@@ -1,1 +1,1 @@
-{"name":"@summit/clinicians","version":"0.0.1","private":true,"dependencies":{"@supabase/ssr":"^0.10.3"}}
+{"name":"@summit/data","version":"0.0.1","private":true,"dependencies":{"@supabase/ssr":"^0.10.3"}}

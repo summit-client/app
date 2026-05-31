@@ -17,16 +17,20 @@ const COLORS = {
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const AVAIL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const CALENDAR_HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 const CELL_H = 22;
 
 // ─── Time helpers ─────────────────────────────────────────────────────────────
 
+function dayFromDate(dateStr) {
+  const DAY_MAP = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return DAY_MAP[new Date(dateStr + "T12:00:00").getDay()];
+}
+
 function generateTimeSlots() {
   const s = [];
   for (let h = 7; h < 20; h++) {
-    s.push(`${String(h).padStart(2,"0")}:00`);
-    s.push(`${String(h).padStart(2,"0")}:30`);
+    s.push(`${String(h).padStart(2, "0")}:00`);
+    s.push(`${String(h).padStart(2, "0")}:30`);
   }
   return s;
 }
@@ -35,8 +39,8 @@ const TIME_SLOTS = generateTimeSlots();
 function buildPreviewSlots() {
   const s = [];
   for (let h = 7; h < 20; h++) {
-    s.push({ h, m: 0, label: `${h}:00`, key: `${String(h).padStart(2,"0")}:00` });
-    s.push({ h, m: 30, label: "", key: `${String(h).padStart(2,"0")}:30` });
+    s.push({ h, m: 0, label: `${h}:00`, key: `${String(h).padStart(2, "0")}:00` });
+    s.push({ h, m: 30, label: "", key: `${String(h).padStart(2, "0")}:30` });
   }
   return s;
 }
@@ -244,7 +248,10 @@ function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, 
 
   function cellAvail(day, tKey) { return displayStaffIds.some(id => staffAvailAt(id, day, tKey, staffAvailability)); }
   function getProposedAt(day, h, m) { return proposedSessions.filter(p => p.day === day && p.hour === h && p.minute === m); }
-  function getExistingAt(day, h) { return (existingSessions || []).filter(s => s.day === day && s.hour === h); }
+  // existingSessions no longer have a .day column — derive from session_date
+  function getExistingAt(day, h) {
+    return (existingSessions || []).filter(s => dayFromDate(s.session_date) === day && s.hour === h);
+  }
 
   function getCellDragState(day, tKey, dragPs) {
     if (!dragPs) return "normal";
@@ -329,7 +336,7 @@ function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, 
                       const p = proposed[0], ex = existing[0];
                       if (p || ex) setTooltip({
                         x: e.clientX + 14, y: e.clientY + 10,
-                        proposed: p ? { name: p.clientName, staff: p.staffName, type: p.sessionType, loc: locations.find(l => l.id === p.locationId)?.name, time: `${day} ${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}` } : null,
+                        proposed: p ? { name: p.clientName, staff: p.staffName, type: p.sessionType, loc: locations.find(l => l.id === p.locationId)?.name, time: `${day} ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}` } : null,
                         existing: ex ? { name: clients.find(c => c.id === ex.client_id)?.name, staff: employees.find(e => e.id === ex.employee_id)?.name, type: ex.type, time: `${day} ${h}:00` } : null,
                       });
                     }}
@@ -465,11 +472,11 @@ function Trail({ steps, onBack }) {
 }
 
 // ─── Group session card ────────────────────────────────────────────────────────
+
 function GroupSessionCard({ items, sessionTypeName, maxClients, accepted, onAccept, onReject, typeColors }) {
   const [showTip, setShowTip] = useState(false);
   const color = typeColors[sessionTypeName] || "#888888";
 
-  // Best staff by aggregate score across all clients
   const staffScores = {};
   items.forEach(item => {
     (item.matches || []).forEach(m => {
@@ -478,7 +485,6 @@ function GroupSessionCard({ items, sessionTypeName, maxClients, accepted, onAcce
   });
   const topStaff = Object.entries(staffScores).sort((a, b) => b[1] - a[1])[0]?.[0] || "No staff available";
 
-  // Rank clients by score with topStaff, fall back to first match
   const ranked = items.map(item => {
     const mi = item.matches?.findIndex(m => m.staffName === topStaff);
     const matchIdx = mi >= 0 ? mi : 0;
@@ -656,21 +662,22 @@ function Dashboard({ clients, employees, bookings, typeColors }) {
             {filteredBookings.length === 0
               ? <div style={{ fontSize: 14, color: COLORS.textT, padding: "20px 0" }}>No sessions match this filter.</div>
               : filteredBookings.slice(0, 20).map(b => {
-                  const client = clients.find(c => c.id === b.client_id);
-                  const emp = employees.find(e => e.id === b.employee_id);
-                  const color = typeColors[b.type] || "#888888";
-                  return (
-                    <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 8, background: COLORS.bgS, border: `0.5px solid ${COLORS.border}` }}>
-                      <div style={{ width: 3, height: 36, borderRadius: 2, background: color, flexShrink: 0 }} />
-                      <Avatar name={client?.name || "?"} size={32} color={color} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>{client?.name}</div>
-                        <div style={{ fontSize: 13, color: COLORS.textS }}>{emp?.name} · {b.day} {b.hour}:00</div>
-                      </div>
-                      <Badge label={b.type} color={color} />
+                const client = clients.find(c => c.id === b.client_id);
+                const emp = employees.find(e => e.id === b.employee_id);
+                const color = typeColors[b.type] || "#888888";
+                const bDay = b.session_date ? dayFromDate(b.session_date) : "—";
+                return (
+                  <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 8, background: COLORS.bgS, border: `0.5px solid ${COLORS.border}` }}>
+                    <div style={{ width: 3, height: 36, borderRadius: 2, background: color, flexShrink: 0 }} />
+                    <Avatar name={client?.name || "?"} size={32} color={color} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>{client?.name}</div>
+                      <div style={{ fontSize: 13, color: COLORS.textS }}>{emp?.name} · {bDay} {b.hour}:00</div>
                     </div>
-                  );
-                })
+                    <Badge label={b.type} color={color} />
+                  </div>
+                );
+              })
             }
           </div>
         </div>
@@ -728,16 +735,17 @@ function Dashboard({ clients, employees, bookings, typeColors }) {
 function CalendarView({ clients, employees, bookings, locations, typeColors, calendars, workDays, workStart, workEnd, refreshBookings, showToast }) {
   const [hoveredCell, setHoveredCell] = useState(null);
   const [selectedCalendarId, setSelectedCalendarId] = useState(null);
-  console.log("filteredBookings sample:", bookings?.filter(b => b.calendar_id === 1).slice(0, 3));
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [cancelling, setCancelling] = useState(false);
 
   const activeCalendars = (calendars || []).filter(c => c.status !== "archived");
   const effectiveCalId = selectedCalendarId ?? activeCalendars[0]?.id ?? null;
-const filteredBookings = (effectiveCalId ? bookings.filter(b => b.calendar_id === effectiveCalId) : bookings)
-  .filter(b => b.status !== "cancelled");
-console.log("effectiveCalId:", effectiveCalId, "filteredCount:", filteredBookings.length);
-  const getBookings = (day, hour) => filteredBookings.filter(b => b.day === day && b.hour === hour);
+  const filteredBookings = (effectiveCalId ? bookings.filter(b => b.calendar_id === effectiveCalId) : bookings)
+    .filter(b => b.status !== "cancelled");
+
+  // Derive day from session_date for grid lookup
+  const getBookings = (day, hour) =>
+    filteredBookings.filter(b => b.session_date && dayFromDate(b.session_date) === day && b.hour === hour);
 
   async function handleCancel(booking) {
     if (!confirm("Cancel this session?")) return;
@@ -778,51 +786,51 @@ console.log("effectiveCalId:", effectiveCalId, "filteredCount:", filteredBooking
             <>
               <div key={`h-${hour}`} style={{ padding: "6px 6px 0", fontSize: 11, color: COLORS.textT, borderBottom: `0.5px solid ${COLORS.border}`, display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>{hour}:00</div>
               {DAYS.filter(d => workDays.includes(d)).map(day => {
-const bs = getBookings(day, hour);
-return (
-  <div key={`${day}-${hour}`} style={{ borderLeft: `0.5px solid ${COLORS.border}`, borderBottom: `0.5px solid ${COLORS.border}`, height: 48, padding: 2, background: COLORS.bg, position: "relative" }}>
-    {bs.length > 0 && (() => {
-      const first = bs[0];
-      const col = typeColors[first.type] || "#888888";
-      const firstClient = clients.find(c => c.id === first.client_id);
-      const firstEmp = employees.find(e => e.id === first.employee_id);
-      const loc = locations?.find(l => l.id === firstEmp?.location_id);
-      const cellKey = `${day}-${hour}`;
-      return (
-        <div onMouseEnter={() => setHoveredCell(cellKey)} onMouseLeave={() => setHoveredCell(null)}
-          onClick={() => setSelectedBooking(selectedBooking?.id === first.id ? null : first)}
-          style={{ height: "100%", borderRadius: 4, padding: "2px 6px", background: col + "22", borderLeft: `2.5px solid ${col}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: col, lineHeight: 1.3 }}>{firstClient?.name?.split(" ")[0]}</div>
-            {bs.length > 1 && <div style={{ fontSize: 11, color: COLORS.textS }}>+{bs.length - 1} more</div>}
-          </div>
-          {hoveredCell === cellKey && (
-            <div style={{ position: "absolute", top: 52, left: 0, zIndex: 50, minWidth: 220, background: COLORS.bg, border: `0.5px solid ${COLORS.borderS}`, borderRadius: 10, padding: "12px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, marginBottom: 8 }}>{day} {hour}:00 · {first.session_date}</div>
-              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>📍 {loc?.name || "—"}</div>
-              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>👤 {firstEmp?.name || "—"}</div>
-              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>🔁 {bs.some(b => b.recurrence_id) ? "Recurring" : "One-time"}</div>
-              <div style={{ borderTop: `0.5px solid ${COLORS.border}`, marginTop: 8, paddingTop: 8 }}>
-                {bs.map(b => {
-                  const c = clients.find(c => c.id === b.client_id);
-                  const bcol = typeColors[b.type] || "#888";
-                  return (
-                    <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: bcol, flexShrink: 0 }} />
-                      <span style={{ fontSize: 12, color: COLORS.text }}>{c?.name}</span>
-                      <span style={{ fontSize: 11, color: COLORS.textT, marginLeft: "auto" }}>{b.type}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    })()}
-  </div>
-);
-})}
+                const bs = getBookings(day, hour);
+                return (
+                  <div key={`${day}-${hour}`} style={{ borderLeft: `0.5px solid ${COLORS.border}`, borderBottom: `0.5px solid ${COLORS.border}`, height: 48, padding: 2, background: COLORS.bg, position: "relative" }}>
+                    {bs.length > 0 && (() => {
+                      const first = bs[0];
+                      const col = typeColors[first.type] || "#888888";
+                      const firstClient = clients.find(c => c.id === first.client_id);
+                      const firstEmp = employees.find(e => e.id === first.employee_id);
+                      const loc = locations?.find(l => l.id === firstEmp?.location_id);
+                      const cellKey = `${day}-${hour}`;
+                      return (
+                        <div onMouseEnter={() => setHoveredCell(cellKey)} onMouseLeave={() => setHoveredCell(null)}
+                          onClick={() => setSelectedBooking(selectedBooking?.id === first.id ? null : first)}
+                          style={{ height: "100%", borderRadius: 4, padding: "2px 6px", background: col + "22", borderLeft: `2.5px solid ${col}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: col, lineHeight: 1.3 }}>{firstClient?.name?.split(" ")[0]}</div>
+                            {bs.length > 1 && <div style={{ fontSize: 11, color: COLORS.textS }}>+{bs.length - 1} more</div>}
+                          </div>
+                          {hoveredCell === cellKey && (
+                            <div style={{ position: "absolute", top: 52, left: 0, zIndex: 50, minWidth: 220, background: COLORS.bg, border: `0.5px solid ${COLORS.borderS}`, borderRadius: 10, padding: "12px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, marginBottom: 8 }}>{day} {hour}:00 · {first.session_date}</div>
+                              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>📍 {loc?.name || "—"}</div>
+                              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>👤 {firstEmp?.name || "—"}</div>
+                              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>🔁 {bs.some(b => b.recurrence_id) ? "Recurring" : "One-time"}</div>
+                              <div style={{ borderTop: `0.5px solid ${COLORS.border}`, marginTop: 8, paddingTop: 8 }}>
+                                {bs.map(b => {
+                                  const c = clients.find(c => c.id === b.client_id);
+                                  const bcol = typeColors[b.type] || "#888";
+                                  return (
+                                    <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: bcol, flexShrink: 0 }} />
+                                      <span style={{ fontSize: 12, color: COLORS.text }}>{c?.name}</span>
+                                      <span style={{ fontSize: 11, color: COLORS.textT, marginLeft: "auto" }}>{b.type}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              })}
             </>
           ))}
         </div>
@@ -831,12 +839,13 @@ return (
         const client = clients.find(c => c.id === selectedBooking.client_id);
         const emp = employees.find(e => e.id === selectedBooking.employee_id);
         const color = typeColors[selectedBooking.type] || "#888888";
+        const bDay = selectedBooking.session_date ? dayFromDate(selectedBooking.session_date) : "—";
         return (
           <div style={{ marginTop: 16, padding: "14px 18px", borderRadius: 10, background: COLORS.bgS, border: `0.5px solid ${color}55`, display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ width: 4, height: 50, borderRadius: 2, background: color, flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: COLORS.text }}>{client?.name}</div>
-              <div style={{ fontSize: 14, color: COLORS.textS }}>{emp?.name} · {selectedBooking.day} {selectedBooking.hour}:00</div>
+              <div style={{ fontSize: 14, color: COLORS.textS }}>{emp?.name} · {bDay} {selectedBooking.hour}:00</div>
             </div>
             <Badge label={selectedBooking.type} color={color} />
             <button onClick={() => handleCancel(selectedBooking)} disabled={cancelling}
@@ -850,6 +859,7 @@ return (
     </div>
   );
 }
+
 // ─── Clients view ─────────────────────────────────────────────────────────────
 
 function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast }) {
@@ -879,8 +889,8 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
           const cAvail = (clientAvailability || []).filter(a => a.client_id === client.id);
           const availSummary = AVAIL_DAYS.filter(d => cAvail.some(a => a.day === d)).map(d => {
             const slots = cAvail.filter(a => a.day === d);
-            const earliest = slots.reduce((min, a) => String(a.start_time).substring(0,5) < min ? String(a.start_time).substring(0,5) : min, "23:59");
-            const latest = slots.reduce((max, a) => String(a.end_time).substring(0,5) > max ? String(a.end_time).substring(0,5) : max, "00:00");
+            const earliest = slots.reduce((min, a) => String(a.start_time).substring(0, 5) < min ? String(a.start_time).substring(0, 5) : min, "23:59");
+            const latest = slots.reduce((max, a) => String(a.end_time).substring(0, 5) > max ? String(a.end_time).substring(0, 5) : max, "00:00");
             return `${d} ${earliest}–${latest}`;
           });
           return (
@@ -941,8 +951,8 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
           const isExp = expandedId === emp.id;
           const availSummary = AVAIL_DAYS.filter(d => empAvail.some(a => a.day === d)).map(d => {
             const slots = empAvail.filter(a => a.day === d);
-            const earliest = slots.reduce((min, a) => String(a.start_time).substring(0,5) < min ? String(a.start_time).substring(0,5) : min, "23:59");
-            const latest = slots.reduce((max, a) => String(a.end_time).substring(0,5) > max ? String(a.end_time).substring(0,5) : max, "00:00");
+            const earliest = slots.reduce((min, a) => String(a.start_time).substring(0, 5) < min ? String(a.start_time).substring(0, 5) : min, "23:59");
+            const latest = slots.reduce((max, a) => String(a.end_time).substring(0, 5) > max ? String(a.end_time).substring(0, 5) : max, "00:00");
             return `${d} ${earliest}–${latest}`;
           });
           return (
@@ -987,10 +997,10 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
   const [editingType, setEditingType] = useState(null);
 
   function handleSave(updated) {
-  setSessionTypes(prev => prev.map(st => st.id === updated.id ? { ...st, ...updated } : st));
-  setEditingType(null);
-  showToast("Service saved");
-}
+    setSessionTypes(prev => prev.map(st => st.id === updated.id ? { ...st, ...updated } : st));
+    setEditingType(null);
+    showToast("Service saved");
+  }
 
   return (
     <div>
@@ -1058,8 +1068,8 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
 
   const TABS = ["General", "User Management", "Admin"];
   const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const TIMEZONES = ["America/Toronto","America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Europe/London","Europe/Paris"];
-  const LANGUAGES = ["Bulgarian","English","French","Italian","Spanish"];
+  const TIMEZONES = ["America/Toronto", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "Europe/London", "Europe/Paris"];
+  const LANGUAGES = ["Bulgarian", "English", "French", "Italian", "Spanish"];
 
   const allUsers = [
     ...employees.map(e => ({ ...e, kind: "staff" })),
@@ -1106,8 +1116,6 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
         <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Settings</h2>
         <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Manage your workspace preferences</p>
       </div>
-
-      {/* Horizontal tabs */}
       <div style={{ display: "flex", gap: 2, marginBottom: 28, borderBottom: `0.5px solid ${COLORS.border}` }}>
         {TABS.map(t => {
           const isActive = tab === t.toLowerCase().replace(" ", "");
@@ -1120,7 +1128,6 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
         })}
       </div>
 
-      {/* ── General ── */}
       {tab === "general" && (
         <div style={{ maxWidth: 560 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>REGIONAL</div>
@@ -1132,10 +1139,9 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
               <Select value={language} onChange={setLanguage} options={LANGUAGES} />
             </SettingRow>
             <SettingRow label="Date format" sub="How dates appear across the app">
-              <Select value={dateFormat} onChange={setDateFormat} options={["MM/DD/YYYY","DD/MM/YYYY","YYYY-MM-DD"]} />
+              <Select value={dateFormat} onChange={setDateFormat} options={["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD"]} />
             </SettingRow>
           </div>
-
           <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>APPEARANCE</div>
           <div style={{ background: COLORS.bgS, borderRadius: 12, padding: "0 18px", border: `0.5px solid ${COLORS.border}`, marginBottom: 24 }}>
             <SettingRow label="Dark mode" sub="Toggle dark or light interface">
@@ -1143,7 +1149,7 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
             </SettingRow>
             <SettingRow label="Display density" sub="Controls spacing and card size">
               <div style={{ display: "flex", gap: 6 }}>
-                {["compact","comfortable","spacious"].map(d => (
+                {["compact", "comfortable", "spacious"].map(d => (
                   <button key={d} onClick={() => setDensity(d)}
                     style={{ padding: "4px 12px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${density === d ? "#5DCAA5" : COLORS.border}`, background: density === d ? "#5DCAA518" : COLORS.bg, color: density === d ? "#5DCAA5" : COLORS.textS, cursor: "pointer", fontWeight: density === d ? 500 : 400 }}>
                     {d.charAt(0).toUpperCase() + d.slice(1)}
@@ -1152,7 +1158,6 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
               </div>
             </SettingRow>
           </div>
-
           <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>CALENDAR VIEW RANGE</div>
           <div style={{ background: COLORS.bgS, borderRadius: 12, padding: "18px 18px", border: `0.5px solid ${COLORS.border}`, marginBottom: 24 }}>
             <div style={{ marginBottom: 18 }}>
@@ -1189,14 +1194,13 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
         </div>
       )}
 
-      {/* ── User Management ── */}
       {tab === "usermanagement" && (
         <div>
           <div style={{ display: "flex", gap: 10, marginBottom: 18, alignItems: "center" }}>
             <input placeholder="Search users…" value={userSearch} onChange={e => setUserSearch(e.target.value)}
               style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 220 }} />
             <div style={{ display: "flex", gap: 4 }}>
-              {["all","staff","client"].map(f => (
+              {["all", "staff", "client"].map(f => (
                 <button key={f} onClick={() => setUserFilter(f)}
                   style={{ padding: "6px 14px", borderRadius: 20, fontSize: 13, border: `0.5px solid ${userFilter === f ? "#5DCAA5" : COLORS.border}`, background: userFilter === f ? "#5DCAA518" : COLORS.bg, color: userFilter === f ? "#5DCAA5" : COLORS.textS, cursor: "pointer", fontWeight: userFilter === f ? 500 : 400 }}>
                   {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -1228,7 +1232,6 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
         </div>
       )}
 
-      {/* ── Admin ── */}
       {tab === "admin" && (
         <div style={{ maxWidth: 560 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>CLINIC</div>
@@ -1237,33 +1240,31 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
               <input defaultValue="Summit ABA Clinic" style={{ padding: "6px 10px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.text, fontSize: 13, width: 200 }} />
             </SettingRow>
             <SettingRow label="Billing cycle" sub="How often invoices are generated">
-              <Select value="Monthly" onChange={() => {}} options={["Weekly","Bi-weekly","Monthly"]} />
+              <Select value="Monthly" onChange={() => {}} options={["Weekly", "Bi-weekly", "Monthly"]} />
             </SettingRow>
             <SettingRow label="Session overlap buffer" sub="Minimum gap between sessions (minutes)">
-              <Select value="15 min" onChange={() => {}} options={["0 min","10 min","15 min","30 min"]} />
+              <Select value="15 min" onChange={() => {}} options={["0 min", "10 min", "15 min", "30 min"]} />
             </SettingRow>
           </div>
-
           <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>ACCESS & SECURITY</div>
           <div style={{ background: COLORS.bgS, borderRadius: 12, padding: "0 18px", border: `0.5px solid ${COLORS.border}`, marginBottom: 24 }}>
             <SettingRow label="Require 2FA" sub="Enforce two-factor authentication for all users">
               <Toggle value={false} onChange={() => {}} />
             </SettingRow>
             <SettingRow label="Session timeout" sub="Auto-logout after inactivity">
-              <Select value="30 min" onChange={() => {}} options={["15 min","30 min","1 hour","4 hours"]} />
+              <Select value="30 min" onChange={() => {}} options={["15 min", "30 min", "1 hour", "4 hours"]} />
             </SettingRow>
             <SettingRow label="Audit logging" sub="Track all scheduling actions">
               <Toggle value={true} onChange={() => {}} />
             </SettingRow>
           </div>
-
           <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>DATA</div>
           <div style={{ background: COLORS.bgS, borderRadius: 12, padding: "0 18px", border: `0.5px solid ${COLORS.border}`, marginBottom: 24 }}>
             <SettingRow label="Export all sessions" sub="Download a CSV of all booked sessions">
               <button style={{ padding: "6px 14px", borderRadius: 8, fontSize: 13, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>Export CSV</button>
             </SettingRow>
             <SettingRow label="Data retention" sub="How long session records are kept">
-              <Select value="3 years" onChange={() => {}} options={["1 year","2 years","3 years","Indefinite"]} />
+              <Select value="3 years" onChange={() => {}} options={["1 year", "2 years", "3 years", "Indefinite"]} />
             </SettingRow>
           </div>
         </div>
@@ -1277,16 +1278,14 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
 function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays }) {
   const [step, setStep] = useState("calendar");
   const [trail, setTrail] = useState([]);
-  
+
   const [editingCalId, setEditingCalId] = useState(null);
   const [editingCalName, setEditingCalName] = useState("");
   const [hoveredCalId, setHoveredCalId] = useState(null);
-  
+
   const [selectedCalendar, setSelectedCalendar] = useState(null);
   const [showNewCal, setShowNewCal] = useState(false);
   const [newCalName, setNewCalName] = useState("");
-  const [newCalStart, setNewCalStart] = useState("");
-  const [newCalEnd, setNewCalEnd] = useState("");
   const [calCreating, setCalCreating] = useState(false);
 
   const [matchCount, setMatchCount] = useState(null);
@@ -1303,9 +1302,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [endCount, setEndCount] = useState("");
 
   const [activeTab, setActiveTab] = useState("");
-  const [multiScope, setMultiScope] = useState(null);
   const [multiClients, setMultiClients] = useState([]);
-  const [clientSessionTypes, setClientSessionTypes] = useState({});
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1315,18 +1312,19 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [proposedSessions, setProposedSessions] = useState([]);
   const [booking, setBooking] = useState(false);
 
-  const ONE_ORDER = ["calendar","matchCount","location","client","sessionType","staff","time","review","booked"];
-  const MULTI_ORDER = ["calendar","matchCount","multiClient","time","review","booked"];
- 
+  const ONE_ORDER = ["calendar", "matchCount", "location", "client", "sessionType", "staff", "time", "review", "booked"];
+  const MULTI_ORDER = ["calendar", "matchCount", "multiClient", "time", "review", "booked"];
+
   function getNextQuarterPlaceholder() {
-  const now = new Date();
-  const month = now.getMonth();
-  const year = now.getFullYear();
-  const quarter = Math.floor(month / 3) + 1;
-  const nextQ = quarter === 4 ? 1 : quarter + 1;
-  const nextYear = quarter === 4 ? year + 1 : year;
-  return `${nextYear}, or Q${nextQ} ${nextYear}`;
-}
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    const quarter = Math.floor(month / 3) + 1;
+    const nextQ = quarter === 4 ? 1 : quarter + 1;
+    const nextYear = quarter === 4 ? year + 1 : year;
+    return `${nextYear}, or Q${nextQ} ${nextYear}`;
+  }
+
   function advance(nextStep, label) { setTrail(t => [...t, label]); setStep(nextStep); }
   function goBack(idx) {
     const order = matchCount === "multiple" ? MULTI_ORDER : ONE_ORDER;
@@ -1336,30 +1334,31 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   }
 
   async function createCalendar() {
-  if (!newCalName) return;
-  setCalCreating(true);
-  const today = new Date().toISOString().split("T")[0];
-  const farFuture = `${new Date().getFullYear() + 3}-12-31`;
-  const { data } = await supabase
-    .from("calendars")
-    .insert({ name: newCalName, date_start: today, date_end: farFuture, status: "draft" })
-    .select().single();
-  if (data) { setCalendars(prev => [...prev, data]); setSelectedCalendar(data); setShowNewCal(false); showToast("Calendar created"); setNewCalName(""); }
-  setCalCreating(false);
-}
-  async function renameCalendar(id) {
-  if (!editingCalName.trim()) return;
-  const { data } = await supabase.from("calendars").update({ name: editingCalName.trim() }).eq("id", id).select().single();
-  if (data) setCalendars(prev => prev.map(c => c.id === id ? { ...c, name: data.name } : c));
-  setEditingCalId(null);
-  showToast("Calendar renamed");
-}
+    if (!newCalName) return;
+    setCalCreating(true);
+    const today = new Date().toISOString().split("T")[0];
+    const farFuture = `${new Date().getFullYear() + 3}-12-31`;
+    const { data } = await supabase
+      .from("calendars")
+      .insert({ name: newCalName, date_start: today, date_end: farFuture, status: "draft" })
+      .select().single();
+    if (data) { setCalendars(prev => [...prev, data]); setSelectedCalendar(data); setShowNewCal(false); showToast("Calendar created"); setNewCalName(""); }
+    setCalCreating(false);
+  }
 
-async function archiveCalendar(id) {
-  await supabase.from("calendars").update({ status: "archived" }).eq("id", id);
-  setCalendars(prev => prev.filter(c => c.id !== id));
-  if (selectedCalendar?.id === id) setSelectedCalendar(null);
-}
+  async function renameCalendar(id) {
+    if (!editingCalName.trim()) return;
+    const { data } = await supabase.from("calendars").update({ name: editingCalName.trim() }).eq("id", id).select().single();
+    if (data) setCalendars(prev => prev.map(c => c.id === id ? { ...c, name: data.name } : c));
+    setEditingCalId(null);
+    showToast("Calendar renamed");
+  }
+
+  async function archiveCalendar(id) {
+    await supabase.from("calendars").update({ status: "archived" }).eq("id", id);
+    setCalendars(prev => prev.filter(c => c.id !== id));
+    if (selectedCalendar?.id === id) setSelectedCalendar(null);
+  }
 
   function buildReviewItems(res, type, client, sessionType) {
     if (type === "single" || type === "one") {
@@ -1396,8 +1395,8 @@ async function archiveCalendar(id) {
       const { day, hour, minute } = parseSlot(match.overlappingSlots?.[0]);
       setAccepted(a => ({ ...a, [key]: true }));
       setProposedSessions(prev => {
-        const filtered = prev.filter(p => p.key !== key);
-        return [...filtered, { key, clientId: item.clientId, clientName: item.clientName, staffId: staff?.id, staffName: match.staffName, sessionType: item.sessionType, locationId: item.locationId, day, hour, minute, color: typeColors[item.sessionType] || "#888888" }];
+        const f = prev.filter(p => p.key !== key);
+        return [...f, { key, clientId: item.clientId, clientName: item.clientName, staffId: staff?.id, staffName: match.staffName, sessionType: item.sessionType, locationId: item.locationId, day, hour, minute, color: typeColors[item.sessionType] || "#888888" }];
       });
     }
   }
@@ -1408,145 +1407,144 @@ async function archiveCalendar(id) {
     if (!isCurrentlyRejected) setProposedSessions(prev => prev.filter(p => p.key !== key));
   }
 
-async function handleConfirmAndBook() {
-  setBooking(true);
-  setError(null);
-  try {
+  async function handleConfirmAndBook() {
+    setBooking(true);
+    setError(null);
+    try {
+      const inserts = [];
+      const skipped = [];
 
-    const inserts = [];
-    const skipped = [];
+      for (const ps of proposedSessions) {
+        if (!ps.staffId || !ps.clientId) continue;
+        const recurrenceId = recurring === "yes" ? crypto.randomUUID() : null;
+        const dates = recurring === "yes"
+          ? generateRecurringDates(selectedCalendar.date_start, selectedCalendar.date_end, ps.day, endType, endDate, endCount)
+          : generateRecurringDates(selectedCalendar.date_start, selectedCalendar.date_end, ps.day, "count", null, 1);
 
-    for (const ps of proposedSessions) {
-      if (!ps.staffId || !ps.clientId) continue;
-      const recurrenceId = recurring === "yes" ? crypto.randomUUID() : null;
-      const dates = recurring === "yes"
-        ? generateRecurringDates(selectedCalendar.date_start, selectedCalendar.date_end, ps.day, endType, endDate, endCount)
-        : generateRecurringDates(selectedCalendar.date_start, selectedCalendar.date_end, ps.day, "count", null, 1);
+        dates.forEach(date => {
+          const conflict = bookings.some(b =>
+            b.employee_id === ps.staffId &&
+            b.session_date === date &&
+            b.hour === ps.hour &&
+            b.status !== "cancelled"
+          );
+          if (conflict) {
+            skipped.push(`${ps.clientName} · ${date} ${ps.hour}:${String(ps.minute).padStart(2, "0")}`);
+          } else {
+            inserts.push({
+              recurrence_id: recurrenceId,
+              client_id: ps.clientId,
+              employee_id: ps.staffId,
+              hour: ps.hour,
+              minute: ps.minute,
+              session_date: date,
+              type: ps.sessionType,
+              calendar_id: selectedCalendar.id,
+              status: "scheduled",
+            });
+          }
+        });
+      }
 
-      dates.forEach(date => {
-        const conflict = bookings.some(b =>
-          b.employee_id === ps.staffId &&
-          b.session_date === date &&
-          b.hour === ps.hour &&
-          b.status !== "cancelled"
-        );
-        if (conflict) {
-          skipped.push(`${ps.clientName} · ${date} ${ps.hour}:${String(ps.minute).padStart(2,"0")}`);
-        } else {
-          inserts.push({
-            recurrence_id: recurrenceId,
-            client_id: ps.clientId, employee_id: ps.staffId,
-            day: ps.day, hour: ps.hour, minute: ps.minute,
-            session_date: date, type: ps.sessionType,
-            calendar_id: selectedCalendar.id, status: "scheduled",
-          });
-        }
-      });
-    }
+      if (inserts.length === 0) {
+        setError(`Nothing to book — ${skipped.length} conflict${skipped.length !== 1 ? "s" : ""} with existing sessions.`);
+        setBooking(false);
+        return;
+      }
 
-    if (inserts.length === 0) {
-      setError(`Nothing to book — ${skipped.length} conflict${skipped.length !== 1 ? "s" : ""} with existing sessions.`);
+      const { error: err } = await supabase.from("sessions").insert(inserts);
+      if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
+
+      // Auto-promote waitlist clients booked for Assessment
+      const assessmentClientIds = [...new Set(
+        proposedSessions.filter(ps => ps.sessionType === "Assessment").map(ps => ps.clientId)
+      )];
+      let promoted = 0;
+      if (assessmentClientIds.length) {
+        const { count } = await supabase
+          .from("clients")
+          .update({ status: "active" })
+          .in("id", assessmentClientIds)
+          .eq("status", "waitlist")
+          .select("id", { count: "exact", head: true });
+        promoted = count || 0;
+        if (promoted > 0) setClients(prev => prev.map(c => assessmentClientIds.includes(c.id) ? { ...c, status: "active" } : c));
+      }
+
       setBooking(false);
-      return;
+      refreshBookings();
+      const baseMsg = skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked";
+      showToast(promoted > 0 ? `${baseMsg} · ${promoted} client${promoted !== 1 ? "s" : ""} promoted to active` : baseMsg);
+      advance("booked", "Booked");
+    } catch (err) {
+      console.error("Booking error:", err);
+      setError("Booking failed. Try again.");
+    } finally {
+      setBooking(false);
     }
-
-    const { error: err } = await supabase.from("sessions").insert(inserts);
-    if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
-
-    // Auto-promote waitlist clients booked for Assessment
-    const assessmentClientIds = [...new Set(
-      proposedSessions.filter(ps => ps.sessionType === "Assessment").map(ps => ps.clientId)
-    )];
-    let promoted = 0;
-    if (assessmentClientIds.length) {
-      const { count } = await supabase
-        .from("clients")
-        .update({ status: "active" })
-        .in("id", assessmentClientIds)
-        .eq("status", "waitlist")
-        .select("id", { count: "exact", head: true });
-      promoted = count || 0;
-      if (promoted > 0) setClients(prev => prev.map(c => assessmentClientIds.includes(c.id) ? { ...c, status: "active" } : c));
-    }
-
-    setBooking(false);
-    refreshBookings();
-    const baseMsg = skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked";
-    showToast(promoted > 0 ? `${baseMsg} · ${promoted} client${promoted !== 1 ? "s" : ""} promoted to active` : baseMsg);
-    advance("booked", "Booked");
-  } catch (err) {
-    console.error("Booking error:", err);
-    setError("Booking failed. Try again.");
-  } finally {
-    setBooking(false);
   }
-}
-
-// ─── Matching ──────────────────────────────────────────────────────────────
-
 
   async function runMatch(type) {
     setLoading(true); setError(null);
     let prompt, maxTokens;
 
     if (type === "single" || type === "one") {
-  const eligible = employees.filter(e =>
-    e.specialties?.includes(selectedSessionType.name) &&
-    e.booked < e.capacity &&
-    e.location_id === selectedClient.location_id &&
-    (staffChoice === "any" || e.id === selectedStaff?.id)
-  );
-  const endCond = recurring === "yes" ? (endType === "date" ? `until ${endDate}` : `${endCount} sessions total`) : "one-time";
-  prompt = `You are an ABA scheduling assistant. Find the best staff match for a client.
+      const eligible = employees.filter(e =>
+        e.specialties?.includes(selectedSessionType.name) &&
+        e.booked < e.capacity &&
+        e.location_id === selectedClient.location_id &&
+        (staffChoice === "any" || e.id === selectedStaff?.id)
+      );
+      const endCond = recurring === "yes" ? (endType === "date" ? `until ${endDate}` : `${endCount} sessions total`) : "one-time";
+      prompt = `You are an ABA scheduling assistant. Find the best staff match for a client.
 CALENDAR: ${selectedCalendar.name} (${selectedCalendar.date_start} to ${selectedCalendar.date_end})
 CLIENT: ${selectedClient.name} | SESSION: ${selectedSessionType.name} (${selectedSessionType.duration}min)
 SESSIONS/WEEK: ${sessionsPerWeek} | SCHEDULE: ${recurring === "yes" ? `Recurring — ${endCond}` : "One-time"}
 ELIGIBLE STAFF: ${eligible.map(e => `${e.name} (${e.booked}/${e.capacity})`).join(", ") || "none"}
 Respond ONLY with valid JSON — no extra text:
 {"matches":[{"staffName":"...","overlappingSlots":["Mon 9:00"]}],"recommendation":"..."}`;
-  maxTokens = 800;
+      maxTokens = 800;
+    } else {
+      const clientMatches = multiClients.map(({ client, session_type }) => {
+        const eligible = employees
+          .filter(e =>
+            e.specialties?.includes(session_type) &&
+            e.booked < e.capacity &&
+            e.location_id === client.location_id
+          )
+          .sort((a, b) => (a.booked / a.capacity) - (b.booked / b.capacity));
 
-
-} else {
-  const clientMatches = multiClients.map(({ client, session_type }) => {
-    const eligible = employees
-      .filter(e =>
-        e.specialties?.includes(session_type) &&
-        e.booked < e.capacity &&
-        e.location_id === client.location_id
-      )
-      .sort((a, b) => (a.booked / a.capacity) - (b.booked / b.capacity));
-
-    const matches = eligible.slice(0, 3).map(emp => {
-      const overlappingSlots = [];
-      for (const day of AVAIL_DAYS) {
-        for (const t of TIME_SLOTS) {
-          if (
-            staffAvailAt(emp.id, day, t, staffAvailability) &&
-            clientAvailAt(client.id, day, t, clientAvailability)
-          ) {
-            overlappingSlots.push(`${day} ${t}`);
-            break;
+        const matches = eligible.slice(0, 3).map(emp => {
+          const overlappingSlots = [];
+          for (const day of AVAIL_DAYS) {
+            for (const t of TIME_SLOTS) {
+              if (
+                staffAvailAt(emp.id, day, t, staffAvailability) &&
+                clientAvailAt(client.id, day, t, clientAvailability)
+              ) {
+                overlappingSlots.push(`${day} ${t}`);
+                break;
+              }
+            }
           }
-        }
-      }
-      return { staffName: emp.name, overlappingSlots };
-    });
+          return { staffName: emp.name, overlappingSlots };
+        });
 
-    return { clientName: client.name, sessionType: session_type, matches };
-  });
+        return { clientName: client.name, sessionType: session_type, matches };
+      });
 
-  const items = buildReviewItems({ clientMatches }, "multi", null, null);
-  setReviewItems(items);
-  setAccepted({});
-  setProposedSessions([]);
-  setTrail(t => [...t, "Review"]);
-  setStep("review");
-  setLoading(false);
-  return;
-}
+      const items = buildReviewItems({ clientMatches }, "multi", null, null);
+      setReviewItems(items);
+      setAccepted({});
+      setProposedSessions([]);
+      setTrail(t => [...t, "Review"]);
+      setStep("review");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "haiku-4-5-20251001", max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }) });
+      const res = await fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }) });
       const data = await res.json();
       const raw = data.content?.map(b => b.text || "").join("");
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
@@ -1572,48 +1570,48 @@ Respond ONLY with valid JSON — no extra text:
     <div>{PH}
       <StepCard question="Which calendar are you working with?">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-{calendars.filter(c => c.status !== "archived").map(cal => {
-  const isSelected = selectedCalendar?.id === cal.id;
-  const isEditing = editingCalId === cal.id;
-  const isHovered = hoveredCalId === cal.id;
-  const color = cal.status === "active" ? "#5DCAA5" : "#378ADD";
-  return (
-    <div key={cal.id} style={{ position: "relative", display: "inline-block" }}
-      onMouseEnter={() => setHoveredCalId(cal.id)}
-      onMouseLeave={() => setHoveredCalId(null)}>
-      <div onClick={() => !isEditing && setSelectedCalendar(cal)}
-        style={{ padding: "11px 18px", borderRadius: 10, border: `1.5px solid ${isSelected ? color : COLORS.border}`, background: isSelected ? color + "18" : COLORS.bg, cursor: "pointer", minWidth: 130, transition: "all 0.15s" }}>
-        {isEditing ? (
-          <input autoFocus value={editingCalName} onChange={e => setEditingCalName(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") renameCalendar(cal.id); if (e.key === "Escape") setEditingCalId(null); }}
-            onClick={e => e.stopPropagation()}
-            style={{ fontSize: 14, fontWeight: 500, border: "none", background: "transparent", color: isSelected ? color : COLORS.text, outline: "none", width: "100%" }} />
-        ) : (
-          <>
-            <div style={{ fontSize: 14, fontWeight: isSelected ? 500 : 400, color: isSelected ? color : COLORS.text }}>{cal.name}</div>
-            <div style={{ fontSize: 12, color: isSelected ? color : COLORS.textT, marginTop: 3 }}>{cal.status}</div>
-          </>
-        )}
-      </div>
-      {isHovered && !isEditing && (
-        <div style={{ position: "absolute", top: -8, right: -8, display: "flex", gap: 4, zIndex: 10 }}>
-          <button onClick={e => { e.stopPropagation(); setEditingCalId(cal.id); setEditingCalName(cal.name); }}
-            style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✎</button>
-          <button onClick={e => { e.stopPropagation(); archiveCalendar(cal.id); }}
-            style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✕</button>
-        </div>
-      )}
-    </div>
-  );
-})}
+          {calendars.filter(c => c.status !== "archived").map(cal => {
+            const isSelected = selectedCalendar?.id === cal.id;
+            const isEditing = editingCalId === cal.id;
+            const isHovered = hoveredCalId === cal.id;
+            const color = cal.status === "active" ? "#5DCAA5" : "#378ADD";
+            return (
+              <div key={cal.id} style={{ position: "relative", display: "inline-block" }}
+                onMouseEnter={() => setHoveredCalId(cal.id)}
+                onMouseLeave={() => setHoveredCalId(null)}>
+                <div onClick={() => !isEditing && setSelectedCalendar(cal)}
+                  style={{ padding: "11px 18px", borderRadius: 10, border: `1.5px solid ${isSelected ? color : COLORS.border}`, background: isSelected ? color + "18" : COLORS.bg, cursor: "pointer", minWidth: 130, transition: "all 0.15s" }}>
+                  {isEditing ? (
+                    <input autoFocus value={editingCalName} onChange={e => setEditingCalName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") renameCalendar(cal.id); if (e.key === "Escape") setEditingCalId(null); }}
+                      onClick={e => e.stopPropagation()}
+                      style={{ fontSize: 14, fontWeight: 500, border: "none", background: "transparent", color: isSelected ? color : COLORS.text, outline: "none", width: "100%" }} />
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 14, fontWeight: isSelected ? 500 : 400, color: isSelected ? color : COLORS.text }}>{cal.name}</div>
+                      <div style={{ fontSize: 12, color: isSelected ? color : COLORS.textT, marginTop: 3 }}>{cal.status}</div>
+                    </>
+                  )}
+                </div>
+                {isHovered && !isEditing && (
+                  <div style={{ position: "absolute", top: -8, right: -8, display: "flex", gap: 4, zIndex: 10 }}>
+                    <button onClick={e => { e.stopPropagation(); setEditingCalId(cal.id); setEditingCalName(cal.name); }}
+                      style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✎</button>
+                    <button onClick={e => { e.stopPropagation(); archiveCalendar(cal.id); }}
+                      style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✕</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <OptionButton label="+ New calendar" selected={showNewCal} color="#EF9F27" onClick={() => setShowNewCal(v => !v)} />
         </div>
         {showNewCal && (
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14, padding: 16, borderRadius: 10, background: COLORS.bg, border: `0.5px solid ${COLORS.border}` }}>
-            {[["Name", "text", newCalName, setNewCalName, getNextQuarterPlaceholder(), 180]].map(([lbl,type,val,setter,ph,w]) => (
-              <div key={lbl}><div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>{lbl}</div>
-                <input type={type} value={val} onChange={e => setter(e.target.value)} placeholder={ph} style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: w }} /></div>
-            ))}
+            <div>
+              <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>Name</div>
+              <input type="text" value={newCalName} onChange={e => setNewCalName(e.target.value)} placeholder={getNextQuarterPlaceholder()} style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 180 }} />
+            </div>
             <button onClick={createCalendar} disabled={calCreating || !newCalName} style={{ padding: "7px 20px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>{calCreating ? "Creating…" : "Create"}</button>
           </div>
         )}
@@ -1686,7 +1684,7 @@ Respond ONLY with valid JSON — no extra text:
       <div>{PH}<Trail steps={trail} onBack={goBack} />
         <StepCard question="How many sessions per week?">
           <div style={{ display: "flex", gap: 10 }}>
-            {[1,2,3,4,5].map(n => <OptionButton key={n} label={`${n}x`} selected={sessionsPerWeek === n} onClick={() => setSessionsPerWeek(n)} />)}
+            {[1, 2, 3, 4, 5].map(n => <OptionButton key={n} label={`${n}x`} selected={sessionsPerWeek === n} onClick={() => setSessionsPerWeek(n)} />)}
           </div>
         </StepCard>
         {sessionsPerWeek && <StepCard question="Is this a recurring schedule?">
@@ -1716,177 +1714,143 @@ Respond ONLY with valid JSON — no extra text:
   if (step === "multiClient") {
     const currentTab = activeTab || sessionTypes[0]?.name || "";
     const activeClients = currentTab === "Assessment"
-  ? clients.filter(c => c.status === "active" || c.status === "waitlist")
-  : clients.filter(c => c.status === "active");
+      ? clients.filter(c => c.status === "active" || c.status === "waitlist")
+      : clients.filter(c => c.status === "active");
 
-  const isSelected = (clientId, stName) => multiClients.some(mc => mc.client.id === clientId && mc.session_type === stName);
+    const isSelected = (clientId, stName) => multiClients.some(mc => mc.client.id === clientId && mc.session_type === stName);
 
-  function toggleClient(c, stName) {
-    const key = `${c.id}-${stName}`;
-    if (isSelected(c.id, stName)) {
-      setMultiClients(prev => prev.filter(mc => !(mc.client.id === c.id && mc.session_type === stName)));
-    } else {
-      setMultiClients(prev => [...prev, { client: c, session_type: stName, key: `${key}-${Date.now()}` }]);
+    function toggleClient(c, stName) {
+      if (isSelected(c.id, stName)) {
+        setMultiClients(prev => prev.filter(mc => !(mc.client.id === c.id && mc.session_type === stName)));
+      } else {
+        setMultiClients(prev => [...prev, { client: c, session_type: stName, key: `${c.id}-${stName}-${Date.now()}` }]);
+      }
     }
-  }
 
-  function selectAll(stName) {
-    const toAdd = activeClients
-      .filter(c => !isSelected(c.id, stName))
-      .map(c => ({ client: c, session_type: stName, key: `${c.id}-${stName}-${Date.now()}` }));
-    setMultiClients(prev => [...prev, ...toAdd]);
-  }
+    function selectAll(stName) {
+      const toAdd = activeClients
+        .filter(c => !isSelected(c.id, stName))
+        .map(c => ({ client: c, session_type: stName, key: `${c.id}-${stName}-${Date.now()}` }));
+      setMultiClients(prev => [...prev, ...toAdd]);
+    }
 
-  function clearAll(stName) {
-    setMultiClients(prev => prev.filter(mc => mc.session_type !== stName));
-  }
+    function clearAll(stName) {
+      setMultiClients(prev => prev.filter(mc => mc.session_type !== stName));
+    }
 
-  const tabCount = (stName) => multiClients.filter(mc => mc.session_type === stName).length;
+    const tabCount = (stName) => multiClients.filter(mc => mc.session_type === stName).length;
 
-  return (
-    <div>{PH}<Trail steps={trail} onBack={goBack} />
-      <StepCard question="Which clients do you want to match?">
-
-        {/* Session type tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-          {sessionTypes.map(st => {
-            const count = tabCount(st.name);
-            const active = (activeTab || sessionTypes[0]?.name) === st.name;
-            return (
-              <button key={st.id} onClick={() => setActiveTab(st.name)}
-                style={{ padding: "6px 16px", borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: "pointer", border: `1.5px solid ${active ? st.color : COLORS.border}`, background: active ? st.color + "22" : COLORS.bg, color: active ? st.color : COLORS.textS, transition: "all 0.15s" }}>
-                {st.name}{count > 0 ? ` · ${count}` : ""}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Select all / Clear */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
-          <button onClick={() => selectAll(currentTab)}
-            style={{ padding: "4px 14px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
-            Select all
-          </button>
-          <button onClick={() => clearAll(currentTab)}
-            style={{ padding: "4px 14px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
-            Clear
-          </button>
-          <span style={{ fontSize: 12, color: COLORS.textT }}>{tabCount(currentTab)} selected for {currentTab}</span>
-        </div>
-
-        {/* Client grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginBottom: 20 }}>
-          {activeClients.map(c => {
-            const sel = isSelected(c.id, currentTab);
-            const color = sessionTypes.find(s => s.name === currentTab)?.color || "#378ADD";
-            return (
-              <div key={c.id} onClick={() => toggleClient(c, currentTab)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: `1.5px solid ${sel ? color : COLORS.border}`, background: sel ? color + "11" : COLORS.bgS, transition: "all 0.15s" }}>
-                <Avatar name={c.name} color={sel ? color : "#888"} size={28} />
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: COLORS.text }}>{c.name}</div>
-                  <div style={{ fontSize: 11, color: COLORS.textT }}>{c.status}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Summary tray */}
-        {multiClients.length > 0 && (
-          <div style={{ borderTop: `0.5px solid ${COLORS.border}`, paddingTop: 14, marginBottom: 14 }}>
-            <div style={{ fontSize: 13, color: COLORS.textS, marginBottom: 8 }}>{multiClients.length} pair{multiClients.length !== 1 ? "s" : ""} queued</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {multiClients.map(mc => (
-                <span key={mc.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "3px 10px", borderRadius: 20, background: (typeColors[mc.session_type] || "#888") + "22", color: COLORS.text, border: `0.5px solid ${(typeColors[mc.session_type] || "#888")}66` }}>
-                  {mc.client.name} · {mc.session_type}
-                  <span onClick={() => setMultiClients(prev => prev.filter(m => m.key !== mc.key))}
-                    style={{ cursor: "pointer", color: COLORS.textT, fontWeight: 700, fontSize: 13, lineHeight: 1 }}>×</span>
-                </span>
-              ))}
-            </div>
+    return (
+      <div>{PH}<Trail steps={trail} onBack={goBack} />
+        <StepCard question="Which clients do you want to match?">
+          <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+            {sessionTypes.map(st => {
+              const count = tabCount(st.name);
+              const active = (activeTab || sessionTypes[0]?.name) === st.name;
+              return (
+                <button key={st.id} onClick={() => setActiveTab(st.name)}
+                  style={{ padding: "6px 16px", borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: "pointer", border: `1.5px solid ${active ? st.color : COLORS.border}`, background: active ? st.color + "22" : COLORS.bg, color: active ? st.color : COLORS.textS, transition: "all 0.15s" }}>
+                  {st.name}{count > 0 ? ` · ${count}` : ""}
+                </button>
+              );
+            })}
           </div>
-        )}
+          <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
+            <button onClick={() => selectAll(currentTab)}
+              style={{ padding: "4px 14px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
+              Select all
+            </button>
+            <button onClick={() => clearAll(currentTab)}
+              style={{ padding: "4px 14px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
+              Clear
+            </button>
+            <span style={{ fontSize: 13, color: COLORS.textT }}>{activeClients.length} eligible</span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxHeight: 300, overflowY: "auto" }}>
+            {activeClients.map(c => {
+              const sel = isSelected(c.id, currentTab);
+              return (
+                <button key={c.id} onClick={() => toggleClient(c, currentTab)}
+                  style={{ padding: "7px 14px", borderRadius: 8, fontSize: 13, border: `1px solid ${sel ? "#5DCAA5" : COLORS.border}`, background: sel ? "#5DCAA518" : COLORS.bg, color: sel ? "#0F6E56" : COLORS.text, cursor: "pointer", fontWeight: sel ? 500 : 400 }}>
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+          {multiClients.length > 0 && (
+            <button onClick={() => advance("time", `${multiClients.length} clients`)}
+              style={{ marginTop: 16, padding: "8px 22px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
+              Continue with {multiClients.length} client{multiClients.length !== 1 ? "s" : ""} →
+            </button>
+          )}
+        </StepCard>
+      </div>
+    );
+  }
 
-        {multiClients.length > 0 && (
-          <button onClick={() => advance("time", `${multiClients.length} clients`)}
-            style={{ padding: "8px 22px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-            Continue →
+  if (step === "review") {
+    const groupTypes = sessionTypes.filter(st => st.max_clients > 1).map(st => st.name);
+    const groupBuckets = {};
+    const individualItems = [];
+    reviewItems.forEach(item => {
+      if (groupTypes.includes(item.sessionType)) {
+        if (!groupBuckets[item.sessionType]) groupBuckets[item.sessionType] = [];
+        groupBuckets[item.sessionType].push(item);
+      } else {
+        individualItems.push(item);
+      }
+    });
+    const sortedItems = [...individualItems, ...Object.values(groupBuckets).flat()];
+    const totalAccepted = Object.values(accepted).filter(v => v === true).length;
+
+    return (
+      <div>{PH}<Trail steps={trail} onBack={goBack} />
+        <div style={{ marginBottom: 20 }}>
+          <PreviewGrid
+            proposedSessions={proposedSessions}
+            setProposedSessions={setProposedSessions}
+            existingSessions={bookings}
+            staffAvailability={staffAvailability}
+            clientAvailability={clientAvailability}
+            employees={employees}
+            clients={clients}
+            locations={locations}
+            sessionTypes={sessionTypes}
+            unmatchedClients={[]}
+            typeColors={typeColors}
+            workDays={workDays}
+          />
+        </div>
+        <div style={{ borderTop: `0.5px solid ${COLORS.border}`, paddingTop: 20, marginTop: 4 }}>
+          <div style={{ fontSize: 15, fontWeight: 500, color: COLORS.text, marginBottom: 12 }}>
+            Matches — {sortedItems.length} client{sortedItems.length !== 1 ? "s" : ""}
+          </div>
+          <div style={{ maxHeight: 480, overflowY: "auto", paddingRight: 4 }}>
+            {individualItems.map((item, i) => (
+              <ClientMatchCard key={i} item={item} accepted={accepted} onAccept={handleAccept} onReject={handleReject} typeColors={typeColors} />
+            ))}
+            {Object.entries(groupBuckets).map(([stName, groupItems]) => {
+              const st = sessionTypes.find(s => s.name === stName);
+              return (
+                <GroupSessionCard key={stName} items={groupItems} sessionTypeName={stName} maxClients={st?.max_clients ?? 3}
+                  accepted={accepted} onAccept={handleAccept} onReject={handleReject} typeColors={typeColors} />
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ marginTop: 20, display: "flex", gap: 14, alignItems: "center", paddingTop: 16, borderTop: `0.5px solid ${COLORS.border}` }}>
+          <button onClick={handleConfirmAndBook} disabled={booking || totalAccepted === 0}
+            style={{ padding: "10px 28px", borderRadius: 10, background: totalAccepted > 0 ? "#5DCAA5" : COLORS.bgT, color: totalAccepted > 0 ? "#fff" : COLORS.textT, border: "none", cursor: totalAccepted > 0 ? "pointer" : "not-allowed", fontSize: 15, fontWeight: 500 }}>
+            {booking ? "Booking…" : `✓ Confirm & Book (${totalAccepted} session${totalAccepted !== 1 ? "s" : ""})`}
           </button>
-        )}
-      </StepCard>
-    </div>
-  );
-}
-
-if (step === "review") {
-  const activeCalSessions = bookings.filter(b => b.calendar_id === selectedCalendar?.id);
-  const sortedItems = [...reviewItems].sort((a, b) => a.clientName.localeCompare(b.clientName));
-  const totalAccepted = proposedSessions.length;
-
-  const groupTypeNames = new Set(sessionTypes.filter(st => (st.max_clients ?? 1) > 1).map(st => st.name));
-  const groupBuckets = {};
-  const individualItems = [];
-  sortedItems.forEach(item => {
-    if (groupTypeNames.has(item.sessionType)) {
-      if (!groupBuckets[item.sessionType]) groupBuckets[item.sessionType] = [];
-      groupBuckets[item.sessionType].push(item);
-    } else {
-      individualItems.push(item);
-    }
-  });
-
-  return (
-    <div>{PH}<Trail steps={trail} onBack={goBack} />
-      <div style={{ marginBottom: 4 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-          <div style={{ fontSize: 16, fontWeight: 500, color: COLORS.text }}>Schedule preview · {selectedCalendar?.name}</div>
-          <div style={{ fontSize: 13, color: COLORS.textS }}>Accept matches below to see them appear here · drag to adjust</div>
-        </div>
-        <PreviewGrid
-          proposedSessions={proposedSessions}
-          setProposedSessions={setProposedSessions}
-          existingSessions={activeCalSessions}
-          staffAvailability={staffAvailability}
-          clientAvailability={clientAvailability}
-          employees={employees}
-          clients={clients}
-          locations={locations}
-          sessionTypes={sessionTypes}
-          unmatchedClients={[]}
-          typeColors={typeColors}
-          workDays={workDays}
-        />
-      </div>
-      <div style={{ borderTop: `0.5px solid ${COLORS.border}`, paddingTop: 20, marginTop: 4 }}>
-        <div style={{ fontSize: 15, fontWeight: 500, color: COLORS.text, marginBottom: 12 }}>
-          Matches — {sortedItems.length} client{sortedItems.length !== 1 ? "s" : ""}
-        </div>
-        <div style={{ maxHeight: 480, overflowY: "auto", paddingRight: 4 }}>
-          {individualItems.map((item, i) => (
-            <ClientMatchCard key={i} item={item} accepted={accepted} onAccept={handleAccept} onReject={handleReject} typeColors={typeColors} />
-          ))}
-          {Object.entries(groupBuckets).map(([stName, groupItems]) => {
-            const st = sessionTypes.find(s => s.name === stName);
-            return (
-              <GroupSessionCard key={stName} items={groupItems} sessionTypeName={stName} maxClients={st?.max_clients ?? 3}
-                accepted={accepted} onAccept={handleAccept} onReject={handleReject} typeColors={typeColors} />
-            );
-          })}
+          <div style={{ fontSize: 13, color: COLORS.textS }}>
+            {recurring === "yes" ? `Recurring · ${endType === "date" ? `ends ${endDate}` : `${endCount} sessions`}` : "One-time sessions"}
+          </div>
         </div>
       </div>
-      <div style={{ marginTop: 20, display: "flex", gap: 14, alignItems: "center", paddingTop: 16, borderTop: `0.5px solid ${COLORS.border}` }}>
-        <button onClick={handleConfirmAndBook} disabled={booking || totalAccepted === 0}
-          style={{ padding: "10px 28px", borderRadius: 10, background: totalAccepted > 0 ? "#5DCAA5" : COLORS.bgT, color: totalAccepted > 0 ? "#fff" : COLORS.textT, border: "none", cursor: totalAccepted > 0 ? "pointer" : "not-allowed", fontSize: 15, fontWeight: 500 }}>
-          {booking ? "Booking…" : `✓ Confirm & Book (${totalAccepted} session${totalAccepted !== 1 ? "s" : ""})`}
-        </button>
-        <div style={{ fontSize: 13, color: COLORS.textS }}>
-          {recurring === "yes" ? `Recurring · ${endType === "date" ? `ends ${endDate}` : `${endCount} sessions`}` : "One-time sessions"}
-        </div>
-      </div>
-    </div>
-  );
-}
+    );
+  }
+
   if (step === "booked") return (
     <div>{PH}
       <div style={{ padding: "48px 32px", textAlign: "center", borderRadius: 14, background: COLORS.bgS, border: `0.5px solid ${COLORS.border}` }}>
@@ -1904,7 +1868,7 @@ if (step === "review") {
   return null;
 }
 
-// ─── Sessions ─────────────────────────────────────────────────────────
+// ─── Sessions view ─────────────────────────────────────────────────────────────
 
 function SessionsView({ clients, employees, sessionTypes, bookings, calendars, locations, refreshBookings, showToast, typeColors }) {
   const appUser = useContext(UserContext);
@@ -1921,16 +1885,17 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
   const [proposeDay, setProposeDay] = useState("Mon");
   const [proposeHour, setProposeHour] = useState(9);
+  const [proposeDate, setProposeDate] = useState("");
 
   const [sortKey, setSortKey] = useState("session_date");
   const [sortDir, setSortDir] = useState("asc");
 
-function toggleSort(key) {
-  if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
-  else { setSortKey(key); setSortDir("asc"); }
-}
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  }
 
-  const CANCEL_HOURS = 24; // TODO: pull from Settings
+  const CANCEL_HOURS = 24;
 
   const filtered = (bookings || []).filter(b => {
     if (calFilter !== "all" && b.calendar_id !== Number(calFilter)) return false;
@@ -1945,16 +1910,16 @@ function toggleSort(key) {
     }
     return true;
   }).sort((a, b) => {
-  let av, bv;
-  if (sortKey === "session_date") { av = `${a.session_date}${a.hour}`; bv = `${b.session_date}${b.hour}`; }
-  else if (sortKey === "client") { av = clients.find(c => c.id === a.client_id)?.name || ""; bv = clients.find(c => c.id === b.client_id)?.name || ""; }
-  else if (sortKey === "staff") { av = employees.find(e => e.id === a.employee_id)?.name || ""; bv = employees.find(e => e.id === b.employee_id)?.name || ""; }
-  else if (sortKey === "location") { av = locations?.find(l => l.id === employees.find(e => e.id === a.employee_id)?.location_id)?.name || ""; bv = locations?.find(l => l.id === employees.find(e => e.id === b.employee_id)?.location_id)?.name || ""; }
-  else if (sortKey === "type") { av = a.type || ""; bv = b.type || ""; }
-  else if (sortKey === "status") { av = a.status || ""; bv = b.status || ""; }
-  const cmp = av < bv ? -1 : av > bv ? 1 : 0;
-  return sortDir === "asc" ? cmp : -cmp;
-});
+    let av, bv;
+    if (sortKey === "session_date") { av = `${a.session_date}${a.hour}`; bv = `${b.session_date}${b.hour}`; }
+    else if (sortKey === "client") { av = clients.find(c => c.id === a.client_id)?.name || ""; bv = clients.find(c => c.id === b.client_id)?.name || ""; }
+    else if (sortKey === "staff") { av = employees.find(e => e.id === a.employee_id)?.name || ""; bv = employees.find(e => e.id === b.employee_id)?.name || ""; }
+    else if (sortKey === "location") { av = locations?.find(l => l.id === employees.find(e => e.id === a.employee_id)?.location_id)?.name || ""; bv = locations?.find(l => l.id === employees.find(e => e.id === b.employee_id)?.location_id)?.name || ""; }
+    else if (sortKey === "type") { av = a.type || ""; bv = b.type || ""; }
+    else if (sortKey === "status") { av = a.status || ""; bv = b.status || ""; }
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sortDir === "asc" ? cmp : -cmp;
+  });
 
   function toggleSelect(id) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -1969,11 +1934,11 @@ function toggleSort(key) {
     const lateCount = ids.filter(id => {
       const b = bookings.find(s => s.id === id);
       if (!b?.session_date) return false;
-      const sessionTime = new Date(`${b.session_date}T${String(b.hour).padStart(2,"0")}:00:00`);
+      const sessionTime = new Date(`${b.session_date}T${String(b.hour).padStart(2, "0")}:00:00`);
       return (sessionTime - now) / 36e5 < CANCEL_HOURS;
     }).length;
     const msg = lateCount > 0
-      ? `${lateCount} of ${ids.length} session(s) are within the ${CANCEL_HOURS}-hour cancellation window and may not be refundable. Cancel anyway?`
+      ? `${lateCount} of ${ids.length} session(s) are within the ${CANCEL_HOURS}-hour cancellation window. Cancel anyway?`
       : `Cancel ${ids.length} session(s)?`;
     if (!confirm(msg)) return;
     setCancelling(true);
@@ -1993,9 +1958,9 @@ function toggleSort(key) {
       const dateStr = (b.session_date || "").replace(/-/g, "");
       const st = sessionTypes.find(s => s.name === b.type);
       const dur = st?.duration || 60;
-      const startH = String(b.hour).padStart(2,"0");
-      const endH = String(b.hour + Math.floor(dur / 60)).padStart(2,"0");
-      const endM = String(dur % 60).padStart(2,"0");
+      const startH = String(b.hour).padStart(2, "0");
+      const endH = String(b.hour + Math.floor(dur / 60)).padStart(2, "0");
+      const endM = String(dur % 60).padStart(2, "0");
       lines.push("BEGIN:VEVENT",
         `DTSTART:${dateStr}T${startH}0000`,
         `DTEND:${dateStr}T${endH}${endM}00`,
@@ -2010,8 +1975,11 @@ function toggleSort(key) {
   }
 
   async function submitReschedule() {
-    if (isAdminOrScheduler) {
-      await supabase.from("sessions").update({ day: proposeDay, hour: proposeHour }).eq("id", rescheduleTarget.id);
+    if (isAdminOrScheduler && proposeDate) {
+      await supabase.from("sessions").update({
+        session_date: proposeDate,
+        hour: proposeHour,
+      }).eq("id", rescheduleTarget.id);
       refreshBookings();
       showToast("Session rescheduled");
     } else {
@@ -2022,10 +1990,8 @@ function toggleSort(key) {
 
   const selInput = { padding: "6px 10px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 13 };
 
-return (
+  return (
     <div>
-
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Sessions</h2>
@@ -2045,10 +2011,8 @@ return (
         </div>
       </div>
 
-      {/* Filters */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <input placeholder="Search client, staff, type…" value={search} onChange={e => setSearch(e.target.value)}
-          style={{ ...selInput, width: 220 }} />
+        <input placeholder="Search client, staff, type…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...selInput, width: 220 }} />
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selInput}>
           <option value="all">All statuses</option>
           <option value="scheduled">Scheduled</option>
@@ -2076,10 +2040,9 @@ return (
         )}
       </div>
 
-      {/* Table header */}
       <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 140px 100px 80px 80px", gap: 0, padding: "6px 12px", borderRadius: "8px 8px 0 0", background: COLORS.bgS, border: `0.5px solid ${COLORS.border}`, borderBottom: "none" }}>
         <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll} style={{ cursor: "pointer" }} />
-        {[["Client","client"],["Staff","staff"],["Location","location"],["Type","type"],["Date & Time","session_date"],["Status","status"]].map(([label, key]) => (
+        {[["Client", "client"], ["Staff", "staff"], ["Location", "location"], ["Type", "type"], ["Date & Time", "session_date"], ["Status", "status"]].map(([label, key]) => (
           <div key={key} onClick={() => toggleSort(key)}
             style={{ fontSize: 12, fontWeight: 600, color: sortKey === key ? COLORS.text : COLORS.textT, letterSpacing: "0.04em", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 4 }}>
             {label}
@@ -2088,7 +2051,7 @@ return (
         ))}
         <div />
       </div>
-      {/* Rows */}
+
       <div style={{ border: `0.5px solid ${COLORS.border}`, borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
         {filtered.length === 0 && (
           <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>No sessions match your filters</div>
@@ -2100,46 +2063,51 @@ return (
           const isSel = selected.has(b.id);
           const isCancelled = b.status === "cancelled";
           const now = new Date();
-          const sessionTime = b.session_date ? new Date(`${b.session_date}T${String(b.hour).padStart(2,"0")}:00:00`) : null;
+          const sessionTime = b.session_date ? new Date(`${b.session_date}T${String(b.hour).padStart(2, "0")}:00:00`) : null;
           const lateCancel = sessionTime && (sessionTime - now) / 36e5 < CANCEL_HOURS;
+          const bDay = b.session_date ? dayFromDate(b.session_date) : "—";
           return (
-<div key={b.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 140px 100px 80px 80px", gap: 0, padding: "10px 12px", borderBottom: i < filtered.length - 1 ? `0.5px solid ${COLORS.border}` : "none", background: isSel ? COLORS.bgS : COLORS.bg, opacity: isCancelled ? 0.55 : 1, alignItems: "center", transition: "background 0.1s" }}>
-  <input type="checkbox" checked={isSel} onChange={() => toggleSelect(b.id)} style={{ cursor: "pointer" }} />
-  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-    <Avatar name={client?.name || "?"} size={28} color="#378ADD" />
-    <span style={{ fontSize: 13, fontWeight: 500, color: COLORS.text }}>{client?.name || "—"}</span>
-  </div>
-  <div style={{ fontSize: 13, color: COLORS.textS }}>{emp?.name || "—"}</div>
-  <div style={{ fontSize: 13, color: COLORS.textS }}>{locations?.find(l => l.id === emp?.location_id)?.name || "—"}</div>
-  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-    <span style={{ width: 8, height: 8, borderRadius: "50%", background: col, flexShrink: 0 }} />
-    <span style={{ fontSize: 13, color: COLORS.text }}>{b.type}</span>
-    {b.recurrence_id && <span title="Recurring" style={{ fontSize: 10, padding: "1px 5px", borderRadius: 4, background: "#378ADD18", color: "#378ADD", border: "0.5px solid #378ADD44" }}>
-      {b.recurrence_id ? "R" : ""}
-    </span>}
-  </div>
-  <div style={{ fontSize: 13, color: COLORS.textS }}>
-    <div>{b.session_date}</div>
-    <div style={{ fontSize: 12, color: COLORS.textT }}>{b.day} {b.hour}:00{lateCancel && !isCancelled ? <span title="Within cancellation window" style={{ color: "#EF9F27", marginLeft: 4 }}>⚠</span> : null}</div>
-  </div>
-  <div>
-    <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: isCancelled ? "#88888820" : "#5DCAA520", color: isCancelled ? COLORS.textT : "#5DCAA5", border: `0.5px solid ${isCancelled ? COLORS.border : "#5DCAA544"}` }}>
-      {b.status}
-    </span>
-  </div>
-  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-    {!isCancelled && (
-      <>
-        <button title={isAdminOrScheduler ? "Reschedule" : "Propose reschedule"} onClick={() => { setRescheduleTarget(b); setProposeDay(b.day); setProposeHour(b.hour); }}
-          style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 14 }}>✎</button>
-        {isAdminOrScheduler && (
-          <button title="Cancel" onClick={async () => { if (!confirm(lateCancel ? `This session is within the ${CANCEL_HOURS}-hour cancellation window and may not be refundable. Cancel anyway?` : "Cancel this session?")) return; await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id); refreshBookings(); showToast("Session cancelled"); }}
-            style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 14 }}>✕</button>
-        )}
-      </>
-    )}
-  </div>
-</div>          );
+            <div key={b.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 140px 100px 80px 80px", gap: 0, padding: "10px 12px", borderBottom: i < filtered.length - 1 ? `0.5px solid ${COLORS.border}` : "none", background: isSel ? COLORS.bgS : COLORS.bg, opacity: isCancelled ? 0.55 : 1, alignItems: "center", transition: "background 0.1s" }}>
+              <input type="checkbox" checked={isSel} onChange={() => toggleSelect(b.id)} style={{ cursor: "pointer" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Avatar name={client?.name || "?"} size={28} color="#378ADD" />
+                <span style={{ fontSize: 13, fontWeight: 500, color: COLORS.text }}>{client?.name || "—"}</span>
+              </div>
+              <div style={{ fontSize: 13, color: COLORS.textS }}>{emp?.name || "—"}</div>
+              <div style={{ fontSize: 13, color: COLORS.textS }}>{locations?.find(l => l.id === emp?.location_id)?.name || "—"}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: col, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: COLORS.text }}>{b.type}</span>
+                {b.recurrence_id && <span title="Recurring" style={{ fontSize: 10, padding: "1px 5px", borderRadius: 4, background: "#378ADD18", color: "#378ADD", border: "0.5px solid #378ADD44" }}>R</span>}
+              </div>
+              <div style={{ fontSize: 13, color: COLORS.textS }}>
+                <div>{b.session_date}</div>
+                <div style={{ fontSize: 12, color: COLORS.textT }}>{bDay} {b.hour}:00{lateCancel && !isCancelled ? <span title="Within cancellation window" style={{ color: "#EF9F27", marginLeft: 4 }}>⚠</span> : null}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: isCancelled ? "#88888820" : "#5DCAA520", color: isCancelled ? COLORS.textT : "#5DCAA5", border: `0.5px solid ${isCancelled ? COLORS.border : "#5DCAA544"}` }}>
+                  {b.status}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                {!isCancelled && (
+                  <>
+                    <button title={isAdminOrScheduler ? "Reschedule" : "Propose reschedule"}
+                      onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); }}
+                      style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 14 }}>✎</button>
+                    {isAdminOrScheduler && (
+                      <button title="Cancel" onClick={async () => {
+                        if (!confirm(lateCancel ? `Within the ${CANCEL_HOURS}-hour window. Cancel anyway?` : "Cancel this session?")) return;
+                        await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id);
+                        refreshBookings();
+                        showToast("Session cancelled");
+                      }} style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 14 }}>✕</button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          );
         })}
       </div>
 
@@ -2148,7 +2116,7 @@ return (
         const client = clients.find(c => c.id === rescheduleTarget.client_id);
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 360, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 380, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: COLORS.text, marginBottom: 4 }}>
                 {isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"}
               </div>
@@ -2158,11 +2126,9 @@ return (
               </div>
               <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>Day</div>
-                  <select value={proposeDay} onChange={e => setProposeDay(e.target.value)}
-                    style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 13 }}>
-                    {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                  <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>New date</div>
+                  <input type="date" value={proposeDate} onChange={e => setProposeDate(e.target.value)}
+                    style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 13 }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>Hour</div>
@@ -2205,7 +2171,7 @@ export default function Scheduler() {
   const [clientAvailability, setClientAvailability] = useState([]);
   const [toast, setToast] = useState(null);
   function showToast(message = "Changes saved") { setToast(message); }
-  const [workDays, setWorkDays] = useState(["Mon","Tue","Wed","Thu","Fri"]);
+  const [workDays, setWorkDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri"]);
   const [workStart, setWorkStart] = useState(8);
   const [workEnd, setWorkEnd] = useState(18);
 
@@ -2237,13 +2203,12 @@ export default function Scheduler() {
     if (data) setBookings(data);
   }
 
-  // Derive color map from Supabase session_types — no hardcoding
   const typeColors = Object.fromEntries(sessionTypes.map(st => [st.name, st.color]));
 
-const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
-const ViewComp = views[view];
+  const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
+  const ViewComp = views[view];
 
-return (
+  return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bgT, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", fontSize: 16 }}>
       <style>{`
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
@@ -2257,13 +2222,14 @@ return (
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--color-border-secondary); border-radius: 3px; }
       `}</style>
-<Sidebar
-  view={view}
-  onNavigate={setView}
-  appUser={appUser}
-  bookings={bookings}
-  calendars={calendars}
-/>      <main style={{ flex: 1, padding: "32px 36px", overflowY: "auto" }}>
+      <Sidebar
+        view={view}
+        onNavigate={setView}
+        appUser={appUser}
+        bookings={bookings}
+        calendars={calendars}
+      />
+      <main style={{ flex: 1, padding: "32px 36px", overflowY: "auto" }}>
         <ViewComp
           clients={clients} setClients={setClients}
           employees={employees} setEmployees={setEmployees}
