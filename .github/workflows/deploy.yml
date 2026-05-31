@@ -1,0 +1,64 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to DigitalOcean
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed apps
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files: $CHANGED"
+
+          for app in scheduler clinician employee family web; do
+            if echo "$CHANGED" | grep -q "^apps/$app/\|^packages/"; then
+              echo "${app}_changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "${app}_changed=false" >> $GITHUB_OUTPUT
+            fi
+          done
+
+      - name: Deploy to droplet
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_KEY }}
+          envs: CHANGED_SCHEDULER=${{ steps.changes.outputs.scheduler_changed }},CHANGED_WEB=${{ steps.changes.outputs.web_changed }},CHANGED_CLINICIAN=${{ steps.changes.outputs.clinician_changed }},CHANGED_EMPLOYEE=${{ steps.changes.outputs.employee_changed }},CHANGED_FAMILY=${{ steps.changes.outputs.family_changed }}
+          script: |
+            set -e
+            cd /var/www/summit-client
+
+            echo "→ Pulling latest..."
+            git pull origin main
+
+            echo "→ Installing dependencies..."
+            pnpm install --frozen-lockfile
+
+            deploy_app() {
+              local app=$1
+              local pm2_name=$2
+              echo "→ Building $app..."
+              pnpm --filter @summit/$app build
+              echo "→ Restarting $pm2_name..."
+              pm2 restart $pm2_name
+            }
+
+            [ "$CHANGED_SCHEDULER" = "true" ] && deploy_app scheduler scheduler
+            [ "$CHANGED_WEB" = "true" ]       && deploy_app web web
+            [ "$CHANGED_CLINICIAN" = "true" ] && deploy_app clinician clinician
+            [ "$CHANGED_EMPLOYEE" = "true" ]  && deploy_app employee employee
+            [ "$CHANGED_FAMILY" = "true" ]    && deploy_app family family
+
+            echo "✓ Deploy complete"
