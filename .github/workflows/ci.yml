@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Lint, Typecheck & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 11.1.3
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Detect changed apps
+        id: changes
+        run: |
+          git fetch origin main --depth=1
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          echo "Changed files: $CHANGED"
+
+          for app in scheduler clinician employee family web; do
+            if echo "$CHANGED" | grep -q "^apps/$app/\|^packages/"; then
+              echo "${app}_changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "${app}_changed=false" >> $GITHUB_OUTPUT
+            fi
+          done
+
+      - name: Build scheduler
+        if: steps.changes.outputs.scheduler_changed == 'true'
+        run: pnpm --filter @summit/scheduler build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Build web
+        if: steps.changes.outputs.web_changed == 'true'
+        run: pnpm --filter @summit/web build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Build clinician
+        if: steps.changes.outputs.clinician_changed == 'true'
+        run: pnpm --filter @summit/clinician build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Build employee
+        if: steps.changes.outputs.employee_changed == 'true'
+        run: pnpm --filter @summit/employee build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Build family
+        if: steps.changes.outputs.family_changed == 'true'
+        run: pnpm --filter @summit/family build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
