@@ -6,24 +6,22 @@ export default function AuthCallback() {
   const router = useRouter()
 
   useEffect(() => {
-    const run = async () => {
-      const { data } = await supabase.auth.getSession()
-      const session = data.session
+    const handle = async () => {
+      const { error } = await supabase.auth.getSession()
 
-      if (session?.user) {
-        // recovery flow → force password update
-        const isRecovery = session.user?.recovery || true
+      // important: let supabase parse the URL hash
+      const { data } = await supabase.auth.getUser()
 
-        if (isRecovery) {
-          router.replace('/update-password')
-          return
-        }
+      if (error) {
+        console.error(error)
+        router.replace('/login')
+        return
       }
 
-      router.replace('/')
+      router.replace('/update-password')
     }
 
-    run()
+    handle()
   }, [])
 
   return <p>Loading...</p>
