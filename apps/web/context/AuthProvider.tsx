@@ -1,32 +1,56 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from 'react'
+import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
-const AuthContext = createContext(null)
+type AuthContextType = {
+  user: User | null
+  role: string | null
+  loading: boolean
+}
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [role, setRole] = useState(null)
+const AuthContext = createContext<AuthContextType | null>(null)
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [role, setRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const loadProfile = async (userId) => {
-    const { data } = await supabase
+  const loadProfile = async (userId: string) => {
+    const { data, error } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', userId)
       .single()
 
+    if (error) {
+      setRole(null)
+      return
+    }
+
     setRole(data?.role ?? null)
   }
 
   useEffect(() => {
+    let mounted = true
+
     const init = async () => {
-      const { data } = await supabase.auth.getSession()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-      const session = data.session
-      setUser(session?.user ?? null)
+      if (!mounted) return
 
-      if (session?.user) {
-        await loadProfile(session.user.id)
+      const currentUser = session?.user ?? null
+      setUser(currentUser)
+
+      if (currentUser) {
+        await loadProfile(currentUser.id)
       }
 
       setLoading(false)
@@ -34,17 +58,24 @@ export function AuthProvider({ children }) {
 
     init()
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const u = session?.user ?? null
-        setUser(u)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user ?? null
 
-        if (u) await loadProfile(u.id)
-        else setRole(null)
+      setUser(currentUser)
+
+      if (currentUser) {
+        await loadProfile(currentUser.id)
+      } else {
+        setRole(null)
       }
-    )
+    })
 
-    return () => listener.subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   return (
@@ -54,4 +85,10 @@ export function AuthProvider({ children }) {
   )
 }
 
-export const useAuth = () => useContext(AuthContext)
+export const useAuth = () => {
+  const context = useContext(AuthContext)
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider')
+  }
+  return context
+}
