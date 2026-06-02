@@ -18,6 +18,7 @@ export default function UpdatePassword() {
     }
   }
 
+  
   return (
     <form onSubmit={handleSubmit}>
       <h1>Set New Password</h1>
