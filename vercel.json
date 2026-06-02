@@ -1,6 +1,6 @@
 {
   "buildCommand": "pnpm turbo build --filter=@summit/web",
   "outputDirectory": "apps/web/.next",
-  "framework": "nextjs",
-  "installCommand": "pnpm install"
+  "installCommand": "pnpm install",
+  "framework": "nextjs"
 }
