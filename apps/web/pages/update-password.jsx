@@ -7,17 +7,18 @@ export default function UpdatePassword() {
   const [newPass, setNewPass] = useState('')
   const [message, setMessage] = useState('')
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    alert('submitting: ' + newPass)
-    const { error } = await supabase.auth.updateUser({ password: newPass })
-    if (error) {
-      setMessage(error.message)
-    } else {
-      setMessage('Password updated! Redirecting...')
-      setTimeout(() => router.push('/'), 2000)
-    }
+async function handleSubmit(e) {
+  e.preventDefault()
+  alert('submitting: ' + newPass)
+  const { data, error } = await supabase.auth.updateUser({ password: newPass })
+  alert('result: ' + JSON.stringify({ data, error }))
+  if (error) {
+    setMessage(error.message)
+  } else {
+    setMessage('Password updated! Redirecting...')
+    setTimeout(() => router.push('/'), 2000)
   }
+}
 
   return (
     <form onSubmit={handleSubmit}>
