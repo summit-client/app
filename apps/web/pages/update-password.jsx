@@ -7,18 +7,26 @@ export default function UpdatePassword() {
   const [newPass, setNewPass] = useState('')
   const [message, setMessage] = useState('')
 
-async function handleSubmit(e) {
-  e.preventDefault()
-  alert('submitting: ' + newPass)
-  const { data, error } = await supabase.auth.updateUser({ password: newPass })
-  alert('result: ' + JSON.stringify({ data, error }))
-  if (error) {
-    setMessage(error.message)
-  } else {
-    setMessage('Password updated! Redirecting...')
-    setTimeout(() => router.push('/'), 2000)
+  async function handleSubmit(e) {
+    e.preventDefault()
+    const session = JSON.parse(localStorage.getItem('sb-xbkokyxegrxutppolgtz-auth-token'))
+    const res = await fetch('https://xbkokyxegrxutppolgtz.supabase.co/auth/v1/user', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+        'apikey': 'sb_publishable_nBoBo2BVzUst8xxu0bLrqw_4QZJ06Oh'
+      },
+      body: JSON.stringify({ password: newPass })
+    })
+    const data = await res.json()
+    if (data.email) {
+      setMessage('Password updated! Redirecting...')
+      setTimeout(() => router.push('/'), 2000)
+    } else {
+      setMessage(data.msg || data.message || 'An error occurred')
+    }
   }
-}
 
   return (
     <form onSubmit={handleSubmit}>
