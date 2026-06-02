@@ -9,7 +9,7 @@ export default function UpdatePassword() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    const { error } = await supabase.auth.updateUser({ password })
     if (error) {
       setMessage(error.message)
     } else {
