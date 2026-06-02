@@ -7,10 +7,10 @@ export default function UpdatePassword() {
   const [newPass, setNewPass] = useState('')
   const [message, setMessage] = useState('')
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    const { error } = await supabase.auth.updateUser({ password: newPass })
-    if (error) {
+async function handleSubmit(e) {
+  e.preventDefault()
+  alert('submitting: ' + newPass)
+  const { error } = await supabase.auth.updateUser({ password: newPass })    if (error) {
       setMessage(error.message)
     } else {
       setMessage('Password updated! Redirecting...')
