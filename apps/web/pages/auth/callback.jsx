@@ -8,10 +8,10 @@ export default function AuthCallback() {
   useEffect(() => {
     if (!router.isReady) return
 
-    const code = router.query.code
+    const { token_hash, type } = router.query
 
-    if (code) {
-      supabase.auth.exchangeCodeForSession(String(code)).then(({ error }) => {
+    if (token_hash && type) {
+      supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
         if (error) {
           console.error(error)
           router.replace('/login')
