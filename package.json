@@ -9,7 +9,6 @@
     "typecheck": "turbo typecheck"
   },
   "devDependencies": {
-    "turbo": "latest",
-    "next": "*"
+    "turbo": "latest"
   }
 }
