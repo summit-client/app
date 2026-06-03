@@ -29,11 +29,12 @@ export default function Login() {
     }
 
     // Fetch role from profiles table
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', data.user.id)
       .single()
+    console.log('profile result:', { profile, profileError })
 
     const role = profile?.role
     const redirect = role ? ROLE_REDIRECTS[role] : null
