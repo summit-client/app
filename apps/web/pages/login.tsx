@@ -41,8 +41,7 @@ export default function Login() {
 
     // Temporary hardcoded redirect until role_permissions table is built (ac1)
     if (redirect) {
-      console.log('redirecting to:', redirect)
-      window.location.href = 'http://localhost:3001'
+      window.location.href = redirect
     } else {
       setError('Your account is pending activation. Contact your administrator.')
       setLoading(false)
