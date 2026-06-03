@@ -1,11 +1,11 @@
 import type { AppProps } from 'next/app'
 import { AuthProvider } from '../context/AuthProvider'
-import Navbar from '../components/Navbar'
+import PublicNav from '../components/PublicNav'
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
     <AuthProvider>
-      <Navbar />
+      <PublicNav />
       <Component {...pageProps} />
     </AuthProvider>
   )
