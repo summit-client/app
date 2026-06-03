@@ -1,13 +1,19 @@
 import { useState } from 'react'
-import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 
+const ROLE_REDIRECTS: Record<string, string> = {
+  admin:     'https://scheduler.summitclient.io',
+  scheduler: 'https://scheduler.summitclient.io',
+  clinician: 'https://data.summitclient.io',
+  staff:     'https://employee.summitclient.io',
+  client:    'https://client.summitclient.io',
+}
+
 export default function Login() {
-  const router = useRouter()
-  const [email, setEmail] = useState('')
+  const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [error, setError]       = useState('')
+  const [loading, setLoading]   = useState(false)
 
   async function handleLogin() {
     setLoading(true)
@@ -29,18 +35,13 @@ export default function Login() {
       .single()
 
     const role = profile?.role
+    const redirect = role ? ROLE_REDIRECTS[role] : null
 
     // Temporary hardcoded redirect until role_permissions table is built (ac1)
-    if (role === 'admin' || role === 'scheduler') {
-      window.location.href = 'https://scheduler.summitclient.io'
-    } else if (role === 'clinician') {
-      window.location.href = 'https://data.summitclient.io'
-    } else if (role === 'staff') {
-      window.location.href = 'https://employee.summitclient.io'
-    } else if (role === 'client') {
-      window.location.href = 'https://client.summitclient.io'
+    if (redirect) {
+      window.location.href = redirect
     } else {
-      setError('No role assigned. Contact your administrator.')
+      setError('Your account is pending activation. Contact your administrator.')
       setLoading(false)
     }
   }
@@ -64,19 +65,23 @@ export default function Login() {
           placeholder="Password"
           value={password}
           onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleLogin()}
           style={{ padding: '10px 12px', fontSize: 15, border: '1px solid #ccc', borderRadius: 6 }}
         />
         <button
           onClick={handleLogin}
           disabled={loading}
-          style={{ padding: '10px 12px', fontSize: 15, background: '#1A3F5C', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+          style={{ padding: '10px 12px', fontSize: 15, background: '#1A3F5C', color: '#fff', border: 'none', borderRadius: 6, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
         >
-          {loading ? 'Signing in...' : 'Sign in'}
+          {loading ? 'Signing in…' : 'Sign in'}
         </button>
 
-        <p style={{ fontSize: 13, color: '#666', margin: 0 }}>
-          Don't have an account? <a href="/signup">Sign up</a>
-        </p>
+        <a href="/forgot-password" style={{ fontSize: 13, color: '#555', textDecoration: 'none' }}
+          onMouseOver={e => (e.currentTarget.style.textDecoration = 'underline')}
+          onMouseOut={e  => (e.currentTarget.style.textDecoration = 'none')}
+        >
+          Forgot password?
+        </a>
       </div>
     </div>
   )
