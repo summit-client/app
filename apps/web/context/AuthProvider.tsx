@@ -1,14 +1,20 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-const AuthContext = createContext(null)
+interface AuthContextType {
+  user: any
+  role: string | null
+  loading: boolean
+}
+
+const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState(null)
-  const [role, setRole] = useState(null)
+  const [user, setUser] = useState<any>(null)
+  const [role, setRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const loadProfile = async (userId) => {
+  const loadProfile = async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
       .select('role')
@@ -21,14 +27,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getSession()
-
       const session = data.session
       setUser(session?.user ?? null)
-
-      if (session?.user) {
-        await loadProfile(session.user.id)
-      }
-
+      if (session?.user) await loadProfile(session.user.id)
       setLoading(false)
     }
 
@@ -38,7 +39,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async (_event, session) => {
         const u = session?.user ?? null
         setUser(u)
-
         if (u) await loadProfile(u.id)
         else setRole(null)
       }
