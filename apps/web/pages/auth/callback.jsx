@@ -7,9 +7,6 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('auth event:', event)
-      console.log('session:', session?.user?.email)
-
       if (!session) return
 
       const hash = window.location.hash
@@ -26,7 +23,6 @@ export default function AuthCallback() {
         .single()
 
       const role = profile?.role
-      console.log('role:', role)
 
       if (role === 'admin' || role === 'scheduler') {
         window.location.href = 'https://scheduler.summitclient.io'
