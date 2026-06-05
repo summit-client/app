@@ -7,9 +7,30 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const run = async () => {
-      const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
+      const hash = window.location.hash
+      const query = new URLSearchParams(window.location.search)
+      const code = query.get('code')
 
-      if (error) {
+      if (code) {
+        // PKCE flow
+        const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
+        if (error) {
+          router.replace('/login')
+          return
+        }
+      } else if (hash.includes('access_token')) {
+        // Implicit flow
+        const params = new URLSearchParams(hash.substring(1))
+        const access_token = params.get('access_token')
+        const refresh_token = params.get('refresh_token')
+        if (access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({ access_token, refresh_token })
+          if (error) {
+            router.replace('/login')
+            return
+          }
+        }
+      } else {
         router.replace('/login')
         return
       }
@@ -21,7 +42,6 @@ export default function AuthCallback() {
         return
       }
 
-      const hash = window.location.hash
       if (hash.includes('type=recovery') || hash.includes('type=invite')) {
         router.replace('/update-password')
         return
@@ -42,7 +62,7 @@ export default function AuthCallback() {
       } else if (role === 'staff') {
         window.location.href = 'https://employee.summitclient.io'
       } else if (role === 'client') {
-        window.location.href = 'https://client.summitclient.io'
+        window.location.href = 'https://client.summitclink.io'
       } else {
         router.replace('/login')
       }
