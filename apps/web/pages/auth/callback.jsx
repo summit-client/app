@@ -6,43 +6,13 @@ export default function AuthCallback() {
   const router = useRouter()
 
   useEffect(() => {
-    const run = async () => {
-      console.log('callback started')
-      const hash = window.location.hash
-      const query = new URLSearchParams(window.location.search)
-      const code = query.get('code')
-      console.log('code:', code)
-      console.log('hash:', hash.substring(0, 50))
-
-      if (code) {
-        console.log('pkce flow')
-        const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
-        console.log('exchange error:', error)
-        if (error) { router.replace('/login'); return }
-      } else if (hash.includes('access_token')) {
-        console.log('implicit flow')
-        const params = new URLSearchParams(hash.substring(1))
-        const access_token = params.get('access_token')
-        const refresh_token = params.get('refresh_token')
-        console.log('tokens present:', !!access_token, !!refresh_token)
-        console.log('supabase client type:', typeof supabase.auth.setSession)
-        const { error } = await supabase.auth.setSession({ access_token, refresh_token })
-        console.log('setSession error:', error)
-        if (error) { router.replace('/login'); return }
-      } else {
-        console.log('no auth params found')
-        router.replace('/login')
-        return
-      }
-
-      console.log('getting session')
-      const { data: { session } } = await supabase.auth.getSession()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('auth event:', event)
       console.log('session:', session?.user?.email)
 
-      if (!session) {
-        router.replace('/login')
-        return
-      }
+      if (!session) return
+
+      const hash = window.location.hash
 
       if (hash.includes('type=recovery') || hash.includes('type=invite')) {
         router.replace('/update-password')
@@ -69,9 +39,9 @@ export default function AuthCallback() {
       } else {
         router.replace('/login')
       }
-    }
+    })
 
-    run()
+    return () => subscription.unsubscribe()
   }, [])
 
   return <p>Loading...</p>
