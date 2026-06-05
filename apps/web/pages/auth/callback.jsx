@@ -25,7 +25,7 @@ export default function AuthCallback() {
         const access_token = params.get('access_token')
         const refresh_token = params.get('refresh_token')
         console.log('tokens present:', !!access_token, !!refresh_token)
-        const { error } = await supabase.auth.setSession({ access_token: access_token!, refresh_token: refresh_token! })
+        const { error } = await supabase.auth.setSession({ access_token, refresh_token })
         console.log('setSession error:', error)
         if (error) { router.replace('/login'); return }
       } else {
