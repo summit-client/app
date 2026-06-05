@@ -7,35 +7,36 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const run = async () => {
+      console.log('callback started')
       const hash = window.location.hash
       const query = new URLSearchParams(window.location.search)
       const code = query.get('code')
+      console.log('code:', code)
+      console.log('hash:', hash.substring(0, 50))
 
       if (code) {
-        // PKCE flow
+        console.log('pkce flow')
         const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
-        if (error) {
-          router.replace('/login')
-          return
-        }
+        console.log('exchange error:', error)
+        if (error) { router.replace('/login'); return }
       } else if (hash.includes('access_token')) {
-        // Implicit flow
+        console.log('implicit flow')
         const params = new URLSearchParams(hash.substring(1))
         const access_token = params.get('access_token')
         const refresh_token = params.get('refresh_token')
-        if (access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({ access_token, refresh_token })
-          if (error) {
-            router.replace('/login')
-            return
-          }
-        }
+        console.log('tokens present:', !!access_token, !!refresh_token)
+        const { error } = await supabase.auth.setSession({ access_token: access_token!, refresh_token: refresh_token! })
+        console.log('setSession error:', error)
+        if (error) { router.replace('/login'); return }
       } else {
+        console.log('no auth params found')
         router.replace('/login')
         return
       }
 
+      console.log('getting session')
       const { data: { session } } = await supabase.auth.getSession()
+      console.log('session:', session?.user?.email)
 
       if (!session) {
         router.replace('/login')
@@ -54,6 +55,7 @@ export default function AuthCallback() {
         .single()
 
       const role = profile?.role
+      console.log('role:', role)
 
       if (role === 'admin' || role === 'scheduler') {
         window.location.href = 'https://scheduler.summitclient.io'
@@ -62,7 +64,7 @@ export default function AuthCallback() {
       } else if (role === 'staff') {
         window.location.href = 'https://employee.summitclient.io'
       } else if (role === 'client') {
-        window.location.href = 'https://client.summitclink.io'
+        window.location.href = 'https://client.summitclient.io'
       } else {
         router.replace('/login')
       }
