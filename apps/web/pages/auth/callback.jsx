@@ -10,7 +10,7 @@ export default function AuthCallback() {
       const hash = window.location.hash
 
       // Let Supabase process session from URL
-      await supabase.auth.exchangeCodeForSession(window.location.hash)
+      await supabase.auth.getSession()
 
       // Detect recovery flow safely
       const isRecovery = hash.includes('type=recovery')
