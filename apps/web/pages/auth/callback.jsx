@@ -6,39 +6,56 @@ export default function AuthCallback() {
   const router = useRouter()
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tokenHash = params.get('token_hash')
+    const type = params.get('type')
+
+    if (tokenHash && type) {
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type })
+        .then(({ error }) => {
+          if (error) {
+            router.replace('/login?error=' + encodeURIComponent(error.message))
+            return
+          }
+          if (type === 'recovery') {
+            router.replace('/update-password')
+          } else {
+            handleRoleRedirect()
+          }
+        })
+      return
+    }
+
+    // fallback: implicit flow (hash-based)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!session) return
-
-      const hash = window.location.hash
-
-      if (hash.includes('type=recovery') || hash.includes('type=invite')) {
-        router.replace('/update-password')
-        return
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', session.user.id)
-        .single()
-
-      const role = profile?.role
-
-      if (role === 'admin' || role === 'scheduler') {
-        window.location.href = 'https://scheduler.summitclient.io'
-      } else if (role === 'clinician') {
-        window.location.href = 'https://data.summitclient.io'
-      } else if (role === 'staff') {
-        window.location.href = 'https://employee.summitclient.io'
-      } else if (role === 'client') {
-        window.location.href = 'https://client.summitclient.io'
-      } else {
-        router.replace('/login')
-      }
+      await handleRoleRedirect(session)
     })
 
     return () => subscription.unsubscribe()
   }, [])
+
+  async function handleRoleRedirect(session) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', session.user.id)
+      .single()
+
+    const role = profile?.role
+
+    if (role === 'admin' || role === 'scheduler') {
+      window.location.href = 'https://scheduler.summitclient.io'
+    } else if (role === 'clinician') {
+      window.location.href = 'https://data.summitclient.io'
+    } else if (role === 'staff') {
+      window.location.href = 'https://employee.summitclient.io'
+    } else if (role === 'client') {
+      window.location.href = 'https://client.summitclient.io'
+    } else {
+      router.replace('/login')
+    }
+  }
 
   return <p>Loading...</p>
 }
