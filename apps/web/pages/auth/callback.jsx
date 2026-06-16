@@ -26,10 +26,17 @@ export default function AuthCallback() {
       return
     }
 
-    // fallback: implicit flow (hash-based)
+    // hash-based flows (invite, recovery, implicit login)
+    const hashParams = new URLSearchParams(window.location.hash.replace('#', ''))
+    const hashType = hashParams.get('type')
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!session) return
-      await handleRoleRedirect(session)
+      if (hashType === 'invite' || hashType === 'recovery') {
+        router.replace('/update-password')
+      } else {
+        await handleRoleRedirect(session)
+      }
     })
 
     return () => subscription.unsubscribe()
