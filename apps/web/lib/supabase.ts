@@ -6,12 +6,14 @@ export const supabase = createBrowserClient(
   {
     cookies: {
       getAll() {
-        return document.cookie.split('; ').map(c => {
+        if (typeof document === 'undefined') return []
+        return document.cookie.split('; ').filter(Boolean).map(c => {
           const [name, ...rest] = c.split('=')
           return { name, value: rest.join('=') }
         })
       },
       setAll(cookies) {
+        if (typeof document === 'undefined') return
         cookies.forEach(({ name, value, options }) => {
           const opts = { ...options, domain: '.summitclient.io', path: '/' }
           let str = `${name}=${value}`
