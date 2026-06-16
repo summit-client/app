@@ -30,6 +30,7 @@ export default function AuthCallback() {
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''))
     const hashType = hashParams.get('type')
     const accessToken = hashParams.get('access_token')
+    console.log('callback debug:', { hashType, hasToken: !!accessToken, url: window.location.href })
     const refreshToken = hashParams.get('refresh_token')
 
     if (accessToken && refreshToken) {
@@ -40,7 +41,7 @@ export default function AuthCallback() {
             return
           }
           if (hashType === 'invite' || hashType === 'recovery') {
-            router.replace('/update-password')
+            window.location.href = '/update-password'
           } else {
             await handleRoleRedirect(data.session)
           }
