@@ -30,26 +30,20 @@ export default function AuthCallback() {
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''))
     const hashType = hashParams.get('type')
     const accessToken = hashParams.get('access_token')
-    console.log('callback debug:', { hashType, hasToken: !!accessToken, url: window.location.href })
     const refreshToken = hashParams.get('refresh_token')
 
     if (accessToken && refreshToken) {
-      console.log('callback: entering setSession')
+      // fire the session write but do not await it (the cookie adapter can hang the promise)
       supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
-        .then(async ({ data, error }) => {
-          console.log('callback: setSession resolved', { hasSession: !!data?.session, error })
-          if (error) {
-            window.location.href = '/login?error=' + encodeURIComponent(error.message)
-            return
-          }
-          console.log('callback: about to redirect, hashType =', hashType)
-          if (hashType === 'invite' || hashType === 'recovery') {
-            window.location.href = '/update-password'
-          } else {
-            await handleRoleRedirect(data.session)
-          }
-        })
-        .catch(err => console.log('callback: setSession threw', err))
+
+      // redirect immediately based on type; we already have everything we need
+      setTimeout(() => {
+        if (hashType === 'invite' || hashType === 'recovery') {
+          window.location.href = '/update-password'
+        } else {
+          window.location.href = '/login'
+        }
+      }, 300)
       return
     }
 
