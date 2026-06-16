@@ -6,23 +6,56 @@ export default function AuthCallback() {
   const router = useRouter()
 
   useEffect(() => {
-    if (!router.isReady) return
+    const params = new URLSearchParams(window.location.search)
+    const tokenHash = params.get('token_hash')
+    const type = params.get('type')
 
-    const { token_hash, type } = router.query
+    if (tokenHash && type) {
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type })
+        .then(async ({ data, error }) => {
+          if (error) {
+            router.replace('/login?error=' + encodeURIComponent(error.message))
+            return
+          }
+          if (type === 'recovery') {
+            router.replace('/update-password')
+          } else {
+            await handleRoleRedirect(data.session)
+          }
+        })
+      return
+    }
 
-    if (token_hash && type) {
-      supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
-        if (error) {
-          console.error(error)
-          router.replace('/login')
-        } else {
-          router.replace('/update-password')
-        }
-      })
+    // fallback: implicit flow (hash-based)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!session) return
+      await handleRoleRedirect(session)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  async function handleRoleRedirect(session) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', session.user.id)
+      .single()
+
+    const role = profile?.role
+
+    if (role === 'admin' || role === 'scheduler') {
+      window.location.href = 'https://scheduler.summitclient.io'
+    } else if (role === 'clinician') {
+      window.location.href = 'https://data.summitclient.io'
+    } else if (role === 'staff') {
+      window.location.href = 'https://employee.summitclient.io'
+    } else if (role === 'client') {
+      window.location.href = 'https://client.summitclient.io'
     } else {
       router.replace('/login')
     }
-  }, [router.isReady])
+  }
 
   return <p>Loading...</p>
 }

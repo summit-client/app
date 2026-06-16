@@ -31,7 +31,6 @@ export function AuthProvider({ children }: Props) {
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getSession()
-
       const session = data.session
       const u = session?.user ?? null
 
@@ -50,7 +49,6 @@ export function AuthProvider({ children }: Props) {
       async (_event, session) => {
         const u = session?.user ?? null
         setUser(u)
-
         if (u) await loadProfile(u.id)
         else setRole(null)
       }
