@@ -29,25 +29,26 @@ export default function AuthCallback() {
     // hash-based flows (invite, recovery, implicit login)
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''))
     const hashType = hashParams.get('type')
+    const accessToken = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
 
-    async function routeFromSession(session) {
-      if (!session) return
-      if (hashType === 'invite' || hashType === 'recovery') {
-        router.replace('/update-password')
-      } else {
-        await handleRoleRedirect(session)
-      }
+    if (accessToken && refreshToken) {
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+        .then(async ({ data, error }) => {
+          if (error) {
+            router.replace('/login?error=' + encodeURIComponent(error.message))
+            return
+          }
+          if (hashType === 'invite' || hashType === 'recovery') {
+            router.replace('/update-password')
+          } else {
+            await handleRoleRedirect(data.session)
+          }
+        })
+      return
     }
 
-    // catch the session if it was already set before this listener attached
-    supabase.auth.getSession().then(({ data: { session } }) => routeFromSession(session))
-
-    // and listen in case it resolves just after mount
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      routeFromSession(session)
-    })
-
-    return () => subscription.unsubscribe()
+    router.replace('/login')
   }, [])
 
   async function handleRoleRedirect(session) {
