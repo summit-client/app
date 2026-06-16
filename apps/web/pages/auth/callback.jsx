@@ -30,13 +30,21 @@ export default function AuthCallback() {
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''))
     const hashType = hashParams.get('type')
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    async function routeFromSession(session) {
       if (!session) return
       if (hashType === 'invite' || hashType === 'recovery') {
         router.replace('/update-password')
       } else {
         await handleRoleRedirect(session)
       }
+    }
+
+    // catch the session if it was already set before this listener attached
+    supabase.auth.getSession().then(({ data: { session } }) => routeFromSession(session))
+
+    // and listen in case it resolves just after mount
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      routeFromSession(session)
     })
 
     return () => subscription.unsubscribe()
