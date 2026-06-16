@@ -34,18 +34,22 @@ export default function AuthCallback() {
     const refreshToken = hashParams.get('refresh_token')
 
     if (accessToken && refreshToken) {
+      console.log('callback: entering setSession')
       supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
         .then(async ({ data, error }) => {
+          console.log('callback: setSession resolved', { hasSession: !!data?.session, error })
           if (error) {
-            router.replace('/login?error=' + encodeURIComponent(error.message))
+            window.location.href = '/login?error=' + encodeURIComponent(error.message)
             return
           }
+          console.log('callback: about to redirect, hashType =', hashType)
           if (hashType === 'invite' || hashType === 'recovery') {
             window.location.href = '/update-password'
           } else {
             await handleRoleRedirect(data.session)
           }
         })
+        .catch(err => console.log('callback: setSession threw', err))
       return
     }
 
