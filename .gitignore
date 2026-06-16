@@ -2,3 +2,5 @@ node_modules
 .turbo
 .env*.local
 packages/nav/dist/
+.vercel
+.env*

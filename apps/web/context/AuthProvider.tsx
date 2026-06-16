@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 
-interface AuthContextType {
+type AuthContextType = {
   user: any
   role: string | null
   loading: boolean
@@ -9,7 +9,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+type Props = {
+  children: ReactNode
+}
+
+export function AuthProvider({ children }: Props) {
   const [user, setUser] = useState<any>(null)
   const [role, setRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -28,8 +32,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const init = async () => {
       const { data } = await supabase.auth.getSession()
       const session = data.session
-      setUser(session?.user ?? null)
-      if (session?.user) await loadProfile(session.user.id)
+      const u = session?.user ?? null
+
+      setUser(u)
+
+      if (u) {
+        await loadProfile(u.id)
+      }
+
       setLoading(false)
     }
 
@@ -54,4 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-export const useAuth = () => useContext(AuthContext)
+export const useAuth = () => {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used inside AuthProvider')
+  return ctx
+}

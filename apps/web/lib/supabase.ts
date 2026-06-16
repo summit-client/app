@@ -1,28 +1,28 @@
 import { createBrowserClient } from '@supabase/ssr'
-import { createClient } from '@supabase/supabase-js'
 
-const isBrowser = typeof window !== 'undefined'
-
-export const supabase = isBrowser
-  ? createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name) {
-            const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
-            return match ? decodeURIComponent(match[2]) : undefined
-          },
-          set(name, value, options) {
-            document.cookie = `${name}=${encodeURIComponent(value)}; domain=.summitclient.io; path=/; max-age=${options?.maxAge ?? 31536000}; SameSite=Lax`
-          },
-          remove(name) {
-            document.cookie = `${name}=; domain=.summitclient.io; path=/; max-age=0`
-          },
-        },
-      }
-    )
-  : createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+export const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    cookies: {
+      getAll() {
+        return document.cookie.split('; ').map(c => {
+          const [name, ...rest] = c.split('=')
+          return { name, value: rest.join('=') }
+        })
+      },
+      setAll(cookies) {
+        cookies.forEach(({ name, value, options }) => {
+          const opts = { ...options, domain: '.summitclient.io', path: '/' }
+          let str = `${name}=${value}`
+          if (opts.domain)   str += `; Domain=${opts.domain}`
+          if (opts.path)     str += `; Path=${opts.path}`
+          if (opts.maxAge)   str += `; Max-Age=${opts.maxAge}`
+          if (opts.sameSite) str += `; SameSite=${opts.sameSite}`
+          if (opts.secure)   str += `; Secure`
+          document.cookie = str
+        })
+      },
+    },
+  }
+)

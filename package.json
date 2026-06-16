@@ -9,6 +9,7 @@
     "typecheck": "turbo typecheck"
   },
   "devDependencies": {
-    "turbo": "latest"
+    "turbo": "latest",
+    "next": "16.2.6"
   }
 }

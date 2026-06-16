@@ -1,4 +1,11 @@
+import { useEffect } from 'react'
 export default function Home() {
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
+      window.location.replace('/auth/callback' + window.location.hash)
+    }
+  }, [])
+
   const grad  = 'linear-gradient(135deg,#3BBDB4 0%,#2B8EC4 55%,#1A4D6E 100%)'
   const navy  = '#12374F'
   const teal  = '#3BBDB4'
@@ -384,7 +391,7 @@ export default function Home() {
             Ready to take your scheduling to the summit?
           </h2>
           <p style={{ color: 'rgba(255,255,255,.75)', fontSize: '1.05rem', marginBottom: '2.5rem' }}>
-            Start your free trial today. No credit card required. Set up in under 10 minutes.
+            Start your free trial today. Set up in under 10 minutes.
           </p>
           <a href="/signup" style={{
             background: '#fff', color: navy,
