@@ -33,8 +33,10 @@ export default function AuthCallback() {
     const refreshToken = hashParams.get('refresh_token')
 
     if (accessToken && refreshToken) {
+      console.log('[cb] calling setSession')
       supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
         .then(({ error }) => {
+          console.log('[cb] setSession resolved', error)
           if (error) {
             router.replace('/login?error=' + encodeURIComponent(error.message))
             return
@@ -45,6 +47,7 @@ export default function AuthCallback() {
             window.location.href = '/login'
           }
         })
+        .catch(err => console.log('[cb] setSession threw', err))
       return
     }
 
