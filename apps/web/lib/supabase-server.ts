@@ -1,6 +1,8 @@
 import { createServerClient, serializeCookieHeader } from '@supabase/ssr'
 
-export function createClient(req, res) {
+import type { NextApiRequest, NextApiResponse } from 'next'
+
+export function createClient(req: NextApiRequest, res: NextApiResponse) {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
