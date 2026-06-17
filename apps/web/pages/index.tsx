@@ -16,48 +16,6 @@ export default function Home() {
 
   return (
     <>
-      {/* ── NAV ── */}
-      <nav style={{
-        position: 'sticky', top: 0, zIndex: 99,
-        background: 'rgba(255,255,255,.95)',
-        backdropFilter: 'blur(14px)',
-        borderBottom: `1px solid ${g100}`,
-        padding: '0 2rem',
-        fontFamily: "'DM Sans',sans-serif",
-      }}>
-        <div style={{
-          maxWidth: 1200, margin: '0 auto',
-          display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', height: 68,
-        }}>
-          <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src="/summit-logo.jpg" alt="Summit" style={{ height: 38, width: 'auto' }} />
-          </a>
-
-          <div style={{ display: 'flex', gap: '2rem' }}>
-            {([['Features','#features'],['How it works','#how'],['Pricing','/pricing']] as [string,string][]).map(([label,href]) => (
-              <a key={href} href={href} className="nav-link-item"
-                style={{ color: g700, fontSize: '.9rem', fontWeight: 500, transition: 'color .2s' }}>
-                {label}
-              </a>
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <a href="/login"
-              style={{ color: navy, fontSize: '.9rem', fontWeight: 500, padding: '.5rem 1rem', borderRadius: 8 }}>
-              Log in
-            </a>
-            <a href="/signup" style={{
-              background: grad, color: '#fff',
-              fontFamily: "'Sora',sans-serif", fontSize: '.875rem', fontWeight: 700,
-              padding: '.6rem 1.25rem', borderRadius: 8, display: 'inline-block',
-            }}>
-              Start Free Trial
-            </a>
-          </div>
-        </div>
-      </nav>
 
       {/* ── HERO ── */}
       <section className="hero-bg" style={{
