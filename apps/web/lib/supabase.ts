@@ -14,14 +14,15 @@ export const supabase = createBrowserClient(
       },
       setAll(cookies) {
         if (typeof document === 'undefined') return
+        const isHttps = location.protocol === 'https:'
         cookies.forEach(({ name, value, options }) => {
           const opts = { ...options, domain: '.summitclient.io', path: '/' }
           let str = `${name}=${value}`
-          if (opts.domain)   str += `; Domain=${opts.domain}`
-          if (opts.path)     str += `; Path=${opts.path}`
-          if (opts.maxAge)   str += `; Max-Age=${opts.maxAge}`
-          if (opts.sameSite) str += `; SameSite=${opts.sameSite}`
-          if (opts.secure)   str += `; Secure`
+          str += `; Domain=${opts.domain}`
+          str += `; Path=${opts.path}`
+          if (opts.maxAge) str += `; Max-Age=${opts.maxAge}`
+          str += `; SameSite=${opts.sameSite || 'Lax'}`
+          if (isHttps) str += `; Secure`
           document.cookie = str
         })
       },
