@@ -33,21 +33,16 @@ export default function AuthCallback() {
     const refreshToken = hashParams.get('refresh_token')
 
     if (accessToken && refreshToken) {
-      console.log('[cb] calling setSession')
-      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
-        .then(({ error }) => {
-          console.log('[cb] setSession resolved', error)
-          if (error) {
-            router.replace('/login?error=' + encodeURIComponent(error.message))
-            return
-          }
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (session) {
+          subscription.unsubscribe()
           if (hashType === 'invite' || hashType === 'recovery') {
             window.location.href = '/update-password'
           } else {
-            window.location.href = '/login'
+            handleRoleRedirect(session)
           }
-        })
-        .catch(err => console.log('[cb] setSession threw', err))
+        }
+      })
       return
     }
 
