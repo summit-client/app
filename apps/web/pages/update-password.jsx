@@ -22,19 +22,22 @@ export default function UpdatePassword() {
     })
   }, [])
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
+    if (loading) return
     setLoading(true)
     setMessage('Updating…')
 
-    // fire the update but do not await it (the cookie adapter can hang the promise)
-    supabase.auth.updateUser({ password: newPass })
+    const { error } = await supabase.auth.updateUser({ password: newPass })
 
-    // the password write itself succeeds server-side; redirect after a brief buffer
-    setTimeout(() => {
-      setMessage('Password updated! Redirecting…')
-      window.location.href = '/login'
-    }, 1500)
+    if (error) {
+      setMessage(error.message)
+      setLoading(false)
+      return
+    }
+
+    setMessage('Password updated! Redirecting…')
+    window.location.href = '/login'
   }
 
   if (!authorized) return null // prevents flash of form before redirect

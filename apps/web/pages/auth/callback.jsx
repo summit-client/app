@@ -33,17 +33,18 @@ export default function AuthCallback() {
     const refreshToken = hashParams.get('refresh_token')
 
     if (accessToken && refreshToken) {
-      // fire the session write but do not await it (the cookie adapter can hang the promise)
       supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
-
-      // redirect immediately based on type; we already have everything we need
-      setTimeout(() => {
-        if (hashType === 'invite' || hashType === 'recovery') {
-          window.location.href = '/update-password'
-        } else {
-          window.location.href = '/login'
-        }
-      }, 300)
+        .then(({ error }) => {
+          if (error) {
+            router.replace('/login?error=' + encodeURIComponent(error.message))
+            return
+          }
+          if (hashType === 'invite' || hashType === 'recovery') {
+            window.location.href = '/update-password'
+          } else {
+            window.location.href = '/login'
+          }
+        })
       return
     }
 
