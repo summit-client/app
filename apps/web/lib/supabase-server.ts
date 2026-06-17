@@ -1,15 +1,14 @@
 import { createServerClient, serializeCookieHeader } from '@supabase/ssr'
-
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 export function createClient(req: NextApiRequest, res: NextApiResponse) {
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll() {
-          return Object.entries(req.cookies).map(([name, value]) => ({ name, value }))
+          return Object.entries(req.cookies).map(([name, value]) => ({ name, value: value as string }))
         },
         setAll(cookiesToSet) {
           res.setHeader(
