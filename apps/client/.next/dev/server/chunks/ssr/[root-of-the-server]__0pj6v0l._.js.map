@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/Dario/Documents/app/apps/client/pages/index.tsx"],"sourcesContent":["export default function ClientDashboard() {\r\n  return (\r\n    <main>\r\n      <h1>Client Portal Dashboard</h1>\r\n      <p>Welcome to the Client Portal.</p>\r\n\r\n      <h2>Upcoming Sessions</h2>\r\n      <p>No sessions yet.</p>\r\n\r\n      <h2>Progress</h2>\r\n      <p>Progress will appear here.</p>\r\n\r\n      <h2>Announcements</h2>\r\n      <p>No announcements yet.</p>\r\n    </main>\r\n  )\r\n}"],"names":["ClientDashboard"],"mappings":";;;;;;AAAe,SAASA;IACtB,qBACE,qKAAC;;0BACC,qKAAC;0BAAG;;;;;;0BACJ,qKAAC;0BAAE;;;;;;0BAEH,qKAAC;0BAAG;;;;;;0BACJ,qKAAC;0BAAE;;;;;;0BAEH,qKAAC;0BAAG;;;;;;0BACJ,qKAAC;0BAAE;;;;;;0BAEH,qKAAC;0BAAG;;;;;;0BACJ,qKAAC;0BAAE;;;;;;;;;;;;AAGT"}}]
+}

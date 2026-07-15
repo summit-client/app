@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/Dario/Documents/app/apps/client/styles/globals.css"],"sourcesContent":["body {\r\n  margin: 0;\r\n  padding: 30px;\r\n  font-family: Arial, sans-serif;\r\n  background: #f7f9fb;\r\n}"],"names":[],"mappings":"AAAA"}}]
+}

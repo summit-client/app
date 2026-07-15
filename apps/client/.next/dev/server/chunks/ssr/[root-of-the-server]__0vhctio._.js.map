@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 10, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/Dario/Documents/app/apps/client/pages/_app.tsx"],"sourcesContent":["import '../styles/globals.css'\r\nimport type { AppProps } from 'next/app'\r\n\r\nexport default function App({ Component, pageProps }: AppProps) {\r\n  return <Component {...pageProps} />\r\n}"],"names":["App","Component","pageProps"],"mappings":";;;;;;;AAGe,SAASA,IAAI,EAAEC,SAAS,EAAEC,SAAS,EAAY;IAC5D,qBAAO,qKAACD;QAAW,GAAGC,SAAS;;;;;;AACjC"}}]
+}

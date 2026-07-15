@@ -1,0 +1,8 @@
+var R=require("../chunks/ssr/[turbopack]_runtime.js")("server/pages/index.js")
+R.c("server/chunks/ssr/0m~-_next_dist_0il8y9s._.js")
+R.c("server/chunks/ssr/[root-of-the-server]__0pj6v0l._.js")
+R.c("server/chunks/ssr/node_modules__pnpm_0he7n0p._.js")
+R.c("server/chunks/ssr/[externals]__0.o~_~l._.js")
+R.c("server/chunks/ssr/[root-of-the-server]__0-mhv-g._.js")
+R.m("[project]/node_modules/.pnpm/next@16.2.1_react-dom@19.2.4_react@19.2.4__react@19.2.4/node_modules/next/dist/esm/build/templates/pages.js { INNER_PAGE => \"[project]/apps/client/pages/index.tsx [ssr] (ecmascript)\", INNER_DOCUMENT => \"[project]/node_modules/.pnpm/next@16.2.1_react-dom@19.2.4_react@19.2.4__react@19.2.4/node_modules/next/document.js [ssr] (ecmascript)\", INNER_APP => \"[project]/apps/client/pages/_app.tsx [ssr] (ecmascript)\" } [ssr] (ecmascript)")
+module.exports=R.m("[project]/node_modules/.pnpm/next@16.2.1_react-dom@19.2.4_react@19.2.4__react@19.2.4/node_modules/next/dist/esm/build/templates/pages.js { INNER_PAGE => \"[project]/apps/client/pages/index.tsx [ssr] (ecmascript)\", INNER_DOCUMENT => \"[project]/node_modules/.pnpm/next@16.2.1_react-dom@19.2.4_react@19.2.4__react@19.2.4/node_modules/next/document.js [ssr] (ecmascript)\", INNER_APP => \"[project]/apps/client/pages/_app.tsx [ssr] (ecmascript)\" } [ssr] (ecmascript)").exports
