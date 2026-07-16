@@ -172,7 +172,7 @@ export default function Signup() {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
       <div style={{ width: 360, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Get started with Summit Client</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Launching Q4 2026. Sign up for our mailing list for updates.</h1>
 
         {error && <p style={{ color: 'red', margin: 0, fontSize: 14 }}>{error}</p>}
 
