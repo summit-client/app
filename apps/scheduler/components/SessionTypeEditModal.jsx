@@ -23,12 +23,20 @@ export default function SessionTypeEditModal({ sessionType, onSave, onClose, sho
     if (!name.trim()) return;
     setSaving(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("session_types")
-      .update({ name: name.trim(), duration: Number(duration), cost: Number(cost), max_clients: Number(maxClients) })
-      .eq("id", sessionType.id)
-      .select()
-      .single();
+    console.log("SessionType =", sessionType);
+  const { data, error: err } = await supabase
+  .from("session_types")
+  .update({
+    name: name.trim(),
+    duration: Number(duration),
+    price: Number(cost),
+    max_clients: Number(maxClients),
+  })
+  .eq("id", sessionType.id)
+  .select()
+  .single();
+  console.log("Updated rows:", data);
+console.log("Error:", err);
     setSaving(false);
     if (err) { setError("Save failed. Check console."); console.error(err); return; }
     onSave(data);
