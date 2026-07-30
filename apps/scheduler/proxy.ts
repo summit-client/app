@@ -1,30 +1,22 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export async function proxy(req: NextRequest) {
+export default async function proxy(req: NextRequest) {
   const res = NextResponse.next();
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-  getAll: () => req.cookies.getAll(),
-  setAll: (cookies) => cookies.forEach(({ name, value, options }) =>
-    res.cookies.set(name, value, { ...options, domain: '.summitclient.io' })
-  ),
-},
-    }
-  );
+  if (process.env.NODE_ENV === "development") {
+    return res;
+  }
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const hasSupabaseAuthCookie = req.cookies
+    .getAll()
+    .some(cookie => cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"));
 
-  if (!session && req.nextUrl.pathname !== "/login") {
+  if (!hasSupabaseAuthCookie && req.nextUrl.pathname !== "/login") {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  if (session && req.nextUrl.pathname === "/login") {
+  if (hasSupabaseAuthCookie && req.nextUrl.pathname === "/login") {
     return NextResponse.redirect(new URL("/", req.url));
   }
 

@@ -42,6 +42,13 @@ export default function PublicNav() {
 
         {/* CTAs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <a href="/clinician" style={{
+            fontSize: 15, fontWeight: 600, color: '#fff',
+            background: '#28B4A6', textDecoration: 'none',
+            padding: '8px 16px', borderRadius: 6
+          }}>
+            Clinician portal
+          </a>
           <a href="/login" style={{
             fontSize: 15, fontWeight: 500, color: '#1A3F5C',
             textDecoration: 'none', padding: '8px 16px'

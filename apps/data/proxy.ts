@@ -1,31 +1,22 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 
-export async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const response = NextResponse.next()
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookies) {
-          cookies.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options)
-          })
-        }
-      }
-    }
-  )
+  if (process.env.NODE_ENV === 'development') {
+    return response
+  }
 
-  const { data: { session } } = await supabase.auth.getSession()
+  const hasSupabaseAuthCookie = request.cookies
+    .getAll()
+    .some(cookie => cookie.name.startsWith('sb-') && cookie.name.includes('auth-token'))
 
-  if (!session) {
-    return NextResponse.redirect('https://summitclient.io/login')
+  if (!hasSupabaseAuthCookie) {
+    const loginTarget = process.env.NEXT_PUBLIC_WEB_APP_URL
+      ?? (process.env.NODE_ENV === 'production' ? 'https://summitclient.io' : 'http://127.0.0.1:3001')
+
+    return NextResponse.redirect(new URL('/login', loginTarget).toString())
   }
 
   return response

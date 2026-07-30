@@ -1,1 +1,29 @@
-{"name":"@summit/data","version":"0.0.1","private":true,"dependencies":{"@supabase/ssr":"^0.10.3"}}
+{
+	"name": "@summit/data",
+	"version": "0.0.1",
+	"private": true,
+	"scripts": {
+		"dev": "next dev",
+		"build": "next build",
+		"start": "next start -p 3004",
+		"lint": "eslint"
+	},
+	"dependencies": {
+		"@summit/db": "workspace:*",
+		"@summit/nav": "workspace:*",
+		"@supabase/auth-helpers-nextjs": "^0.15.0",
+		"@supabase/ssr": "^0.10.3",
+		"@supabase/supabase-js": "^2.106.1",
+		"next": "16.2.6",
+		"react": "19.2.4",
+		"react-dom": "19.2.4"
+	},
+	"devDependencies": {
+		"@types/node": "^20",
+		"@types/react": "^19",
+		"@types/react-dom": "^19",
+		"eslint": "^9",
+		"eslint-config-next": "16.2.6",
+		"typescript": "^5"
+	}
+}
