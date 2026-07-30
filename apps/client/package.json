@@ -1,1 +1,23 @@
-{"name":"@summit/client","version":"0.0.1","private":true,"dependencies":{"@supabase/ssr":"^0.10.3"}}
+{
+  "name": "@summit/client",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@summit/db": "workspace:*",
+    "@summit/nav": "workspace:*",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.103.0",
+    "next": "16.2.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "typescript": "6.0.2"
+  }
+}
