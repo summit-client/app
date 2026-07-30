@@ -835,27 +835,166 @@ function CalendarView({ clients, employees, bookings, locations, typeColors, cal
           ))}
         </div>
       </div>
-      {selectedBooking && (() => {
-        const client = clients.find(c => c.id === selectedBooking.client_id);
-        const emp = employees.find(e => e.id === selectedBooking.employee_id);
-        const color = typeColors[selectedBooking.type] || "#888888";
-        const bDay = selectedBooking.session_date ? dayFromDate(selectedBooking.session_date) : "—";
-        return (
-          <div style={{ marginTop: 16, padding: "14px 18px", borderRadius: 10, background: COLORS.bgS, border: `0.5px solid ${color}55`, display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ width: 4, height: 50, borderRadius: 2, background: color, flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 16, fontWeight: 500, color: COLORS.text }}>{client?.name}</div>
-              <div style={{ fontSize: 14, color: COLORS.textS }}>{emp?.name} · {bDay} {selectedBooking.hour}:00</div>
-            </div>
-            <Badge label={selectedBooking.type} color={color} />
-            <button onClick={() => handleCancel(selectedBooking)} disabled={cancelling}
-              style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: "pointer", background: "#FCEBEB", color: "#A32D2D", fontWeight: 500, opacity: cancelling ? 0.6 : 1 }}>
-              {cancelling ? "Cancelling…" : "Cancel session"}
-            </button>
-            <button onClick={() => setSelectedBooking(null)} style={{ background: "none", border: "none", color: COLORS.textT, cursor: "pointer", fontSize: 18 }}>✕</button>
+{selectedBooking && (() => {
+  const client = clients.find(c => c.id === selectedBooking.client_id);
+  const employee = employees.find(e => e.id === selectedBooking.employee_id);
+ const location = locations.find(
+  l => String(l.id) === String(client?.location_id)
+);
+  const calendar = calendars.find(c => c.id === selectedBooking.calendar_id);
+
+  const color = typeColors[selectedBooking.type] || "#888888";
+  const day = selectedBooking.session_date
+    ? dayFromDate(selectedBooking.session_date)
+    : "";
+
+  const sessionDate = selectedBooking.session_date
+    ? new Date(`${selectedBooking.session_date}T12:00:00`).toLocaleDateString(
+        undefined,
+        {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }
+      )
+    : "Not available";
+
+  const formattedTime = `${String(selectedBooking.hour ?? 0).padStart(
+    2,
+    "0"
+  )}:${String(selectedBooking.minute ?? 0).padStart(2, "0")}`;
+
+  const detailRow = (label, value) => (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 16,
+        padding: "8px 0",
+        borderBottom: `0.5px solid ${COLORS.border}`,
+      }}
+    >
+      <span style={{ fontSize: 12, color: COLORS.textS }}>{label}</span>
+
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: 500,
+          color: COLORS.text,
+          textAlign: "right",
+        }}
+      >
+        {value || "Not available"}
+      </span>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: "18px 20px",
+        borderRadius: 12,
+        background: COLORS.bgS,
+        border: `0.5px solid ${color}55`,
+        borderLeft: `4px solid ${color}`,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 16,
+          marginBottom: 12,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 17,
+              fontWeight: 600,
+              color: COLORS.text,
+              marginBottom: 4,
+            }}
+          >
+            {client?.name || "Unknown client"}
           </div>
-        );
-      })()}
+
+          <div style={{ fontSize: 13, color: COLORS.textS }}>
+            {employee?.name || "Unassigned staff"}
+          </div>
+        </div>
+
+        <Badge label={selectedBooking.type} color={color} />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          columnGap: 24,
+          marginBottom: 16,
+        }}
+      >
+        <div>
+          {detailRow("Date", `${day}, ${sessionDate}`)}
+          {detailRow("Time", formattedTime)}
+          {detailRow("Location", location?.name)}
+        </div>
+
+        <div>
+          {detailRow("Calendar", calendar?.name)}
+          {detailRow("Status", selectedBooking.status || "scheduled")}
+          {detailRow(
+            "Recurrence",
+            selectedBooking.recurrence_id ? "Recurring" : "One-time"
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          gap: 10,
+        }}
+      >
+        <button
+          onClick={() => handleCancel(selectedBooking)}
+          disabled={cancelling}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 8,
+            fontSize: 13,
+            border: "none",
+            cursor: cancelling ? "not-allowed" : "pointer",
+            background: "#FCE8E8",
+            color: "#A33A3A",
+            opacity: cancelling ? 0.6 : 1,
+          }}
+        >
+          {cancelling ? "Cancelling..." : "Cancel session"}
+        </button>
+
+        <button
+          onClick={() => setSelectedBooking(null)}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 8,
+            fontSize: 13,
+            border: `0.5px solid ${COLORS.border}`,
+            background: COLORS.bg,
+            color: COLORS.text,
+            cursor: "pointer",
+          }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+})()}
     </div>
   );
 }
