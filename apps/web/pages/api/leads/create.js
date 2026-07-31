@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import nodemailer from 'nodemailer';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -29,43 +28,40 @@ function isRateLimited(ip) {
   return recent.length > RATE_LIMIT_MAX;
 }
 
-// ── Email notification (Microsoft 365 / Outlook SMTP) ─────────
-// Requires SMTP_USER + SMTP_PASSWORD env vars, and "Authenticated
-// SMTP" enabled for that mailbox in the Microsoft 365 admin center
-// (Admin center > Users > Active users > [mailbox] > Mail > Manage
-// email apps > Authenticated SMTP). SMTP_PASSWORD should be an app
-// password if MFA is on the account.
-const transporter = process.env.SMTP_USER && process.env.SMTP_PASSWORD
-  ? nodemailer.createTransport({
-      host: 'smtp.office365.com',
-      port: 587,
-      secure: false, // STARTTLS
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD,
-      },
-    })
-  : null;
-
+// ── Email notification (Resend API) ───────────────────────────
+// Requires RESEND_API_KEY env var. The summitclient.io domain must be
+// verified in the Resend dashboard (DNS records at Namecheap) before
+// sending from RESEND_FROM. Optional: RESEND_FROM, LEAD_NOTIFY_EMAIL.
 async function notifyNewLead(lead) {
-  if (!transporter) {
-    console.warn('SMTP not configured — skipping lead notification email');
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY not configured, skipping lead notification email');
     return;
   }
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_USER,
-      to: process.env.LEAD_NOTIFY_EMAIL || process.env.SMTP_USER,
-      subject: `New Summit lead: ${lead.clinic_name}`,
-      text: `New signup lead\n\nName: ${lead.full_name}\nClinic: ${lead.clinic_name}\nEmail: ${lead.email}\nRole: ${lead.role || 'n/a'}`,
-      html: `<p><strong>New signup lead</strong></p>
-        <p>Name: ${lead.full_name}<br/>
-        Clinic: ${lead.clinic_name}<br/>
-        Email: ${lead.email}<br/>
-        Role: ${lead.role || 'n/a'}</p>`,
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: process.env.RESEND_FROM || 'Summit Leads <leads@summitclient.io>',
+        to: [process.env.LEAD_NOTIFY_EMAIL || 'yanko@summitclient.io'],
+        subject: `New Summit lead: ${lead.clinic_name}`,
+        text: `New signup lead\n\nName: ${lead.full_name}\nClinic: ${lead.clinic_name}\nEmail: ${lead.email}\nRole: ${lead.role || 'n/a'}`,
+        html: `<p><strong>New signup lead</strong></p>
+          <p>Name: ${lead.full_name}<br/>
+          Clinic: ${lead.clinic_name}<br/>
+          Email: ${lead.email}<br/>
+          Role: ${lead.role || 'n/a'}</p>`,
+      }),
     });
+    if (!resp.ok) {
+      const body = await resp.text();
+      console.error('Lead notification email failed:', resp.status, body);
+    }
   } catch (err) {
-    // Never fail the request over a notification issue — the lead is
+    // Never fail the request over a notification issue. The lead is
     // already saved in Supabase regardless.
     console.error('Lead notification email failed:', err);
   }
