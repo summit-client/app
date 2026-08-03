@@ -1,4 +1,50 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, ReactNode } from 'react'
+import { motion, useScroll, useSpring, useTransform, MotionValue } from 'motion/react'
+
+type Cell = { type: string; lines: string[] } | null
+
+const ROWS: { time: string; cells: Cell[] }[] = [
+  { time: '9:00 AM', cells: [
+    { type: 'teal', lines: ['Direct Therapy','J. Martinez'] }, null,
+    { type: 'blue', lines: ['Assessment','R. Patel'] }, null,
+    { type: 'teal', lines: ['Direct Therapy','M. Chen'] }, null,
+  ]},
+  { time: '10:00 AM', cells: [
+    null, { type: 'yellow', lines: ['Group Therapy','3 clients'] }, null,
+    { type: 'teal', lines: ['Direct Therapy','A. Williams'] }, null, null,
+  ]},
+  { time: '11:00 AM', cells: [
+    { type: 'blue', lines: ['Supervision','Dr. K. Park'] }, null,
+    { type: 'teal', lines: ['Direct Therapy','L. Torres'] }, null,
+    { type: 'blue', lines: ['Assessment','B. Nguyen'] }, null,
+  ]},
+]
+
+// Assign each filled cell a global sequence number so the highlight
+// sweep runs left-to-right, top-to-bottom across the whole grid.
+let _seq = 0
+const SEQ_ROWS = ROWS.map(row => ({
+  ...row,
+  cells: row.cells.map(cell => (cell ? { ...cell, seq: _seq++ } : null)),
+}))
+const SEQ_TOTAL = _seq
+
+// ── Scene timing ──────────────────────────────────────────────
+// Pills: staggered entrance, then each draws a connector.
+const PILL_COUNT   = 3      // keep in sync with PILLS below
+const PILL_START   = 0.28
+const PILL_STAGGER = 0.13
+const PILL_DUR     = 0.14
+const LINE_DUR     = 0.09
+
+// Moment the final connector finishes drawing.
+const SCENE_PEAK = PILL_START + (PILL_COUNT - 1) * PILL_STAGGER + PILL_DUR + LINE_DUR
+
+// Cell highlight sweep runs from SWEEP_START and lands its last cell
+// exactly on SCENE_PEAK, so the grid finishes as the last line completes.
+const SWEEP_START = 0.18
+const CELL_DUR    = 0.07
+const SWEEP_SPAN  = SCENE_PEAK - SWEEP_START - CELL_DUR
 
 export default function Home() {
   useEffect(() => {
@@ -51,195 +97,218 @@ export default function Home() {
   const display = "'Bricolage Grotesque',sans-serif"
   const body    = "'Hanken Grotesk',sans-serif"
 
+  const heroRef = useRef<HTMLDivElement>(null)
+  const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end end'] })
+
+  // Springed copy drives the heavy calendar rotation so it carries weight
+  // and smooths trackpad jitter. Pills stay on the raw value to feel snappy.
+  const smooth = useSpring(scrollYProgress, { stiffness: 90, damping: 22, restDelta: 0.001 })
+
+  const rotateY = useTransform(smooth, [0.18, 0.85], [0, -32])
+  const rotateX = useTransform(smooth, [0.18, 0.85], [0, 10])
+  const calScale = useTransform(smooth, [0.18, 0.85], [1, 0.95])
+  const badgeOpacity = useTransform(scrollYProgress, [0.10, 0.18], [1, 0])
+  const sceneOpacity = useTransform(scrollYProgress, [0.88, 1], [1, 0])
+
+  const PILLS = [
+    { glyph: '🤖', title: 'AI staff matching',    sub: 'Best-qualified and available, instantly' },
+    { glyph: '📅', title: 'Recurring schedules',  sub: 'Set once, built in bulk' },
+    { glyph: '🔒', title: 'HIPAA-ready',          sub: 'Encrypted, role-based access' },
+  ]
+
   return (
     <>
 
-      {/* ── HERO ── */}
-      <section className="hero-bg" style={{
-        padding: '88px 2rem 80px',
+{/* ── HERO / SCROLL SCENE ── */}
+      <div ref={heroRef} style={{
+        position: 'relative', height: '320vh',
         background: 'linear-gradient(180deg,#EDF6F9 0%,#fff 100%)',
-        overflow: 'hidden', position: 'relative',
-        fontFamily: body,
       }}>
-        <div style={{
-          maxWidth: 1200, margin: '0 auto',
-          display: 'grid', gridTemplateColumns: '1fr 1fr',
-          gap: '4rem', alignItems: 'center',
+        <motion.div style={{
+          opacity: sceneOpacity,
+          position: 'sticky', top: 64,
+          height: 'calc(100vh - 64px)',
+          display: 'flex', alignItems: 'center',
+          overflow: 'hidden', padding: '0 2rem',
+          fontFamily: body,
         }}>
-          {/* Left copy */}
-          <div>
-            <div className="an1" style={{
-              display: 'inline-flex', alignItems: 'center', gap: '.4rem',
-              background: 'rgba(40,180,166,.12)', color: teal,
-              fontSize: '.78rem', fontWeight: 700,
-              padding: '.35rem .8rem', borderRadius: 100,
-              marginBottom: '1.25rem',
-              fontFamily: display, letterSpacing: '.02em',
-            }}>
-              ✦ Built for ABA Clinics
-            </div>
+          <div style={{
+            maxWidth: 1200, margin: '0 auto', width: '100%',
+            display: 'grid', gridTemplateColumns: '1fr 1fr',
+            gap: '4rem', alignItems: 'center',
+            perspective: 1500,
+          }}>
 
-            <h1 className="an2" style={{
-              fontFamily: display,
-              fontSize: 'clamp(2.1rem,3.8vw,3.1rem)',
-              fontWeight: 800, lineHeight: 1.15,
-              color: navy, marginBottom: '1.25rem',
-            }}>
-              Scheduling that works<br />
-              as hard as{' '}
-              <span className="grad-text">your clinicians do.</span>
-            </h1>
+            {/* Left: copy fades out, pills fly in.
+                COPY BAND holds badge/headline/paragraph and defines the region.
+                Pills are top-anchored inside it, so they physically cannot
+                reach the CTA, which sits after the band in normal flow. */}
+            <div style={{ position: 'relative' }}>
 
-            <p className="an3" style={{
-              fontSize: '1.05rem', color: g700,
-              marginBottom: '2rem', maxWidth: 460, lineHeight: 1.75,
-            }}>
-              Summit matches clients to the right staff automatically, eliminates double bookings, and builds your entire recurring schedule in minutes — not hours.
-            </p>
+              <div style={{ position: 'relative' }}>
+                <FadeOut progress={scrollYProgress} start={0.10}>
+                  <div className="an1" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '.4rem',
+                    background: 'rgba(40,180,166,.12)', color: teal,
+                    fontSize: '.78rem', fontWeight: 700,
+                    padding: '.35rem .8rem', borderRadius: 100,
+                    marginBottom: '1.25rem',
+                    fontFamily: display, letterSpacing: '.02em',
+                  }}>
+                    ✦ Built for ABA Clinics
+                  </div>
+                </FadeOut>
 
-            <div className="an4" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '2.5rem' }}>
-              <a href="/signup" className="btn-primary" style={{
-                background: grad, color: '#fff',
-                fontFamily: display, fontSize: '1rem', fontWeight: 700,
-                padding: '.875rem 2rem', borderRadius: 10,
-                boxShadow: '0 4px 22px rgba(26,63,92,.28)',
-                display: 'inline-block',
-              }}>
-                Start Free Trial
-              </a>
-              <a href="#how" style={{
-                color: navy,
-                fontFamily: display, fontSize: '1rem', fontWeight: 600,
-                display: 'inline-flex', alignItems: 'center', gap: '.4rem',
-              }}>
-                See how it works →
-              </a>
-            </div>
+                <FadeOut progress={scrollYProgress} start={0.13}>
+                  <h1 className="an2" style={{
+                    fontFamily: display,
+                    fontSize: 'clamp(2.1rem,3.8vw,3.1rem)',
+                    fontWeight: 800, lineHeight: 1.15,
+                    color: navy, marginBottom: '1.25rem',
+                  }}>
+                    Scheduling that works<br />
+                    as hard as{' '}
+                    <span className="grad-text">your clinicians do.</span>
+                  </h1>
+                </FadeOut>
 
-            <div className="an5" style={{ display: 'flex', gap: '2.5rem' }}>
-              <div>
-                <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 800, color: navy }}>{multiplier}×</div>
-                <div style={{ fontSize: '.78rem', color: g500, fontWeight: 500 }}>faster scheduling</div>
-              </div>
-              <div>
-                <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 800, color: navy }}>0</div>
-                <div style={{ fontSize: '.78rem', color: g500, fontWeight: 500 }}>double bookings</div>
-              </div>
-              <div>
-                <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 800, color: navy }}>AI</div>
-                <div style={{ fontSize: '.78rem', color: g500, fontWeight: 500 }}>powered matching</div>
-              </div>
-            </div>
-          </div>
+                <FadeOut progress={scrollYProgress} start={0.16}>
+                  <p className="an3" style={{
+                    fontSize: '1.05rem', color: g700,
+                    marginBottom: '2rem', maxWidth: 460, lineHeight: 1.75,
+                  }}>
+                    Summit matches clients to the right staff automatically, eliminates double bookings, and builds your entire recurring schedule in minutes, not hours.
+                  </p>
+                </FadeOut>
 
-          {/* Right — app mock */}
-          <div className="an3" style={{ position: 'relative' }}>
-            <div style={{
-              background: '#fff', borderRadius: 16,
-              boxShadow: '0 24px 64px rgba(26,63,92,.14),0 4px 16px rgba(26,63,92,.07)',
-              overflow: 'hidden', border: `1px solid ${g100}`,
-            }}>
-              {/* Window chrome */}
-              <div style={{ background: '#0F2E3D', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 7 }}>
-                {['#ff5f57','#ffbd2e','#28c840'].map(c => (
-                  <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
-                ))}
-                <div style={{ margin: '0 auto', color: 'rgba(255,255,255,.45)', fontSize: '.72rem', fontFamily: display }}>
-                  Summit Scheduler — Week of May 26
-                </div>
-              </div>
-
-              {/* Calendar grid */}
-              <div style={{ padding: 14 }}>
-                {/* Day headers */}
-                <div style={{ display: 'grid', gridTemplateColumns: '72px repeat(6,1fr)', gap: 3, marginBottom: 3 }}>
-                  <div />
-                  {['Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                    <div key={d} style={{
-                      fontFamily: display, fontSize: '.68rem',
-                      fontWeight: 600, color: g500, textAlign: 'center', padding: '5px 0',
-                    }}>{d}</div>
+                {/* Pills — top-anchored to the band, height is intrinsic */}
+                <div style={{
+                  position: 'absolute', left: 0, right: 0, top: 0,
+                  display: 'flex', flexDirection: 'column',
+                  gap: '1.1rem',
+                  pointerEvents: 'none', zIndex: 2,
+                  perspective: 1200, transformStyle: 'preserve-3d',
+                }}>
+                  {PILLS.map((p, i) => (
+                    <FeaturePill key={p.title} progress={scrollYProgress} index={i} {...p} />
                   ))}
                 </div>
-
-                {/* Time rows */}
-                {[
-                  { time: '9:00 AM', cells: [
-                    { type: 'teal', lines: ['Direct Therapy','J. Martinez'] },
-                    null,
-                    { type: 'blue', lines: ['Assessment','R. Patel'] },
-                    null,
-                    { type: 'teal', lines: ['Direct Therapy','M. Chen'] },
-                    null,
-                  ]},
-                  { time: '10:00 AM', cells: [
-                    null,
-                    { type: 'yellow', lines: ['Group Therapy','3 clients'] },
-                    null,
-                    { type: 'teal',   lines: ['Direct Therapy','A. Williams'] },
-                    null,
-                    null,
-                  ]},
-                  { time: '11:00 AM', cells: [
-                    { type: 'blue', lines: ['Supervision','Dr. K. Park'] },
-                    null,
-                    { type: 'teal', lines: ['Direct Therapy','L. Torres'] },
-                    null,
-                    { type: 'blue', lines: ['Assessment','B. Nguyen'] },
-                    null,
-                  ]},
-                ].map((row, ri) => (
-                  <div key={row.time}>
-                    {ri > 0 && <div style={{ height: 3 }} />}
-                    <div style={{ display: 'grid', gridTemplateColumns: '72px repeat(6,1fr)', gap: 3 }}>
-                      <div style={{ fontSize: '.65rem', color: g500, textAlign: 'right', paddingRight: 7, paddingTop: 3 }}>
-                        {row.time}
-                      </div>
-                      {row.cells.map((cell, ci) => cell ? (
-                        <div key={ci} style={{
-                          borderRadius: 6, padding: '3px 5px',
-                          fontSize: '.6rem', fontWeight: 700, color: '#fff',
-                          fontFamily: display, lineHeight: 1.3,
-                          height: 62, display: 'flex', flexDirection: 'column',
-                          justifyContent: 'center', gap: 1,
-                          background:
-                            cell.type === 'teal'   ? 'linear-gradient(135deg,#28B4A6,#219A8E)' :
-                            cell.type === 'blue'   ? 'linear-gradient(135deg,#21798A,#1D6478)' :
-                                                     'linear-gradient(135deg,#e09c00,#c98d00)',
-                        }}>
-                          {cell.lines.map(t => <span key={t}>{t}</span>)}
-                        </div>
-                      ) : (
-                        <div key={ci} style={{ height: 62, borderRadius: 4, background: g100 }} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
               </div>
+
+              <div className="an4" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '2.5rem' }}>
+                <a href="/signup" className="btn-primary" style={{
+                  background: grad, color: '#fff',
+                  fontFamily: display, fontSize: '1rem', fontWeight: 700,
+                  padding: '.875rem 2rem', borderRadius: 10,
+                  boxShadow: '0 4px 22px rgba(26,63,92,.28)',
+                  display: 'inline-block', position: 'relative', zIndex: 3,
+                }}>
+                  Start Free Trial
+                </a>
+                <FadeOut progress={scrollYProgress} start={0.19}>
+                  <a href="#how" style={{
+                    color: navy,
+                    fontFamily: display, fontSize: '1rem', fontWeight: 600,
+                    display: 'inline-flex', alignItems: 'center', gap: '.4rem',
+                  }}>
+                    See how it works →
+                  </a>
+                </FadeOut>
+              </div>
+
+              <FadeOut progress={scrollYProgress} start={0.22}>
+                <div className="an5" style={{ display: 'flex', gap: '2.5rem' }}>
+                  {[['×','faster scheduling'],['0','double bookings'],['AI','powered matching']].map(([v,l], i) => (
+                    <div key={l}>
+                      <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 800, color: navy }}>
+                        {i === 0 ? `${multiplier}${v}` : v}
+                      </div>
+                      <div style={{ fontSize: '.78rem', color: g500, fontWeight: 500 }}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+              </FadeOut>
             </div>
 
-            {/* Floating badge */}
-            <div className="float-badge" style={{
-              position: 'absolute', bottom: -18, right: 20,
-              background: '#fff', borderRadius: 12, padding: '11px 15px',
-              boxShadow: '0 8px 32px rgba(26,63,92,.14)',
-              border: `1px solid ${g100}`,
-              display: 'flex', alignItems: 'center', gap: 10,
+            {/* Right: calendar rotates in place */}
+            <motion.div style={{
+              rotateX, rotateY, scale: calScale,
+              position: 'relative', transformStyle: 'preserve-3d',
+              willChange: 'transform',
             }}>
               <div style={{
-                width: 34, height: 34, borderRadius: '50%',
-                background: grad, display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                color: '#fff', fontSize: '1rem',
-              }}>✓</div>
-              <div>
-                <div style={{ fontFamily: display, fontSize: '.78rem', fontWeight: 700, color: navy }}>12 sessions booked</div>
-                <div style={{ fontSize: '.68rem', color: g500 }}>Conflicts resolved automatically</div>
+                background: '#fff', borderRadius: 16,
+                boxShadow: '0 24px 64px rgba(26,63,92,.14),0 4px 16px rgba(26,63,92,.07)',
+                overflow: 'hidden', border: `1px solid ${g100}`,
+              }}>
+                <div style={{ background: '#0F2E3D', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                  {['#ff5f57','#ffbd2e','#28c840'].map(c => (
+                    <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
+                  ))}
+                  <div style={{ margin: '0 auto', color: 'rgba(255,255,255,.45)', fontSize: '.72rem', fontFamily: display }}>
+                    Summit Scheduler — Week of May 26
+                  </div>
+                </div>
+
+                <div style={{ padding: 14 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '72px repeat(6,1fr)', gap: 3, marginBottom: 3 }}>
+                    <div />
+                    {['Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                      <div key={d} style={{
+                        fontFamily: display, fontSize: '.68rem',
+                        fontWeight: 600, color: g500, textAlign: 'center', padding: '5px 0',
+                      }}>{d}</div>
+                    ))}
+                  </div>
+
+                  {SEQ_ROWS.map((row, ri) => (
+                    <div key={row.time}>
+                      {ri > 0 && <div style={{ height: 3 }} />}
+                      <div style={{ display: 'grid', gridTemplateColumns: '72px repeat(6,1fr)', gap: 3 }}>
+                        <div style={{ fontSize: '.65rem', color: g500, textAlign: 'right', paddingRight: 7, paddingTop: 3 }}>
+                          {row.time}
+                        </div>
+                        {row.cells.map((cell, ci) => cell ? (
+                          <SessionCell
+                            key={ci}
+                            progress={scrollYProgress}
+                            seq={cell.seq}
+                            type={cell.type}
+                            lines={cell.lines}
+                          />
+                        ) : (
+                          <div key={ci} style={{ height: 62, borderRadius: 4, background: g100 }} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+
+              <motion.div style={{
+                opacity: badgeOpacity,
+                position: 'absolute', bottom: -18, right: 20,
+                background: '#fff', borderRadius: 12, padding: '11px 15px',
+                boxShadow: '0 8px 32px rgba(26,63,92,.14)',
+                border: `1px solid ${g100}`,
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <div style={{
+                  width: 34, height: 34, borderRadius: '50%',
+                  background: grad, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', fontSize: '1rem',
+                }}>✓</div>
+                <div>
+                  <div style={{ fontFamily: display, fontSize: '.78rem', fontWeight: 700, color: navy }}>12 sessions booked</div>
+                  <div style={{ fontSize: '.68rem', color: g500 }}>Conflicts resolved automatically</div>
+                </div>
+              </motion.div>
+            </motion.div>
+
           </div>
-        </div>
-      </section>
+        </motion.div>
+      </div>
 
       {/* ── LOGOS MARQUEE ── */}
       <div style={{
@@ -444,5 +513,115 @@ export default function Home() {
         </div>
       </footer>
     </>
+  )
+}
+
+function FadeOut({ progress, start, children }: {
+  progress: MotionValue<number>; start: number; children: ReactNode
+}) {
+  const opacity = useTransform(progress, [start, start + 0.10], [1, 0])
+  const y = useTransform(progress, [start, start + 0.10], [0, -36])
+  return <motion.div style={{ opacity, y, willChange: 'transform, opacity' }}>{children}</motion.div>
+}
+
+function FeaturePill({ progress, index, glyph, title, sub }: {
+  progress: MotionValue<number>; index: number; glyph: string; title: string; sub: string
+}) {
+  const start = PILL_START + index * PILL_STAGGER
+  const end = start + PILL_DUR
+
+  const x = useTransform(progress, [start, end], [420, 0])
+  const opacity = useTransform(progress, [start, start + 0.05], [0, 1])
+  const scale = useTransform(progress, [start, end], [0.55, 1])
+  // Counter-rotation: pill arrives turned away, squares up as it lands.
+  const rotateY = useTransform(progress, [start, end], [-26, 0])
+  const z = useTransform(progress, [start, end], [140, 60])
+
+  // Connector draws only once the pill has settled.
+  const lineLength = useTransform(progress, [end, end + LINE_DUR], [0, 1])
+  const lineOpacity = useTransform(progress, [end, end + 0.04, 0.86, 0.9], [0, 1, 1, 0])
+
+  return (
+    <motion.div style={{
+      x, opacity, scale, rotateY, z,
+      position: 'relative',
+      transformStyle: 'preserve-3d',
+      willChange: 'transform, opacity',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '.85rem',
+        background: '#fff', border: '1px solid #EEF3F6',
+        borderRadius: 999, padding: '.75rem 1.35rem .75rem .75rem',
+        boxShadow: '0 10px 34px rgba(26,63,92,.12)',
+      }}>
+        <div style={{
+          width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+          background: 'linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.05rem',
+        }}>{glyph}</div>
+        <div>
+          <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: '.95rem', fontWeight: 700, color: '#1A3F5C' }}>{title}</div>
+          <div style={{ fontSize: '.75rem', color: '#7A9AAD' }}>{sub}</div>
+        </div>
+      </div>
+
+      {/* Connector line running from pill toward the calendar */}
+      <svg
+        width="52" height="10" viewBox="0 0 52 10"
+        style={{ position: 'absolute', left: '100%', top: '50%', marginTop: -5, overflow: 'visible' }}
+      >
+        <motion.path
+          d="M0 5 L44 5"
+          stroke="#28B4A6" strokeWidth="2" strokeLinecap="round" fill="none"
+          style={{ pathLength: lineLength, opacity: lineOpacity }}
+        />
+        <motion.circle
+          cx="48" cy="5" r="3.5" fill="#28B4A6"
+          style={{ opacity: lineOpacity, scale: lineLength, transformOrigin: '48px 5px' }}
+        />
+      </svg>
+    </motion.div>
+  )
+}
+
+function SessionCell({ progress, seq, type, lines }: {
+  progress: MotionValue<number>; seq: number; type: string; lines: string[]
+}) {
+  // Sweep lands its last cell exactly when the third connector completes.
+  const denom = Math.max(SEQ_TOTAL - 1, 1)
+  const start = SWEEP_START + (seq / denom) * SWEEP_SPAN
+  const mid = start + CELL_DUR / 2
+  const end = start + CELL_DUR
+
+  const scale = useTransform(progress, [start, mid, end], [1, 1.09, 1])
+  const glow = useTransform(progress, [start, mid, end], [0, 1, 0])
+
+  const bg =
+    type === 'teal' ? 'linear-gradient(135deg,#28B4A6,#219A8E)' :
+    type === 'blue' ? 'linear-gradient(135deg,#21798A,#1D6478)' :
+                      'linear-gradient(135deg,#e09c00,#c98d00)'
+
+  return (
+    <motion.div style={{
+      scale,
+      position: 'relative', height: 62, borderRadius: 6,
+      willChange: 'transform',
+    }}>
+      <div style={{
+        height: '100%', borderRadius: 6, padding: '3px 5px',
+        fontSize: '.6rem', fontWeight: 700, color: '#fff',
+        fontFamily: "'Bricolage Grotesque',sans-serif", lineHeight: 1.3,
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
+        background: bg,
+      }}>
+        {lines.map(t => <span key={t}>{t}</span>)}
+      </div>
+      <motion.div style={{
+        opacity: glow,
+        position: 'absolute', inset: 0, borderRadius: 6,
+        boxShadow: '0 0 0 3px rgba(40,180,166,.55), 0 10px 26px rgba(40,180,166,.40)',
+        pointerEvents: 'none',
+      }} />
+    </motion.div>
   )
 }
