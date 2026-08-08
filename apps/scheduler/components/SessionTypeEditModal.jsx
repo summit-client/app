@@ -20,7 +20,25 @@ export default function SessionTypeEditModal({ sessionType, onSave, onClose, sho
   const [error, setError] = useState(null);
 
   async function handleSave() {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+  setError("Session type name is required.");
+  return;
+}
+
+if (Number(duration) <= 0) {
+  setError("Duration must be greater than 0.");
+  return;
+}
+
+if (Number(cost) < 0) {
+  setError("Cost cannot be negative.");
+  return;
+}
+
+if (Number(maxClients) < 1) {
+  setError("Client slots must be at least 1.");
+  return;
+}
     setSaving(true);
     setError(null);
     console.log("SessionType =", sessionType);
@@ -75,7 +93,7 @@ console.log("Error:", err);
         </div>
         {error && <div style={{ fontSize: 13, color: "#A32D2D", marginBottom: 14 }}>{error}</div>}
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={handleSave} disabled={saving || !name.trim()}
+          <button onClick={handleSave} disabled={saving}
             style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
             {saving ? "Saving…" : "Save changes"}
           </button>
