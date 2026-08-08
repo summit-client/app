@@ -1615,10 +1615,12 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       const baseMsg = skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked";
       showToast(promoted > 0 ? `${baseMsg} · ${promoted} client${promoted !== 1 ? "s" : ""} promoted to active` : baseMsg);
       advance("booked", "Booked");
-    } catch (err) {
-      console.error("Booking error:", err);
-      setError("Booking failed. Try again.");
-    } finally {
+   } catch {
+  showToast("Booking failed. Error code: BOOKING_FAILED");
+  setError("Booking failed. Please try again.");
+} finally {
+  setBooking(false);
+}
       setBooking(false);
     }
   }
@@ -1694,8 +1696,11 @@ Respond ONLY with valid JSON — no extra text:
       setProposedSessions([]);
       setTrail(t => [...t, "Review"]);
       setStep("review");
-    } catch (err) { console.error("Match error:", err); setError("Could not complete AI match. Check API connectivity."); }
-    finally { setLoading(false); }
+   } catch {
+  showToast("AI match failed. Error code: AI_MATCH_FAILED");
+  setError("Could not complete AI match. Please try again.");
+}
+finally { setLoading(false); }
   }
 
   const PH = (
