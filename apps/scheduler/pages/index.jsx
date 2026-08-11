@@ -1022,7 +1022,13 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
         <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 200 }} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {filtered.map(client => {
+  {clients.length === 0 && (
+    <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+      No clients yet
+    </div>
+  )}
+
+  {filtered.map(client => {
           const loc = locations?.find(l => l.id === client.location_id);
           const isExp = expandedId === client.id;
           const cAvail = (clientAvailability || []).filter(a => a.client_id === client.id);
@@ -1081,8 +1087,14 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
         </div>
         <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 200 }} />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {filtered.map(emp => {
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+  {employees.length === 0 && (
+    <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+      No employees yet
+    </div>
+  )}
+
+  {filtered.map(emp => {
           const pct = emp.booked / emp.capacity;
           const barColor = pct > 0.85 ? "#E24B4A" : pct > 0.6 ? "#EF9F27" : "#5DCAA5";
           const loc = locations?.find(l => l.id === emp.location_id);
@@ -2192,9 +2204,15 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
       </div>
 
       <div style={{ border: `0.5px solid ${COLORS.border}`, borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
-        {filtered.length === 0 && (
-          <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>No sessions match your filters</div>
-        )}
+       {bookings.length === 0 ? (
+  <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+    No sessions yet
+  </div>
+) : filtered.length === 0 ? (
+  <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+    No sessions match your filters
+  </div>
+) : null}
         {filtered.map((b, i) => {
           const client = clients.find(c => c.id === b.client_id);
           const emp = employees.find(e => e.id === b.employee_id);
