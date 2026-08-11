@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useContext, Fragment } from "react";
+import { useRouter } from "next/router";
 import { supabase } from "../lib/supabase";
 import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
@@ -2346,7 +2347,18 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
 
 export default function Scheduler() {
   const appUser = useContext(UserContext);
+  const router = useRouter();
   const [view, setView] = useState("dashboard");
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const requestedView = router.query.view;
+    const validViews = ["dashboard", "calendar", "sessions", "clients", "employees", "sessiontypes", "create", "settings"];
+    if (typeof requestedView === "string" && validViews.includes(requestedView)) {
+      setView(requestedView);
+      void router.replace("/", undefined, { shallow: true });
+    }
+  }, [router.isReady, router.query.view]);
   const [clients, setClients] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [sessionTypes, setSessionTypes] = useState([]);
