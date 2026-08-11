@@ -465,7 +465,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(roleColors[member.role] || '#6B7280')}>{member.role}</span>
         <button style={s.btnGhost} onClick={() => { setError(null); setEditingId(member.id); setEditForm({}); }}>Edit</button>
-        <button style={s.btnDelete} onClick={() => handleDelete('staff', member.id, member.name)}>✕</button>
+        <button aria-label={`Delete ${member.name}`} style={s.btnDelete} onClick={() => handleDelete('staff', member.id, member.name)}>✕</button>
       </div>
     </>
   )}
@@ -495,7 +495,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(statusColors[client.status] || '#6B7280')}>{client.status}</span>
         <button style={s.btnGhost} onClick={() => { setError(null); setEditingId(client.id); setEditForm({}); }}>Edit</button>
-        <button style={s.btnDelete} onClick={() => handleDelete('clients', client.id, client.name)}>✕</button>
+        <button aria-label={`Delete ${client.name}`} style={s.btnDelete} onClick={() => handleDelete('clients', client.id, client.name)}>✕</button>
       </div>
     </>
   )}
