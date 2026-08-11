@@ -74,7 +74,7 @@ console.log("Error:", err);
       <div style={{ background: COLORS.bg, borderRadius: 14, padding: "28px 28px 24px", width: 360, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
           <div style={{ fontSize: 17, fontWeight: 500, color: COLORS.text }}>Edit session type</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textT, cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>
+          <button aria-label="Close edit session type modal" onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textT, cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 22 }}>
           {fields.map(({ label, type, value, setter, placeholder }) => (
