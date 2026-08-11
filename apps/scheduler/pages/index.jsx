@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext } from "react";
+import { useState, useEffect, useRef, useContext, Fragment } from "react";
 import { supabase } from "../lib/supabase";
 import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
@@ -783,7 +783,7 @@ function CalendarView({ clients, employees, bookings, locations, typeColors, cal
           <div style={{ background: COLORS.bgS, borderBottom: `0.5px solid ${COLORS.border}`, padding: "8px 0" }} />
           {DAYS.filter(d => workDays.includes(d)).map(d => <div key={d} style={{ background: COLORS.bgS, borderBottom: `0.5px solid ${COLORS.border}`, borderLeft: `0.5px solid ${COLORS.border}`, padding: "8px 0", textAlign: "center", fontSize: 13, fontWeight: 500, color: COLORS.textS }}>{d}</div>)}
           {Array.from({ length: workEnd - workStart }, (_, i) => workStart + i).map(hour => (
-            <>
+            <Fragment key={hour}>
               <div key={`h-${hour}`} style={{ padding: "6px 6px 0", fontSize: 11, color: COLORS.textT, borderBottom: `0.5px solid ${COLORS.border}`, display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>{hour}:00</div>
               {DAYS.filter(d => workDays.includes(d)).map(day => {
                 const bs = getBookings(day, hour);
@@ -831,7 +831,7 @@ function CalendarView({ clients, employees, bookings, locations, typeColors, cal
                   </div>
                 );
               })}
-            </>
+            </Fragment>
           ))}
         </div>
       </div>
