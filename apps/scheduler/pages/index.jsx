@@ -734,6 +734,10 @@ function Dashboard({ clients, employees, bookings, typeColors }) {
 
 function CalendarView({ clients, employees, bookings, locations, typeColors, calendars, workDays, workStart, workEnd, refreshBookings, showToast }) {
   const [hoveredCell, setHoveredCell] = useState(null);
+  const [tooltipPlacement, setTooltipPlacement] = useState({
+  horizontal: "right",
+  vertical: "below",
+});
   const [selectedCalendarId, setSelectedCalendarId] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [cancelling, setCancelling] = useState(false);
@@ -779,7 +783,7 @@ function CalendarView({ clients, employees, bookings, locations, typeColors, cal
         </div>
       )}
       <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: `48px repeat(${workDays.length}, 1fr)`, minWidth: 650, gap: 0, border: `0.5px solid ${COLORS.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: `48px repeat(${workDays.length}, 1fr)`, minWidth: 650, gap: 0, border: `0.5px solid ${COLORS.border}`, borderRadius: 10, overflow: "visible" }}>
           <div style={{ background: COLORS.bgS, borderBottom: `0.5px solid ${COLORS.border}`, padding: "8px 0" }} />
           {DAYS.filter(d => workDays.includes(d)).map(d => <div key={d} style={{ background: COLORS.bgS, borderBottom: `0.5px solid ${COLORS.border}`, borderLeft: `0.5px solid ${COLORS.border}`, padding: "8px 0", textAlign: "center", fontSize: 13, fontWeight: 500, color: COLORS.textS }}>{d}</div>)}
           {Array.from({ length: workEnd - workStart }, (_, i) => workStart + i).map(hour => (
@@ -797,15 +801,35 @@ function CalendarView({ clients, employees, bookings, locations, typeColors, cal
                       const loc = locations?.find(l => l.id === firstEmp?.location_id);
                       const cellKey = `${day}-${hour}`;
                       return (
-                        <div onMouseEnter={() => setHoveredCell(cellKey)} onMouseLeave={() => setHoveredCell(null)}
+                      <div
+  onMouseEnter={(e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const tooltipWidth = 240;
+    const tooltipHeight = 180;
+
+    setTooltipPlacement({
+      horizontal: rect.right + tooltipWidth > window.innerWidth ? "left" : "right",
+      vertical: rect.bottom + tooltipHeight > window.innerHeight ? "above" : "below",
+    });
+
+    setHoveredCell(cellKey);
+  }}
+  onMouseLeave={() => setHoveredCell(null)}
                           onClick={() => setSelectedBooking(selectedBooking?.id === first.id ? null : first)}
                           style={{ height: "100%", borderRadius: 4, padding: "2px 6px", background: col + "22", borderLeft: `2.5px solid ${col}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                           <div>
                             <div style={{ fontSize: 12, fontWeight: 500, color: col, lineHeight: 1.3 }}>{firstClient?.name?.split(" ")[0]}</div>
                             {bs.length > 1 && <div style={{ fontSize: 11, color: COLORS.textS }}>+{bs.length - 1} more</div>}
                           </div>
-                          {hoveredCell === cellKey && (
-                            <div style={{ position: "absolute", top: 52, left: 0, zIndex: 50, minWidth: 220, background: COLORS.bg, border: `0.5px solid ${COLORS.borderS}`, borderRadius: 10, padding: "12px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
+                         {hoveredCell === cellKey && (
+  <div style={{
+    position: "absolute",
+    top: tooltipPlacement.vertical === "below" ? 52 : "auto",
+    bottom: tooltipPlacement.vertical === "above" ? 52 : "auto",
+    left: tooltipPlacement.horizontal === "right" ? 0 : "auto",
+    right: tooltipPlacement.horizontal === "left" ? 0 : "auto",
+    zIndex: 50,
+    minWidth: 220, background: COLORS.bg, border: `0.5px solid ${COLORS.borderS}`, borderRadius: 10, padding: "12px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
                               <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, marginBottom: 8 }}>{day} {hour}:00 · {first.session_date}</div>
                               <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>📍 {loc?.name || "—"}</div>
                               <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>👤 {firstEmp?.name || "—"}</div>
