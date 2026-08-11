@@ -118,6 +118,7 @@ function handleNav(id: string) {
               <button
                 onClick={() => handleNav(n.id)}
                 className={`nav-item${active ? " active" : ""}`}
+            aria-current={active ? "page" : undefined}
                 style={{ position: "relative" }}
               >
                 <span style={{
