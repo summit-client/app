@@ -189,8 +189,20 @@ async function fetchAll() {
   await fetchAll();
 }
 async function handleSave(type: 'staff' | 'clients', id: number) {
+  setError(null);
   setSaving(true);
-  await supabase.from(type).update(editForm).eq('id', id);
+
+  const { error: saveErr } = await supabase
+    .from(type)
+    .update(editForm)
+    .eq('id', id);
+
+  if (saveErr) {
+    setError('Could not save changes. Please try again.');
+    setSaving(false);
+    return;
+  }
+
   setEditingId(null);
   setEditForm({});
   showToast('Saved');
@@ -414,7 +426,11 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
         </button>
       </div>
 
-      <div style={s.tabs}>
+     {error && editingId !== null && (
+  <div style={s.errorMsg}>{error}</div>
+)}
+
+<div style={s.tabs}>
         <button style={s.tab(tab === 'staff')} onClick={() => setTab('staff')}>
           Staff ({staffList.length})
         </button>
@@ -448,7 +464,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(roleColors[member.role] || '#6B7280')}>{member.role}</span>
-        <button style={s.btnGhost} onClick={() => { setEditingId(member.id); setEditForm({}); }}>Edit</button>
+        <button style={s.btnGhost} onClick={() => { setError(null); setEditingId(member.id); setEditForm({}); }}>Edit</button>
         <button style={s.btnDelete} onClick={() => handleDelete('staff', member.id, member.name)}>✕</button>
       </div>
     </>
@@ -478,7 +494,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(statusColors[client.status] || '#6B7280')}>{client.status}</span>
-        <button style={s.btnGhost} onClick={() => { setEditingId(client.id); setEditForm({}); }}>Edit</button>
+        <button style={s.btnGhost} onClick={() => { setError(null); setEditingId(client.id); setEditForm({}); }}>Edit</button>
         <button style={s.btnDelete} onClick={() => handleDelete('clients', client.id, client.name)}>✕</button>
       </div>
     </>
