@@ -1,6 +1,6 @@
-/apps/scheduler/          @mountetnabusiness
-/apps/clinician/      @mountetnabusiness
-/apps/employee/   @mountetnabusiness
-/apps/family/    @mountetnabusiness
-/apps/teacher/    @mountetnabusiness
-/packages/                @mountetnabusiness
+/apps/scheduler/   @mountetnabusiness @Dani-Eastwood
+/apps/data/        @mountetnabusiness @Dani-Eastwood
+/apps/employee/    @mountetnabusiness @Dani-Eastwood
+/apps/client/      @mountetnabusiness @Dani-Eastwood
+/apps/teacher/     @mountetnabusiness @Dani-Eastwood
+/packages/         @mountetnabusiness @Dani-Eastwood

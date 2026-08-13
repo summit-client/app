@@ -163,6 +163,13 @@ button {
 }
 
 button:active { transform: scale(0.98); }
+button:disabled {
+  cursor: not-allowed;
+}
+
+button:disabled:active {
+  transform: none;
+}
 
 a {
   color: var(--brand-600);

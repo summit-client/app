@@ -28,7 +28,9 @@ export default function LoginPage() {
     <div style={{ maxWidth: 400, margin: "100px auto", fontFamily: "Inter, sans-serif" }}>
       <h2 style={{ marginBottom: 24 }}>Summit Scheduler</h2>
 
+      <label htmlFor="email">Email</label>
       <input
+        id="email"
         type="email"
         placeholder="Email"
         value={email}
@@ -36,14 +38,18 @@ export default function LoginPage() {
         style={{ width: "100%", padding: 10, marginBottom: 12, borderRadius: 6, border: "1px solid #ccc" }}
       />
 
-      {mode === "password" && (
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          style={{ width: "100%", padding: 10, marginBottom: 12, borderRadius: 6, border: "1px solid #ccc" }}
-        />
+                {mode === "password" && (
+        <>
+          <label htmlFor="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            style={{ width: "100%", padding: 10, marginBottom: 12, borderRadius: 6, border: "1px solid #ccc" }}
+          />
+        </>
       )}
 
       {mode === "password" ? (
@@ -70,7 +76,7 @@ export default function LoginPage() {
         </>
       )}
 
-      {message && <p style={{ marginTop: 16, color: "#666" }}>{message}</p>}
+      {message && <p role="status" aria-live="polite" style={{ marginTop: 16, color: "#666" }}>{message}</p>}
     </div>
   );
 }
