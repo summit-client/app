@@ -1,7 +1,5 @@
 import Head from "next/head";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { supabase } from "@summit/db";
 import Sidebar from "../components/Sidebar";
 import styles from "../styles/design-b.module.css";
 
@@ -33,6 +31,11 @@ type Session = {
   type: string | null;
   session_date: string;
   status: string | null;
+};
+
+type DesignBProps = {
+  familyName: string;
+  clientName: string;
 };
 
 function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
@@ -87,93 +90,30 @@ const metrics: Array<{
   { label: "Messages", value: "2", icon: "message", detail: "Unread" },
 ];
 
-export default function DesignB() {
-  const [clientName, setClientName] = useState("Ava Bennett");
-  const [clientError, setClientError] = useState("");
-  const [clientLoading, setClientLoading] = useState(true);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadClient() {
-      setClientLoading(true);
-      setSessionsLoading(true);
-      setClientError("");
-
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (!isMounted) return;
-
-      if (authError || !user) {
-        console.error("User lookup failed:", authError);
-        setClientError("No authenticated user was found.");
-        setClientLoading(false);
-        setSessionsLoading(false);
-        return;
-      }
-
-      const { data: client, error: clientQueryError } = await supabase
-        .from("clients")
-        .select("id, name")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (!isMounted) return;
-
-      if (clientQueryError) {
-        console.error("Client query failed:", clientQueryError);
-        setClientError(clientQueryError.message);
-        setClientLoading(false);
-        setSessionsLoading(false);
-        return;
-      }
-
-      if (!client) {
-        setClientError("No client is linked to this account.");
-        setClientLoading(false);
-        setSessionsLoading(false);
-        return;
-      }
-
-      setClientName(client.name);
-      setClientLoading(false);
-
-      const today = new Date().toISOString().split("T")[0];
-
-      const { data: sessionData, error: sessionError } = await supabase
-        .from("sessions")
-        .select("id, client_id, hour, minute, type, session_date, status")
-        .eq("client_id", client.id)
-        .gte("session_date", today)
-        .order("session_date", { ascending: true })
-        .order("hour", { ascending: true })
-        .order("minute", { ascending: true })
-        .limit(2);
-
-      if (!isMounted) return;
-
-      if (sessionError) {
-        console.error("Sessions query failed:", sessionError);
-        setClientError(`Sessions error: ${sessionError.message}`);
-        setSessionsLoading(false);
-        return;
-      }
-
-      setSessions(sessionData ?? []);
-      setSessionsLoading(false);
-    }
-
-    loadClient();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+export default function DesignB({
+  familyName,
+  clientName,
+}: DesignBProps) {
+  const sessions: Session[] = [
+    {
+      id: 1,
+      client_id: 0,
+      hour: 10,
+      minute: 0,
+      type: "Direct Therapy",
+      session_date: "2026-08-15",
+      status: "confirmed",
+    },
+    {
+      id: 2,
+      client_id: 0,
+      hour: 13,
+      minute: 30,
+      type: "Assessment",
+      session_date: "2026-08-18",
+      status: "scheduled",
+    },
+  ];
 
   return (
     <>
@@ -192,7 +132,7 @@ export default function DesignB() {
           <header className={styles.header}>
             <div>
               <p className={styles.eyebrow}>CLIENT PORTAL</p>
-              <h1>Good morning</h1>
+              <h1>Good morning, {familyName}</h1>
               <p className={styles.subtitle}>
                 Everything important for {clientName}&apos;s care, at a glance.
               </p>
@@ -205,26 +145,10 @@ export default function DesignB() {
               </button>
 
               <div className={styles.clientSelect}>
-                {clientLoading ? "Loading client..." : clientName}
+                {clientName}
               </div>
             </div>
           </header>
-
-          {clientError && (
-            <p
-              style={{
-                margin: "0 0 16px",
-                padding: "10px 12px",
-                color: "#991b1b",
-                background: "#fee2e2",
-                border: "1px solid #fecaca",
-                borderRadius: 10,
-                fontSize: 13,
-              }}
-            >
-              Supabase error: {clientError}
-            </p>
-          )}
 
           <section className={styles.metrics} aria-label="Dashboard summary">
             {metrics.map((metric) => (
@@ -234,11 +158,7 @@ export default function DesignB() {
                 </div>
                 <div>
                   <div className={styles.metricValue}>
-                    {metric.label === "Sessions"
-                      ? sessionsLoading
-                        ? "—"
-                        : String(sessions.length)
-                      : metric.value}
+                    {metric.label === "Sessions" ? String(sessions.length) : metric.value}
                   </div>
                   <div className={styles.metricLabel}>{metric.label}</div>
                 </div>
@@ -260,69 +180,59 @@ export default function DesignB() {
               </div>
 
               <div className={styles.sessionList}>
-                {sessionsLoading ? (
-                  <p style={{ padding: "18px 0", margin: 0 }}>
-                    Loading upcoming sessions...
-                  </p>
-                ) : sessions.length === 0 ? (
-                  <p style={{ padding: "18px 0", margin: 0 }}>
-                    No upcoming sessions found.
-                  </p>
-                ) : (
-                  sessions.map((session) => {
-                    const sessionDate = new Date(
-                      `${session.session_date}T00:00:00`
-                    );
-                    const day = String(sessionDate.getDate()).padStart(2, "0");
-                    const month = sessionDate
-                      .toLocaleString("en-US", { month: "short" })
-                      .toUpperCase();
-                    const time = formatSessionTime(
-                      session.hour,
-                      session.minute
-                    );
-                    const isVirtual =
-                      session.type?.toLowerCase().includes("virtual") ?? false;
-                    const statusLabel = isVirtual
-                      ? "Virtual"
-                      : formatStatus(session.status);
+                {sessions.map((session) => {
+                  const sessionDate = new Date(
+                    `${session.session_date}T00:00:00`
+                  );
+                  const day = String(sessionDate.getDate()).padStart(2, "0");
+                  const month = sessionDate
+                    .toLocaleString("en-US", { month: "short" })
+                    .toUpperCase();
+                  const time = formatSessionTime(
+                    session.hour,
+                    session.minute
+                  );
+                  const isVirtual =
+                    session.type?.toLowerCase().includes("virtual") ?? false;
+                  const statusLabel = isVirtual
+                    ? "Virtual"
+                    : formatStatus(session.status);
 
-                    return (
-                      <div className={styles.sessionRow} key={session.id}>
-                        <div className={styles.dateTile}>
-                          <strong>{day}</strong>
-                          <span>{month}</span>
-                        </div>
-
-                        <div className={styles.sessionMain}>
-                          <strong>{session.type || "Scheduled Session"}</strong>
-                          <div className={styles.sessionMeta}>
-                            <span>
-                              <Icon name="clock" size={15} />
-                              {time}
-                            </span>
-                            <span>
-                              <Icon
-                                name={isVirtual ? "video" : "calendar"}
-                                size={15}
-                              />
-                              {isVirtual ? "Virtual" : "Scheduled"}
-                            </span>
-                          </div>
-                          <small>Summit Client</small>
-                        </div>
-
-                        <span
-                          className={`${styles.status} ${
-                            isVirtual ? styles.virtual : styles.confirmed
-                          }`}
-                        >
-                          {statusLabel}
-                        </span>
+                  return (
+                    <div className={styles.sessionRow} key={session.id}>
+                      <div className={styles.dateTile}>
+                        <strong>{day}</strong>
+                        <span>{month}</span>
                       </div>
-                    );
-                  })
-                )}
+
+                      <div className={styles.sessionMain}>
+                        <strong>{session.type || "Scheduled Session"}</strong>
+                        <div className={styles.sessionMeta}>
+                          <span>
+                            <Icon name="clock" size={15} />
+                            {time}
+                          </span>
+                          <span>
+                            <Icon
+                              name={isVirtual ? "video" : "calendar"}
+                              size={15}
+                            />
+                            {isVirtual ? "Virtual" : "Scheduled"}
+                          </span>
+                        </div>
+                        <small>Summit Client</small>
+                      </div>
+
+                      <span
+                        className={`${styles.status} ${
+                          isVirtual ? styles.virtual : styles.confirmed
+                        }`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </article>
 

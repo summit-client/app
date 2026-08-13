@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { useState } from "react";
+import { supabase } from "@summit/db";
 import styles from "../styles/design-b.module.css";
 
 type SidebarIconName =
@@ -9,7 +11,8 @@ type SidebarIconName =
   | "message"
   | "document"
   | "consent"
-  | "settings";
+  | "settings"
+  | "logout";
 
 function SidebarIcon({
   name,
@@ -58,6 +61,13 @@ function SidebarIcon({
         <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1L7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
       </>
     ),
+    logout: (
+      <>
+        <path d="M10 17l5-5-5-5" />
+        <path d="M15 12H3" />
+        <path d="M21 19V5a2 2 0 0 0-2-2h-6" />
+      </>
+    ),
   };
 
   return (
@@ -82,7 +92,7 @@ const navItems: Array<{
   icon: SidebarIconName;
   href: string;
 }> = [
-  { label: "Dashboard", icon: "home", href: "/design-b" },
+  { label: "Dashboard", icon: "home", href: "/" },
   { label: "Appointments", icon: "calendar", href: "/appointments" },
   { label: "Progress", icon: "progress", href: "/progress" },
   { label: "Messages", icon: "message", href: "/messages" },
@@ -93,11 +103,32 @@ const navItems: Array<{
 
 export default function Sidebar() {
   const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setLoggingOut(false);
+      return;
+    }
+
+    window.location.href = "https://summitclient.io/login";
+  }
 
   return (
-    <aside className={styles.sidebar}>
+    <aside
+      className={styles.sidebar}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       <div className={styles.brand}>
         <div className={styles.brandMark}>▲</div>
+
         <div>
           <strong>Summit</strong>
           <span>CLIENT PORTAL</span>
@@ -124,6 +155,31 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      <div
+        style={{
+          marginTop: "auto",
+          paddingTop: 20,
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className={styles.navItem}
+          style={{
+            width: "100%",
+            border: "none",
+            background: "transparent",
+            cursor: loggingOut ? "not-allowed" : "pointer",
+            opacity: loggingOut ? 0.6 : 1,
+            textAlign: "left",
+          }}
+        >
+          <SidebarIcon name="logout" />
+          <span>{loggingOut ? "Logging out..." : "Log out"}</span>
+        </button>
+      </div>
     </aside>
   );
 }

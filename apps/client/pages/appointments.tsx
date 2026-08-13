@@ -1,5 +1,11 @@
+import type {
+  GetServerSideProps,
+  NextApiRequest,
+  NextApiResponse,
+} from "next";
 import { useState } from "react";
 import Sidebar from "../components/Sidebar";
+import { createClient } from "../lib/supabase-server";
 import styles from "../styles/design-b.module.css";
 
 type Session = {
@@ -213,3 +219,31 @@ export default function Appointments() {
     </div>
   );
 }
+
+export const getServerSideProps: GetServerSideProps = async ({
+  req,
+  res,
+}) => {
+  const supabase = createClient(
+    req as NextApiRequest,
+    res as NextApiResponse
+  );
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return {
+      redirect: {
+        destination: "https://summitclient.io/login",
+        permanent: false,
+      },
+    };
+  }
+
+  return {
+    props: {},
+  };
+};
