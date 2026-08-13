@@ -1,5 +1,7 @@
 import { createBrowserClient } from '@supabase/ssr'
 
+const isProduction = process.env.NODE_ENV === 'production'
+
 export const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -16,9 +18,9 @@ export const supabase = createBrowserClient(
         if (typeof document === 'undefined') return
         const isHttps = location.protocol === 'https:'
         cookies.forEach(({ name, value, options }) => {
-          const opts = { ...options, domain: '.summitclient.io', path: '/' }
+          const opts = { ...options, path: '/' }
           let str = `${name}=${value}`
-          str += `; Domain=${opts.domain}`
+          if (isProduction) str += `; Domain=.summitclient.io`
           str += `; Path=${opts.path}`
           if (opts.maxAge) str += `; Max-Age=${opts.maxAge}`
           str += `; SameSite=${opts.sameSite || 'Lax'}`
