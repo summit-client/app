@@ -1658,9 +1658,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
 } finally {
   setBooking(false);
 }
-      setBooking(false);
-    }
-  }
+}
 
   async function runMatch(type) {
     setLoading(true); setError(null);
