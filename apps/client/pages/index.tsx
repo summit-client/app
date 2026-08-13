@@ -4,12 +4,15 @@ import type {
   NextApiRequest,
   NextApiResponse,
 } from "next";
-import DesignB from "./design-b";
+import DesignB, {
+  type DashboardSession,
+} from "../components/design-b";
 import { createClient } from "../lib/supabase-server";
 
 type PageProps = {
   familyName: string;
   clientName: string;
+  sessions: DashboardSession[];
 };
 
 export default function ClientDashboard(
@@ -35,7 +38,9 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   if (userError || !user) {
     return {
       redirect: {
-        destination: "https://summitclient.io/login",
+        destination:
+          process.env.NEXT_PUBLIC_LOGIN_URL ||
+          "https://summitclient.io/login",
         permanent: false,
       },
     };
@@ -53,24 +58,40 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const metadataName =
-    typeof user.user_metadata?.full_name === "string"
-      ? user.user_metadata.full_name
-      : null;
+  const { data: sessions, error: sessionsError } = await supabase
+    .from("sessions")
+    .select(`
+      id,
+      hour,
+      minute,
+      type,
+      session_date,
+      status
+    `)
+    .order("session_date", { ascending: true })
+    .order("hour", { ascending: true })
+    .order("minute", { ascending: true });
+
+  if (sessionsError) {
+    console.error(
+      "Failed to load dashboard sessions:",
+      sessionsError.message
+    );
+  }
 
   const clientLastName = client?.name
     ? client.name.trim().split(/\s+/).pop()
     : null;
 
-  const familyName =
-    profile?.full_name ||
-    metadataName ||
-    (clientLastName ? `${clientLastName} Family` : "Family");
+  const familyName = clientLastName
+    ? `${clientLastName} Family`
+    : profile?.full_name || "Family";
 
   return {
     props: {
       familyName,
       clientName: client?.name || "Client",
+      sessions: (sessions ?? []) as DashboardSession[],
     },
   };
 };

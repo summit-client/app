@@ -1,5 +1,5 @@
 .page {
-  min-height: 100vh;
+  min-height: calc(100vh - 40px);
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
   background: #edf7f8;
@@ -8,7 +8,7 @@
 }
 
 .sidebar {
-  min-height: 100vh;
+  min-height: calc(100vh - 40px);
   padding: 22px 14px;
   background: #f9fcfd;
   border-right: 1px solid #d4e2e8;

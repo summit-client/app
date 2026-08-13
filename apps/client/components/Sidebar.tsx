@@ -14,6 +14,13 @@ type SidebarIconName =
   | "settings"
   | "logout";
 
+type NavItem = {
+  label: string;
+  icon: SidebarIconName;
+  href?: string;
+  comingSoon?: boolean;
+};
+
 function SidebarIcon({
   name,
   size = 19,
@@ -87,35 +94,36 @@ function SidebarIcon({
   );
 }
 
-const navItems: Array<{
-  label: string;
-  icon: SidebarIconName;
-  href: string;
-}> = [
+const navItems: NavItem[] = [
   { label: "Dashboard", icon: "home", href: "/" },
   { label: "Appointments", icon: "calendar", href: "/appointments" },
-  { label: "Progress", icon: "progress", href: "/progress" },
-  { label: "Messages", icon: "message", href: "/messages" },
-  { label: "Documents", icon: "document", href: "/documents" },
-  { label: "Consents", icon: "consent", href: "/consents" },
-  { label: "Settings", icon: "settings", href: "/settings" },
+  { label: "Progress", icon: "progress", comingSoon: true },
+  { label: "Messages", icon: "message", comingSoon: true },
+  { label: "Documents", icon: "document", comingSoon: true },
+  { label: "Consents", icon: "consent", comingSoon: true },
+  { label: "Settings", icon: "settings", comingSoon: true },
 ];
 
 export default function Sidebar() {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
 
   async function handleLogout() {
     setLoggingOut(true);
+    setLogoutError("");
 
     const { error } = await supabase.auth.signOut();
 
     if (error) {
+      setLogoutError("Could not log out. Please try again.");
       setLoggingOut(false);
       return;
     }
 
-    window.location.href = "https://summitclient.io/login";
+    window.location.href =
+      process.env.NEXT_PUBLIC_LOGIN_URL ||
+      "https://summitclient.io/login";
   }
 
   return (
@@ -139,6 +147,42 @@ export default function Sidebar() {
 
       <nav aria-label="Client portal">
         {navItems.map((item) => {
+          if (item.comingSoon) {
+            return (
+              <div
+                key={item.label}
+                className={styles.navItem}
+                aria-disabled="true"
+                style={{
+                  opacity: 0.45,
+                  cursor: "not-allowed",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <SidebarIcon name={item.icon} />
+                  <span>{item.label}</span>
+                </span>
+
+                <small
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Soon
+                </small>
+              </div>
+            );
+          }
+
           const active = router.pathname === item.href;
 
           return (
@@ -146,7 +190,7 @@ export default function Sidebar() {
               className={`${styles.navItem} ${
                 active ? styles.navItemActive : ""
               }`}
-              href={item.href}
+              href={item.href!}
               key={item.href}
             >
               <SidebarIcon name={item.icon} />
@@ -162,6 +206,20 @@ export default function Sidebar() {
           paddingTop: 20,
         }}
       >
+        {logoutError && (
+          <p
+            role="alert"
+            style={{
+              color: "#b42318",
+              fontSize: 12,
+              margin: "0 8px 10px",
+              lineHeight: 1.4,
+            }}
+          >
+            {logoutError}
+          </p>
+        )}
+
         <button
           type="button"
           onClick={handleLogout}
