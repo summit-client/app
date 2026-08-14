@@ -1,13 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-
-const ROLE_REDIRECTS: Record<string, string> = {
-  admin:     'https://scheduler.summitclient.io',
-  scheduler: 'https://scheduler.summitclient.io',
-  clinician: 'https://data.summitclient.io',
-  staff:     'https://employee.summitclient.io',
-  client:    'https://client.summitclient.io',
-}
+import { ROLE_REDIRECTS } from '../lib/role-redirects'
 
 export default function Login() {
   const [email, setEmail]       = useState('')

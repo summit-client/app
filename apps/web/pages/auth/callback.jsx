@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
+import { ROLE_REDIRECTS } from '../../lib/role-redirects'
 
 export default function AuthCallback() {
   const router = useRouter()
@@ -58,14 +59,9 @@ export default function AuthCallback() {
 
     const role = profile?.role
 
-    if (role === 'admin' || role === 'scheduler') {
-      window.location.href = 'https://scheduler.summitclient.io'
-    } else if (role === 'clinician') {
-      window.location.href = 'https://data.summitclient.io'
-    } else if (role === 'staff') {
-      window.location.href = 'https://employee.summitclient.io'
-    } else if (role === 'client') {
-      window.location.href = 'https://client.summitclient.io'
+    const destination = ROLE_REDIRECTS[role]
+    if (destination) {
+      window.location.href = destination
     } else {
       router.replace('/login')
     }
