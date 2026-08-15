@@ -230,6 +230,25 @@
   box-shadow: 0 8px 24px rgba(20, 60, 80, 0.05);
 }
 
+.cardBody {
+  padding: 20px 19px 22px;
+  color: #607987;
+}
+
+.cardBody strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #365468;
+  font-size: 13px;
+}
+
+.cardBody p {
+  margin: 0;
+  color: #607987;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .cardHeader {
   display: flex;
   align-items: flex-start;
