@@ -1,5 +1,4 @@
 name: CI
-
 on:
   pull_request:
     branches: [main]
@@ -8,43 +7,50 @@ jobs:
   ci:
     name: Lint, Typecheck & Build
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: 11.1.3
 
       - name: Get pnpm store directory
-        id: pnpm-cache
-        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Cache pnpm store
         uses: actions/cache@v4
         with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          path: ${{ env.STORE_PATH }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared nav
+        run: pnpm --filter ./packages/nav build
+
+      - name: Typecheck
+        run: pnpm -r --if-present run typecheck
+
       - name: Detect changed apps
         id: changes
+        shell: bash
         run: |
-          git fetch origin main --depth=1
           CHANGED=$(git diff --name-only origin/main...HEAD)
-          echo "Changed files: $CHANGED"
-
-          for app in scheduler clinician employee family web; do
+          echo "Changed files:"
+          echo "$CHANGED"
+          for app in scheduler web data client; do
             if echo "$CHANGED" | grep -q "^apps/$app/\|^packages/"; then
               echo "${app}_changed=true" >> $GITHUB_OUTPUT
             else
@@ -54,7 +60,7 @@ jobs:
 
       - name: Build scheduler
         if: steps.changes.outputs.scheduler_changed == 'true'
-        run: pnpm --filter @summit/scheduler build
+        run: pnpm --filter ./apps/scheduler build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -62,28 +68,21 @@ jobs:
 
       - name: Build web
         if: steps.changes.outputs.web_changed == 'true'
-        run: pnpm --filter @summit/web build
+        run: pnpm --filter ./apps/web build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
-      - name: Build clinician
-        if: steps.changes.outputs.clinician_changed == 'true'
-        run: pnpm --filter @summit/clinician build
+      - name: Build data
+        if: steps.changes.outputs.data_changed == 'true'
+        run: pnpm --filter ./apps/data build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
-      - name: Build employee
-        if: steps.changes.outputs.employee_changed == 'true'
-        run: pnpm --filter @summit/employee build
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-
-      - name: Build family
-        if: steps.changes.outputs.family_changed == 'true'
-        run: pnpm --filter @summit/family build
+      - name: Build client
+        if: steps.changes.outputs.client_changed == 'true'
+        run: pnpm --filter ./apps/client build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}

@@ -26,7 +26,8 @@ export default function Sidebar({ view, onNavigate, appUser, bookings, calendars
 
 function handleNav(id: string) {
   if (isAdminPage) {
-    router.push("/");
+    if (id === "settings") return;
+    router.push({ pathname: "/", query: { view: id } });
   } else {
     onNavigate(id);
   }
@@ -118,6 +119,7 @@ function handleNav(id: string) {
               <button
                 onClick={() => handleNav(n.id)}
                 className={`nav-item${active ? " active" : ""}`}
+            aria-current={active ? "page" : undefined}
                 style={{ position: "relative" }}
               >
                 <span style={{

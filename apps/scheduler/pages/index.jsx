@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useContext } from "react";
+import { useState, useEffect, useRef, useContext, Fragment } from "react";
+import { useRouter } from "next/router";
 import { supabase } from "../lib/supabase";
 import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
@@ -734,6 +735,10 @@ function Dashboard({ clients, employees, bookings, typeColors }) {
 
 function CalendarView({ clients, employees, bookings, locations, typeColors, calendars, workDays, workStart, workEnd, refreshBookings, showToast }) {
   const [hoveredCell, setHoveredCell] = useState(null);
+  const [tooltipPlacement, setTooltipPlacement] = useState({
+  horizontal: "right",
+  vertical: "below",
+});
   const [selectedCalendarId, setSelectedCalendarId] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [cancelling, setCancelling] = useState(false);
@@ -779,11 +784,11 @@ function CalendarView({ clients, employees, bookings, locations, typeColors, cal
         </div>
       )}
       <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: `48px repeat(${workDays.length}, 1fr)`, minWidth: 650, gap: 0, border: `0.5px solid ${COLORS.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: `48px repeat(${workDays.length}, 1fr)`, minWidth: 650, gap: 0, border: `0.5px solid ${COLORS.border}`, borderRadius: 10, overflow: "visible" }}>
           <div style={{ background: COLORS.bgS, borderBottom: `0.5px solid ${COLORS.border}`, padding: "8px 0" }} />
           {DAYS.filter(d => workDays.includes(d)).map(d => <div key={d} style={{ background: COLORS.bgS, borderBottom: `0.5px solid ${COLORS.border}`, borderLeft: `0.5px solid ${COLORS.border}`, padding: "8px 0", textAlign: "center", fontSize: 13, fontWeight: 500, color: COLORS.textS }}>{d}</div>)}
           {Array.from({ length: workEnd - workStart }, (_, i) => workStart + i).map(hour => (
-            <>
+            <Fragment key={hour}>
               <div key={`h-${hour}`} style={{ padding: "6px 6px 0", fontSize: 11, color: COLORS.textT, borderBottom: `0.5px solid ${COLORS.border}`, display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>{hour}:00</div>
               {DAYS.filter(d => workDays.includes(d)).map(day => {
                 const bs = getBookings(day, hour);
@@ -797,15 +802,35 @@ function CalendarView({ clients, employees, bookings, locations, typeColors, cal
                       const loc = locations?.find(l => l.id === firstEmp?.location_id);
                       const cellKey = `${day}-${hour}`;
                       return (
-                        <div onMouseEnter={() => setHoveredCell(cellKey)} onMouseLeave={() => setHoveredCell(null)}
+                      <div
+  onMouseEnter={(e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const tooltipWidth = 240;
+    const tooltipHeight = 180;
+
+    setTooltipPlacement({
+      horizontal: rect.right + tooltipWidth > window.innerWidth ? "left" : "right",
+      vertical: rect.bottom + tooltipHeight > window.innerHeight ? "above" : "below",
+    });
+
+    setHoveredCell(cellKey);
+  }}
+  onMouseLeave={() => setHoveredCell(null)}
                           onClick={() => setSelectedBooking(selectedBooking?.id === first.id ? null : first)}
                           style={{ height: "100%", borderRadius: 4, padding: "2px 6px", background: col + "22", borderLeft: `2.5px solid ${col}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                           <div>
                             <div style={{ fontSize: 12, fontWeight: 500, color: col, lineHeight: 1.3 }}>{firstClient?.name?.split(" ")[0]}</div>
                             {bs.length > 1 && <div style={{ fontSize: 11, color: COLORS.textS }}>+{bs.length - 1} more</div>}
                           </div>
-                          {hoveredCell === cellKey && (
-                            <div style={{ position: "absolute", top: 52, left: 0, zIndex: 50, minWidth: 220, background: COLORS.bg, border: `0.5px solid ${COLORS.borderS}`, borderRadius: 10, padding: "12px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
+                         {hoveredCell === cellKey && (
+  <div style={{
+    position: "absolute",
+    top: tooltipPlacement.vertical === "below" ? 52 : "auto",
+    bottom: tooltipPlacement.vertical === "above" ? 52 : "auto",
+    left: tooltipPlacement.horizontal === "right" ? 0 : "auto",
+    right: tooltipPlacement.horizontal === "left" ? 0 : "auto",
+    zIndex: 50,
+    minWidth: 220, background: COLORS.bg, border: `0.5px solid ${COLORS.borderS}`, borderRadius: 10, padding: "12px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
                               <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, marginBottom: 8 }}>{day} {hour}:00 · {first.session_date}</div>
                               <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>📍 {loc?.name || "—"}</div>
                               <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>👤 {firstEmp?.name || "—"}</div>
@@ -831,7 +856,7 @@ function CalendarView({ clients, employees, bookings, locations, typeColors, cal
                   </div>
                 );
               })}
-            </>
+            </Fragment>
           ))}
         </div>
       </div>
@@ -1022,7 +1047,13 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
         <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 200 }} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {filtered.map(client => {
+  {clients.length === 0 && (
+    <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+      No clients yet
+    </div>
+  )}
+
+  {filtered.map(client => {
           const loc = locations?.find(l => l.id === client.location_id);
           const isExp = expandedId === client.id;
           const cAvail = (clientAvailability || []).filter(a => a.client_id === client.id);
@@ -1081,8 +1112,14 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
         </div>
         <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 200 }} />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {filtered.map(emp => {
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+  {employees.length === 0 && (
+    <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+      No employees yet
+    </div>
+  )}
+
+  {filtered.map(emp => {
           const pct = emp.booked / emp.capacity;
           const barColor = pct > 0.85 ? "#E24B4A" : pct > 0.6 ? "#EF9F27" : "#5DCAA5";
           const loc = locations?.find(l => l.id === emp.location_id);
@@ -1615,13 +1652,13 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       const baseMsg = skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked";
       showToast(promoted > 0 ? `${baseMsg} · ${promoted} client${promoted !== 1 ? "s" : ""} promoted to active` : baseMsg);
       advance("booked", "Booked");
-    } catch (err) {
-      console.error("Booking error:", err);
-      setError("Booking failed. Try again.");
-    } finally {
-      setBooking(false);
-    }
-  }
+   } catch {
+  showToast("Booking failed. Error code: BOOKING_FAILED");
+  setError("Booking failed. Please try again.");
+} finally {
+  setBooking(false);
+}
+}
 
   async function runMatch(type) {
     setLoading(true); setError(null);
@@ -1694,8 +1731,11 @@ Respond ONLY with valid JSON — no extra text:
       setProposedSessions([]);
       setTrail(t => [...t, "Review"]);
       setStep("review");
-    } catch (err) { console.error("Match error:", err); setError("Could not complete AI match. Check API connectivity."); }
-    finally { setLoading(false); }
+   } catch {
+  showToast("AI match failed. Error code: AI_MATCH_FAILED");
+  setError("Could not complete AI match. Please try again.");
+}
+finally { setLoading(false); }
   }
 
   const PH = (
@@ -2192,9 +2232,15 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
       </div>
 
       <div style={{ border: `0.5px solid ${COLORS.border}`, borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
-        {filtered.length === 0 && (
-          <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>No sessions match your filters</div>
-        )}
+       {bookings.length === 0 ? (
+  <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+    No sessions yet
+  </div>
+) : filtered.length === 0 ? (
+  <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+    No sessions match your filters
+  </div>
+) : null}
         {filtered.map((b, i) => {
           const client = clients.find(c => c.id === b.client_id);
           const emp = employees.find(e => e.id === b.employee_id);
@@ -2299,7 +2345,18 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
 
 export default function Scheduler() {
   const appUser = useContext(UserContext);
+  const router = useRouter();
   const [view, setView] = useState("dashboard");
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const requestedView = router.query.view;
+    const validViews = ["dashboard", "calendar", "sessions", "clients", "employees", "sessiontypes", "create", "settings"];
+    if (typeof requestedView === "string" && validViews.includes(requestedView)) {
+      setView(requestedView);
+      void router.replace("/", undefined, { shallow: true });
+    }
+  }, [router.isReady, router.query.view]);
   const [clients, setClients] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [sessionTypes, setSessionTypes] = useState([]);

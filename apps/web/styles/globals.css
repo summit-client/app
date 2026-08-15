@@ -43,6 +43,13 @@ a {
 
 /* ── Landing page additions ── */
 
+html { scroll-behavior: smooth; }
+
+/* Offset anchor jumps so the fixed nav doesn't cover section headings */
+#features, #how, #testimonials, #trial {
+  scroll-margin-top: 80px;
+}
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(22px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -53,18 +60,62 @@ a {
 .an4 { animation: fadeUp .6s .40s ease both; }
 .an5 { animation: fadeUp .6s .55s ease both; }
 
+/* Scroll-triggered reveal — toggled via IntersectionObserver in index.tsx */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity .7s ease, transform .7s ease;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* Gradient text — needs nested <span>, can't be inline */
 .grad-text {
-  background: linear-gradient(135deg, #3BBDB4 0%, #2B8EC4 55%, #1A4D6E 100%);
+  background: linear-gradient(135deg, #28B4A6 0%, #21798A 55%, #1A3F5C 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 /* Hover states */
-.nav-link-item:hover  { color: #1A4D6E !important; }
+.nav-link-item:hover  { color: #1A3F5C !important; }
 .feature-card         { transition: transform .2s, box-shadow .2s; }
-.feature-card:hover   { transform: translateY(-5px); box-shadow: 0 16px 44px rgba(26,77,110,.1) !important; }
+.feature-card:hover   { transform: translateY(-5px); box-shadow: 0 16px 44px rgba(26,63,92,.1) !important; }
+
+.btn-primary { transition: transform .2s ease, box-shadow .2s ease; }
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(26,63,92,.32);
+}
+
+/* Gentle float on the hero's "sessions booked" badge */
+@keyframes floatBadge {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+.float-badge { animation: floatBadge 4.5s ease-in-out infinite; }
+
+/* Infinite logo marquee — inspired by the auto-scrolling industry strip
+   on summitintegrations.com */
+.marquee {
+  width: 100%;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee-track {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  animation: marqueeScroll 32s linear infinite;
+}
+.marquee:hover .marquee-track { animation-play-state: paused; }
+@keyframes marqueeScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
 
 /* Pseudo-elements */
 .hero-bg::after {
@@ -72,17 +123,32 @@ a {
   position: absolute;
   top: -80px; right: -80px;
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(59,189,180,.09) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(40,180,166,.09) 0%, transparent 70%);
   pointer-events: none;
+  animation: floatBlob 9s ease-in-out infinite;
+}
+@keyframes floatBlob {
+  0%, 100% { transform: translate(0,0) scale(1); }
+  50%      { transform: translate(-24px,28px) scale(1.06); }
 }
 .testi-bg::before {
   content: '"';
   position: absolute;
-  font-family: 'Sora', sans-serif;
+  font-family: 'Bricolage Grotesque', sans-serif;
   font-size: 18rem;
   font-weight: 800;
   color: rgba(255,255,255,.025);
   top: -40px; left: 30px;
   line-height: 1;
   pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .an1, .an2, .an3, .an4, .an5, .reveal, .float-badge, .hero-bg::after, .marquee-track {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
