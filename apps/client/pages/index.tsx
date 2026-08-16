@@ -1,200 +1,97 @@
-const sidebarItems = [
-  'Dashboard',
-  'Appointments',
-  'Progress',
-  'Messages',
-  'Documents',
-  'Consents',
-  'Settings',
-]
+import type {
+  GetServerSideProps,
+  InferGetServerSidePropsType,
+  NextApiRequest,
+  NextApiResponse,
+} from "next";
+import DesignB, {
+  type DashboardSession,
+} from "../components/design-b";
+import { createClient } from "../lib/supabase-server";
 
-export default function ClientDashboard() {
-  return (
-    <div className="client-layout">
-      <aside className="sidebar">
-        <div className="sidebar-logo">
-          <div className="logo-icon">▲</div>
+type PageProps = {
+  familyName: string;
+  clientName: string;
+  sessions: DashboardSession[];
+};
 
-          <div>
-            <strong>Summit</strong>
-            <span>CLIENT PORTAL</span>
-          </div>
-        </div>
-
-        <p className="sidebar-label">FAMILY PORTAL</p>
-
-        <nav className="sidebar-nav">
-          {sidebarItems.map(item => (
-            <button
-              key={item}
-              className={item === 'Dashboard' ? 'sidebar-link active' : 'sidebar-link'}
-            >
-              {item}
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      <main className="dashboard-content">
-        <header className="dashboard-header">
-          <div>
-            <h1>Dashboard</h1>
-            <p>Welcome back. Here is an overview of your child’s care.</p>
-          </div>
-
-          <select className="child-selector" defaultValue="Ava">
-            <option value="Ava">Ava Bennett</option>
-            <option value="Noah">Noah Bennett</option>
-          </select>
-        </header>
-
-        <section className="summary-grid">
-          <article className="summary-card">
-            <span>Upcoming sessions</span>
-            <strong>3</strong>
-            <p>scheduled this week</p>
-          </article>
-
-          <article className="summary-card">
-            <span>Skills mastered</span>
-            <strong>8</strong>
-            <p>2 added this month</p>
-          </article>
-
-          <article className="summary-card">
-            <span>Active goals</span>
-            <strong>5</strong>
-            <p>1 close to completion</p>
-          </article>
-
-          <article className="summary-card">
-            <span>Unread messages</span>
-            <strong>2</strong>
-            <p>from your care team</p>
-          </article>
-        </section>
-
-        <section className="dashboard-grid">
-          <article className="dashboard-card upcoming-card">
-            <div className="card-heading">
-              <div>
-                <h2>Upcoming Sessions</h2>
-                <p>Your next scheduled appointments</p>
-              </div>
-
-              <button className="text-button">View all</button>
-            </div>
-
-            <div className="session-item">
-              <div className="date-box">
-                <strong>18</strong>
-                <span>JUL</span>
-              </div>
-
-              <div className="session-details">
-                <strong>Direct Therapy</strong>
-                <span>10:00 AM – 10:50 AM</span>
-                <span>Rachel Kim · Summit Main Clinic</span>
-              </div>
-
-              <span className="status-pill">Confirmed</span>
-            </div>
-
-            <div className="session-item">
-              <div className="date-box">
-                <strong>21</strong>
-                <span>JUL</span>
-              </div>
-
-              <div className="session-details">
-                <strong>Assessment</strong>
-                <span>1:30 PM – 2:20 PM</span>
-                <span>Dr. Sarah Chen · Virtual</span>
-              </div>
-
-              <span className="status-pill virtual">Virtual</span>
-            </div>
-          </article>
-
-          <article className="dashboard-card">
-            <div className="card-heading">
-              <div>
-                <h2>Progress Snapshot</h2>
-                <p>This month’s progress</p>
-              </div>
-            </div>
-
-            <div className="progress-row">
-              <div>
-                <strong>Communication</strong>
-                <span>75% complete</span>
-              </div>
-              <div className="progress-track">
-                <div className="progress-fill communication" />
-              </div>
-            </div>
-
-            <div className="progress-row">
-              <div>
-                <strong>Daily Living</strong>
-                <span>60% complete</span>
-              </div>
-              <div className="progress-track">
-                <div className="progress-fill living" />
-              </div>
-            </div>
-
-            <div className="progress-row">
-              <div>
-                <strong>Social Skills</strong>
-                <span>45% complete</span>
-              </div>
-              <div className="progress-track">
-                <div className="progress-fill social" />
-              </div>
-            </div>
-          </article>
-
-          <article className="dashboard-card">
-            <div className="card-heading">
-              <div>
-                <h2>Announcements</h2>
-                <p>Updates from your clinic</p>
-              </div>
-            </div>
-
-            <div className="announcement">
-              <strong>Summer schedule update</strong>
-              <p>Clinic hours will change beginning July 22.</p>
-              <span>Posted 2 days ago</span>
-            </div>
-
-            <div className="announcement">
-              <strong>New progress report available</strong>
-              <p>Your latest monthly report is ready to review.</p>
-              <span>Posted 5 days ago</span>
-            </div>
-          </article>
-
-          <article className="dashboard-card">
-            <div className="card-heading">
-              <div>
-                <h2>Sensory Check-In</h2>
-                <p>How is your child feeling today?</p>
-              </div>
-            </div>
-
-            <div className="sensory-options">
-              <button>Calm</button>
-              <button>Happy</button>
-              <button>Tired</button>
-              <button>Overwhelmed</button>
-            </div>
-
-            <button className="primary-button">Submit Check-In</button>
-          </article>
-        </section>
-      </main>
-    </div>
-  )
+export default function ClientDashboard(
+  props: InferGetServerSidePropsType<typeof getServerSideProps>
+) {
+  return <DesignB {...props} />;
 }
+
+export const getServerSideProps: GetServerSideProps<PageProps> = async ({
+  req,
+  res,
+}) => {
+  const supabase = createClient(
+    req as NextApiRequest,
+    res as NextApiResponse
+  );
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return {
+      redirect: {
+        destination:
+          process.env.NEXT_PUBLIC_LOGIN_URL ||
+          "https://summitclient.io/login",
+        permanent: false,
+      },
+    };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const { data: client } = await supabase
+    .from("clients")
+    .select("name")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const { data: sessions, error: sessionsError } = await supabase
+    .from("sessions")
+    .select(`
+      id,
+      hour,
+      minute,
+      type,
+      session_date,
+      status
+    `)
+    .order("session_date", { ascending: true })
+    .order("hour", { ascending: true })
+    .order("minute", { ascending: true });
+
+  if (sessionsError) {
+    console.error(
+      "Failed to load dashboard sessions:",
+      sessionsError.message
+    );
+  }
+
+  const clientLastName = client?.name
+    ? client.name.trim().split(/\s+/).pop()
+    : null;
+
+  const familyName = clientLastName
+    ? `${clientLastName} Family`
+    : profile?.full_name || "Family";
+
+  return {
+    props: {
+      familyName,
+      clientName: client?.name || "Client",
+      sessions: (sessions ?? []) as DashboardSession[],
+    },
+  };
+};
