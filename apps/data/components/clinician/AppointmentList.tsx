@@ -22,6 +22,10 @@ function formatTimeRange(startsAt: string, endsAt: string): string {
   return `${start} - ${end}`
 }
 
+function formatDate(startsAt: string): string {
+  return new Date(startsAt).toLocaleDateString()
+}
+
 export function AppointmentList({ appointments, loading, error, title = 'Appointments' }: AppointmentListProps) {
   if (loading) {
     return (
@@ -58,6 +62,7 @@ export function AppointmentList({ appointments, loading, error, title = 'Appoint
           <thead>
             <tr>
               <th>Client</th>
+              <th>Date</th>
               <th>Time</th>
               <th>Clinician</th>
               <th>Status</th>
@@ -71,6 +76,7 @@ export function AppointmentList({ appointments, loading, error, title = 'Appoint
                   <div>{appointment.clientName}</div>
                   <div className={styles.subtle}>{appointment.location ?? 'Room not set'}</div>
                 </td>
+                <td>{formatDate(appointment.startsAt)}</td>
                 <td>{formatTimeRange(appointment.startsAt, appointment.endsAt)}</td>
                 <td>{appointment.clinicianName}</td>
                 <td>
