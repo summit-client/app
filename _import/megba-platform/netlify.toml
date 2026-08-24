@@ -1,0 +1,18 @@
+# Netlify deployment config for the full MEGBA Next.js app.
+# Connect this repo in Netlify → it auto-detects Next.js and installs the
+# official runtime (@netlify/plugin-nextjs), which handles SSR, image
+# optimization, API routes, and the sitemap/OG routes.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  # Node version for the build image.
+  NODE_VERSION = "20"
+
+# Set NEXT_PUBLIC_SITE_URL (and DATABASE_URL etc. for Phase 2+) in
+# Netlify → Site settings → Environment variables. See .env.example.

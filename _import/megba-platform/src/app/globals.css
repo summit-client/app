@@ -1,0 +1,219 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * MEGBA theme tokens.
+ * Palette: deep forest green, warm ivory, charcoal, soft stone, muted sage,
+ * ember-orange accent. Values are HSL channels so Tailwind can wrap them in
+ * hsl(var(--token) / <alpha>).
+ */
+@layer base {
+  :root {
+    --forest: 148 34% 18%;
+    --forest-50: 150 30% 96%;
+    --forest-100: 148 26% 90%;
+    --forest-600: 148 32% 24%;
+    --forest-700: 149 36% 20%;
+    --forest-900: 150 40% 11%;
+
+    --sage: 108 12% 66%;
+    --sage-100: 108 18% 92%;
+    --sage-300: 108 14% 80%;
+    --sage-500: 108 12% 60%;
+
+    /* Clean neutrals (no beige). White surfaces + cool-neutral greys. */
+    --ivory: 0 0% 100%;
+    --stone: 210 12% 90%;
+    --stone-200: 210 14% 93%;
+    --stone-300: 210 10% 85%;
+    --charcoal: 210 8% 14%;
+
+    --ember: 16 62% 48%;
+    --ember-600: 16 66% 42%;
+
+    /* Maple red - sampled from the MEGBA logo summit star. */
+    --maple: 356 72% 46%;
+    --maple-600: 356 74% 39%;
+
+    /* Semantic mapping */
+    --background: 0 0% 100%;
+    --foreground: var(--charcoal);
+    --card: 0 0% 100%;
+    --card-foreground: var(--charcoal);
+    --muted: 210 20% 97%;
+    --muted-foreground: 210 6% 40%;
+    --border: 210 16% 90%;
+    --ring: var(--forest);
+    --primary: var(--forest);
+    --primary-foreground: 0 0% 100%;
+    --accent: var(--ember);
+    --accent-foreground: 0 0% 100%;
+
+    --radius: 0.5rem;
+    --reading-width: 68ch;
+    --font-scale: 1;
+  }
+
+  /* High-contrast accessibility mode (toggled from the a11y panel). */
+  [data-contrast="high"] {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 6%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 20%;
+    --border: 0 0% 30%;
+    --primary: 149 60% 14%;
+    --accent: 14 80% 36%;
+    --card: 0 0% 100%;
+    --ring: 0 0% 6%;
+    --maple: 356 80% 34%;
+    --maple-600: 356 82% 28%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    font-size: calc(100% * var(--font-scale));
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Respect reduced-motion at the platform level. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  [data-motion="reduced"] *,
+  [data-motion="reduced"] *::before,
+  [data-motion="reduced"] *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.012em;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+  h1 {
+    line-height: 1.08;
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-eyebrow text-ember-600;
+  }
+
+  .prose-reading {
+    @apply mx-auto max-w-reading text-[1.05rem] leading-relaxed text-foreground/90;
+  }
+  .prose-reading p {
+    @apply mb-5;
+  }
+  .prose-reading h2 {
+    @apply mb-3 mt-10 text-2xl font-semibold;
+  }
+  .prose-reading h3 {
+    @apply mb-2 mt-8 text-xl font-semibold;
+  }
+  .prose-reading ul {
+    @apply mb-5 list-disc space-y-2 pl-6;
+  }
+  .prose-reading a {
+    @apply font-medium text-forest underline underline-offset-4;
+  }
+
+  /* Decorative topographic motif removed, calmer, operational surfaces. */
+  .topo-lines {
+    background-image: none;
+  }
+}
+
+@layer utilities {
+  .container-tight {
+    @apply container max-w-[960px];
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Google Translate widget, hide its injected chrome, keep our layout intact. */
+.goog-te-banner-frame.skiptranslate,
+.goog-te-gadget-icon {
+  display: none !important;
+}
+body {
+  top: 0 !important;
+  position: static !important;
+}
+#goog-gt-tt,
+.goog-te-balloon-frame {
+  display: none !important;
+}
+.goog-text-highlight {
+  background: none !important;
+  box-shadow: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Hub motion, teaching / feedback micro-interactions only (per the Mount Etna
+   animation standard: explain → demonstrate → reinforce, never decoration).
+   Scoped to `prefers-reduced-motion: no-preference`, so with reduced motion the
+   elements simply render in their final state, no information is lost.
+   --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes hubRise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes hubRing {
+    from { stroke-dashoffset: var(--hub-circ, 0); }
+  }
+  @keyframes hubBar {
+    from { transform: scaleX(0); }
+  }
+  @keyframes hubPop {
+    0% { transform: scale(0.4); opacity: 0; }
+    60% { transform: scale(1.12); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .hub-rise { animation: hubRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .hub-stagger > * { animation: hubRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .hub-stagger > *:nth-child(2) { animation-delay: 0.06s; }
+  .hub-stagger > *:nth-child(3) { animation-delay: 0.12s; }
+  .hub-stagger > *:nth-child(4) { animation-delay: 0.18s; }
+  .hub-stagger > *:nth-child(5) { animation-delay: 0.24s; }
+  /* Progress ring fills from empty → current, teaching "how far along am I". */
+  .hub-ring-prog { animation: hubRing 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  /* Progress bar advances from 0 → current. */
+  .hub-bar-fill { transform-origin: left center; animation: hubBar 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  /* A completed item's check draws itself in, quiet confirmation, no confetti. */
+  .hub-pop { animation: hubPop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+}

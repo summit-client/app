@@ -1,0 +1,1150 @@
+// ---------------------------------------------------------------------------
+// MEGBA — Prisma schema
+//
+// Conventions:
+//   * cuid() primary keys
+//   * createdAt / updatedAt timestamps on every model
+//   * deletedAt for soft deletion where appropriate
+//   * organizationId for organization-level data separation (multi-tenant)
+//
+// This schema models the full platform (Phases 2–4). Phase 1 ships the schema
+// and seed; run `prisma migrate dev` against a Postgres database to apply it.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ------------------------------- Enums -------------------------------------
+
+enum RoleName {
+  SUPER_ADMIN
+  ORG_ADMIN
+  SCHOOL_ADMIN
+  CONSULTANT
+  SUPERVISOR
+  INSTRUCTOR
+  LEARNER
+  PARENT
+  STUDENT
+}
+
+enum PartnerType {
+  SCHOOL
+  UNIVERSITY
+  NONPROFIT
+  GOVERNMENT
+  CLINIC
+  COMMUNITY
+  MICROSCHOOL
+}
+
+enum RegionStatus {
+  CURRENT
+  REMOTE
+  OUTREACH
+  FUTURE
+}
+
+enum EnrolmentStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum ContentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LeadKind {
+  CONTACT
+  CONSULTATION
+  DEMO
+  SCHOOL_PROPOSAL
+  PARTNER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  WON
+  LOST
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum ConsultationStatus {
+  REQUESTED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+// ------------------------------ Identity -----------------------------------
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  passwordHash   String?
+  image          String?
+  locale         String    @default("en")
+  emailVerified  DateTime?
+  isActive       Boolean   @default(true)
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  roles          UserRole[]
+  learnerProfile LearnerProfile?
+  staffProfile   StaffProfile?
+  consultantProfile ConsultantProfile?
+
+  enrolments     Enrolment[]
+  attempts       AssessmentAttempt[]
+  certificates   Certificate[]
+  notifications  Notification[]
+  supportTickets SupportTicket[]
+  consentRecords ConsentRecord[]
+  auditLogs      AuditLog[]
+  authoredNotes  ConsultationNote[]
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  @@index([organizationId])
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        RoleName     @unique
+  description String?
+  permissions RolePermission[]
+  users       UserRole[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique // e.g. "course:publish"
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime @default(now())
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+// --------------------------- Organizations ---------------------------------
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  type        PartnerType @default(SCHOOL)
+  subdomain   String?  @unique
+  branding    Json?    // { logoUrl, colors, ... } for white-label
+  locales     String[] @default(["en"])
+  isWhiteLabel Boolean @default(false)
+
+  users       User[]
+  schools     School[]
+  licences    Licence[]
+  subscriptions Subscription[]
+  invoices    Invoice[]
+  partner     Partner?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model School {
+  id             String   @id @default(cuid())
+  name           String
+  country        String
+  city           String?
+  curriculum     String?
+  studentCount   Int?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  campuses       Campus[]
+  cohorts        Cohort[]
+  consultations  Consultation[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  @@index([organizationId])
+}
+
+model Campus {
+  id        String   @id @default(cuid())
+  name      String
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+model Partner {
+  id             String      @id @default(cuid())
+  organizationId String      @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type           PartnerType
+  regionStatus   RegionStatus @default(REMOTE)
+  region         String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+// ----------------------------- Profiles ------------------------------------
+
+model LearnerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guardianEmail String?
+  isMinor   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StaffProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobTitle     String?
+  credentials  Credential[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ConsultantProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio          String?
+  serviceHours Float    @default(0)
+  consultations Consultation[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ---------------------------- Credentials ----------------------------------
+
+model Credential {
+  id            String   @id @default(cuid())
+  abbr          String   // BCBA, RBA, IBA, IBT
+  name          String
+  description   String?
+  staffProfileId String?
+  staffProfile  StaffProfile? @relation(fields: [staffProfileId], references: [id])
+  verifications CredentialVerification[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model CredentialVerification {
+  id           String    @id @default(cuid())
+  credentialId String
+  credential   Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  verifiedBy   String?
+  verifiedOn   DateTime
+  expiresOn    DateTime?
+  evidenceUrl  String?
+  createdAt    DateTime  @default(now())
+
+  @@index([credentialId])
+}
+
+// ------------------------------ Learning -----------------------------------
+
+model Language {
+  code       String   @id // BCP-47
+  label      String
+  nativeLabel String
+  dir        String   @default("ltr")
+  enabled    Boolean  @default(true)
+  reviewed   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Course {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  title          String
+  summary        String
+  academy        String   // student | parent | teacher | clinical | digital
+  level          String
+  topic          String
+  delivery       String
+  durationHours  Float
+  price          Int?     // null = institutional/free (see priceType)
+  priceType      String   @default("paid") // free | paid | institutional
+  certificate    Boolean  @default(false)
+  ceu            Boolean  @default(false)
+  verifiedStatus Boolean  @default(false) // gates certificate/CEU display
+  institutionalOnly Boolean @default(false)
+  status         ContentStatus @default(DRAFT)
+
+  modules        CourseModule[]
+  enrolments     Enrolment[]
+  translations   Translation[]
+  languages      CourseLanguage[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+}
+
+model CourseLanguage {
+  courseId String
+  langCode String
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  language Language @relation(fields: [langCode], references: [code], onDelete: Cascade)
+
+  @@id([courseId, langCode])
+}
+
+model CourseModule {
+  id        String   @id @default(cuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title     String
+  order     Int      @default(0)
+  lessons   Lesson[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId])
+}
+
+model Lesson {
+  id         String   @id @default(cuid())
+  moduleId   String
+  module     CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title      String
+  order      Int      @default(0)
+  contentMd  String?
+  videoUrl   String?
+  transcript String?
+  assessment Assessment?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([moduleId])
+}
+
+model Translation {
+  id        String   @id @default(cuid())
+  langCode  String
+  namespace String   // e.g. "course", "ui"
+  key       String
+  value     String
+  reviewed  Boolean  @default(false)
+  courseId  String?
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([langCode, namespace, key, courseId])
+}
+
+model Cohort {
+  id         String   @id @default(cuid())
+  name       String
+  schoolId   String?
+  school     School?  @relation(fields: [schoolId], references: [id])
+  startDate  DateTime?
+  endDate    DateTime?
+  enrolments Enrolment[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Enrolment {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  cohortId  String?
+  status    EnrolmentStatus @default(ACTIVE)
+  progress  Int      @default(0) // 0–100
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  cohort    Cohort?  @relation(fields: [cohortId], references: [id])
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, courseId])
+  @@index([courseId])
+}
+
+model Assessment {
+  id        String   @id @default(cuid())
+  lessonId  String   @unique
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  title     String
+  passScore Int      @default(80)
+  questions Json     // [{ prompt, options, answerIndex }]
+  attempts  AssessmentAttempt[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AssessmentAttempt {
+  id           String   @id @default(cuid())
+  assessmentId String
+  userId       String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score        Int
+  passed       Boolean
+  createdAt    DateTime @default(now())
+
+  @@index([assessmentId])
+  @@index([userId])
+}
+
+model Certificate {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseSlug String
+  title      String
+  issuedOn   DateTime @default(now())
+  serial     String   @unique @default(cuid())
+  ceu        Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+// --------------------------- Consultation ----------------------------------
+
+model Consultation {
+  id           String   @id @default(cuid())
+  schoolId     String?
+  consultantId String?
+  school       School?  @relation(fields: [schoolId], references: [id])
+  consultant   ConsultantProfile? @relation(fields: [consultantId], references: [id])
+  status       ConsultationStatus @default(REQUESTED)
+  scheduledAt  DateTime?
+  hours        Float    @default(0)
+  notes        ConsultationNote[]
+  appointments Appointment[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ConsultationNote {
+  id             String   @id @default(cuid())
+  consultationId String
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  authorId       String?
+  author         User?    @relation(fields: [authorId], references: [id])
+  body           String
+  createdAt      DateTime @default(now())
+
+  @@index([consultationId])
+}
+
+model Appointment {
+  id             String   @id @default(cuid())
+  consultationId String?
+  consultation   Consultation? @relation(fields: [consultationId], references: [id])
+  title          String
+  startsAt       DateTime
+  endsAt         DateTime
+  timezone       String   @default("UTC")
+  createdAt      DateTime @default(now())
+}
+
+// ------------------------------ Resources ----------------------------------
+
+model Resource {
+  id        String   @id @default(cuid())
+  title     String
+  type      String   // Guide | Checklist | Template | Visual support
+  audience  String?
+  fileKey   String?  // storage abstraction key
+  languages String[] @default(["en"])
+  status    ContentStatus @default(DRAFT)
+  downloads Download[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Download {
+  id         String   @id @default(cuid())
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  userId     String?
+  createdAt  DateTime @default(now())
+
+  @@index([resourceId])
+}
+
+// ------------------------- Commerce & licensing ----------------------------
+
+model Subscription {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan           String
+  seats          Int      @default(0)
+  status         String   @default("active")
+  stripeId       String?
+  renewsAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model Licence {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  kind           String   // annual | per-school | per-seat | per-family
+  seatsAllocated Int      @default(0)
+  seatsUsed      Int      @default(0)
+  startsOn       DateTime @default(now())
+  endsOn         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  number         String   @unique
+  amountCents    Int
+  currency       String   @default("CAD")
+  status         InvoiceStatus @default(DRAFT)
+  dueOn          DateTime?
+  payments       Payment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amountCents Int
+  provider    String   @default("stripe")
+  providerRef String?
+  paidAt      DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+// ----------------------------- Content/CMS ---------------------------------
+
+model Event {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  type      String   // Webinar | Workshop | Info session
+  summary   String?
+  startsAt  DateTime
+  timezone  String   @default("UTC")
+  languages String[] @default(["en"])
+  status    ContentStatus @default(DRAFT)
+  webinar   Webinar?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Webinar {
+  id       String @id @default(cuid())
+  eventId  String @unique
+  event    Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  joinUrl  String?
+  recordingUrl String?
+  capacity Int?
+}
+
+model Article {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  excerpt   String
+  body      String
+  category  String
+  author    String
+  status    ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CaseStudy {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  region    String
+  audience  String
+  challenge String
+  approach  String
+  outcome   String
+  status    ContentStatus @default(DRAFT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Testimonial {
+  id        String   @id @default(cuid())
+  quote     String
+  name      String
+  role      String?
+  org       String?
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ------------------------- Leads & operations ------------------------------
+
+model Lead {
+  id         String   @id @default(cuid())
+  kind       LeadKind
+  status     LeadStatus @default(NEW)
+  name       String?
+  email      String?
+  organization String?
+  country    String?
+  source     String?
+  utmSource  String?
+  utmMedium  String?
+  utmCampaign String?
+  payload    Json
+  submission FormSubmission?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([kind])
+  @@index([status])
+}
+
+model FormSubmission {
+  id        String   @id @default(cuid())
+  form      String   // contact | consultation | demo | school-proposal
+  leadId    String?  @unique
+  lead      Lead?    @relation(fields: [leadId], references: [id])
+  data      Json
+  ipHash    String?
+  createdAt DateTime @default(now())
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  subject   String
+  body      String
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// -------------------------- Governance/audit -------------------------------
+
+model ConsentRecord {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  scope     String   // cookies | guardian | terms | data-processing
+  granted   Boolean
+  version   String?
+  ipHash    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity])
+  @@index([actorId])
+}
+
+// ===========================================================================
+// MOUNT ETNA EMPLOYEE HUB — Beta 1
+//
+// Self-contained set of models for the internal employee portal (onboarding,
+// training, professional development, certificates, reporting). Prefixed `Hub`
+// and mapped to `hub_*` tables so they never collide with the marketing schema
+// above. Every employee is an individual user even though Beta 1 authenticates
+// with a shared access password held in an env var (never in the DB).
+// ===========================================================================
+
+enum HubRole {
+  EMPLOYEE
+  ADMIN
+}
+
+enum HubUserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum HubTaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  AWAITING_SIGNOFF
+  NOT_APPLICABLE
+}
+
+enum HubDeadlineBucket {
+  WEEK_1
+  WEEK_2
+  WITHIN_14_DAYS
+  WITHIN_30_DAYS
+  CUSTOM
+}
+
+enum HubVscStatus {
+  NOT_SUBMITTED
+  APPLIED
+  PENDING
+  CLEARED
+  REQUIRES_FOLLOWUP
+}
+
+enum HubTaskCategory {
+  HR_COMPLIANCE
+  SYSTEMS_TOOLS
+  ORIENTATION_POLICY
+  CLINICAL_LEARNING
+  PRACTICE_PREP
+  OBSERVATION
+  TEAM_PARTICIPATION
+  PRACTICE_FACILITATION
+  READINESS
+}
+
+enum HubCourseKind {
+  COMPLIANCE
+  CLINICAL
+  SYSTEM
+}
+
+enum HubVerifyStatus {
+  UNVERIFIED
+  VERIFIED
+}
+
+enum HubDocCategory {
+  HANDBOOK
+  POLICY
+  TRAINING_RESOURCE
+  CERTIFICATE
+  ONBOARDING_REPORT
+  FORM
+}
+
+/// One account per employee. The beta shared password lives in an env var, not
+/// here; `passwordHash` is reserved for future individual credentials.
+model HubUser {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  role           HubRole       @default(EMPLOYEE)
+  status         HubUserStatus @default(ACTIVE)
+  passwordHash   String? // reserved for post-beta individual credentials
+  lastActivityAt DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  profile       HubEmployeeProfile?
+  taskProgress  HubTaskProgress[]
+  trainings     HubEmployeeTraining[]
+  pdRecords     HubPdRecord[]
+  certificates  HubCertificate[]
+  documents     HubDocument[]
+  sessions      HubAuthSession[]
+  learning      HubLearningSession[]
+  timeOff       HubTimeOffRequest[]
+
+  @@index([role])
+  @@map("hub_users")
+}
+
+/// Configurable primary locations (not hard-coded in the UI).
+model HubLocation {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  active   Boolean @default(true)
+  order    Int     @default(0)
+  profiles HubEmployeeProfile[]
+
+  @@map("hub_locations")
+}
+
+model HubEmployeeProfile {
+  id                 String       @id @default(cuid())
+  userId             String       @unique
+  user               HubUser      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employeeNumber     String       @unique // e.g. MOU-2026-0001
+  firstName          String
+  lastName           String
+  jobTitle           String?
+  locationId         String?
+  location           HubLocation? @relation(fields: [locationId], references: [id])
+  supervisorName     String?
+  supervisorUserId   String? // scalar ref (no relation) to keep the schema light
+  startDate          DateTime?
+  photoUrl           String?
+  onboardingStartedAt DateTime?
+  vscStatus          HubVscStatus @default(NOT_SUBMITTED)
+  vscUpdatedAt       DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@map("hub_employee_profiles")
+}
+
+/// A versioned onboarding template. Beta 1 ships one active template.
+model HubOnboardingTemplate {
+  id        String              @id @default(cuid())
+  name      String
+  version   Int                 @default(1)
+  active    Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  tasks     HubOnboardingTask[]
+
+  @@map("hub_onboarding_templates")
+}
+
+model HubOnboardingTask {
+  id                        String            @id @default(cuid())
+  templateId                String
+  template                  HubOnboardingTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  key                       String // stable slug, unique within a template
+  week                      Int // 1 or 2
+  section                   String // e.g. "Paperwork, payroll and compliance"
+  category                  HubTaskCategory
+  title                     String
+  description               String?
+  required                  Boolean           @default(true)
+  supervisorSignoffRequired Boolean           @default(false)
+  evidenceRequired          Boolean           @default(false)
+  trainingUrl               String?
+  courseKey                 String? // links to a HubTrainingCourse.key when this is a training item
+  deadlineBucket            HubDeadlineBucket @default(WITHIN_14_DAYS)
+  customDueOffsetDays       Int?
+  trainingHours             Decimal?          @db.Decimal(5, 2) // PD credit when completed
+  order                     Int               @default(0)
+  progress                  HubTaskProgress[]
+
+  @@unique([templateId, key])
+  @@index([templateId, week])
+  @@map("hub_onboarding_tasks")
+}
+
+model HubTaskProgress {
+  id                 String            @id @default(cuid())
+  employeeUserId     String
+  employee           HubUser           @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  taskId             String
+  task               HubOnboardingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  status             HubTaskStatus     @default(NOT_STARTED)
+  applicable         Boolean           @default(true)
+  dueDate            DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  employeeConfirmedAt DateTime?
+  supervisorSignedById String? // scalar ref to HubUser (admin/supervisor)
+  supervisorSignedAt DateTime?
+  notes              String?
+  evidenceUrl        String?
+  timeSpentMinutes   Int               @default(0)
+  updatedAt          DateTime          @updatedAt
+
+  @@unique([employeeUserId, taskId])
+  @@index([employeeUserId, status])
+  @@map("hub_employee_task_progress")
+}
+
+/// Catalog of trainings (compliance + clinical + systems). `parentCourseId`
+/// groups modules under a parent when needed (keeps modules in one table).
+model HubTrainingCourse {
+  id             String                @id @default(cuid())
+  key            String                @unique
+  title          String
+  provider       String?
+  kind           HubCourseKind
+  category       String? // free-form grouping label
+  externalUrl    String?
+  defaultHours   Decimal?              @db.Decimal(5, 2)
+  deadlineBucket HubDeadlineBucket     @default(WITHIN_30_DAYS)
+  parentCourseId String?
+  order          Int                   @default(0)
+  active         Boolean               @default(true)
+  enrolments     HubEmployeeTraining[]
+
+  @@map("hub_training_courses")
+}
+
+model HubEmployeeTraining {
+  id               String            @id @default(cuid())
+  employeeUserId   String
+  employee         HubUser           @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  courseId         String
+  course           HubTrainingCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  status           HubTaskStatus     @default(NOT_STARTED)
+  dueDate          DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  attestation      Boolean           @default(false)
+  certificateUrl   String?
+  timeSpentMinutes Int               @default(0)
+  timeSource       String? // "manual" | "auto" — label captured time honestly
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([employeeUserId, courseId])
+  @@index([employeeUserId, status])
+  @@map("hub_employee_training")
+}
+
+/// Permanent professional-development record (internal, MEGBA, or external).
+model HubPdRecord {
+  id             String          @id @default(cuid())
+  employeeUserId String
+  employee       HubUser         @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  title          String
+  provider       String?
+  category       String?
+  source         String? // INTERNAL | MEGBA | EXTERNAL | CONFERENCE | WORKSHOP | WEBINAR | SUPERVISION | ...
+  date           DateTime?
+  hours          Decimal         @default(0) @db.Decimal(6, 2)
+  instructor     String?
+  description    String?
+  certificateUrl String?
+  expiryDate     DateTime?
+  notes          String?
+  verified       Boolean         @default(false)
+  verifiedById   String?
+  verifiedAt     DateTime?
+  verifyStatus   HubVerifyStatus @default(UNVERIFIED)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([employeeUserId])
+  @@map("hub_pd_records")
+}
+
+/// Structured MEGBA certificate of performance (rendered to PDF on demand).
+model HubCertificate {
+  id            String          @id @default(cuid())
+  certNumber    String          @unique // e.g. MEGBA-2026-000142
+  employeeUserId String
+  employee      HubUser         @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  title         String
+  competency    String?
+  issuedDate    DateTime        @default(now())
+  instructor    String?
+  trainingHours Decimal?        @db.Decimal(5, 2)
+  expiryDate    DateTime?
+  verifyStatus  HubVerifyStatus @default(VERIFIED)
+  verifyCode    String? // reserved for future QR verification
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([employeeUserId])
+  @@map("hub_certificates")
+}
+
+model HubDocument {
+  id             String         @id @default(cuid())
+  title          String
+  category       HubDocCategory
+  description    String?
+  url            String? // link or asset path
+  external       Boolean        @default(false)
+  ownerUserId    String? // null = shared org-wide document
+  owner          HubUser?       @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+
+  @@index([category])
+  @@map("hub_documents")
+}
+
+/// Immutable log of sign-offs (audit-friendly).
+model HubSignoff {
+  id             String   @id @default(cuid())
+  employeeUserId String
+  subjectKind    String // TASK | COMPETENCY | READINESS | CERTIFICATE | VSC | TRAINING
+  subjectRef     String // id/key of the subject
+  supervisorUserId String
+  decision       String // APPROVED | RETURNED
+  note           String?
+  signedAt       DateTime @default(now())
+
+  @@index([employeeUserId])
+  @@map("hub_supervisor_signoffs")
+}
+
+model HubLearningSession {
+  id             String    @id @default(cuid())
+  employeeUserId String
+  employee       HubUser   @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  startedAt      DateTime  @default(now())
+  lastActivityAt DateTime  @default(now())
+  endedAt        DateTime?
+  capturedMinutes Int      @default(0)
+  source         String? // "auto" | "manual"
+
+  @@index([employeeUserId])
+  @@map("hub_learning_sessions")
+}
+
+/// DB-backed session so beta logins are revocable and resumable across devices.
+model HubAuthSession {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique // sha-256 of the opaque cookie token
+  userId     String
+  user       HubUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  userAgent  String?
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@map("hub_auth_sessions")
+}
+
+/// Login attempts for rate limiting (DB-backed so it survives serverless).
+model HubLoginAttempt {
+  id        String   @id @default(cuid())
+  keyHash   String // hash of ip+email
+  success   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([keyHash, createdAt])
+  @@map("hub_login_attempts")
+}
+
+enum HubTimeOffType {
+  VACATION
+  SICK // sick or mental-health day
+}
+
+enum HubTimeOffStatus {
+  REQUESTED
+  APPROVED
+  DENIED
+  CANCELLED
+}
+
+/// Time-off requests (vacation and sick/mental-health). Balances are computed
+/// from approved requests within the employee's anniversary-based entitlement
+/// year (see src/lib/hub/entitlements.ts).
+model HubTimeOffRequest {
+  id             String           @id @default(cuid())
+  employeeUserId String
+  employee       HubUser          @relation(fields: [employeeUserId], references: [id], onDelete: Cascade)
+  type           HubTimeOffType
+  startDate      DateTime
+  endDate        DateTime
+  days           Decimal          @default(1) @db.Decimal(4, 1)
+  reason         String?
+  status         HubTimeOffStatus @default(REQUESTED)
+  submittedAt    DateTime         @default(now())
+  decidedById    String?
+  decidedAt      DateTime?
+  note           String?
+  notified       Boolean          @default(false) // office emailed
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([employeeUserId, status])
+  @@map("hub_time_off_requests")
+}
+
+/// HR/training audit events, designed for future auditability.
+model HubAuditEvent {
+  id             String   @id @default(cuid())
+  actorUserId    String? // who performed it (null = system)
+  employeeUserId String? // subject employee
+  action         String // e.g. "training.completed", "vsc.status_changed", "certificate.issued"
+  detail         Json?
+  verifierUserId String?
+  createdAt      DateTime @default(now())
+
+  @@index([employeeUserId])
+  @@index([action])
+  @@map("hub_audit_events")
+}
