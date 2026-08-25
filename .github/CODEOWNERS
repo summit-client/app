@@ -1,6 +1,2 @@
-/apps/scheduler/   @mountetnabusiness @Dani-Eastwood
-/apps/data/        @mountetnabusiness @Dani-Eastwood
-/apps/employee/    @mountetnabusiness @Dani-Eastwood
-/apps/client/      @mountetnabusiness @Dani-Eastwood
-/apps/teacher/     @mountetnabusiness @Dani-Eastwood
-/packages/         @mountetnabusiness @Dani-Eastwood
+*                  @mountetnabusiness
+/.github/          @mountetnabusiness
