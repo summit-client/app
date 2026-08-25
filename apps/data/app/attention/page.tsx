@@ -100,7 +100,7 @@ function AttentionCard({ item }: { item: AttentionItem }) {
           <button className="btn ghost" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
             {open ? "Hide evidence" : "Why am I seeing this?"}
           </button>
-          <Link href={`/clients/${item.clientId}`} className="btn secondary" style={{ textDecoration: "none" }}>
+          <Link href={`/clients/${item.clientId}/supervision`} className="btn secondary" style={{ textDecoration: "none" }}>
             Review case
           </Link>
         </div>

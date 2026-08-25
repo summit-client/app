@@ -57,6 +57,8 @@ export interface GoalEvidence {
   caregiverReports: string[];             // verbatim-adjacent, always labelled caregiver_report
 
   treatmentIntegrityPct: number | null;
+  notesAnalyzed: number;
+  goalBankNextOptions: string[];          // approved "next" relations (organization Goal Bank)
 
   consistency: NoteDataConsistency;
 
@@ -176,7 +178,7 @@ export interface AIRequestAudit {
   clinicId: string | null;
   requestingUserId: string | null;
   clientId: number | null;
-  feature: "note_themes" | "progress_report" | "treatment_planning" | "decision_tree" | "clinical_query";
+  feature: "note_themes" | "progress_report" | "treatment_planning" | "decision_tree" | "clinical_query" | "supervision_brief" | "case_review";
   provider: string;
   model: string;
   promptTemplateVersion: string;

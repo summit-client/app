@@ -33,6 +33,9 @@ export default function ClientPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <a href={`/clients/${clientId}/supervision`} className="btn secondary" style={{ textDecoration: "none" }}>
+            Supervision
+          </a>
           <a href={`/clients/${clientId}/report`} className="btn secondary" style={{ textDecoration: "none" }}>
             Progress report
           </a>

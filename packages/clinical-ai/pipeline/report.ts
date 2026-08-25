@@ -186,6 +186,8 @@ export async function buildEvidencePacket(
       documentedBarriers: (themes?.documentedBarriers ?? []).map((t) => t.theme),
       caregiverReports: (themes?.caregiverReports ?? []).map((t) => t.theme),
       treatmentIntegrityPct: integrityPct(f.integrityChecks),
+      notesAnalyzed: data.notes.filter((n) => n.programIds.includes(f.programId)).length,
+      goalBankNextOptions: f.goalBankNextOptions,
       consistency: noteDataConsistency(f, themes),
       sourceReferences: sources,
     };

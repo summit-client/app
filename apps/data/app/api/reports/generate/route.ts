@@ -3,9 +3,8 @@ import { createServerClient } from "@supabase/ssr";
 import {
   buildEvidencePacket, ClinicalAIUnavailableError, MockProvider, PROMPT_TEMPLATE_VERSION,
   readConfig, resolveProvider, runReportPipeline,
-  type EvidenceRetriever, type ReportGenerationOptions, type RetrievedClinicalData,
+  type EvidenceRetriever, type ReportGenerationOptions,
 } from "@summit/clinical-ai";
-import type { ProgramFacts } from "@summit/analytics";
 
 /**
  * POST /api/reports/generate — the evidence-first pipeline, server-side.
@@ -42,7 +41,7 @@ export async function POST(request: NextRequest) {
     userId = user.id; clinicId = profile.clinic_id ?? null;
   }
 
-  const retriever: EvidenceRetriever = IS_PREVIEW ? previewRetriever() : liveRetriever(sb!);
+  const retriever: EvidenceRetriever = IS_PREVIEW ? previewRetriever() : (await import("@/lib/server/retriever")).liveRetriever(sb!);
   const input = { clientId: body.clientId, startDate: body.startDate, endDate: body.endDate };
 
   try {
@@ -85,76 +84,6 @@ function previewRetriever(): EvidenceRetriever {
     async retrieve({ clientId }) {
       const { getPreviewRetrieval } = await import("@/lib/preview-report");
       return getPreviewRetrieval(clientId);
-    },
-  };
-}
-
-function liveRetriever(sb: ReturnType<typeof serverClient>): EvidenceRetriever {
-  return {
-    async retrieve({ clientId, startDate, endDate }) {
-      const inPeriod = (col: string) => ({ gte: `${col}.gte.${startDate}`, lte: `${col}.lte.${endDate}` });
-      const [client, programs, records, notes, incidents, mods, decisions, cg, integrity] = await Promise.all([
-        sb.from("clients").select("id,name").eq("id", clientId).single(),
-        sb.from("programs").select("*, program_steps(*)").eq("client_id", clientId).neq("status", "archived"),
-        sb.from("session_records").select("id, program_id, started_at, summary_pct, summary_count").eq("client_id", clientId)
-          .gte("started_at", startDate).lte("started_at", `${endDate}T23:59:59`).not("ended_at", "is", null).order("started_at"),
-        sb.from("session_notes").select("id, session_id, created_at, body").eq("client_id", clientId)
-          .gte("created_at", startDate).lte("created_at", `${endDate}T23:59:59`),
-        sb.from("behaviour_incidents").select("id, occurred_at, suspected_function").eq("client_id", clientId)
-          .gte("occurred_at", startDate).lte("occurred_at", `${endDate}T23:59:59`),
-        sb.from("treatment_modifications").select("id, program_id, modified_at, kind, rationale, outcome")
-          .gte("modified_at", startDate).lte("modified_at", `${endDate}T23:59:59`),
-        sb.from("clinical_decisions").select("id, decided_at, pattern, decision").eq("client_id", clientId)
-          .gte("decided_at", startDate).lte("decided_at", `${endDate}T23:59:59`),
-        sb.from("caregiver_goals").select("status, priority").eq("client_id", clientId),
-        sb.from("integrity_checks").select("program_id, steps_correct, steps_total, observed_at")
-          .gte("observed_at", startDate).lte("observed_at", `${endDate}T23:59:59`),
-      ]);
-      void inPeriod;
-      const recs = records.data ?? [];
-      const facts: ProgramFacts[] = ((programs.data ?? []) as Record<string, unknown>[]).map((p) => ({
-        programId: p.id as string, clientId,
-        clientName: (client.data?.name as string) ?? `Client ${clientId}`,
-        goalName: p.name as string, domain: (p.domain as string) ?? null,
-        targetDirection: (p.target_direction as "increase" | "decrease") ?? "increase",
-        masteryPct: (p.mastery_pct as number) ?? 80, masteryConsecutive: (p.mastery_consecutive as number) ?? 3,
-        series: recs.filter((r) => r.program_id === p.id).map((r) => ({
-          date: String(r.started_at).slice(0, 10),
-          pct: r.summary_pct != null ? Number(r.summary_pct) : null,
-          count: r.summary_count != null ? Number(r.summary_count) : null,
-          opportunities: r.summary_count != null ? Number(r.summary_count) : 10,
-        })),
-        phaseChanges: (mods.data ?? []).filter((m) => m.program_id === p.id)
-          .map((m) => ({ date: String(m.modified_at).slice(0, 10), label: `${m.kind}: ${m.rationale}` })),
-        integrityChecks: (integrity.data ?? []).filter((x) => x.program_id === p.id)
-          .map((x) => ({ stepsCorrect: x.steps_correct as number, stepsTotal: x.steps_total as number, date: String(x.observed_at).slice(0, 10) })),
-        noteThemes: [], caregiverGoalsOpenDays: null,
-        masteredAt: p.status === "mastered" ? String(p.updated_at ?? "").slice(0, 10) || null : null,
-        hasNextGoalProgrammed: true, goalBankNextOptions: [],
-      }));
-      const noteRows = (notes.data ?? []).map((n) => {
-        const body = n.body as { summary?: string; perProgram?: { programName: string; narrative: string }[] } | null;
-        return {
-          id: n.id as string, date: String(n.created_at).slice(0, 10),
-          excerpts: [body?.summary ?? "", ...(body?.perProgram ?? []).map((x) => x.narrative)].filter(Boolean),
-          programIds: facts.filter((f) => (body?.perProgram ?? []).some((x) => x.programName === f.goalName)).map((f) => f.programId),
-        };
-      });
-      const cgRows = cg.data ?? [];
-      return {
-        client: { id: clientId, displayName: (client.data?.name as string) ?? `Client ${clientId}` },
-        clinicId: null,
-        facts,
-        notes: noteRows,
-        incidents: (incidents.data ?? []).map((i) => ({ id: i.id as string, date: String(i.occurred_at).slice(0, 10), suspectedFunction: (i.suspected_function as string) ?? null })),
-        clinicalEvents: (decisions.data ?? []).map((d) => ({ date: String(d.decided_at).slice(0, 10), kind: "clinical_decision", description: `${d.pattern}: ${d.decision}`, sourceId: d.id as string })),
-        caregiverGoals: {
-          open: cgRows.filter((x) => x.status === "open").length,
-          addressed: cgRows.filter((x) => x.status === "addressed").length,
-          reports: cgRows.map((x) => x.priority as string),
-        },
-        sessionsHeld: new Set(recs.map((r) => r.id)).size,
-      } satisfies RetrievedClinicalData;
     },
   };
 }

@@ -86,6 +86,7 @@ Everything ─ logged to → clinical_audit_events
 | Goal Bank + provenance | `0002` + seeds; surfaced in attention/planning | schema + seed |
 | Supervisor query engine | structured filters now; NL→filter translation is the LLM's only job later | filters built |
 | Evidence-first reporting (10-step pipeline) | `packages/clinical-ai` (providers, packet, consistency, validation) + `apps/data` report workspace + migration 0003 | built |
+| Supervision Brief + Case Review | `packages/clinical-ai/pipeline/case-review` (deterministic) + `apps/data` supervision workspace | built |
 | Organizational learning loop (de-identified) | aggregate views over goal_bank usage | later |
 
 ## The one job the LLM gets
