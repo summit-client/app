@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
 export type UserRole = "admin" | "scheduler" | "staff" | "client";
@@ -10,7 +11,7 @@ export interface AppUser {
   full_name?: string;
 }
 
-/** Reject rather than hang forever if an auth or data call never settles. */
+/** Reject rather than hang forever if a call never settles. */
 function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     p as Promise<T>,
@@ -27,15 +28,8 @@ export function useUser() {
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
+    const applySession = async (session: Session | null) => {
       try {
-        const { data: { session } } = await withTimeout(
-          supabase.auth.getSession(),
-          8000,
-          "supabase.auth.getSession"
-        );
-        if (cancelled) return;
-
         if (!session) {
           setUser(null);
           return;
@@ -51,17 +45,43 @@ export function useUser() {
         if (error) console.error("[useUser] profile lookup failed", error);
         setUser(profile ? (profile as AppUser) : null);
       } catch (err) {
-        // Never leave the app stuck behind the _app.tsx loading gate.
-        console.error("[useUser] auth load failed", err);
+        console.error("[useUser] profile load failed", err);
         if (!cancelled) setUser(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
 
-    load();
+    // Initial read. Safe to call getSession here -- we are not inside an auth
+    // callback, so the auth lock is not already held by our own caller.
+    (async () => {
+      try {
+        const { data: { session } } = await withTimeout(
+          supabase.auth.getSession(),
+          8000,
+          "supabase.auth.getSession"
+        );
+        if (!cancelled) await applySession(session);
+      } catch (err) {
+        console.error("[useUser] initial auth load failed", err);
+        if (!cancelled) {
+          setUser(null);
+          setLoading(false);
+        }
+      }
+    })();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(() => load());
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Never call supabase.auth.* synchronously in here. This callback is
+      // invoked while gotrue holds the auth lock, so a nested getSession()
+      // waits on a lock its own caller owns -- a self-deadlock. That was the
+      // cause of the permanent "Loading..." hang. Use the session we are
+      // handed, and defer any further supabase work off the callback stack.
+      setTimeout(() => {
+        if (!cancelled) applySession(session);
+      }, 0);
+    });
+
     return () => {
       cancelled = true;
       listener.subscription.unsubscribe();
