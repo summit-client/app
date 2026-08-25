@@ -1,6 +1,10 @@
 {
   "name": "@summit/design",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "private": true,
   "main": "./index.ts",
-  "private": true
+  "exports": {
+    ".": "./index.ts",
+    "./tokens.css": "./tokens.css"
+  }
 }
