@@ -93,7 +93,14 @@ export default function ClinicalDocPage() {
         <h2 className="section-title" style={{ margin: 0 }}>{template.name}</h2>
         <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <span className={`pill ${statusPill}`}>{doc.status}</span>
-          <PdfExport title={template.name} subtitle={`${client.name} · status: ${doc.status}`}>
+          <PdfExport
+            title={template.name}
+            subtitle={`${client.name} · status: ${doc.status}`}
+            authors={[
+              doc.writtenBy ? `${doc.writtenBy} (author)` : "",
+              doc.proofedBy ? `${doc.proofedBy} (proofed)` : "",
+            ]}
+          >
             {template.sections.map((s) => <PrintSection key={s.id} heading={s.title} text={valueFor(s)} />)}
             <PrintSection heading="Sign-off" text={`Written by: ${doc.writtenBy || "—"}\nProofed by: ${doc.proofedBy || "—"}\nStatus: ${doc.status}${doc.updatedAt ? ` (${doc.updatedAt.slice(0, 10)})` : ""}`} />
           </PdfExport>

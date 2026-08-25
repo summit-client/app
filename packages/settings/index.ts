@@ -95,7 +95,7 @@ const sel = (...vals: string[]) => vals.map((v) => ({ value: v, label: v }));
 
 export const SETTINGS: SettingDef[] = [
   /* General */
-  { key: "org.name", label: "Organization name", section: "general", scope: "org", type: "text", default: "Summit Behaviour Services", keywords: ["practice", "name"] },
+  { key: "org.name", label: "Organization name", section: "general", scope: "org", type: "text", default: "Mount Etna Child & Family Services", keywords: ["practice", "name"] },
   { key: "org.legalName", label: "Legal business name", section: "general", scope: "org", type: "text", default: "" },
   { key: "org.email", label: "Business email", section: "general", scope: "org", type: "text", default: "" },
   { key: "org.phone", label: "Business phone", section: "general", scope: "org", type: "text", default: "" },
