@@ -1,21 +1,14 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import "@summit/design/tokens.css";
 import "./app.css";
 import { themeInitScript } from "@summit/design";
 import { ThemeControls } from "@/components/theme-controls";
+import { PortalNav, SettingsEffects } from "@/components/portal-chrome";
 
 export const metadata: Metadata = {
   title: "Summit Clinician",
   description: "Session data collection, programs and supervision for Summit clinics.",
 };
-
-const NAV = [
-  { href: "/", label: "Today" },
-  { href: "/caseload", label: "My Caseload" },
-  { href: "/attention", label: "Attention" },
-  { href: "/review", label: "Review Queue" },
-];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -30,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <SettingsEffects />
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
@@ -38,13 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Summit <b>Clinician</b>
               </span>
             </div>
-            <nav aria-label="Portal">
-              {NAV.map((n) => (
-                <Link key={n.href} href={n.href} className="nav-item">
-                  {n.label}
-                </Link>
-              ))}
-            </nav>
+            <PortalNav />
             <div className="sidebar-foot">
               {process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" ? <span className="pill warn">Preview data</span> : null}
             </div>

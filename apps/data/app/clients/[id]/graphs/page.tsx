@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { eventsForSession, getNote, getPrograms, runSessionsFor, summariesFor } from "@/lib/data";
+import { getSetting } from "@summit/settings";
 import { MODE_LABEL, type Program, type RunSession, type SessionProgramSummary } from "@/lib/types";
 
 /**
@@ -84,7 +85,7 @@ export default function GraphsPage() {
                 <Chart
                   points={pts}
                   isPercent={p.mode !== "frequency"}
-                  masteryPct={p.mode !== "frequency" ? p.masteryPct : null}
+                  masteryPct={p.mode !== "frequency" && getSetting("graphs.masteryLine") === true ? p.masteryPct : null}
                   onSelect={(pt) => setSelected({ program: p, point: pt })}
                   selectedDate={selected?.program.id === p.id ? selected.point.date : null}
                 />
@@ -129,9 +130,15 @@ function Chart({ points, isPercent, masteryPct, onSelect, selectedDate }: {
             onClick={() => onSelect(p)}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(p); } }}
             style={{ cursor: "pointer" }}>
-            <circle cx={x(i)} cy={y(p.value)} r={selectedDate === p.date ? 7 : 5}
-              className={`graph-dot ${p.session ? "backed" : ""} ${selectedDate === p.date ? "sel" : ""}`} />
-            <text x={x(i)} y={y(p.value) - 10} textAnchor="middle" className="graph-val">{p.value}{isPercent ? "%" : ""}</text>
+            {getSetting("a11y.colorBlindGraphs") === true && p.session ? (
+              <rect x={x(i) - 5} y={y(p.value) - 5} width={10} height={10} className="graph-dot backed" />
+            ) : (
+              <circle cx={x(i)} cy={y(p.value)} r={selectedDate === p.date ? 7 : 5}
+                className={`graph-dot ${p.session ? "backed" : ""} ${selectedDate === p.date ? "sel" : ""}`} />
+            )}
+            {getSetting("graphs.pointValues") === true ? (
+              <text x={x(i)} y={y(p.value) - 10} textAnchor="middle" className="graph-val">{p.value}{isPercent ? "%" : ""}</text>
+            ) : null}
           </g>
         ))}
       </svg>

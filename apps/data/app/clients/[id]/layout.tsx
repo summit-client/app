@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { getClients, getPrograms, openSessionFor, runSessionsFor } from "@/lib/data";
+import { useTerm } from "@/components/portal-chrome";
 import type { ClientRow, Program } from "@/lib/types";
 
 /**
@@ -13,24 +14,30 @@ import type { ClientRow, Program } from "@/lib/types";
  * session already bound to this client; the clinician never re-selects them.
  */
 
-const TABS = [
-  { seg: "", label: "Overview" },
-  { seg: "run", label: "Run Session" },
-  { seg: "programs", label: "Programs" },
-  { seg: "goals", label: "Goals" },
-  { seg: "graphs", label: "Graphs" },
-  { seg: "sessions", label: "Sessions" },
-  { seg: "planning", label: "Treatment Plan" },
-  { seg: "assessments", label: "Assessments" },
-  { seg: "documents", label: "Documents" },
-  { seg: "timeline", label: "Timeline" },
-  { seg: "supervision", label: "Case Review" },
-  { seg: "report", label: "Report" },
-];
+/** Tab labels resolve through the central terminology settings. */
+function useTabs() {
+  const t = useTerm();
+  const s = (name: string) => (t(name).endsWith("s") ? t(name) : `${t(name)}s`);
+  return [
+    { seg: "", label: "Overview" },
+    { seg: "run", label: `Run ${t("session")}` },
+    { seg: "programs", label: s("program") },
+    { seg: "goals", label: s("goal") },
+    { seg: "graphs", label: "Graphs" },
+    { seg: "sessions", label: s("session") },
+    { seg: "planning", label: "Treatment Plan" },
+    { seg: "assessments", label: "Assessments" },
+    { seg: "documents", label: "Documents" },
+    { seg: "timeline", label: "Timeline" },
+    { seg: "supervision", label: "Case Review" },
+    { seg: "report", label: "Report" },
+  ];
+}
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const params = useParams<{ id: string }>();
   const pathname = usePathname();
+  const TABS = useTabs();
   const clientId = Number(params.id);
   const [client, setClient] = React.useState<ClientRow | null>(null);
   const [programs, setPrograms] = React.useState<Program[]>([]);

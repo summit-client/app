@@ -11,6 +11,7 @@ import {
 import {
   AbcPanel, DttPanel, DurationPanel, FrequencyPanel, IntervalPanel, NetPanel, TaskAnalysisPanel, YniPanel,
 } from "@/components/modes";
+import { getSetting } from "@summit/settings";
 import { masteryCheck, trendArrow } from "@/lib/mastery";
 import {
   MODE_LABEL, PROMPT_ORDER,
@@ -57,8 +58,9 @@ export default function RunSessionPage() {
 function PlanStage({ client, programs, session, lastDone, onChange }: {
   client: ClientRow; programs: Program[]; session?: RunSession; lastDone?: RunSession; onChange: () => void;
 }) {
-  const [duration, setDuration] = React.useState(session?.plannedDurationMin ?? 120);
-  const [location, setLocation] = React.useState(session?.location ?? "Clinic");
+  // Defaults flow from the central settings service (org default, user override).
+  const [duration, setDuration] = React.useState(session?.plannedDurationMin ?? Number(getSetting("org.defaultSessionDuration")) ?? 120);
+  const [location, setLocation] = React.useState(session?.location ?? String(getSetting("org.defaultLocation")));
   const [serviceType, setServiceType] = React.useState(session?.serviceType ?? "Direct Therapy");
   const [focus, setFocus] = React.useState(session?.focus ?? "");
   const [busy, setBusy] = React.useState(false);
@@ -156,9 +158,11 @@ function PlanStage({ client, programs, session, lastDone, onChange }: {
         </div>
 
         <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-          <button className="btn" onClick={suggest} disabled={busy || !runnable.length}>
-            {busy ? "Building plan…" : "Suggest session plan"}
-          </button>
+          {getSetting("ai.sessionPlanning") === true ? (
+            <button className="btn" onClick={suggest} disabled={busy || !runnable.length}>
+              {busy ? "Building plan…" : "Suggest session plan"}
+            </button>
+          ) : null}
           <button className="btn secondary" onClick={start} disabled={busy}>Start without a plan</button>
         </div>
         {planError ? <p className="sub" style={{ color: "var(--warn)", marginTop: 8 }}>{planError}</p> : null}
@@ -283,7 +287,7 @@ function SessionTab({ client, programs, session, onChange }: {
       <div className="session-bar card">
         <div style={{ minWidth: 0 }}>
           <b>Today&rsquo;s session</b>
-          <span className="session-clock" aria-live="off">{fmt(elapsed)}</span>
+          {getSetting("run.showTimer") === true ? <span className="session-clock" aria-live="off">{fmt(elapsed)}</span> : null}
         </div>
         <label className="sub" htmlFor="run-activity" style={{ marginTop: 0 }}>Activity</label>
         <select
