@@ -1,8 +1,8 @@
 import type {
   AuthorizedClinicalContext, ClinicalAIProvider, ClinicalDecisionEvidence, ClinicalDecisionTree,
   ClinicalEvidencePacket, ClinicalQuery, ClinicalQueryResponse, GeneratedClinicalReport,
-  NoteEvidenceInput, ReportBlock, ReportGenerationOptions, StructuredNoteThemes,
-  TreatmentPlanningEvidence, TreatmentPlanSuggestions,
+  NoteEvidenceInput, ReportBlock, ReportGenerationOptions, SessionPlanEvidence, StructuredNoteThemes,
+  SuggestedSessionPlan, TreatmentPlanningEvidence, TreatmentPlanSuggestions,
 } from "../types";
 
 /**
@@ -126,6 +126,39 @@ export class MockProvider implements ClinicalAIProvider {
       ],
       measurementPlan: "Re-measure at 2 weeks; success = at least 10% gain with no behavioural escalation.",
       escalation: "Auto-escalate to supervisor QA review if no gain by week 3.",
+    };
+  }
+
+  async suggestSessionPlan(ev: SessionPlanEvidence): Promise<SuggestedSessionPlan> {
+    const active = ev.goals.filter((g) => !g.isBehaviourProgram && g.status === "active");
+    const behaviour = ev.goals.filter((g) => g.isBehaviourProgram);
+    // Deterministic priority: flagged first, then longest-unrun, then lowest performance.
+    const ranked = [...active].sort((a, b) =>
+      Number(b.attentionFlag != null) - Number(a.attentionFlag != null)
+      || (b.lastRunDaysAgo ?? 0) - (a.lastRunDaysAgo ?? 0)
+      || (a.currentMeanPct ?? 100) - (b.currentMeanPct ?? 100));
+    const perBlock = Math.max(2, Math.round(ev.plannedDurationMin / 30));
+    const priority = ranked.slice(0, perBlock).map((g) => g.programId);
+    const interests = ev.clientInterests.length ? ev.clientInterests : ["Preferred activity"];
+    const name = (id: string) => ev.goals.find((g) => g.programId === id)?.goalName ?? id;
+    return {
+      priorityProgramIds: priority,
+      maintenanceProgramIds: ev.maintenanceDueProgramIds,
+      activities: priority.map((id, i) => ({
+        name: `${interests[i % interests.length]} — embed ${name(id)}`,
+        programIds: [id],
+      })),
+      materials: interests.slice(0, 4),
+      generalization: ev.generalizationNeeds,
+      behaviourNotes: behaviour.map((g) => `${g.goalName}: continue current programming; record ABC on occurrence.`),
+      flow: [
+        "Arrival and pairing with preferred items",
+        ...priority.map((id) => `Teaching block: ${name(id)}`),
+        ...(ev.maintenanceDueProgramIds.length ? ["Maintenance probes"] : []),
+        "Free play with embedded generalization opportunities",
+        "Clean-up and transition",
+      ],
+      rationale: `Ranked by attention flags, days since last run, then current performance, sized to ${ev.plannedDurationMin} minutes at ${ev.location}.${ev.supervisorPriorities.length ? ` Supervisor priorities considered: ${ev.supervisorPriorities.join("; ")}.` : ""}`,
     };
   }
 

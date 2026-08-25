@@ -19,7 +19,7 @@ export default function TodayPage() {
   return (
     <div>
       <h1 className="h-page">Today</h1>
-      <p className="sub">Your sessions and caseload at a glance. Start a session to begin collecting.</p>
+      <p className="sub">Your sessions and caseload at a glance. Sessions run from inside each client&rsquo;s record.</p>
 
       <div className="tiles" style={{ marginTop: 20 }}>
         <div className="card tile"><div className="n">{sessions.length}</div><div className="l">Sessions today</div></div>
@@ -42,8 +42,8 @@ export default function TodayPage() {
                 <td>{s.location}</td>
                 <td><span className={`pill ${s.status === "completed" ? "good" : "accent"}`}>{s.status}</span></td>
                 <td style={{ textAlign: "right" }}>
-                  <Link href={`/session/${s.id}`} className="btn" style={{ textDecoration: "none" }}>
-                    Start session
+                  <Link href={`/clients/${s.clientId}/run`} className="btn" style={{ textDecoration: "none" }}>
+                    Open client · ▶ Run
                   </Link>
                 </td>
               </tr>

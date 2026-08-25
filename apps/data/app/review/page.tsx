@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { pendingNotes, saveNote } from "@/lib/data";
+import { lockRunSession, pendingNotes, saveNote } from "@/lib/data";
 import type { SessionNoteDraft } from "@/lib/types";
 
 /**
@@ -17,6 +17,7 @@ export default function ReviewQueuePage() {
 
   const act = async (n: SessionNoteDraft, decision: "countersigned" | "returned") => {
     await saveNote({ ...n, status: decision });
+    if (decision === "countersigned") await lockRunSession(n.sessionId); // completed → locked
     refresh();
   };
 
@@ -32,11 +33,14 @@ export default function ReviewQueuePage() {
               <b>Session #{n.sessionId} · code {n.billableCode}</b>
               <span className="pill warn">Awaiting countersign</span>
             </div>
-            <p className="sub" style={{ marginTop: 8 }}>{n.summary}</p>
+            {n.subjective ? <p className="sub" style={{ marginTop: 8 }}><b>S:</b> {n.subjective}</p> : null}
+            <p className="sub" style={{ marginTop: 8 }}><b>O:</b> {n.objective}</p>
             {n.perProgram.map((p) => (
               <p key={p.programName} className="sub" style={{ marginTop: 6 }}>· {p.narrative}</p>
             ))}
             {n.abcNarrative ? <p className="sub" style={{ marginTop: 6, color: "var(--warn)" }}>{n.abcNarrative}</p> : null}
+            <p className="sub" style={{ marginTop: 6 }}><b>A:</b> {n.assessment}</p>
+            <p className="sub" style={{ marginTop: 6 }}><b>P:</b> {n.plan}</p>
             <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
               <button className="btn" onClick={() => act(n, "countersigned")}>Countersign</button>
               <input

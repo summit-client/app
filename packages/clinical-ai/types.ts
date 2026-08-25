@@ -156,6 +156,41 @@ export interface TreatmentPlanSuggestions { suggestions: { goalName: string; sou
 export interface ClinicalDecisionEvidence { packet: ClinicalEvidencePacket; goalId: string; pattern: string; patternEvidence: Evidence }
 export interface ClinicalDecisionTree { pattern: string; candidateCauses: { cause: string; confidencePct: number; rationale: string }[]; actions: { option: string; plan: string }[]; measurementPlan: string; escalation: string }
 export interface ClinicalQuery { question: string }
+
+/**
+ * Session planning: the deterministic engine selects the candidates (goals not
+ * recently run, maintenance due, attention flags); the model only arranges
+ * them into activities and a flow. Scoped to ONE client's authorized record.
+ */
+export interface SessionPlanEvidence {
+  client: { id: number; displayName: string };
+  plannedDurationMin: number;
+  location: string;
+  focus: string | null;
+  goals: {
+    programId: string; goalName: string; domain: string | null;
+    status: string;
+    currentMeanPct: number | null;
+    lastRunDaysAgo: number | null;
+    attentionFlag: string | null;      // deterministic-engine flag, e.g. "possible_plateau"
+    isBehaviourProgram: boolean;
+  }[];
+  maintenanceDueProgramIds: string[];
+  generalizationNeeds: string[];
+  supervisorPriorities: string[];
+  clientInterests: string[];
+}
+
+export interface SuggestedSessionPlan {
+  priorityProgramIds: string[];
+  maintenanceProgramIds: string[];
+  activities: { name: string; programIds: string[] }[];
+  materials: string[];
+  generalization: string[];
+  behaviourNotes: string[];
+  flow: string[];
+  rationale: string;
+}
 export interface AuthorizedClinicalContext { packets: ClinicalEvidencePacket[] }
 export interface ClinicalQueryResponse { filterId: string | null; explanation: string }
 
@@ -170,6 +205,7 @@ export interface ClinicalAIProvider {
   generateTreatmentPlanSuggestions(evidence: TreatmentPlanningEvidence): Promise<TreatmentPlanSuggestions>;
   generateDecisionTree(evidence: ClinicalDecisionEvidence): Promise<ClinicalDecisionTree>;
   answerClinicalQuery(query: ClinicalQuery, evidence: AuthorizedClinicalContext): Promise<ClinicalQueryResponse>;
+  suggestSessionPlan(evidence: SessionPlanEvidence): Promise<SuggestedSessionPlan>;
 }
 
 /* ---- audit -------------------------------------------------------------------- */
@@ -178,7 +214,7 @@ export interface AIRequestAudit {
   clinicId: string | null;
   requestingUserId: string | null;
   clientId: number | null;
-  feature: "note_themes" | "progress_report" | "treatment_planning" | "decision_tree" | "clinical_query" | "supervision_brief" | "case_review";
+  feature: "note_themes" | "progress_report" | "treatment_planning" | "decision_tree" | "clinical_query" | "supervision_brief" | "case_review" | "session_plan";
   provider: string;
   model: string;
   promptTemplateVersion: string;

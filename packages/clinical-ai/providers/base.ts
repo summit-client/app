@@ -6,8 +6,8 @@
 import type {
   AuthorizedClinicalContext, ClinicalDecisionEvidence, ClinicalDecisionTree,
   ClinicalEvidencePacket, ClinicalQuery, ClinicalQueryResponse, GeneratedClinicalReport,
-  NoteEvidenceInput, ReportGenerationOptions, StructuredNoteThemes,
-  TreatmentPlanningEvidence, TreatmentPlanSuggestions,
+  NoteEvidenceInput, ReportGenerationOptions, SessionPlanEvidence, StructuredNoteThemes,
+  SuggestedSessionPlan, TreatmentPlanningEvidence, TreatmentPlanSuggestions,
 } from "../types";
 import { ClinicalAIUnavailableError } from "../types";
 
@@ -75,6 +75,16 @@ QUESTION: ${JSON.stringify(q.question)}
 AVAILABLE CONTEXT SUMMARY: ${JSON.stringify(ctx.packets.map((p) => ({ client: p.client.displayName, goals: p.goals.map((g) => g.goalName) })))}`;
 }
 
+export function sessionPlanPrompt(ev: SessionPlanEvidence): string {
+  return `${RULES}
+
+TASK: Arrange TODAY'S SESSION for this one client from the candidate goals the deterministic engine supplied. Session planning selects and organizes existing programming for today — it never changes what the treatment plan is. Prioritize: attention-flagged goals, supervisor priorities, goals not recently run, then maintenance and generalization. Ground activities in the listed client interests and the stated location. priorityProgramIds and maintenanceProgramIds must come only from the supplied goals' programIds.
+
+SCHEMA: {"priorityProgramIds":string[],"maintenanceProgramIds":string[],"activities":[{"name":string,"programIds":string[]}],"materials":string[],"generalization":string[],"behaviourNotes":string[],"flow":string[],"rationale":string}
+
+EVIDENCE (this client only): ${JSON.stringify(ev)}`;
+}
+
 /** Base class: providers implement chatJSON; workflows share everything else. */
 export abstract class JsonChatProvider {
   abstract readonly name: string;
@@ -125,5 +135,9 @@ export abstract class JsonChatProvider {
 
   async answerClinicalQuery(q: ClinicalQuery, ctx: AuthorizedClinicalContext): Promise<ClinicalQueryResponse> {
     return this.json<ClinicalQueryResponse>(queryPrompt(q, ctx));
+  }
+
+  async suggestSessionPlan(ev: SessionPlanEvidence): Promise<SuggestedSessionPlan> {
+    return this.json<SuggestedSessionPlan>(sessionPlanPrompt(ev));
   }
 }

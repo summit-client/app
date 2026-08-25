@@ -7,10 +7,10 @@ import type { ClientRow, Program, ScheduledSession } from "./types";
  */
 
 export const previewClients: ClientRow[] = [
-  { id: 101, name: "Arjun S.", age: 6, funding: "OAP-funded", serviceType: "Comprehensive ABA", status: "active", activeGoals: 4, masteredGoals: 7, nextSession: today() },
-  { id: 102, name: "Maya T.", age: 9, funding: "OAP-funded", serviceType: "Focused ABA", status: "active", activeGoals: 3, masteredGoals: 12, nextSession: today() },
-  { id: 103, name: "Leo K.", age: 5, funding: "Private pay", serviceType: "Comprehensive ABA", status: "intake", activeGoals: 1, masteredGoals: 0, nextSession: null },
-  { id: 104, name: "Sofia R.", age: 12, funding: "OAP-registered", serviceType: "Focused ABA", status: "maintenance", activeGoals: 2, masteredGoals: 19, nextSession: null },
+  { id: 101, name: "Arjun S.", age: 6, funding: "OAP-funded", serviceType: "Comprehensive ABA", status: "active", activeGoals: 4, masteredGoals: 7, nextSession: today(), supervisor: "Jane Smith", lastSession: daysAgo(3), interests: ["Trains", "Bubbles", "Sensory bin", "Tablet time"] },
+  { id: 102, name: "Maya T.", age: 9, funding: "OAP-funded", serviceType: "Focused ABA", status: "active", activeGoals: 3, masteredGoals: 12, nextSession: today(), supervisor: "Jane Smith", lastSession: daysAgo(2), interests: ["Drawing", "Lego", "Music"] },
+  { id: 103, name: "Leo K.", age: 5, funding: "Private pay", serviceType: "Comprehensive ABA", status: "intake", activeGoals: 1, masteredGoals: 0, nextSession: null, supervisor: "Omar Haddad", lastSession: null, interests: ["Cars", "Playdough"] },
+  { id: 104, name: "Sofia R.", age: 12, funding: "OAP-registered", serviceType: "Focused ABA", status: "maintenance", activeGoals: 2, masteredGoals: 19, nextSession: null, supervisor: "Omar Haddad", lastSession: daysAgo(9), interests: ["Reading", "Board games"] },
 ];
 
 export const previewSessions: ScheduledSession[] = [
@@ -26,7 +26,7 @@ export const previewPrograms: Program[] = [
     masteryCriteria: "80% across 3 consecutive sessions, 2 settings, 2 people", masteryPct: 80, masteryConsecutive: 3,
     promptLevel: "gestural", reinforcementSchedule: "VR2", sd: "Non-preferred task presented",
     targetDirection: "increase", status: "active", intervalSeconds: 30, dailyTargetMinutes: null,
-    steps: [], last5: [58, 64, 71, 78, 63],
+    steps: [], targets: ["Open container", "Missing item", "Difficult toy", "Assistance with task"], last5: [58, 64, 71, 78, 63],
   },
   {
     id: "p-handwash", clientId: 101, name: "Hand-washing", domain: "Self-help / daily living",
@@ -42,6 +42,7 @@ export const previewPrograms: Program[] = [
       { id: "s5", position: 5, description: "Rinse", status: "teaching" },
       { id: "s6", position: 6, description: "Dry with towel", status: "teaching" },
     ],
+    targets: [],
     last5: [66, 74, 83, 83, 91],
   },
   {
@@ -50,7 +51,7 @@ export const previewPrograms: Program[] = [
     masteryCriteria: "At or below 1 per hour across 3 consecutive sessions", masteryPct: 80, masteryConsecutive: 3,
     promptLevel: "independent", reinforcementSchedule: "DRO 5 min", sd: null,
     targetDirection: "decrease", status: "active", intervalSeconds: 30, dailyTargetMinutes: null,
-    last5: [12, 9, 7, 5, 4], steps: [],
+    last5: [12, 9, 7, 5, 4], steps: [], targets: [],
   },
   {
     id: "p-ontask", clientId: 101, name: "On-task duration", domain: "Academic readiness",
@@ -58,7 +59,7 @@ export const previewPrograms: Program[] = [
     masteryCriteria: "10 minutes in one block across 3 consecutive sessions", masteryPct: 80, masteryConsecutive: 3,
     promptLevel: "verbal", reinforcementSchedule: "VR3", sd: null,
     targetDirection: "increase", status: "active", intervalSeconds: 30, dailyTargetMinutes: 10,
-    last5: [45, 52, 60, 71, 68], steps: [],
+    last5: [45, 52, 60, 71, 68], steps: [], targets: [],
   },
   {
     id: "p-engage", clientId: 102, name: "Group engagement (interval)", domain: "Social engagement",
@@ -66,7 +67,7 @@ export const previewPrograms: Program[] = [
     masteryCriteria: "80% of intervals across 3 consecutive sessions", masteryPct: 80, masteryConsecutive: 3,
     promptLevel: "gestural", reinforcementSchedule: "FR1", sd: null,
     targetDirection: "increase", status: "active", intervalSeconds: 30, dailyTargetMinutes: null,
-    last5: [55, 63, 70, 74, 77], steps: [],
+    last5: [55, 63, 70, 74, 77], steps: [], targets: [],
   },
   {
     id: "p-spont", clientId: 102, name: "Spontaneous requesting (NET)", domain: "Expressive communication",
@@ -74,7 +75,7 @@ export const previewPrograms: Program[] = [
     masteryCriteria: "70% spontaneous across 3 consecutive sessions", masteryPct: 70, masteryConsecutive: 3,
     promptLevel: "verbal", reinforcementSchedule: "Natural", sd: null,
     targetDirection: "increase", status: "active", intervalSeconds: 30, dailyTargetMinutes: null,
-    last5: [40, 48, 55, 61, 66], steps: [],
+    last5: [40, 48, 55, 61, 66], steps: [], targets: [],
   },
   {
     id: "p-abc", clientId: 102, name: "Transition behaviour (ABC)", domain: "Behaviour reduction",
@@ -82,7 +83,7 @@ export const previewPrograms: Program[] = [
     masteryCriteria: "Function identified; BSP drafted after 3 observations", masteryPct: 80, masteryConsecutive: 3,
     promptLevel: "independent", reinforcementSchedule: "Per BSP", sd: null,
     targetDirection: "decrease", status: "active", intervalSeconds: 30, dailyTargetMinutes: null,
-    last5: [], steps: [],
+    last5: [], steps: [], targets: [],
   },
   {
     id: "p-shoes", clientId: 102, name: "Shoe tying (chain)", domain: "Self-help / daily living",
@@ -96,10 +97,15 @@ export const previewPrograms: Program[] = [
       { id: "t3", position: 3, description: "Make first loop", status: "teaching" },
       { id: "t4", position: 4, description: "Wrap and pull through", status: "teaching" },
     ],
+    targets: [],
     last5: [100, 100, 0, 100, 100],
   },
 ];
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function daysAgo(n: number): string {
+  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 }

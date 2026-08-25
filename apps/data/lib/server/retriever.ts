@@ -64,11 +64,19 @@ export function liveRetriever(sb: SupabaseClient): EvidenceRetriever {
       }));
 
       const noteRows = (notes.data ?? []).map((n) => {
-        const body = n.body as { summary?: string; perProgram?: { programName: string; narrative: string }[] } | null;
+        const body = n.body as {
+          subjective?: string; objective?: string; assessment?: string; plan?: string;
+          summary?: string; // legacy pre-SOAP notes
+          perProgram?: { programName: string; narrative: string }[];
+        } | null;
         return {
           id: n.id as string,
           date: String(n.created_at).slice(0, 10),
-          excerpts: [body?.summary ?? "", ...(body?.perProgram ?? []).map((x) => x.narrative)].filter(Boolean),
+          excerpts: [
+            body?.subjective ?? "", body?.objective ?? "", body?.assessment ?? "", body?.plan ?? "",
+            body?.summary ?? "",
+            ...(body?.perProgram ?? []).map((x) => x.narrative),
+          ].filter(Boolean),
           programIds: facts
             .filter((f) => (body?.perProgram ?? []).some((x) => x.programName === f.goalName))
             .map((f) => f.programId),

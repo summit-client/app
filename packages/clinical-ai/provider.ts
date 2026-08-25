@@ -39,7 +39,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
 }
 
 export interface RouteRequest {
-  task: "note_themes" | "progress_report" | "treatment_planning" | "decision_tree" | "clinical_query";
+  task: "note_themes" | "progress_report" | "treatment_planning" | "decision_tree" | "clinical_query" | "session_plan";
   containsPhi: boolean;
 }
 

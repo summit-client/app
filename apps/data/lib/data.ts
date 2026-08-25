@@ -1,7 +1,11 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import type { AbcIncident, ClientRow, Program, ScheduledSession, SessionNoteDraft, TrialEvent } from "./types";
+import type {
+  AbcIncident, ClientRow, Program, RunSession, ScheduledSession,
+  SessionNoteDraft, SessionPlanDraft, SessionProgramSummary, TrialEvent,
+} from "./types";
+import { deriveProgramSummary } from "./mastery";
 import { previewClients, previewPrograms, previewSessions } from "./preview-data";
 
 /**
@@ -24,6 +28,8 @@ const mem = {
   events: [] as TrialEvent[],
   incidents: [] as AbcIncident[],
   notes: new Map<number, SessionNoteDraft>(),
+  sessions: [] as RunSession[],
+  summaries: [] as SessionProgramSummary[],
 };
 
 const MEM_KEY = "summit-session-mirror";
@@ -31,6 +37,7 @@ function persistMem(): void {
   try {
     sessionStorage.setItem(MEM_KEY, JSON.stringify({
       events: mem.events, incidents: mem.incidents, notes: [...mem.notes.entries()],
+      sessions: mem.sessions, summaries: mem.summaries,
     }));
   } catch { /* storage full or unavailable — mirror stays in memory only */ }
 }
@@ -38,10 +45,15 @@ function rehydrateMem(): void {
   try {
     const raw = sessionStorage.getItem(MEM_KEY);
     if (!raw) return;
-    const d = JSON.parse(raw) as { events: TrialEvent[]; incidents: AbcIncident[]; notes: [number, SessionNoteDraft][] };
+    const d = JSON.parse(raw) as {
+      events: TrialEvent[]; incidents: AbcIncident[]; notes: [number, SessionNoteDraft][];
+      sessions?: RunSession[]; summaries?: SessionProgramSummary[];
+    };
     mem.events = d.events ?? [];
     mem.incidents = d.incidents ?? [];
     mem.notes = new Map(d.notes ?? []);
+    mem.sessions = d.sessions ?? [];
+    mem.summaries = d.summaries ?? [];
   } catch { /* corrupt mirror — start clean */ }
 }
 if (typeof window !== "undefined") rehydrateMem();
@@ -49,18 +61,184 @@ if (typeof window !== "undefined") rehydrateMem();
 let seq = 0;
 const nextId = () => `ev-${++seq}-${Math.random().toString(36).slice(2, 7)}`;
 
-/* ---- active-session context (live mode writes hang off this) --------------- */
+/* ---- active-session context ------------------------------------------------ */
 const active = {
   sessionId: null as number | null,
   clientId: null as number | null,
+  activityContext: null as string | null,
   recordIds: new Map<string, string>(), // programId -> session_records.id
 };
 
-/** The Active Session page calls this on load so events attach to the right session. */
+/** The Run Session page calls this on load so events attach to the right session. */
 export function setActiveSession(sessionId: number, clientId: number): void {
   if (active.sessionId !== sessionId) active.recordIds.clear();
   active.sessionId = sessionId;
   active.clientId = clientId;
+}
+
+/** Optional current activity ("Snack", "Play"…) stamped onto every observation. */
+export function setActivityContext(ctx: string | null): void {
+  active.activityContext = ctx;
+}
+export function activityContext(): string | null {
+  return active.activityContext;
+}
+
+/* Current target exemplar per program — stamped onto observations so the same
+   program can later graph by target without separate programming. */
+const currentTargets = new Map<string, string | null>();
+export function setCurrentTarget(programId: string, target: string | null): void {
+  currentTargets.set(programId, target);
+}
+export function currentTarget(programId: string): string | null {
+  return currentTargets.get(programId) ?? null;
+}
+
+/* ---- client-bound run sessions ---------------------------------------------
+   A session is created FROM a client's record and stays bound to it. The
+   status machine is planning → active → documentation → completed → locked. */
+
+export function runSessionsFor(clientId: number): RunSession[] {
+  return mem.sessions.filter((s) => s.clientId === clientId).sort((a, b) => b.id - a.id);
+}
+
+export function getRunSession(sessionId: number): RunSession | undefined {
+  return mem.sessions.find((s) => s.id === sessionId);
+}
+
+/** The client's session still in flight (planning/active/documentation), if any. */
+export function openSessionFor(clientId: number): RunSession | undefined {
+  return runSessionsFor(clientId).find((s) => ["planning", "active", "documentation"].includes(s.status));
+}
+
+export async function createRunSession(
+  clientId: number,
+  init: { plannedDurationMin: number; location: string; serviceType: string; focus: string | null },
+  programs: Program[],
+): Promise<RunSession> {
+  const id = Math.max(10_000, ...mem.sessions.map((s) => s.id + 1));
+  const session: RunSession = {
+    id, clientId, clinicianId: null, status: "planning",
+    startTime: null, endTime: null,
+    plannedDurationMin: init.plannedDurationMin, actualDurationMin: null,
+    location: init.location, serviceType: init.serviceType, focus: init.focus,
+    plan: null,
+    programVersionSnapshot: programs
+      .filter((p) => p.status === "active" || p.status === "maintenance")
+      .map((p) => ({ programId: p.id, name: p.name, promptLevel: p.promptLevel, masteryCriteria: p.masteryCriteria })),
+    createdAt: new Date().toISOString(),
+  };
+  mem.sessions.push(session);
+  persistMem();
+  if (!IS_PREVIEW) {
+    const user = (await sb().auth.getUser()).data.user;
+    const { data, error } = await sb().from("client_sessions").insert({
+      client_id: clientId, clinician_id: user?.id, clinic_id: await myClinicId(),
+      status: "planning", planned_duration_min: init.plannedDurationMin,
+      location: init.location, service_type: init.serviceType, focus: init.focus,
+      program_version_snapshot: session.programVersionSnapshot,
+    }).select("id").single();
+    if (error) throw error;
+    session.id = data.id; // adopt the DB id so events/summaries attach to it
+    persistMem();
+  }
+  return session;
+}
+
+export async function updateRunSession(sessionId: number, patch: Partial<RunSession>): Promise<RunSession> {
+  const s = mem.sessions.find((x) => x.id === sessionId);
+  if (!s) throw new Error(`Unknown session ${sessionId}`);
+  Object.assign(s, patch);
+  persistMem();
+  if (!IS_PREVIEW) {
+    const row: Record<string, unknown> = {};
+    if (patch.status !== undefined) row.status = patch.status;
+    if (patch.startTime !== undefined) row.start_time = patch.startTime;
+    if (patch.endTime !== undefined) row.end_time = patch.endTime;
+    if (patch.actualDurationMin !== undefined) row.actual_duration_min = patch.actualDurationMin;
+    if (patch.plan !== undefined) row.plan = patch.plan;
+    if (Object.keys(row).length) {
+      const { error } = await sb().from("client_sessions").update(row).eq("id", sessionId);
+      if (error) throw error;
+    }
+  }
+  return s;
+}
+
+export async function saveSessionPlan(sessionId: number, plan: SessionPlanDraft): Promise<RunSession> {
+  return updateRunSession(sessionId, { plan });
+}
+
+/** planning → active. Starts the timer; the Session Tab takes over. */
+export async function startRunSession(sessionId: number): Promise<RunSession> {
+  const s = await updateRunSession(sessionId, { status: "active", startTime: new Date().toISOString() });
+  setActiveSession(s.id, s.clientId);
+  return s;
+}
+
+/**
+ * active → documentation. Stamps end time and derives the per-program
+ * summaries from this session's atomic observations. Raw events stay put —
+ * the summary is recomputable, never authoritative.
+ */
+export async function endRunSession(sessionId: number, programs: Program[]): Promise<RunSession> {
+  const s = getRunSession(sessionId);
+  if (!s) throw new Error(`Unknown session ${sessionId}`);
+  const end = new Date().toISOString();
+  const mins = s.startTime ? Math.max(1, Math.round((Date.now() - new Date(s.startTime).getTime()) / 60_000)) : null;
+  const elapsedHours = mins != null ? Math.max(mins / 60, 1 / 60) : 1;
+
+  mem.summaries = mem.summaries.filter((x) => x.sessionId !== sessionId);
+  for (const p of programs) {
+    const summary = deriveProgramSummary(p, eventsFor(p.id, sessionId), sessionId, elapsedHours);
+    if (summary) mem.summaries.push(summary);
+  }
+  const updated = await updateRunSession(sessionId, { status: "documentation", endTime: end, actualDurationMin: mins });
+
+  if (!IS_PREVIEW) {
+    const rows = mem.summaries.filter((x) => x.sessionId === sessionId).map((x) => ({
+      client_session_id: sessionId, program_id: x.programId,
+      raw_observation_count: x.rawObservationCount, numerator: x.numerator, denominator: x.denominator,
+      calculated_value: x.calculatedValue, metric_type: x.metricType, clinic_id: null,
+    }));
+    if (rows.length) {
+      const { error } = await sb().from("session_program_summaries").upsert(rows, { onConflict: "client_session_id,program_id" });
+      if (error) throw error;
+    }
+    await closeSessionRecords(mem.summaries.filter((x) => x.sessionId === sessionId).map((x) => ({
+      programId: x.programId,
+      pct: x.metricType.startsWith("percent") ? x.calculatedValue : null,
+      count: x.metricType === "count" || x.metricType === "rate_per_hour" ? x.numerator : null,
+      seconds: x.metricType === "total_seconds" ? x.calculatedValue : null,
+    })));
+  }
+  return updated;
+}
+
+/**
+ * documentation → completed. The completed session feeds the whole client
+ * record: percent summaries append to each program's session history so
+ * graphs, mastery evaluation and Clinical Signals update with no extra entry.
+ */
+export async function completeRunSession(sessionId: number, programs: Program[]): Promise<RunSession> {
+  for (const sum of summariesFor(sessionId)) {
+    if (!sum.metricType.startsWith("percent") && sum.metricType !== "count") continue;
+    const p = programs.find((x) => x.id === sum.programId);
+    if (p && sum.calculatedValue != null) p.last5 = [...p.last5, sum.calculatedValue].slice(-8);
+  }
+  const s = await updateRunSession(sessionId, { status: "completed" });
+  if (active.sessionId === sessionId) { active.sessionId = null; active.clientId = null; active.activityContext = null; }
+  return s;
+}
+
+/** completed → locked, once the note is countersigned. Locked sessions are immutable. */
+export async function lockRunSession(sessionId: number): Promise<void> {
+  const s = getRunSession(sessionId);
+  if (s && s.status === "completed") await updateRunSession(sessionId, { status: "locked" });
+}
+
+export function summariesFor(sessionId: number): SessionProgramSummary[] {
+  return mem.summaries.filter((x) => x.sessionId === sessionId);
 }
 
 async function ensureSessionRecord(programId: string): Promise<string | null> {
@@ -96,6 +274,7 @@ export async function getClients(): Promise<ClientRow[]> {
   return (data ?? []).map((c) => ({
     id: c.id, name: c.name, age: null, funding: null, serviceType: null,
     status: c.status ?? "active", activeGoals: 0, masteredGoals: 0, nextSession: null,
+    supervisor: null, lastSession: null, interests: [],
   }));
 }
 
@@ -124,7 +303,7 @@ export async function getPrograms(clientId: number): Promise<Program[]> {
   if (IS_PREVIEW) return previewPrograms.filter((p) => p.clientId === clientId);
   const { data, error } = await sb()
     .from("programs")
-    .select("*, program_steps(*)")
+    .select("*, program_steps(*), program_targets(*)")
     .eq("client_id", clientId)
     .neq("status", "archived")
     .order("created_at");
@@ -156,11 +335,25 @@ export async function getSession(sessionId: number): Promise<ScheduledSession | 
 }
 
 /* ---- writes --------------------------------------------------------------- */
+/**
+ * Every tap creates one of these — the atomic observation, immediately, with
+ * the session/client/target/activity context stamped on. Counters, session
+ * metrics, graphs and mastery are all DERIVED from these rows afterwards.
+ */
 export async function recordEvent(
-  e: Omit<TrialEvent, "id" | "occurredAt">,
+  e: Omit<TrialEvent, "id" | "occurredAt" | "sessionId" | "clientId" | "activityContext" | "target"> &
+    Partial<Pick<TrialEvent, "sessionId" | "clientId" | "activityContext" | "target">>,
   _ctx: Record<string, never> = {},
 ): Promise<TrialEvent> {
-  const full: TrialEvent = { ...e, id: nextId(), occurredAt: new Date().toISOString() };
+  const full: TrialEvent = {
+    ...e,
+    target: e.target !== undefined ? e.target : currentTargets.get(e.programId) ?? null,
+    sessionId: e.sessionId ?? active.sessionId,
+    clientId: e.clientId ?? active.clientId,
+    activityContext: e.activityContext ?? active.activityContext,
+    id: nextId(),
+    occurredAt: new Date().toISOString(),
+  };
   mem.events.push(full); // local mirror drives the UI in both modes
   persistMem();
   if (IS_PREVIEW) return full;
@@ -168,8 +361,10 @@ export async function recordEvent(
   if (!recordId) return full;
   const { error } = await sb().from("trial_events").insert({
     session_record_id: recordId,
+    client_session_id: full.sessionId,
     mode: e.mode, code: e.code, step_position: e.stepPosition,
-    prompt_level: e.promptLevel, note: e.note,
+    prompt_level: e.promptLevel, target: full.target, activity_context: full.activityContext,
+    note: e.note,
     clinic_id: await myClinicId(),
   });
   if (error) throw error;
@@ -206,8 +401,17 @@ export async function undoLastEvent(programId: string): Promise<void> {
   // Live mode: deletion of trial rows is a supervisor amendment path, not inline undo.
 }
 
-export function eventsFor(programId: string): TrialEvent[] {
-  return mem.events.filter((e) => e.programId === programId);
+/**
+ * Observations for one program. Defaults to the session currently in flight so
+ * live counters never bleed across sessions; pass a sessionId for history.
+ */
+export function eventsFor(programId: string, sessionId?: number): TrialEvent[] {
+  const sid = sessionId ?? active.sessionId;
+  return mem.events.filter((e) => e.programId === programId && (sid == null || e.sessionId === sid));
+}
+
+export function eventsForSession(sessionId: number): TrialEvent[] {
+  return mem.events.filter((e) => e.sessionId === sessionId);
 }
 
 export async function recordIncident(i: Omit<AbcIncident, "id" | "occurredAt">): Promise<AbcIncident> {
@@ -234,7 +438,7 @@ export async function saveNote(note: SessionNoteDraft): Promise<void> {
   const { error } = await sb().from("session_notes").upsert(
     {
       session_id: note.sessionId,
-      client_id: 0, // resolved server-side in live mode via the session row
+      client_id: note.clientId ?? 0,
       clinician_id: user?.id,
       clinic_id: await myClinicId(),
       body: note,
@@ -294,6 +498,7 @@ function mapProgram(row: Record<string, unknown>): Program {
     intervalSeconds: (row.interval_seconds as number) ?? 30,
     dailyTargetMinutes: (row.daily_target_minutes as number) ?? null,
     steps,
+    targets: ((row.program_targets as { name: string }[] | null) ?? []).map((t) => t.name),
     last5: [], // filled from session_records summaries by getPrograms
   };
 }
