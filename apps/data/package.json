@@ -15,7 +15,8 @@
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "@summit/analytics": "workspace:*"
+    "@summit/analytics": "workspace:*",
+    "@summit/clinical-ai": "workspace:*"
   },
   "devDependencies": {
     "typescript": "6.0.2",

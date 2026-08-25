@@ -85,7 +85,7 @@ Everything ─ logged to → clinical_audit_events
 | Attention engine ("what needs my attention") | `packages/analytics` → `apps/data/app/attention` | built |
 | Goal Bank + provenance | `0002` + seeds; surfaced in attention/planning | schema + seed |
 | Supervisor query engine | structured filters now; NL→filter translation is the LLM's only job later | filters built |
-| Evidence-first reporting (10-step pipeline) | evidence packets from analytics; LLM drafting behind the hardened gateway | next |
+| Evidence-first reporting (10-step pipeline) | `packages/clinical-ai` (providers, packet, consistency, validation) + `apps/data` report workspace + migration 0003 | built |
 | Organizational learning loop (de-identified) | aggregate views over goal_bank usage | later |
 
 ## The one job the LLM gets
@@ -94,5 +94,4 @@ Translating natural language into the structured query filters, drafting
 narrative from evidence packets, and summarizing note themes — behind the same
 hardened, role-gated gateway pattern as `/api/match` (auth required, model
 pinned, inputs de-identified, outputs validated against the evidence packet
-before display). Provider decision (Azure OpenAI + BAA per the Master Spec vs
-Anthropic) is an open item; nothing in this architecture depends on it.
+before display). Provider decision: **Azure OpenAI for all PHI workloads** (production default), behind the provider-agnostic `ClinicalAIProvider` interface; Anthropic remains for synthetic/dev and non-PHI tasks only, refused for PHI unless a BAA + zero-retention arrangement is formally configured.

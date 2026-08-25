@@ -32,9 +32,14 @@ export default function ClientPage() {
             <span className="pill accent">{client.status}</span>
           </p>
         </div>
-        <button className="btn" onClick={() => setShowForm((v) => !v)}>
-          {showForm ? "Close" : "+ New goal"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <a href={`/clients/${clientId}/report`} className="btn secondary" style={{ textDecoration: "none" }}>
+            Progress report
+          </a>
+          <button className="btn" onClick={() => setShowForm((v) => !v)}>
+            {showForm ? "Close" : "+ New goal"}
+          </button>
+        </div>
       </div>
 
       {showForm ? <NewGoalForm clientId={clientId} onSaved={(p) => { setPrograms((x) => [...x, p]); setShowForm(false); }} /> : null}
