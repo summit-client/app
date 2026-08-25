@@ -4,4 +4,6 @@ node_modules
 packages/nav/dist/
 .vercel
 .env*
+!**/.env.example
+!.env.example
 **/.next/

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import "@summit/design/tokens.css";
 import "./app.css";
+import Link from "next/link";
 import { themeInitScript } from "@summit/design";
-import { ThemeControls } from "@/components/theme-controls";
 import { PortalNav, SettingsEffects } from "@/components/portal-chrome";
 
 export const metadata: Metadata = {
@@ -40,7 +40,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="main">
             <header className="topbar">
               <span className="topbar-title">Clinician Portal</span>
-              <ThemeControls />
+              {/* Theme and accent live in Settings → Appearance & Branding */}
+              <Link href="/settings/appearance" className="btn ghost" style={{ textDecoration: "none" }} aria-label="Appearance settings">
+                Appearance
+              </Link>
             </header>
             <main className="content">{children}</main>
           </div>

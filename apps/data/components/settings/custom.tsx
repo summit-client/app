@@ -33,8 +33,10 @@ const LOGO_SLOTS = ["Primary logo", "Square / icon", "Light background", "Dark b
 export function AppearanceSection() {
   useSettingsTick();
   const [, force] = React.useReducer((n: number) => n + 1, 0);
-  const theme = currentTheme();
-  const accent = currentAccent();
+  // Read from the document only after mount — this component also server-renders.
+  const [theme, setTheme] = React.useState<ReturnType<typeof currentTheme>>("system");
+  const [accent, setAccent] = React.useState<Accent>("blue");
+  React.useEffect(() => { setTheme(currentTheme()); setAccent(currentAccent()); }, []);
   const primary = String(resolve("appearance.primaryColor").effective);
   const contrastOk = contrastRatio(primary, "#ffffff") >= 3;
 
@@ -48,7 +50,7 @@ export function AppearanceSection() {
         </div>
         <div className="set-control" style={{ display: "flex", gap: 6 }}>
           {(["light", "dark", "system"] as const).map((t) => (
-            <button key={t} className={`mode-tab ${theme === t ? "active" : ""}`} onClick={() => { applyTheme(t); force(); }}>
+            <button key={t} className={`mode-tab ${theme === t ? "active" : ""}`} onClick={() => { applyTheme(t); setTheme(t); force(); }}>
               {t === "system" ? "System Default" : t[0].toUpperCase() + t.slice(1)}
             </button>
           ))}
@@ -65,7 +67,7 @@ export function AppearanceSection() {
           {ACCENTS.map((a) => (
             <button
               key={a.key} aria-label={a.label} aria-pressed={accent === a.key}
-              onClick={() => { applyAccent(a.key); force(); }}
+              onClick={() => { applyAccent(a.key); setAccent(a.key); force(); }}
               style={{
                 width: 30, height: 30, borderRadius: "50%", background: SWATCH[a.key], cursor: "pointer",
                 border: accent === a.key ? "3px solid var(--ink)" : "2px solid var(--line)",
@@ -106,7 +108,7 @@ export function AppearanceSection() {
 
       <div>
         <button className="btn secondary" onClick={() => {
-          applyTheme("system"); applyAccent("blue");
+          applyTheme("system"); applyAccent("blue"); setTheme("system"); setAccent("blue");
           setSetting("appearance.primaryColor", null, "org"); setSetting("appearance.accentColor", null, "org");
           setSetting("appearance.density", null, "org"); force();
         }}>
