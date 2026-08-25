@@ -32,8 +32,9 @@ export function liveRetriever(sb: SupabaseClient): EvidenceRetriever {
 
       const recs = records.data ?? [];
       const nextByBank = new Map<string, string[]>();
-      for (const r of (bankRels.data ?? []) as { from_entry: string; to: { name: string } | null }[]) {
-        if (r.to) nextByBank.set(r.from_entry, [...(nextByBank.get(r.from_entry) ?? []), r.to.name]);
+      for (const r of (bankRels.data ?? []) as unknown as { from_entry: string; to: { name: string } | { name: string }[] | null }[]) {
+        const toName = Array.isArray(r.to) ? r.to[0]?.name : r.to?.name; // supabase types to-one joins as arrays without generated DB types
+        if (toName) nextByBank.set(r.from_entry, [...(nextByBank.get(r.from_entry) ?? []), toName]);
       }
 
       const facts: ProgramFacts[] = ((programs.data ?? []) as Record<string, unknown>[]).map((p) => ({

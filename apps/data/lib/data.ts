@@ -18,12 +18,33 @@ function sb() {
   );
 }
 
-/* ---- in-memory store (preview) ------------------------------------------- */
+/* ---- in-memory store, persisted to sessionStorage so a mid-session page
+   reload never loses the working set (DB rows are unaffected in live mode) --- */
 const mem = {
   events: [] as TrialEvent[],
   incidents: [] as AbcIncident[],
   notes: new Map<number, SessionNoteDraft>(),
 };
+
+const MEM_KEY = "summit-session-mirror";
+function persistMem(): void {
+  try {
+    sessionStorage.setItem(MEM_KEY, JSON.stringify({
+      events: mem.events, incidents: mem.incidents, notes: [...mem.notes.entries()],
+    }));
+  } catch { /* storage full or unavailable — mirror stays in memory only */ }
+}
+function rehydrateMem(): void {
+  try {
+    const raw = sessionStorage.getItem(MEM_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw) as { events: TrialEvent[]; incidents: AbcIncident[]; notes: [number, SessionNoteDraft][] };
+    mem.events = d.events ?? [];
+    mem.incidents = d.incidents ?? [];
+    mem.notes = new Map(d.notes ?? []);
+  } catch { /* corrupt mirror — start clean */ }
+}
+if (typeof window !== "undefined") rehydrateMem();
 
 let seq = 0;
 const nextId = () => `ev-${++seq}-${Math.random().toString(36).slice(2, 7)}`;
@@ -141,6 +162,7 @@ export async function recordEvent(
 ): Promise<TrialEvent> {
   const full: TrialEvent = { ...e, id: nextId(), occurredAt: new Date().toISOString() };
   mem.events.push(full); // local mirror drives the UI in both modes
+  persistMem();
   if (IS_PREVIEW) return full;
   const recordId = await ensureSessionRecord(e.programId);
   if (!recordId) return full;
@@ -178,7 +200,7 @@ export async function closeSessionRecords(
 export async function undoLastEvent(programId: string): Promise<void> {
   if (IS_PREVIEW) {
     for (let i = mem.events.length - 1; i >= 0; i--) {
-      if (mem.events[i].programId === programId) { mem.events.splice(i, 1); return; }
+      if (mem.events[i].programId === programId) { mem.events.splice(i, 1); persistMem(); return; }
     }
   }
   // Live mode: deletion of trial rows is a supervisor amendment path, not inline undo.
@@ -190,7 +212,7 @@ export function eventsFor(programId: string): TrialEvent[] {
 
 export async function recordIncident(i: Omit<AbcIncident, "id" | "occurredAt">): Promise<AbcIncident> {
   const full: AbcIncident = { ...i, id: nextId(), occurredAt: new Date().toISOString() };
-  if (IS_PREVIEW) { mem.incidents.push(full); return full; }
+  if (IS_PREVIEW) { mem.incidents.push(full); persistMem(); return full; }
   const { error } = await sb().from("behaviour_incidents").insert({
     client_id: i.clientId, antecedent: i.antecedent, behaviour: i.behaviour,
     consequence: i.consequence, suspected_function: i.suspectedFunction,
@@ -205,7 +227,9 @@ export function incidentsFor(clientId: number): AbcIncident[] {
 }
 
 export async function saveNote(note: SessionNoteDraft): Promise<void> {
-  if (IS_PREVIEW) { mem.notes.set(note.sessionId, note); return; }
+  mem.notes.set(note.sessionId, note);
+  persistMem();
+  if (IS_PREVIEW) return;
   const user = (await sb().auth.getUser()).data.user;
   const { error } = await sb().from("session_notes").upsert(
     {

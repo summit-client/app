@@ -7,8 +7,8 @@ import type { RetrievedClinicalData } from "@summit/clinical-ai";
  * note–data consistency engine both exercise.
  */
 export async function getPreviewRetrieval(clientId: number): Promise<RetrievedClinicalData> {
-  const { getCaseloadFacts } = await import("./facts");
-  const all = await getCaseloadFacts();
+  const { getPreviewCaseloadFacts } = await import("./preview-facts");
+  const all = getPreviewCaseloadFacts();
   const facts = all.filter((f) => f.clientId === clientId);
   const name = facts[0]?.clientName ?? `Client ${clientId}`;
 
