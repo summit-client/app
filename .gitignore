@@ -7,3 +7,4 @@ packages/nav/dist/
 !**/.env.example
 !.env.example
 **/.next/
+*.tsbuildinfo
