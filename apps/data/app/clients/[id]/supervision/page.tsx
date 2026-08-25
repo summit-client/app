@@ -155,6 +155,72 @@ export default function SupervisionPage() {
           ) : null}
         </>
       ) : null}
+
+      <SupervisionNoteComposer clientId={clientId} />
+    </div>
+  );
+}
+
+/**
+ * Supervision meeting notes — the Master Client Supervision Template as a
+ * structured composer: follow-up items, observations/recommendations, and a
+ * "read by clinician" acknowledgement, kept per client with history.
+ */
+function SupervisionNoteComposer({ clientId }: { clientId: number }) {
+  interface SupNote { followUp: string; observations: string; readBy: string; at: string }
+  const KEY = `summit-supervision-notes-${clientId}`;
+  const [notes, setNotes] = React.useState<SupNote[]>([]);
+  const [open, setOpen] = React.useState(false);
+  const [draft, setDraft] = React.useState({ followUp: "", observations: "", readBy: "" });
+
+  React.useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(KEY);
+      if (raw) setNotes(JSON.parse(raw) as SupNote[]);
+    } catch { /* start clean */ }
+  }, [KEY]);
+
+  const save = () => {
+    const next = [{ ...draft, at: new Date().toISOString() }, ...notes];
+    setNotes(next);
+    sessionStorage.setItem(KEY, JSON.stringify(next));
+    setDraft({ followUp: "", observations: "", readBy: "" });
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <h2 className="section-title" style={{ margin: 0 }}>Supervision meeting notes</h2>
+        <button className="btn secondary" onClick={() => setOpen((v) => !v)}>{open ? "Close" : "+ New meeting note"}</button>
+      </div>
+      {open ? (
+        <div className="card card-pad" style={{ marginTop: 10, display: "grid", gap: 12 }}>
+          <div className="field"><label htmlFor="sn-follow">Follow-up items</label>
+            <textarea id="sn-follow" className="input" rows={3} value={draft.followUp}
+              placeholder="e.g. Team submits 2–3 clips per week showing program implementation for fidelity review…"
+              onChange={(e) => setDraft({ ...draft, followUp: e.target.value })} /></div>
+          <div className="field"><label htmlFor="sn-obs">Observations / session notes &amp; recommendations</label>
+            <textarea id="sn-obs" className="input" rows={4} value={draft.observations}
+              placeholder="Clinical recommendations, environmental structuring, communication teaching strategies…"
+              onChange={(e) => setDraft({ ...draft, observations: e.target.value })} /></div>
+          <div className="field" style={{ maxWidth: 280 }}><label htmlFor="sn-read">Read by clinician (initials)</label>
+            <input id="sn-read" className="input" value={draft.readBy} onChange={(e) => setDraft({ ...draft, readBy: e.target.value })} /></div>
+          <div><button className="btn" onClick={save} disabled={!draft.observations.trim()}>Save meeting note</button></div>
+        </div>
+      ) : null}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+        {notes.map((n, i) => (
+          <div key={i} className="card card-pad">
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <b style={{ fontSize: "var(--text-sm)" }}>Meeting note · {n.at.slice(0, 10)}</b>
+              <span className={`pill ${n.readBy ? "good" : "warn"}`}>{n.readBy ? `Read by clinician (${n.readBy})` : "Awaiting clinician read"}</span>
+            </div>
+            {n.followUp ? <p className="sub" style={{ marginTop: 8 }}><b>Follow-up:</b> {n.followUp}</p> : null}
+            <p className="sub" style={{ marginTop: 6 }}><b>Observations:</b> {n.observations}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

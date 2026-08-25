@@ -67,6 +67,16 @@ export default function ReportWorkspacePage() {
         The AI drafts language only; every number is computed and verified by code. You decide.
       </p>
 
+      {/* organization document templates (replace the Word master-template workflow) */}
+      <div className="card card-pad" style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <b>Organization document templates</b>
+          <p className="sub">Structured versions of the master Word templates — evidence sections auto-fill; draft → proofed → final replaces the Drive-copy and upload loop.</p>
+        </div>
+        <Link href={`/clients/${clientId}/report/bar`} className="btn secondary" style={{ textDecoration: "none" }}>BAR Treatment Plan Report</Link>
+        <Link href={`/clients/${clientId}/report/block-summary`} className="btn secondary" style={{ textDecoration: "none" }}>End of Block Summary</Link>
+      </div>
+
       {/* generation controls */}
       <div className="card card-pad" style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div className="field"><label htmlFor="r-start">From</label>

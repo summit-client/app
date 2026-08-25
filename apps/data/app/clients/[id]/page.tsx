@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getPrograms, runSessionsFor } from "@/lib/data";
 import { trendArrow } from "@/lib/mastery";
+import { blockEndingSoon, blockFor } from "@/lib/clinical-docs";
 import type { Program, RunSession } from "@/lib/types";
 
 const ARROW = { up: "▲", down: "▼", flat: "■" } as const;
@@ -25,8 +26,21 @@ export default function ClientOverviewPage() {
   const mastered = programs.filter((p) => p.status === "mastered" || p.status === "maintenance");
   const completed = sessions.filter((s) => s.status === "completed" || s.status === "locked");
 
+  const block = blockFor(clientId);
+
   return (
     <div>
+      {block ? (
+        <div className="card card-pad" style={{ marginBottom: 14, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", ...(blockEndingSoon(block) ? { borderColor: "var(--warn)" } : {}) }}>
+          <span><b>{block.name}</b> <span className="sub" style={{ marginLeft: 8 }}>{block.start} → {block.end}</span></span>
+          {blockEndingSoon(block) ? (
+            <span style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <span className="pill warn">Final 2 weeks — End of Block Summary due</span>
+              <Link href={`/clients/${clientId}/report/block-summary`} className="btn" style={{ textDecoration: "none" }}>Start summary</Link>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <div className="tiles">
         <div className="card tile"><div className="n">{active.length}</div><div className="l">Active goals</div></div>
         <div className="card tile"><div className="n">{mastered.length}</div><div className="l">Mastered / maintenance</div></div>

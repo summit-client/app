@@ -417,10 +417,12 @@ const SEED_RULES: Rule[] = [
   { when: "Goal reaches mastery criterion", iff: "—", then: "Notify supervisor and recommend review", on: true },
   { when: "Authorization has fewer than 10 hours remaining", iff: "—", then: "Notify billing and clinical supervisor", on: true },
   { when: "Month ends", iff: "—", then: "Generate progress review task", on: false },
+  { when: "Treatment block enters its final 2 weeks", iff: "—", then: "Create End of Block Summary task and book the parent meeting", on: true },
+  { when: "Parent interview is older than 3 months", iff: "—", then: "Create a task for the assigned clinician", on: true },
 ];
-const WHENS = ["A session ends", "Goal reaches mastery criterion", "Authorization has fewer than 10 hours remaining", "Month ends", "Note is returned by supervisor", "New client is created"];
+const WHENS = ["A session ends", "Goal reaches mastery criterion", "Authorization has fewer than 10 hours remaining", "Month ends", "Note is returned by supervisor", "New client is created", "Treatment block enters its final 2 weeks", "Parent interview is older than 3 months"];
 const IFFS = ["—", "A session note has not been signed within 24 hours", "The client is OAP-funded", "The goal has declined for 2 weeks"];
-const THENS = ["Notify clinician", "Notify supervisor and recommend review", "Notify billing and clinical supervisor", "Generate progress review task", "Create a task for the assigned clinician"];
+const THENS = ["Notify clinician", "Notify supervisor and recommend review", "Notify billing and clinical supervisor", "Generate progress review task", "Create a task for the assigned clinician", "Create End of Block Summary task and book the parent meeting"];
 
 export function AutomationsSection() {
   const [rules, setRules] = useJsonPref<Rule[]>("summit-automations", SEED_RULES);
