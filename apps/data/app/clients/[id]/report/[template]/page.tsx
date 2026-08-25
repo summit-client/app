@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { getClients, getPrograms } from "@/lib/data";
 import { administrations, instrumentById, overallPct } from "@/lib/instruments";
 import { blockFor, DOC_TEMPLATES, loadDoc, saveDoc, type DocDraft, type DocTemplate } from "@/lib/clinical-docs";
+import { PdfExport, PrintSection } from "@/components/pdf-export";
 import type { ClientRow, Program } from "@/lib/types";
 
 /**
@@ -88,9 +89,15 @@ export default function ClinicalDocPage() {
   return (
     <div>
       <Link href={`/clients/${clientId}/report`} className="sub" style={{ color: "var(--accent)" }}>← Back to reports</Link>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap", marginTop: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
         <h2 className="section-title" style={{ margin: 0 }}>{template.name}</h2>
-        <span className={`pill ${statusPill}`}>{doc.status}</span>
+        <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <span className={`pill ${statusPill}`}>{doc.status}</span>
+          <PdfExport title={template.name} subtitle={`${client.name} · status: ${doc.status}`}>
+            {template.sections.map((s) => <PrintSection key={s.id} heading={s.title} text={valueFor(s)} />)}
+            <PrintSection heading="Sign-off" text={`Written by: ${doc.writtenBy || "—"}\nProofed by: ${doc.proofedBy || "—"}\nStatus: ${doc.status}${doc.updatedAt ? ` (${doc.updatedAt.slice(0, 10)})` : ""}`} />
+          </PdfExport>
+        </span>
       </div>
       <p className="sub">{template.cadence} The signed final is the clinical documentation submission — no separate upload.</p>
 

@@ -6,6 +6,7 @@ import {
   administrations, bandFor, domainSummary, INSTRUMENTS, instrumentById, overallPct,
   saveAdministration, type Administration, type Instrument,
 } from "@/lib/instruments";
+import { PdfExport, PrintSection } from "@/components/pdf-export";
 
 /**
  * Assessments — replaces the Excel assessment dashboards (ABLLS-R, AFLS,
@@ -225,7 +226,25 @@ function Dashboard({ a, all }: { a: Administration; all: Administration[] }) {
 
   return (
     <div className="card card-pad" style={{ marginTop: 12, borderColor: "var(--accent)" }}>
-      <b>{ins.shortName} · {a.date.slice(0, 10)} — domain dashboard</b>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <b>{ins.shortName} · {a.date.slice(0, 10)} — domain dashboard</b>
+        <PdfExport title={ins.name} subtitle={`Administered ${a.date.slice(0, 10)} · overall ${overallPct(ins, a)}% mastery${a.supervisorSignoff ? ` · sign-off ${a.supervisorSignoff}` : ""}`}>
+          <table>
+            <thead><tr><th>Domain</th><th>Score</th><th>Max</th><th>%</th><th>Band</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.domain.code}>
+                  <td>{r.domain.name}</td><td>{r.total}</td><td>{r.max}</td><td>{r.pct}%</td><td>{r.band}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {series.length > 1 ? (
+            <PrintSection heading="Across administrations" text={series.map((s) => `${s.date.slice(0, 10)} — ${overallPct(ins, s)}%`).join(" → ")} />
+          ) : null}
+          {a.notes ? <PrintSection heading="Notes" text={a.notes} /> : null}
+        </PdfExport>
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
         {rows.map((r) => (
           <div key={r.domain.code} style={{ display: "flex", gap: 10, alignItems: "center" }}>

@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { eventsForSession, getNote, incidentsFor, runSessionsFor, summariesFor } from "@/lib/data";
+import { PdfExport, PrintSection } from "@/components/pdf-export";
 import type { RunSession } from "@/lib/types";
 
 const STATUS_PILL: Record<RunSession["status"], string> = {
@@ -47,6 +48,21 @@ export default function SessionsPage() {
                 {sums.length} programs addressed · {obs} atomic observations{abc ? ` · ${abc} ABC entries` : ""} ·
                 note: <b>{note ? note.status.replace(/_/g, " ") : "—"}</b>
               </p>
+              {note && (s.status === "completed" || s.status === "locked") ? (
+                <div style={{ marginTop: 10 }}>
+                  <PdfExport
+                    title="Session Note (SOAP)"
+                    subtitle={`Session #${s.id} · ${(s.endTime ?? s.createdAt).slice(0, 10)} · ${s.serviceType ?? "Session"} at ${s.location ?? "—"} · code ${note.billableCode} · ${note.status.replace(/_/g, " ")}`}
+                  >
+                    <PrintSection heading="S — Subjective" text={note.subjective || "—"} />
+                    <PrintSection heading="O — Objective" text={note.objective} />
+                    {note.perProgram.map((p) => <PrintSection key={p.programName} heading={p.programName} text={p.narrative} />)}
+                    {note.abcNarrative ? <PrintSection heading="Behaviour incidents (ABC)" text={note.abcNarrative} /> : null}
+                    <PrintSection heading="A — Assessment" text={note.assessment} />
+                    <PrintSection heading="P — Plan" text={note.plan} />
+                  </PdfExport>
+                </div>
+              ) : null}
               {["planning", "active", "documentation"].includes(s.status) ? (
                 <div style={{ marginTop: 10 }}>
                   <Link href={`/clients/${clientId}/run`} className="btn" style={{ textDecoration: "none" }}>

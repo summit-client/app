@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { ClinicalEvidencePacket, GeneratedClinicalReport, ReportBlock } from "@summit/clinical-ai";
+import { PdfExport, PrintSection } from "@/components/pdf-export";
 
 type Status = "draft" | "reviewed" | "approved" | "signed";
 const STATUS_FLOW: Status[] = ["draft", "reviewed", "approved", "signed"];
@@ -93,6 +94,12 @@ export default function ReportWorkspacePage() {
           {busy ? "Assembling evidence…" : report ? "Regenerate report" : "Generate progress report"}
         </button>
         <span className={`pill ${status === "signed" ? "good" : "accent"}`}>v{version} · {STATUS_LABEL[status]}</span>
+        {report ? (
+          <PdfExport title="Progress Report" subtitle={`Reporting period ${start} → ${end} · v${version} · ${STATUS_LABEL[status]}`}>
+            {report.blocks.map((b) => <PrintSection key={b.blockId} heading={b.section} text={b.text} />)}
+            <PrintSection heading="Provenance" text={`${report.modelNote}\nEvidence packet ${report.packetId} — every number verified against computed values.`} />
+          </PdfExport>
+        ) : null}
       </div>
 
       {aiMessage ? (
