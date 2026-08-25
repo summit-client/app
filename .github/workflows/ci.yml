@@ -74,8 +74,19 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Build data
+        # apps/data is a stub until the clinician portal merges: no build
+        # script, so an unguarded `pnpm build` fails the whole run. Any change
+        # under packages/ marks every app changed, which is how a scheduler-only
+        # PR ended up trying to build it. Self-healing: builds once the script
+        # exists.
         if: steps.changes.outputs.data_changed == 'true'
-        run: pnpm --filter ./apps/data build
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./apps/data/package.json').scripts && require('./apps/data/package.json').scripts.build ? 0 : 1)"; then
+            pnpm --filter ./apps/data build
+          else
+            echo "::notice::apps/data has no build script (stub package) - skipping"
+          fi
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
