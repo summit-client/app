@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { eventsFor, getPrograms, getSession, incidentsFor, saveNote } from "@/lib/data";
+import { closeSessionRecords, eventsFor, getPrograms, getSession, incidentsFor, saveNote } from "@/lib/data";
 import { sessionPercent } from "@/lib/mastery";
 import { FUNCTION_LABEL, type Program, type ScheduledSession, type SessionNoteDraft } from "@/lib/types";
 
@@ -57,6 +57,21 @@ export default function SessionNotePage() {
   const patch = (k: keyof SessionNoteDraft, v: unknown) => setNote({ ...note, [k]: v } as SessionNoteDraft);
 
   const sign = async () => {
+    // Stamp per-program summaries onto session_records so last-5 trends build up.
+    await closeSessionRecords(
+      programs
+        .filter((p) => eventsFor(p.id).length)
+        .map((p) => {
+          const ev = eventsFor(p.id);
+          const seconds = p.mode === "duration"
+            ? ev.filter((e) => e.code === "stop").reduce((s2, e) => s2 + (Number(e.note?.replace("s", "")) || 0), 0)
+            : null;
+          const count = p.mode === "frequency"
+            ? Math.max(ev.filter((e) => e.code === "+").length - ev.filter((e) => e.code === "-").length, 0)
+            : null;
+          return { programId: p.id, pct: sessionPercent(p, ev), count, seconds };
+        }),
+    );
     const final: SessionNoteDraft = { ...note, status: "awaiting_countersign" };
     await saveNote(final);
     setSigned(true);

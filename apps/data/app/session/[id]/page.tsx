@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { getPrograms, getSession } from "@/lib/data";
+import { getPrograms, getSession, setActiveSession } from "@/lib/data";
 import {
   AbcPanel, DttPanel, DurationPanel, FrequencyPanel, IntervalPanel, NetPanel, TaskAnalysisPanel, YniPanel,
 } from "@/components/modes";
@@ -22,7 +22,10 @@ export default function ActiveSessionPage() {
   React.useEffect(() => {
     void getSession(sessionId).then((s) => {
       setSession(s);
-      if (s) void getPrograms(s.clientId).then((ps) => { setPrograms(ps); setActiveId(ps[0]?.id ?? null); });
+      if (s) {
+        setActiveSession(sessionId, s.clientId);
+        void getPrograms(s.clientId).then((ps) => { setPrograms(ps); setActiveId(ps[0]?.id ?? null); });
+      }
     });
   }, [sessionId]);
 

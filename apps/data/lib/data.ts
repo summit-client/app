@@ -28,6 +28,45 @@ const mem = {
 let seq = 0;
 const nextId = () => `ev-${++seq}-${Math.random().toString(36).slice(2, 7)}`;
 
+/* ---- active-session context (live mode writes hang off this) --------------- */
+const active = {
+  sessionId: null as number | null,
+  clientId: null as number | null,
+  recordIds: new Map<string, string>(), // programId -> session_records.id
+};
+
+/** The Active Session page calls this on load so events attach to the right session. */
+export function setActiveSession(sessionId: number, clientId: number): void {
+  if (active.sessionId !== sessionId) active.recordIds.clear();
+  active.sessionId = sessionId;
+  active.clientId = clientId;
+}
+
+async function ensureSessionRecord(programId: string): Promise<string | null> {
+  if (IS_PREVIEW) return null;
+  const cached = active.recordIds.get(programId);
+  if (cached) return cached;
+  if (active.sessionId == null || active.clientId == null) return null;
+  const user = (await sb().auth.getUser()).data.user;
+  const { data, error } = await sb()
+    .from("session_records")
+    .upsert(
+      {
+        session_id: active.sessionId,
+        client_id: active.clientId,
+        program_id: programId,
+        clinician_id: user?.id,
+        clinic_id: await myClinicId(),
+      },
+      { onConflict: "session_id,program_id" },
+    )
+    .select("id")
+    .single();
+  if (error) throw error;
+  active.recordIds.set(programId, data.id);
+  return data.id;
+}
+
 /* ---- reads ---------------------------------------------------------------- */
 export async function getClients(): Promise<ClientRow[]> {
   if (IS_PREVIEW) return previewClients;
@@ -69,7 +108,25 @@ export async function getPrograms(clientId: number): Promise<Program[]> {
     .neq("status", "archived")
     .order("created_at");
   if (error) throw error;
-  return (data ?? []).map(mapProgram);
+  const programs = (data ?? []).map(mapProgram);
+
+  // last-5 session summaries per program, one query for the whole caseload page
+  if (programs.length) {
+    const { data: recs } = await sb()
+      .from("session_records")
+      .select("program_id, summary_pct, summary_count, started_at")
+      .in("program_id", programs.map((p) => p.id))
+      .not("ended_at", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(programs.length * 5);
+    for (const p of programs) {
+      const mine = (recs ?? []).filter((r) => r.program_id === p.id).slice(0, 5).reverse();
+      p.last5 = mine
+        .map((r) => (r.summary_pct != null ? Number(r.summary_pct) : r.summary_count != null ? Number(r.summary_count) : null))
+        .filter((x): x is number => x != null);
+    }
+  }
+  return programs;
 }
 
 export async function getSession(sessionId: number): Promise<ScheduledSession | null> {
@@ -80,21 +137,42 @@ export async function getSession(sessionId: number): Promise<ScheduledSession | 
 /* ---- writes --------------------------------------------------------------- */
 export async function recordEvent(
   e: Omit<TrialEvent, "id" | "occurredAt">,
-  ctx: { sessionRecordId?: string },
+  _ctx: Record<string, never> = {},
 ): Promise<TrialEvent> {
   const full: TrialEvent = { ...e, id: nextId(), occurredAt: new Date().toISOString() };
-  if (IS_PREVIEW) {
-    mem.events.push(full);
-    return full;
-  }
+  mem.events.push(full); // local mirror drives the UI in both modes
+  if (IS_PREVIEW) return full;
+  const recordId = await ensureSessionRecord(e.programId);
+  if (!recordId) return full;
   const { error } = await sb().from("trial_events").insert({
-    session_record_id: ctx.sessionRecordId,
+    session_record_id: recordId,
     mode: e.mode, code: e.code, step_position: e.stepPosition,
     prompt_level: e.promptLevel, note: e.note,
     clinic_id: await myClinicId(),
   });
   if (error) throw error;
   return full;
+}
+
+/**
+ * Close out the session's records: stamp ended_at and the per-program summary
+ * (percentage, count, seconds) computed from what was collected. Called by the
+ * note page before signing; no-op in preview.
+ */
+export async function closeSessionRecords(
+  summaries: { programId: string; pct: number | null; count: number | null; seconds: number | null }[],
+): Promise<void> {
+  if (IS_PREVIEW) return;
+  const ended = new Date().toISOString();
+  for (const s of summaries) {
+    const recordId = active.recordIds.get(s.programId);
+    if (!recordId) continue;
+    const { error } = await sb()
+      .from("session_records")
+      .update({ ended_at: ended, summary_pct: s.pct, summary_count: s.count, summary_seconds: s.seconds })
+      .eq("id", recordId);
+    if (error) throw error;
+  }
 }
 
 export async function undoLastEvent(programId: string): Promise<void> {
@@ -192,6 +270,6 @@ function mapProgram(row: Record<string, unknown>): Program {
     intervalSeconds: (row.interval_seconds as number) ?? 30,
     dailyTargetMinutes: (row.daily_target_minutes as number) ?? null,
     steps,
-    last5: [], // live mode: computed from session_records summaries (follow-up query)
+    last5: [], // filled from session_records summaries by getPrograms
   };
 }
