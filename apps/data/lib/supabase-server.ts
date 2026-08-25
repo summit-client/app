@@ -1,6 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
+// The cookie domain must NOT be set on localhost, or no session cookie is
+// readable in local dev. Mirrors apps/web/lib/supabase-server.ts.
+const isProduction = process.env.NODE_ENV === 'production'
+
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies()
 
@@ -19,7 +23,7 @@ export async function createSupabaseServerClient() {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, {
               ...options,
-              domain: '.summitclient.io',
+              ...(isProduction ? { domain: '.summitclient.io' } : {}),
               path: '/',
             })
           })
