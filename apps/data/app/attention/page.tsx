@@ -16,6 +16,9 @@ const BUCKET_PILL: Record<Bucket, string> = {
 export default function AttentionPage() {
   const [facts, setFacts] = React.useState<ProgramFacts[]>([]);
   const [queryId, setQueryId] = React.useState<string>("");
+  const [nlq, setNlq] = React.useState("");
+  const [nlBusy, setNlBusy] = React.useState(false);
+  const [nlNote, setNlNote] = React.useState<string | null>(null);
 
   React.useEffect(() => { void getCaseloadFacts().then(setFacts); }, []);
 
@@ -44,8 +47,34 @@ export default function AttentionPage() {
           ))}
       </div>
 
+      {/* natural-language question -> deterministic filter (the model only translates) */}
+      <form
+        style={{ marginTop: 20, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!nlq.trim()) return;
+          setNlBusy(true); setNlNote(null);
+          try {
+            const res = await fetch("/api/clinical-query", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ question: nlq }),
+            });
+            const data = await res.json();
+            if (data.ok && data.filterId) { setQueryId(data.filterId); setNlNote(data.explanation); }
+            else setNlNote(data.explanation ?? "No deterministic filter matches this question yet.");
+          } catch { setNlNote("Query translation is unavailable; use the filter list below."); }
+          finally { setNlBusy(false); }
+        }}
+      >
+        <label htmlFor="nlq" className="sub" style={{ fontWeight: 600 }}>Ask your caseload:</label>
+        <input id="nlq" className="input" style={{ maxWidth: 460 }} value={nlq} onChange={(e) => setNlq(e.target.value)}
+          placeholder="e.g. Which clients have plateaued with integrity above 85%?" />
+        <button className="btn" disabled={nlBusy}>{nlBusy ? "Translating…" : "Ask"}</button>
+      </form>
+      {nlNote ? <p className="sub" style={{ marginTop: 6 }}>{nlNote}</p> : null}
+
       {/* canonical supervisor queries as structured filters */}
-      <div style={{ marginTop: 20, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <label htmlFor="sq" className="sub" style={{ fontWeight: 600 }}>Caseload query:</label>
         <select id="sq" className="input" style={{ maxWidth: 440 }} value={queryId} onChange={(e) => setQueryId(e.target.value)}>
           <option value="">All flagged items ({flagged.length})</option>

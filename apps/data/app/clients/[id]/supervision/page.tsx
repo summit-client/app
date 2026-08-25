@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   REVIEW_CATEGORY_LABEL,
-  type CaseReview, type ClinicalEvidencePacket, type ReviewCategory, type SupervisionBrief,
+  type CaseReview, type ClinicalDecisionTree, type ClinicalEvidencePacket, type ReviewCategory, type SupervisionBrief,
 } from "@summit/clinical-ai";
 
 const CAT_PILL: Record<ReviewCategory, string> = {
@@ -115,6 +115,13 @@ export default function SupervisionPage() {
                         </ul>
                       </>
                     ) : null}
+                    {(g.trend === "Plateau" || g.trend === "Decreasing") && packet ? (
+                      <DecisionTreePanel
+                        clientId={clientId}
+                        goalId={packet.goals.find((x) => x.goalName === g.goalName)?.goalId ?? ""}
+                        pattern={g.trend === "Plateau" ? "Skill plateau" : "Skill regression"}
+                      />
+                    ) : null}
                   </div>
                 ))}
 
@@ -147,6 +154,81 @@ export default function SupervisionPage() {
             </>
           ) : null}
         </>
+      ) : null}
+    </div>
+  );
+}
+
+function DecisionTreePanel({ clientId, goalId, pattern }: { clientId: number; goalId: string; pattern: string }) {
+  const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [tree, setTree] = React.useState<ClinicalDecisionTree | null>(null);
+  const [history, setHistory] = React.useState<{ date: string; summary: string; outcome: string | null }[]>([]);
+  const [committedAs, setCommittedAs] = React.useState<string | null>(null);
+
+  const load = async () => {
+    setOpen(true); setBusy(true);
+    try {
+      const res = await fetch("/api/decision-tree", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, goalId, pattern }),
+      });
+      const data = await res.json();
+      if (data.ok) { setTree(data.tree); setHistory(data.history ?? []); }
+    } finally { setBusy(false); }
+  };
+
+  const commit = async (option: string, plan: string) => {
+    await fetch("/api/decision-tree", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, goalId, pattern, commit: { decision: `${option}: ${plan}` } }),
+    });
+    setCommittedAs(option);
+  };
+
+  if (!open) {
+    return (
+      <button className="btn ghost" style={{ marginTop: 10 }} onClick={load}>
+        Open decision tree · {pattern}
+      </button>
+    );
+  }
+  return (
+    <div style={{ marginTop: 12, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+      {busy ? <p className="sub">Building the decision tree…</p> : null}
+      {history.length ? (
+        <div className="card card-pad" style={{ background: "var(--accent-tint)", marginBottom: 10 }}>
+          <p className="sub" style={{ fontWeight: 600 }}>Decision log for this goal (longitudinal memory):</p>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: "var(--text-sm)", color: "var(--muted)" }}>
+            {history.map((h) => (
+              <li key={`${h.date}-${h.summary}`}>{h.date}: {h.summary}{h.outcome ? ` — outcome: ${h.outcome}` : " — outcome not yet recorded"}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {tree ? (
+        <>
+          <p className="sub" style={{ fontWeight: 600 }}>Candidate causes <span className="sub">(AI inference — you decide)</span>:</p>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: "var(--text-sm)", color: "var(--muted)" }}>
+            {tree.candidateCauses.map((c) => (
+              <li key={c.cause}><b style={{ color: "var(--ink)" }}>{c.cause}</b> ({c.confidencePct}%) — {c.rationale}</li>
+            ))}
+          </ul>
+          <p className="sub" style={{ fontWeight: 600, marginTop: 10 }}>Actions:</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+            {tree.actions.map((a) => (
+              <div key={a.option} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "var(--text-sm)" }}><b>{a.option}</b> — <span style={{ color: "var(--muted)" }}>{a.plan}</span></span>
+                {committedAs === a.option ? <span className="pill good">Committed</span> : committedAs ? null : (
+                  <button className="btn secondary" onClick={() => commit(a.option, a.plan)}>Commit &amp; log decision</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="trend" style={{ marginTop: 10 }}>Measurement plan: <b>{tree.measurementPlan}</b> · Escalation: {tree.escalation}</p>
+        </>
+      ) : !busy ? (
+        <p className="sub">Decision support is unavailable; the pattern evidence and decision log above remain usable.</p>
       ) : null}
     </div>
   );
