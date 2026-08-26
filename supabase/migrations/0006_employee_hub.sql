@@ -121,13 +121,34 @@ begin
   end loop;
 end $$;
 
--- own rows
-create policy hub_profiles_own on hub_employee_profiles for all
+-- own rows.
+--
+-- Every policy here is split per command on purpose. `for all` includes DELETE,
+-- and migrations 0001-0005 grant no delete policy anywhere: deletes are denied
+-- by default and records are corrected, never removed. An HR schema is the last
+-- place to break that rule - `policy_acknowledgements` and `scorecard_responses`
+-- are the evidence that the acknowledgement and the rating happened.
+create policy hub_profiles_own_select on hub_employee_profiles for select
+  using (user_id = auth.uid());
+create policy hub_profiles_own_insert on hub_employee_profiles for insert
+  with check (user_id = auth.uid());
+create policy hub_profiles_own_update on hub_employee_profiles for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
-create policy hub_progress_own on hub_task_progress for all
+
+create policy hub_progress_own_select on hub_task_progress for select
+  using (user_id = auth.uid());
+create policy hub_progress_own_insert on hub_task_progress for insert
+  with check (user_id = auth.uid());
+create policy hub_progress_own_update on hub_task_progress for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
-create policy hub_training_own on hub_employee_training for all
+
+create policy hub_training_own_select on hub_employee_training for select
+  using (user_id = auth.uid());
+create policy hub_training_own_insert on hub_employee_training for insert
+  with check (user_id = auth.uid());
+create policy hub_training_own_update on hub_employee_training for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
+
 create policy hub_pd_own on hub_pd_records for select using (user_id = auth.uid());
 create policy hub_pd_own_insert on hub_pd_records for insert with check (user_id = auth.uid());
 create policy hub_certs_own on hub_certificates for select using (user_id = auth.uid());
@@ -136,7 +157,7 @@ create policy hub_timeoff_own_insert on hub_time_off_requests for insert with ch
 
 -- supervisor: linked team; admin: whole clinic
 create or replace function hub_can_manage(subject uuid) returns boolean
-language sql stable security definer as $$
+language sql stable security definer set search_path = public as $$
   select auth_role() = 'admin'
       or exists (
         select 1 from profiles p
@@ -144,18 +165,41 @@ language sql stable security definer as $$
       );
 $$;
 
-create policy hub_profiles_manage on hub_employee_profiles for all
+-- Manage policies carry an explicit `with check` on every write. The original
+-- `for all` form let Postgres reuse `using` as the check, which is fine until
+-- the command is split - without it a supervisor could update a row and move it
+-- to another clinic or another subject on the way out.
+create policy hub_profiles_manage_select on hub_employee_profiles for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
-create policy hub_progress_manage on hub_task_progress for all
+create policy hub_profiles_manage_update on hub_employee_profiles for update
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+
+create policy hub_progress_manage_select on hub_task_progress for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+create policy hub_progress_manage_update on hub_task_progress for update
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+
 create policy hub_training_manage on hub_employee_training for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 create policy hub_pd_manage on hub_pd_records for update
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+
+-- Certificates are issued, never edited or revoked in place: select + insert
+-- only, and insert is manager-only. A self-issued certificate is a forgery
+-- vector, so the employee's own policy above stays select-only. Automatic
+-- issuance on onboarding completion moves to a security-definer routine in the
+-- data-layer change; it must not become a client-side insert.
+create policy hub_certs_manage_select on hub_certificates for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
-create policy hub_certs_manage on hub_certificates for all
-  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+create policy hub_certs_manage_insert on hub_certificates for insert
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+
 create policy hub_timeoff_manage on hub_time_off_requests for update
-  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 create policy hub_audit_read on hub_audit_events for select
   using (clinic_id = auth_clinic_id() and (actor = auth.uid() or hub_can_manage(subject)));
 create policy hub_audit_write on hub_audit_events for insert

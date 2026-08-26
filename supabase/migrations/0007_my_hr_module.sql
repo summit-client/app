@@ -293,47 +293,75 @@ end $$;
 -- Rules and policies: readable across the clinic, written by administrators.
 create policy rule_versions_read on credential_rule_versions for select
   using (clinic_id is null or clinic_id = auth_clinic_id());
-create policy rule_versions_admin on credential_rule_versions for all
+create policy rule_versions_admin_insert on credential_rule_versions for insert
+  with check (clinic_id = auth_clinic_id() and auth_role() = 'admin');
+create policy rule_versions_admin_update on credential_rule_versions for update
   using (clinic_id = auth_clinic_id() and auth_role() = 'admin')
   with check (clinic_id = auth_clinic_id() and auth_role() = 'admin');
-create policy rule_proposals_admin on credential_rule_proposals for all
+create policy rule_proposals_admin_insert on credential_rule_proposals for insert
+  with check (clinic_id = auth_clinic_id() and auth_role() = 'admin');
+create policy rule_proposals_admin_update on credential_rule_proposals for update
   using (clinic_id = auth_clinic_id() and auth_role() = 'admin')
   with check (clinic_id = auth_clinic_id() and auth_role() = 'admin');
 create policy policies_read on hr_policies for select using (clinic_id = auth_clinic_id());
-create policy policies_admin on hr_policies for all
+create policy policies_admin_insert on hr_policies for insert
+  with check (clinic_id = auth_clinic_id() and auth_role() = 'admin');
+create policy policies_admin_update on hr_policies for update
   using (clinic_id = auth_clinic_id() and auth_role() = 'admin')
   with check (clinic_id = auth_clinic_id() and auth_role() = 'admin');
 
 -- Own records; managers reach their linked team through hub_can_manage().
-create policy credentials_own on employee_credentials for all
+create policy credentials_own_select on employee_credentials for select using (user_id = auth.uid());
+create policy credentials_own_insert on employee_credentials for insert with check (user_id = auth.uid());
+create policy credentials_own_update on employee_credentials for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy credentials_manage on employee_credentials for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
-create policy activities_own on pd_activities for all
+create policy activities_own_select on pd_activities for select using (user_id = auth.uid());
+create policy activities_own_insert on pd_activities for insert with check (user_id = auth.uid());
+create policy activities_own_update on pd_activities for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy activities_manage on pd_activities for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
-create policy allocations_own on pd_credit_allocations for all
+create policy allocations_own_select on pd_credit_allocations for select
+  using (exists (select 1 from pd_activities a where a.id = activity_id and a.user_id = auth.uid()));
+create policy allocations_own_insert on pd_credit_allocations for insert
+  with check (exists (select 1 from pd_activities a where a.id = activity_id and a.user_id = auth.uid()));
+create policy allocations_own_update on pd_credit_allocations for update
   using (exists (select 1 from pd_activities a where a.id = activity_id and a.user_id = auth.uid()))
   with check (exists (select 1 from pd_activities a where a.id = activity_id and a.user_id = auth.uid()));
-create policy goals_own on development_goals for all
+create policy goals_own_select on development_goals for select using (user_id = auth.uid());
+create policy goals_own_insert on development_goals for insert with check (user_id = auth.uid());
+create policy goals_own_update on development_goals for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy goals_manage on development_goals for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
-create policy acks_own on policy_acknowledgements for all
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- An acknowledgement is evidence that a person opened and accepted a policy
+-- version. It is written once and never revised: re-acknowledging a new version
+-- inserts a new row. No update, no delete.
+create policy acks_own_select on policy_acknowledgements for select
+  using (user_id = auth.uid());
+create policy acks_own_insert on policy_acknowledgements for insert
+  with check (user_id = auth.uid());
 create policy acks_manage on policy_acknowledgements for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 
 -- Scorecards: the employee sees their own cycle; managers see their team.
 create policy cycles_own on scorecard_cycles for select using (user_id = auth.uid());
-create policy cycles_manage on scorecard_cycles for all
+create policy cycles_manage_select on scorecard_cycles for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+create policy cycles_manage_insert on scorecard_cycles for insert
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+create policy cycles_manage_update on scorecard_cycles for update
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 
 -- Peer feedback confidentiality: a rater reads back only their own submission;
 -- the subject never selects rows that would reveal an identified rater.
-create policy responses_rater on scorecard_responses for all
-  using (rater = auth.uid()) with check (rater = auth.uid());
+create policy responses_rater_select on scorecard_responses for select
+  using (rater = auth.uid());
+create policy responses_rater_insert on scorecard_responses for insert
+  with check (rater = auth.uid());
 create policy responses_subject on scorecard_responses for select
   using (
     exists (select 1 from scorecard_cycles c where c.id = cycle_id and c.user_id = auth.uid())
@@ -348,8 +376,13 @@ create policy recognition_read on recognitions for select using (clinic_id = aut
 create policy recognition_write on recognitions for insert
   with check (clinic_id = auth_clinic_id() and from_user = auth.uid());
 create policy bonus_own on bonus_results for select using (user_id = auth.uid());
-create policy bonus_manage on bonus_results for all
+create policy bonus_manage_select on bonus_results for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+create policy bonus_manage_insert on bonus_results for insert
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+create policy bonus_manage_update on bonus_results for update
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 
 create policy forum_read on forum_posts for select using (clinic_id = auth_clinic_id());
 create policy forum_write on forum_posts for insert with check (clinic_id = auth_clinic_id() and author = auth.uid());
