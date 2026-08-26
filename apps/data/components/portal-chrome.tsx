@@ -1,0 +1,70 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { getSetting, onSettingsChange, term, terms } from "@summit/settings";
+
+/**
+ * Client-side chrome that reads the central settings service: the sidebar nav
+ * (terminology-aware, honours hidden modules) and the effect hook that applies
+ * appearance/accessibility preferences to the document for every module.
+ */
+
+export function PortalNav() {
+  const [, force] = React.useReducer((n: number) => n + 1, 0);
+  const [hidden, setHidden] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    const read = () => {
+      try { setHidden(JSON.parse(localStorage.getItem("summit-nav-hidden") ?? "[]") as string[]); } catch { /* default */ }
+    };
+    read();
+    const off = onSettingsChange(() => { read(); force(); });
+    const t = setInterval(read, 2000); // nav prefs are written by the Settings page in another part of the tree
+    return () => { off(); clearInterval(t); };
+  }, []);
+
+  const NAV = [
+    { href: "/", label: "Today", id: "Today" },
+    { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload" },
+    { href: "/attention", label: "Attention", id: "Attention" },
+    { href: "/review", label: "Review Queue", id: "Review Queue" },
+    { href: "/settings", label: "Settings", id: "Settings" },
+  ];
+
+  return (
+    <nav aria-label="Portal">
+      {NAV.filter((n) => !hidden.includes(n.id)).map((n) => (
+        <Link key={n.href} href={n.href} className="nav-item">
+          {n.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+/** Applies density, text size and accessibility preferences to <html> so every
+ * module inherits them — one settings source, zero per-module styling. */
+export function SettingsEffects() {
+  React.useEffect(() => {
+    const apply = () => {
+      const el = document.documentElement;
+      el.setAttribute("data-density", String(getSetting("appearance.density")).toLowerCase());
+      el.setAttribute("data-textsize", String(getSetting("a11y.textSize")).toLowerCase());
+      el.toggleAttribute("data-reduce-motion", getSetting("a11y.reduceMotion") === true);
+      el.toggleAttribute("data-line-spacing", getSetting("a11y.lineSpacing") === true);
+      el.toggleAttribute("data-large-controls", getSetting("a11y.largerControls") === true || String(getSetting("run.tapSize")) === "large");
+      el.toggleAttribute("data-focus-rings", getSetting("a11y.focusIndicators") === true);
+    };
+    apply();
+    return onSettingsChange(apply);
+  }, []);
+  return null;
+}
+
+/** Terminology-aware label helper for client components. */
+export function useTerm(): (name: string) => string {
+  const [, force] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => onSettingsChange(() => force()), []);
+  return term;
+}
