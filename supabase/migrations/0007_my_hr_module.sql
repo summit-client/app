@@ -337,12 +337,39 @@ create policy goals_own_update on development_goals for update
 create policy goals_manage on development_goals for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 -- An acknowledgement is evidence that a person opened and accepted a policy
--- version. It is written once and never revised: re-acknowledging a new version
--- inserts a new row. No update, no delete.
+-- version. The screen writes it in two steps - a row on open, acknowledged_at on
+-- accept - so it cannot be pure insert-only. Instead it is a one-way latch: the
+-- row can be updated only while acknowledged_at is null, so an acknowledgement
+-- can be made once and never revised or backdated. Re-acknowledging a new
+-- version inserts a new row. No delete, ever.
 create policy acks_own_select on policy_acknowledgements for select
   using (user_id = auth.uid());
 create policy acks_own_insert on policy_acknowledgements for insert
+  with check (user_id = auth.uid() and acknowledged_at is null);
+create policy acks_own_update on policy_acknowledgements for update
+  using (user_id = auth.uid() and acknowledged_at is null)
   with check (user_id = auth.uid());
+
+-- USING cannot see which columns changed, only which row. Without this an
+-- employee could take an unacknowledged row and repoint it at a different
+-- policy or version. Mirrors forbid_signed_report_update() in 0003.
+create or replace function forbid_ack_identity_change() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.policy_id is distinct from old.policy_id
+     or new.version is distinct from old.version
+     or new.user_id is distinct from old.user_id then
+    raise exception 'An acknowledgement cannot be moved to another policy, version or person.';
+  end if;
+  if old.acknowledged_at is not null then
+    raise exception 'An acknowledgement is final; acknowledge the new version instead.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists policy_acks_latch on policy_acknowledgements;
+create trigger policy_acks_latch
+  before update on policy_acknowledgements
+  for each row execute function forbid_ack_identity_change();
 create policy acks_manage on policy_acknowledgements for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 
