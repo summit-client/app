@@ -8,6 +8,7 @@ import {
   decideTimeOff, getAudit, getPd, getProfile, getProgress, getTimeOff, getTraining,
   onboardingProgress, signOffTask, verifyPd,
 } from "@/lib/hub";
+import { SessionGate, useIdentity } from "@/components/session-provider";
 
 /**
  * Admin: the supervisor and admin console with team directory, pending sign-off
@@ -16,23 +17,27 @@ import {
  * live mode; the preview store holds one employee).
  */
 export default function AdminPage() {
+  // Gate on profiles.role via RLS-backed identity, not on a role the browser
+  // holds. The previous check read a role out of localStorage that My Profile
+  // let anyone set, so any signed-in employee could open this console.
+  return (
+    <SessionGate requires={["SUPERVISOR", "ADMIN"]}>
+      <AdminConsole />
+    </SessionGate>
+  );
+}
+
+function AdminConsole() {
+  const identity = useIdentity();
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [tab, setTab] = React.useState<"queues" | "staff" | "settings">("queues");
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading admin…</p>;
 
-  const profile = getProfile();
-  if (profile.role === "EMPLOYEE") {
-    return (
-      <div>
-        <h1 className="h-page">Admin</h1>
-        <div className="card card-pad" style={{ marginTop: 16 }}>
-          <p className="sub">This area is for supervisors and administrators. In preview, switch your role from My Profile to demo it.</p>
-        </div>
-      </div>
-    );
-  }
+  // The record on screen still comes from the hub store; only the ROLE that
+  // decides what this console exposes comes from identity.
+  const profile = { ...getProfile(), role: identity.role };
 
   if (tab !== "queues") {
     return (

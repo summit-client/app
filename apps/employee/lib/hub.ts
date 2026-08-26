@@ -40,6 +40,9 @@ export interface EmployeeProfile {
   employeeNumber: string;
   jobTitle: string | null;
   location: string | null;
+  /** Display only. Identity - and every gate - reads profiles.role through
+   *  lib/session.ts. This field is the preview fixture's idea of the role and
+   *  must never be what an authorisation check consults. */
   role: HubRole;
   startDate: string | null;        // ISO; drives every deadline
   vscStatus: VscStatus;
@@ -455,7 +458,6 @@ export function getAudit(): AuditEvent[] {
   return store().audit;
 }
 
-/** Preview helper: switch the acting role to demo the admin/supervisor views. */
-export async function setRole(role: HubRole): Promise<void> {
-  await saveProfile({ role });
-}
+/* setRole() removed. The acting role is no longer something the browser can
+   write: it comes from profiles.role through lib/session.ts, and the preview
+   switcher lives in setPreviewRole(), which is a no-op outside preview. */
