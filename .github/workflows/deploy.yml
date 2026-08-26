@@ -19,11 +19,14 @@ jobs:
           host: ${{ secrets.DO_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_KEY }}
-          command_timeout: 20m
+          command_timeout: 30m
           script: |
             set -e
             cd /var/www/summit-client
-            export NODE_OPTIONS="--max-old-space-size=1024"
+
+            # 2048, not 1024: apps/data pulls in four workspace packages
+            # (analytics, clinical-ai, design, settings) and builds tight at 1024.
+            export NODE_OPTIONS="--max-old-space-size=2048"
 
             echo "--> Syncing..."
             git checkout -- package-lock.json || true
@@ -32,16 +35,32 @@ jobs:
             echo "--> Installing..."
             pnpm install
 
-            echo "--> Clean build..."
-            rm -rf apps/web/.next apps/scheduler/.next
-            pnpm turbo build --filter=@summit/web --filter=@summit/scheduler
+            # Every deployed app needs its own .env.local present, or its build
+            # fails on "@supabase/ssr: Your project's URL and API key are required".
+            echo "--> Checking env files..."
+            for app in web scheduler data client; do
+              test -f "apps/$app/.env.local" || { echo "MISSING apps/$app/.env.local"; exit 1; }
+            done
 
+            echo "--> Clean build..."
+            rm -rf apps/web/.next apps/scheduler/.next apps/data/.next apps/client/.next
+            pnpm turbo build \
+              --filter=@summit/web \
+              --filter=@summit/scheduler \
+              --filter=@summit/data \
+              --filter=@summit/client
+
+            # BUILD_ID is written at the very end of a successful next build, so
+            # its presence is what distinguishes a complete build from the
+            # half-populated .next that starts fine and then 500s on every request.
             echo "--> Verifying build output..."
+            for app in web scheduler data client; do
+              test -f "apps/$app/.next/BUILD_ID" || { echo "INCOMPLETE build: apps/$app"; exit 1; }
+            done
             test -f apps/web/.next/server/pages/index.html
-            test -d apps/scheduler/.next
             echo "Build output OK"
 
             echo "--> Restarting..."
-            pm2 restart web scheduler
+            pm2 restart web scheduler data client
             pm2 save
             pm2 list
