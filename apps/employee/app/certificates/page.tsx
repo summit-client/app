@@ -6,7 +6,7 @@ import { certLifecycle, getCertificates } from "@/lib/hub";
 
 const LIFE_PILL = { ACTIVE: "good", EXPIRING_SOON: "warn", EXPIRED: "danger" } as const;
 
-/** My Certificates — issued certificates with lifecycle status and PDF export.
+/** My Certificates: issued certificates with lifecycle status and PDF export.
  * The Module 00 onboarding certificate is auto-issued when onboarding completes. */
 export default function CertificatesPage() {
   const [ready, setReady] = React.useState(false);
@@ -19,7 +19,7 @@ export default function CertificatesPage() {
     <div>
       <h1 className="h-page">My Certificates</h1>
       <p className="sub">
-        Certificates are issued automatically — completing onboarding earns the Module 00 certificate, and training
+        Certificates are issued automatically. Completing onboarding earns the Module 00 certificate, and training
         modules issue theirs on completion. Each carries a sequential registry number.
       </p>
 
@@ -46,7 +46,7 @@ export default function CertificatesPage() {
         })}
         {!certs.length ? (
           <div className="card card-pad">
-            <p className="sub">No certificates yet — complete your onboarding to earn the Module 00 certificate.</p>
+            <p className="sub">No certificates yet. Complete your onboarding to earn the Module 00 certificate.</p>
           </div>
         ) : null}
       </div>

@@ -5,7 +5,7 @@ import { HUB_COURSES, type CourseKind } from "@/lib/content";
 import { dueDate, getProfile, getTraining, setCourseStatus } from "@/lib/hub";
 
 /**
- * My Training — compliance and clinical courses with due dates derived from
+ * My Training: compliance and clinical courses with due dates derived from
  * the start date. Completing a course also completes its matching onboarding
  * task. The in-house Clinical Competency Training Program ships with this app.
  */
@@ -20,7 +20,7 @@ export default function TrainingPage() {
   const statusOf = (key: string) => training.find((t) => t.courseKey === key)?.status ?? "NOT_STARTED";
 
   const groups: { kind: CourseKind; title: string; blurb: string }[] = [
-    { kind: "CLINICAL", title: "Clinical training", blurb: "The in-house competency program plus the Autism Internet Modules for Weeks 1–2." },
+    { kind: "CLINICAL", title: "Clinical training", blurb: "The in-house competency program plus the Autism Internet Modules for Weeks 1 and 2." },
     { kind: "COMPLIANCE", title: "Mandatory compliance", blurb: "BrightHR / BrightSafe modules due within 14 days; additional items within 30 days." },
   ];
 

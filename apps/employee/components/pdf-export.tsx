@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { getSetting } from "@summit/settings";
 
 /**
- * General "Export to PDF" — one component used by every printable surface
+ * General "Export to PDF": one component used by every printable surface
  * (clinical documents, progress reports, assessment dashboards, session
  * notes). Renders the content onto an organization letterhead and prints via
  * the browser's PDF engine, so nothing leaves the machine. Letterhead,
@@ -75,7 +75,7 @@ export function PdfExport({ title, subtitle, authors, children }: {
                 {authorLine ? <span> Authored by {authorLine}.</span> : null}
                 {confidential ? (
                   <span>
-                    {" "}Confidential clinical record — intended only for the client, their circle of care and authorized staff.
+                    {" "}Confidential clinical record, intended only for the client, their circle of care and authorized staff.
                     The signed record in the platform remains authoritative.
                   </span>
                 ) : null}

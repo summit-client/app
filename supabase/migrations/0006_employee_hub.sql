@@ -53,6 +53,12 @@ create table if not exists hub_pd_records (
   provider text,
   hours numeric not null check (hours > 0),
   date date not null,
+  -- certificate reading: CEU classification from the uploaded PDF
+  category text not null default 'GENERAL_PD'
+    check (category in ('BACB_CEU', 'CPBAO_CE', 'IBAO_CEU', 'GENERAL_PD')),
+  ceu_units numeric,
+  file_name text,
+  detection text,
   verified boolean not null default false,
   verified_by uuid references auth.users(id),
   created_at timestamptz not null default now()

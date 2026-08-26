@@ -7,7 +7,7 @@ import {
 
 const STATUS_PILL = { REQUESTED: "warn", APPROVED: "good", DENIED: "danger", CANCELLED: "neutral" } as const;
 
-/** Time Off — balances per entitlement year (reset on the hire anniversary),
+/** Time Off: balances per entitlement year (reset on the hire anniversary),
  * request form and history. Vacation follows the Ontario ESA; sick days are
  * organization policy. */
 export default function TimeOffPage() {

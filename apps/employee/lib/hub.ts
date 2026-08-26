@@ -41,19 +41,27 @@ export interface EmployeeProfile {
   jobTitle: string | null;
   location: string | null;
   role: HubRole;
-  startDate: string | null;        // ISO — drives every deadline
+  startDate: string | null;        // ISO; drives every deadline
   vscStatus: VscStatus;
 }
 
 export interface TaskProgress { taskKey: string; status: TaskStatus; notes: string; applicable: boolean }
 export interface TrainingRecord { courseKey: string; status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED"; completedAt: string | null }
-export interface PdRecord { id: string; title: string; provider: string; hours: number; date: string; verified: boolean }
+export interface PdRecord {
+  id: string; title: string; provider: string; hours: number; date: string; verified: boolean;
+  category: "BACB_CEU" | "CPBAO_CE" | "IBAO_CEU" | "GENERAL_PD";
+  ceuUnits: number | null;
+  fileName: string | null;      // uploaded certificate PDF
+  detection: string;            // what the reader detected (or why it fell back)
+}
 export interface Certificate { id: string; certNumber: string; title: string; competency: string; instructor: string; issuedDate: string; expiryDate: string | null }
 export interface TimeOffRequest { id: string; type: "VACATION" | "SICK"; startDate: string; endDate: string; days: number; status: "REQUESTED" | "APPROVED" | "DENIED" | "CANCELLED"; note: string }
 export interface AuditEvent { id: string; action: string; detail: string; at: string; who: string }
 
 export const ONBOARDING_CERT_TITLE = "New Team Member Onboarding";
 export const ONBOARDING_CERT_COMPETENCY = "MODULE # 00";
+export const PHASE1_CERT_TITLE = "Onboarding Phase 1: Week 1";
+export const PHASE2_CERT_TITLE = "Onboarding Phase 2: Week 2";
 
 /* ---- pure logic (ported) ----------------------------------------------------- */
 
@@ -282,7 +290,12 @@ export async function setCourseStatus(courseKey: string, status: TrainingRecord[
   rec.status = status;
   rec.completedAt = status === "COMPLETED" ? new Date().toISOString() : null;
   persist();
-  audit("training.updated", `${HUB_COURSES.find((c) => c.key === courseKey)?.title ?? courseKey} → ${status}`);
+  const course = HUB_COURSES.find((c) => c.key === courseKey);
+  audit("training.updated", `${course?.title ?? courseKey} → ${status}`);
+  // Every completed course earns its Summit credential.
+  if (course && status === "COMPLETED") {
+    issueCertificate(course.title, `${course.kind} TRAINING${course.category ? ` · ${course.category.toUpperCase()}` : ""}`);
+  }
   const linked = HUB_TASKS.find((t) => t.courseKey === courseKey);
   if (linked && status === "COMPLETED") await updateTask(linked.key, { status: "COMPLETED" });
   if (!IS_PREVIEW) {
@@ -300,9 +313,12 @@ export async function addPd(entry: Omit<PdRecord, "id" | "verified">): Promise<v
   const s = store();
   s.pd.unshift({ ...entry, id: `pd-${Date.now().toString(36)}`, verified: false });
   persist();
-  audit("pd.added", `${entry.title} (${entry.hours}h)`);
+  audit("pd.added", `${entry.title} (${entry.hours}h · ${entry.category})`);
   if (!IS_PREVIEW) {
-    await sb().from("hub_pd_records").insert({ user_id: s.profile.id, title: entry.title, provider: entry.provider, hours: entry.hours, date: entry.date });
+    await sb().from("hub_pd_records").insert({
+      user_id: s.profile.id, title: entry.title, provider: entry.provider, hours: entry.hours, date: entry.date,
+      category: entry.category, ceu_units: entry.ceuUnits, file_name: entry.fileName, detection: entry.detection,
+    });
   }
 }
 
@@ -317,19 +333,18 @@ export function getCertificates(): Certificate[] {
   return store().certificates;
 }
 
-/** Idempotent Module 00 issuance, numbered <SEQ> per year (replica of nextCertNumber). */
-export function maybeIssueOnboardingCertificate(): Certificate | null {
+/** Idempotent issuance by title, numbered SUMMIT-<year>-<seq> (sequential registry). */
+export function issueCertificate(title: string, competency: string): Certificate {
   const s = store();
-  const existing = s.certificates.find((c) => c.title === ONBOARDING_CERT_TITLE);
+  const existing = s.certificates.find((c) => c.title === title);
   if (existing) return existing;
-  if (!isOnboardingComplete(s.progress)) return null;
   s.certSeq += 1;
   const cert: Certificate = {
-    id: `cert-${Date.now().toString(36)}`,
+    id: `cert-${Date.now().toString(36)}-${s.certSeq}`,
     certNumber: `SUMMIT-${new Date().getFullYear()}-${String(s.certSeq).padStart(6, "0")}`,
-    title: ONBOARDING_CERT_TITLE,
-    competency: ONBOARDING_CERT_COMPETENCY,
-    instructor: "Adina Yankov, MPEd, BCBA, RBA (Ont.), IBA",
+    title,
+    competency,
+    instructor: "", // unsigned Summit credential; the issuing organization renders from Settings
     issuedDate: new Date().toISOString().slice(0, 10),
     expiryDate: null,
   };
@@ -337,6 +352,30 @@ export function maybeIssueOnboardingCertificate(): Certificate | null {
   persist();
   audit("certificate.issued", `${cert.title} · ${cert.certNumber}`);
   return cert;
+}
+
+/** Phase progress: required + applicable tasks of one week only. */
+function weekComplete(week: 1 | 2, progress: TaskProgress[]): boolean {
+  const byKey = new Map(progress.map((p) => [p.taskKey, p]));
+  const required = HUB_TASKS.filter((t) => t.week === week && t.required !== false);
+  const applicable = required.filter((t) => {
+    const p = byKey.get(t.key);
+    return p?.status !== "NOT_APPLICABLE" && p?.applicable !== false;
+  });
+  return applicable.length > 0 && applicable.every((t) => byKey.get(t.key)?.status === "COMPLETED");
+}
+
+/**
+ * Certificate cascade: every completed phase earns its credential, up to full
+ * completion: Phase 1 (Week 1) → Phase 2 (Week 2) → Module 00. Each is
+ * idempotent; called after every task change.
+ */
+export function maybeIssueOnboardingCertificate(): Certificate | null {
+  const s = store();
+  if (weekComplete(1, s.progress)) issueCertificate(PHASE1_CERT_TITLE, "ONBOARDING · PHASE 1");
+  if (weekComplete(2, s.progress)) issueCertificate(PHASE2_CERT_TITLE, "ONBOARDING · PHASE 2");
+  if (isOnboardingComplete(s.progress)) return issueCertificate(ONBOARDING_CERT_TITLE, ONBOARDING_CERT_COMPETENCY);
+  return null;
 }
 
 export function getTimeOff(): TimeOffRequest[] {

@@ -8,7 +8,7 @@ import {
 } from "@/lib/hub";
 
 /**
- * Admin — the supervisor/admin console: team directory, pending sign-off
+ * Admin: the supervisor and admin console with team directory, pending sign-off
  * queue, time-off decisions, PD verification and the audit feed. Admins see
  * the whole clinic; supervisors see their linked team (enforced by RLS in
  * live mode; the preview store holds one employee).
@@ -78,7 +78,7 @@ export default function AdminPage() {
               <b style={{ fontSize: "var(--text-sm)" }}>{p.task?.title ?? p.taskKey}</b>
               <p className="trend" style={{ marginTop: 4 }}>{profile.name} · Week {p.task?.week} · {p.task?.section}{p.notes ? ` · note: ${p.notes}` : ""}</p>
             </div>
-            <button className="btn" onClick={() => void signOffTask(p.taskKey).then(force)}>Sign off — completed</button>
+            <button className="btn" onClick={() => void signOffTask(p.taskKey).then(force)}>Sign off as completed</button>
           </div>
         ))}
         {!pendingSignoffs.length ? <div className="card card-pad"><p className="sub">Nothing awaiting sign-off.</p></div> : null}

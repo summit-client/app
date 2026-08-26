@@ -3,53 +3,67 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { getSetting } from "@summit/settings";
 import { getCertificates, getProfile, type Certificate } from "@/lib/hub";
 
 /**
- * Certificate view/print — the approved template, ported 1:1 from the Mount
- * Etna hub (1123×794 landscape): sage corner ribbons, red rosette seal,
- * competency bar, serif titles, signature and academy logo. Print uses
- * A4 landscape with no margins so the art bleeds to the edge.
+ * Certificate view and print: the Summit credential template (blue formal),
+ * white ground, diagonal blue ribbon bands, the Summit badge, Playfair
+ * Display titles and Public Sans body. Unsigned: the credential carries the
+ * registry number and the issuing organization, not a personal signature.
+ * A4 landscape full-bleed on print.
  */
 
 function fmt(iso: string) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
 }
 
-/** Decorative layer — the approved template geometry, unchanged. */
-function CertArt() {
-  const bumps = Array.from({ length: 26 }, (_, i) => {
-    const a = (i / 26) * Math.PI * 2;
-    return <circle key={i} cx={(152 + Math.cos(a) * 88).toFixed(1)} cy={(158 + Math.sin(a) * 88).toFixed(1)} r="11" fill="#e01414" />;
-  });
-  const tl = [[40, 104, "#e3e8de"], [114, 184, "#c2cfba"], [194, 272, "#97ab8e"], [282, 314, "#75886c"]] as const;
-  const br = [[30, 74, "#e3e8de"], [84, 130, "#c2cfba"], [140, 186, "#97ab8e"], [196, 220, "#75886c"]] as const;
-  const dash = (px: number, py: number, ang: number) =>
-    Array.from({ length: 4 }, (_, i) => (
-      <rect key={`${px}-${i}`} x={i * 28} y="0" width="17" height="8" fill="#b7bdbe" transform={`translate(${px},${py}) rotate(${ang})`} />
+/** Diagonal ribbon art echoing the approved blue formal background. */
+function RibbonArt() {
+  const bands = [
+    // [offset, width, fill]: diagonal bands at 45 degrees sweeping the top-right
+    [430, 46, "url(#g1)"], [510, 14, "#cfe0e8"], [556, 30, "url(#g2)"], [620, 10, "#d7dbde"],
+    [664, 40, "url(#g1)"], [740, 16, "#9fc4d2"], [788, 26, "url(#g3)"], [850, 8, "#d7dbde"],
+  ] as const;
+  const dashes = (x0: number, y0: number) =>
+    Array.from({ length: 5 }, (_, i) => (
+      <rect key={i} x={x0 + i * 26} y={y0} width="15" height="7" fill="#b9c6cd" transform={`rotate(-45 ${x0 + i * 26} ${y0})`} />
     ));
   return (
     <svg viewBox="0 0 1123 794" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#2e9db4" /><stop offset="1" stopColor="#14364f" />
+        </linearGradient>
+        <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#57b6c6" /><stop offset="1" stopColor="#1d5f7e" />
+        </linearGradient>
+        <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#6b8ca3" /><stop offset="1" stopColor="#26506b" />
+        </linearGradient>
+      </defs>
       <rect width="1123" height="794" fill="#ffffff" />
-      <rect x="665" y="0" width="458" height="315" fill="#ccd6c3" />
-      {tl.map(([a, b, c]) => <polygon key={`tl${a}`} points={`${a},-40 ${b},-40 -40,${b} -40,${a}`} fill={c} />)}
-      {br.map(([a, b, c]) => <polygon key={`br${a}`} points={`${1123 - a},834 ${1123 - b},834 1163,${794 - b} 1163,${794 - a}`} fill={c} />)}
-      {dash(250, 10, 45)}
-      {dash(10, 250, 45)}
-      {dash(1123 - 248, 794 - 18, 225)}
-      {dash(1123 - 20, 794 - 246, 225)}
-      <circle cx="152" cy="158" r="88" fill="#e01414" />
-      {bumps}
-      <circle cx="152" cy="158" r="74" fill="none" stroke="#d8d8d8" strokeWidth="2.5" />
-      <circle cx="152" cy="158" r="64" fill="none" stroke="#e9e9e9" strokeWidth="2.2" strokeDasharray="0.8,6.2" strokeLinecap="round" />
-      <rect x="0" y="590" width="380" height="204" fill="#ccd6c3" />
-      <rect x="44" y="616" width="272" height="140" rx="70" fill="#ffffff" />
-      <rect x="289" y="258" width="548" height="48" fill="#0c1a0f" />
+      {/* top-right sweep */}
+      <g transform="rotate(-45 1123 0)">
+        {bands.map(([o, w, f]) => (
+          <rect key={`t${o}`} x={1123 - 900} y={-o - w} width="1400" height={w} fill={f} transform={`translate(0 ${-140})`} />
+        ))}
+      </g>
+      {/* bottom-left echo */}
+      <g transform="rotate(-45 0 794)" opacity="0.85">
+        {bands.slice(0, 4).map(([o, w, f]) => (
+          <rect key={`b${o}`} x={-700} y={794 + o * 0.35} width="1100" height={w * 0.7} fill={f} />
+        ))}
+      </g>
+      {dashes(880, 240)}
+      {dashes(150, 700)}
     </svg>
   );
 }
 
 const abs = (style: React.CSSProperties): React.CSSProperties => ({ position: "absolute", textAlign: "center", ...style });
+const SERIF = '"Playfair Display", Georgia, serif';
+const SANS = '"Public Sans", Inter, system-ui, sans-serif';
 
 export default function CertificateViewPage() {
   const params = useParams<{ id: string }>();
@@ -64,7 +78,7 @@ export default function CertificateViewPage() {
   if (cert === "loading") return <p className="sub">Loading certificate…</p>;
   if (!cert) return <p className="sub">Certificate not found.</p>;
 
-  const barText = /^MODULE/i.test(cert.competency) ? cert.competency : "CERTIFICATE";
+  const orgName = String(getSetting("org.name"));
 
   return (
     <>
@@ -76,27 +90,34 @@ export default function CertificateViewPage() {
       </div>
 
       <div className="cert-scroll" style={{ paddingTop: 18 }}>
-        <div style={{ position: "relative", width: 1123, height: 794, margin: "0 auto", fontFamily: "Inter, system-ui, sans-serif", boxShadow: "0 8px 32px rgba(20,40,25,.18)" }}>
-          <CertArt />
-          <div style={abs({ left: 262, top: 66, width: 600, fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 60, lineHeight: 1.13, color: "#243026", letterSpacing: ".5px" })}>
+        <div style={{ position: "relative", width: 1123, height: 794, margin: "0 auto", fontFamily: SANS, boxShadow: "0 8px 32px rgba(15,40,55,.2)", color: "#22333f" }}>
+          <RibbonArt />
+
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/summit-badge.png" alt="Summit" style={{ position: "absolute", left: 74, top: 44, width: 190 }} />
+
+          <div style={abs({ left: 212, top: 96, width: 700, fontFamily: SERIF, fontWeight: 800, fontSize: 58, lineHeight: 1.12, color: "#14364f", letterSpacing: ".5px" })}>
             CERTIFICATE<br />OF COMPLETION
           </div>
-          <div style={{ position: "absolute", left: 289, top: 258, width: 548, height: 48, display: "flex", alignItems: "center", paddingLeft: 28, boxSizing: "border-box", color: "#fff", fontSize: 26, fontWeight: 600 }}>
-            {barText}
+
+          <div style={{ position: "absolute", left: 288, top: 276, width: 548, height: 48, background: "#14364f", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, fontWeight: 600, letterSpacing: "0.14em" }}>
+            SUMMIT CREDENTIAL
           </div>
-          <div style={abs({ left: 212, top: 330, width: 700, fontSize: 25, color: "#3a3a3a" })}>This certificate of competency issued to</div>
-          <div style={abs({ left: 162, top: 384, width: 800, fontFamily: "Georgia, serif", fontSize: 54, fontWeight: 700, color: "#1c2a1f" })}>{name}</div>
-          <div style={abs({ left: 292, top: 496, width: 540, fontSize: 22, color: "#3a3a3a" })}>for the completion of</div>
-          <div style={abs({ left: 292, top: 534, width: 540, fontSize: 24, fontWeight: 600, color: "#243026", lineHeight: 1.25 })}>{cert.title}</div>
-          <div style={abs({ left: 292, top: 612, width: 540, fontSize: 22, color: "#3a3a3a" })}>on this</div>
-          <div style={abs({ left: 292, top: 648, width: 540, fontSize: 24, fontWeight: 500, color: "#243026" })}>{fmt(cert.issuedDate)}</div>
-          <div style={abs({ left: 292, top: 688, width: 540, fontSize: 13, fontWeight: 600, color: "#8a988a" })}>Certificate no. {cert.certNumber}</div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/clinical/assets/signature.png" alt="" style={{ position: "absolute", left: 797, bottom: 190, width: 250 }} />
-          <div style={{ position: "absolute", left: 792, top: 609, width: 260, height: 2, background: "#222" }} />
-          <div style={abs({ left: 772, top: 622, width: 300, fontSize: 16, color: "#333", lineHeight: 1.35 })}>{cert.instructor}</div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/clinical/assets/megba-logo-card.png" alt="Mount Etna Global Behaviour Academy" style={{ position: "absolute", left: 73, top: 646, width: 215 }} />
+          <div style={abs({ left: 288, top: 332, width: 548, fontSize: 14, fontWeight: 600, letterSpacing: "0.1em", color: "#4d6b7d" })}>
+            {cert.competency}
+          </div>
+
+          <div style={abs({ left: 212, top: 386, width: 700, fontSize: 23, color: "#3a4a56" })}>This certificate of completion is issued to</div>
+          <div style={abs({ left: 112, top: 428, width: 900, fontFamily: SERIF, fontSize: 52, fontWeight: 700, color: "#10293c" })}>{name}</div>
+
+          <div style={abs({ left: 212, top: 528, width: 700, fontSize: 21, color: "#3a4a56" })}>for the completion of</div>
+          <div style={abs({ left: 162, top: 564, width: 800, fontSize: 25, fontWeight: 600, color: "#14364f", lineHeight: 1.25 })}>{cert.title}</div>
+
+          <div style={abs({ left: 212, top: 634, width: 700, fontSize: 20, color: "#3a4a56" })}>on this {fmt(cert.issuedDate)}</div>
+
+          <div style={abs({ left: 212, top: 700, width: 700, fontSize: 13, fontWeight: 600, letterSpacing: "0.06em", color: "#7b8f9c" })}>
+            Certificate no. {cert.certNumber} · Issued by {orgName} · Powered by SummitClient.io
+          </div>
         </div>
       </div>
     </>

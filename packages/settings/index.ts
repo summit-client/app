@@ -61,6 +61,7 @@ export const SECTIONS: SettingsSection[] = [
   { slug: "privacy", title: "Privacy & Security", blurb: "Sign-in security, organization policy and the audit log." },
   { slug: "data-export", title: "Data & Export", blurb: "Export client records, data and reports — with elevated permission for bulk export." },
   { slug: "profile", title: "My Profile", blurb: "Your name, credentials, signature and personal defaults." },
+  { slug: "ecosystem", title: "Ecosystem Tracker", blurb: "Monthly scorecards, source weights, recognition, bonus eligibility and career pathways for the HR module." },
 ];
 
 /* ---- terminology ------------------------------------------------------------- */
@@ -224,6 +225,21 @@ export const SETTINGS: SettingDef[] = [
   { key: "profile.pronouns", label: "Pronouns (optional)", section: "profile", scope: "user", type: "text", default: "" },
   { key: "profile.credentials", label: "Credentials", description: "Optionally populates reports and signatures automatically.", section: "profile", scope: "user", type: "text", default: "", keywords: ["designation", "signature"] },
   { key: "profile.jobTitle", label: "Job title", section: "profile", scope: "user", type: "text", default: "" },
+
+  /* Ecosystem Tracker (My HR module) — every tenant-specific number lives here, never in code */
+  { key: "eco.enabled", label: "Ecosystem Tracker", section: "ecosystem", scope: "org", type: "toggle", default: true, keywords: ["scorecard", "obm"] },
+  { key: "eco.weightObjective", label: "Weight: objective metrics (%)", section: "ecosystem", scope: "org", type: "number", default: 35, keywords: ["weights"] },
+  { key: "eco.weightSupervisor", label: "Weight: supervisor assessment (%)", section: "ecosystem", scope: "org", type: "number", default: 30 },
+  { key: "eco.weightPeer", label: "Weight: peer feedback (%)", section: "ecosystem", scope: "org", type: "number", default: 15 },
+  { key: "eco.weightSelf", label: "Weight: self reflection (%)", section: "ecosystem", scope: "org", type: "number", default: 10 },
+  { key: "eco.weightPd", label: "Weight: professional development (%)", section: "ecosystem", scope: "org", type: "number", default: 10 },
+  { key: "recog.enabled", label: "Peer recognition", section: "ecosystem", scope: "org", type: "toggle", default: true, keywords: ["points", "kudos"] },
+  { key: "recog.monthlyAllowance", label: "Recognition points each employee may give per month", section: "ecosystem", scope: "org", type: "number", default: 10 },
+  { key: "recog.maxPerPerson", label: "Maximum points to one person per month", section: "ecosystem", scope: "org", type: "number", default: 4 },
+  { key: "bonus.enabled", label: "Monthly bonus eligibility", description: "Eligibility only; monetary amounts are never stored in Summit.", section: "ecosystem", scope: "org", type: "toggle", default: true, keywords: ["bonus"] },
+  { key: "bonus.minScore", label: "Minimum Ecosystem Score for bonus eligibility", section: "ecosystem", scope: "org", type: "number", default: 80 },
+  { key: "career.ladder", label: "Career development pathway (arrow-separated roles)", section: "ecosystem", scope: "org", type: "text", default: "Behaviour Therapist > Senior Behaviour Therapist > Supervised Behaviour Clinician > Clinical Leadership", keywords: ["pathway", "roles"] },
+  { key: "eco.values", label: "Organizational values (comma-separated)", section: "ecosystem", scope: "org", type: "text", default: "Collaboration, Reciprocity, Learning, Reliability, Respect, Client Care, Mentorship", keywords: ["values", "serviceberry"] },
 
   /* Terminology (rendered by the custom Language section) */
   ...Object.keys(TERMINOLOGY_DEFAULTS).map((k): SettingDef => ({

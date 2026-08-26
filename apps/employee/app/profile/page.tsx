@@ -3,7 +3,7 @@
 import * as React from "react";
 import { getProfile, saveProfile, setRole, type HubRole } from "@/lib/hub";
 
-/** My Profile — the fields that drive the hub: the start date sets every
+/** My Profile: the fields that drive the hub. The start date sets every
  * onboarding and training deadline; role controls what the Admin page shows. */
 export default function ProfilePage() {
   const [ready, setReady] = React.useState(false);

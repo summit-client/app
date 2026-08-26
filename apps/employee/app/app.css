@@ -334,3 +334,30 @@ textarea.input { min-height: 80px; resize: vertical; }
 .task-dot.progress { border-color: var(--accent); background: var(--accent-soft); }
 .task-dot.await { border-color: var(--warn); background: var(--warn-soft); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.nav-group {
+  display: block; margin: var(--space-4) var(--space-2) 4px; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); opacity: 0.75;
+}
+.stat-row { display: flex; gap: var(--space-5); flex-wrap: wrap; padding: var(--space-4) 0; border-bottom: 1px solid var(--line); }
+.stat { min-width: 140px; }
+.stat .v { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat .k { font-size: var(--text-xs); color: var(--muted); margin-top: 4px; }
+.stat .d { font-size: var(--text-xs); margin-top: 2px; }
+.attn { display: flex; flex-direction: column; gap: 2px; }
+.attn a, .attn div {
+  display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 11px 2px; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; font-size: var(--text-sm);
+}
+.attn a:hover { color: var(--accent); }
+.meter { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; min-width: 120px; flex: 1; }
+.meter > div { height: 100%; background: var(--accent); border-radius: 999px; }
+.meter.good > div { background: var(--good); }
+.meter.warn > div { background: var(--warn); }
+.rule-note { font-size: var(--text-xs); color: var(--warn); margin-top: 6px; }
+.scale-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.scale-btn {
+  font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer; min-width: 44px;
+  padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--muted);
+}
+.scale-btn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }

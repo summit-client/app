@@ -1,11 +1,11 @@
 /**
- * Employee Hub authoritative content — ported intact from the Mount Etna
+ * Employee Hub authoritative content, ported intact from the Mount Etna
  * Employee Hub ("Mount Etna New Team Member Onboarding Checklist, 2026").
  * External training URLs, week placement, sections and the VSC rule come from
  * that document; deadlines use the checklist's own wording, never guessed.
  *
  * Summit divergence from the MEGBA original: the template lives in code
- * (versioned with the app) rather than in template tables — only per-employee
+ * (versioned with the app) rather than in template tables. Only per-employee
  * PROGRESS is stored in the database (migration 0006). Organizations will edit
  * this through Settings in a later phase.
  */
@@ -76,7 +76,7 @@ export const HUB_COURSES: HubCourse[] = [
   { key: "cc-privacy-phipa", title: "Privacy and Confidentiality (PHIPA / PIPEDA)", kind: "COMPLIANCE", category: "Privacy", deadlineBucket: "WITHIN_30_DAYS", order: 23 },
   { key: "cc-safe-lifting", title: "Safe Lifting and Transfers", kind: "COMPLIANCE", category: "Health & Safety", deadlineBucket: "WITHIN_30_DAYS", order: 24 },
   { key: "cc-edi", title: "Equity, Diversity and Inclusion (EDI)", kind: "COMPLIANCE", category: "EDI", deadlineBucket: "WITHIN_30_DAYS", order: 25 },
-  // Clinical learning — Autism Internet Modules (Weeks 1–2)
+  // Clinical learning: Autism Internet Modules (Weeks 1 and 2)
   { key: "clin-m1-naturalistic", title: "Module 1: Naturalistic Intervention", provider: "Autism Internet Modules", kind: "CLINICAL", externalUrl: `${AIM}/1199`, deadlineBucket: "WEEK_1", order: 1 },
   { key: "clin-m2-peer-mediated", title: "Module 2: Peer Mediated Instruction & Intervention", provider: "Autism Internet Modules", kind: "CLINICAL", externalUrl: `${AIM}/473`, deadlineBucket: "WEEK_1", order: 2 },
   { key: "clin-m3-social-skills", title: "Module 3: Social Skills Training", provider: "Autism Internet Modules", kind: "CLINICAL", externalUrl: `${AIM}/511`, deadlineBucket: "WEEK_1", order: 3 },
@@ -98,7 +98,7 @@ const next = () => (o += 1);
 export const HUB_TASKS: HubTask[] = [
   /* ---------------- WEEK 1 · HR & Compliance ---------------- */
   { key: "w1-hr-newhire-paperwork", week: 1, section: "Paperwork, payroll and compliance", category: "HR_COMPLIANCE", title: "Complete new-hire paperwork with the HR Lead", supervisorSignoffRequired: true, deadlineBucket: "WEEK_1", order: next() },
-  { key: "w1-hr-direct-deposit", week: 1, section: "Paperwork, payroll and compliance", category: "HR_COMPLIANCE", title: "Set up direct deposit and submit a void cheque in Wagepoint", description: "Complete this in Wagepoint. Do not enter banking details into this portal — confirm here once it is done in Wagepoint.", deadlineBucket: "WEEK_1", order: next() },
+  { key: "w1-hr-direct-deposit", week: 1, section: "Paperwork, payroll and compliance", category: "HR_COMPLIANCE", title: "Set up direct deposit and submit a void cheque in Wagepoint", description: "Complete this in Wagepoint. Do not enter banking details into this portal. Confirm here once it is done in Wagepoint.", deadlineBucket: "WEEK_1", order: next() },
   { key: "w1-hr-payroll-access", week: 1, section: "Paperwork, payroll and compliance", category: "HR_COMPLIANCE", title: "Confirm payroll and pay schedule access in Wagepoint", deadlineBucket: "WEEK_1", order: next() },
   { key: "w1-hr-vsc-apply", week: 1, section: "Paperwork, payroll and compliance", category: "HR_COMPLIANCE", title: "Apply for or submit the Vulnerable Sector Check", description: "Apply on the spot if needed. On-site client observation begins only once your VSC is cleared; until then, observation runs through approved video case studies.", deadlineBucket: "WEEK_1", order: next() },
   { key: "w1-hr-emergency-contact", week: 1, section: "Paperwork, payroll and compliance", category: "HR_COMPLIANCE", title: "Provide updated emergency contact information to the HR Lead", deadlineBucket: "WEEK_1", order: next() },
@@ -198,7 +198,7 @@ export const CATEGORY_LABELS: Record<TaskCategory, string> = {
   READINESS: "Readiness",
 };
 
-/** "My Documents" — handbook, checklists and shared-drive launch cards. */
+/** "My Documents": handbook, checklists and shared-drive launch cards. */
 export const HUB_DOCUMENTS = [
   { name: "Employee Handbook (2026)", kind: "Handbook", url: "https://drive.google.com/file/d/1fmV5zENVnM6ffkTYJDWL0w-4BwdEzoqB/view", note: "Code of conduct, PHIPA and confidentiality, incident reporting. Sign the Chapter 12 acknowledgement in Week 2." },
   { name: "Onboarding Checklist 2026 (PDF)", kind: "Onboarding", url: "/hub-docs/onboarding-checklist-2026.pdf", note: "The source document for the onboarding board." },

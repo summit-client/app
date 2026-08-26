@@ -8,7 +8,7 @@ import {
 } from "@/lib/hub";
 
 /**
- * My Onboarding — the two-week board, replicated from the Mount Etna hub:
+ * My Onboarding: the two-week board, replicated from the Mount Etna hub:
  * week → section groups, five task states (sign-off tasks route through
  * Ready for sign-off), per-task notes with autosave, open-material links,
  * the VSC gate, and overdue highlighting against the 14-day window.
@@ -60,7 +60,7 @@ export default function OnboardingPage() {
       <h1 className="h-page">My Onboarding</h1>
       <p className="sub">
         Everything is due within <b>14 days of your start date</b>
-        {profile.startDate ? <> — by <b>{dueDate(profile.startDate, "WITHIN_14_DAYS")}</b></> : null}.
+        {profile.startDate ? <>, by <b>{dueDate(profile.startDate, "WITHIN_14_DAYS")}</b></> : null}.
         Progress counts required, applicable items only.
       </p>
 
