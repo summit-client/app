@@ -118,8 +118,12 @@ create table if not exists hub_certificates (
 -- numbering is its own business and must not collide with Summit's sequence.
 create unique index if not exists hub_certs_issued_number_idx
   on hub_certificates(cert_number) where source = 'SUMMIT_ISSUED';
+-- Idempotent issuance, scoped to issued certificates only. Unscoped, this
+-- blocked an employee from ever recording the same outside certificate twice -
+-- so a First Aid or CPI card renewed every three years could be added once and
+-- never again, because the renewal has the same title.
 create unique index if not exists hub_certificates_once
-  on hub_certificates(user_id, title);
+  on hub_certificates(user_id, title) where source = 'SUMMIT_ISSUED';
 
 create table if not exists hub_time_off_requests (
   id uuid primary key default gen_random_uuid(),
@@ -245,19 +249,27 @@ create policy hub_pd_manage on hub_pd_records for update
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
   with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 
--- Managers read their team's certificates, record one on someone's behalf, and
--- verify a self-reported upload. Update is how verification happens, so it stays
--- open to them; delete is not granted to anyone.
+-- Managers read their team's certificates, record an outside one on someone's
+-- behalf, and verify a self-reported upload. Update is how verification happens,
+-- so it stays open to them; delete is not granted to anyone.
 --
--- Note managers can insert SUMMIT_ISSUED rows: that is deliberate, so a
--- supervisor can record a certificate the clinic awarded offline. Automatic
--- issuance on onboarding completion is separate and still has to move to a
--- security-definer routine in the data-layer change - the app currently mints
--- the registry number client-side, which no policy here permits.
+-- Managers may NOT insert SUMMIT_ISSUED rows directly, even though it sounds
+-- harmless. Registry numbers are allocated by hub_next_cert_number() in 0008,
+-- and a direct insert picks its own number without telling the registry - so the
+-- counter and the issued numbers drift, and the next real issuance collides on
+-- the unique index. Exactly one thing allocates a number: the security definer
+-- functions, which bypass RLS and therefore do not need a policy here.
+--
+-- Found by running the certificate RLS and issuance suites in sequence: the
+-- first inserted SUMMIT-2026-000001 by hand, and every later issuance failed.
 create policy hub_certs_manage_select on hub_certificates for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 create policy hub_certs_manage_insert on hub_certificates for insert
-  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+  with check (
+    clinic_id = auth_clinic_id()
+    and hub_can_manage(user_id)
+    and source = 'SELF_REPORTED'
+  );
 create policy hub_certs_manage_update on hub_certificates for update
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
   with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
