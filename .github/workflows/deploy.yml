@@ -39,31 +39,32 @@ jobs:
             # Every deployed app needs its own .env.local present, or its build
             # fails on "@supabase/ssr: Your project's URL and API key are required".
             echo "--> Checking env files..."
-            for app in web scheduler data client; do
+            for app in web scheduler data client employee; do
               test -f "apps/$app/.env.local" || { echo "MISSING apps/$app/.env.local"; exit 1; }
             done
 
             echo "--> Clean build..."
-            rm -rf apps/web/.next apps/scheduler/.next apps/data/.next apps/client/.next
+            rm -rf apps/web/.next apps/scheduler/.next apps/data/.next apps/client/.next apps/employee/.next
             # --concurrency=1: the droplet is 1 vCPU so this is already the
             # behaviour, but it stays correct if the box is ever resized.
             pnpm turbo build --concurrency=1 \
               --filter=@summit/web \
               --filter=@summit/scheduler \
               --filter=@summit/data \
-              --filter=@summit/client
+              --filter=@summit/client \
+              --filter=@summit/employee
 
             # BUILD_ID is written at the very end of a successful next build, so
             # its presence is what distinguishes a complete build from the
             # half-populated .next that starts fine and then 500s on every request.
             echo "--> Verifying build output..."
-            for app in web scheduler data client; do
+            for app in web scheduler data client employee; do
               test -f "apps/$app/.next/BUILD_ID" || { echo "INCOMPLETE build: apps/$app"; exit 1; }
             done
             test -f apps/web/.next/server/pages/index.html
             echo "Build output OK"
 
             echo "--> Restarting..."
-            pm2 restart web scheduler data client
+            pm2 restart web scheduler data client employee
             pm2 save
             pm2 list

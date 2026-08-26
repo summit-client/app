@@ -93,7 +93,10 @@ function AdminConsole() {
           </tbody>
         </table>
       </div>
-      <p className="sub" style={{ marginTop: 6 }}>Preview holds one employee; live mode lists every active team member in your scope.</p>
+      <p className="sub" style={{ marginTop: 6 }}>
+        Everyone in your clinic with a Summit account and a clinic assigned. Someone missing here has no
+        <code> profiles.clinic_id</code> set.
+      </p>
 
       <h2 className="section-title">Pending sign-offs {pendingSignoffs.length ? <span className="pill warn">{pendingSignoffs.length}</span> : null}</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
