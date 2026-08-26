@@ -116,6 +116,7 @@
   --good: oklch(52% 0.148 152);   --good-soft: oklch(94% 0.040 152);
   --warn: oklch(58% 0.130 68);    --warn-soft: oklch(95% 0.045 68);
   --danger: oklch(54% 0.205 25);  --danger-soft: oklch(96% 0.035 25);
+  --info: oklch(52% 0.130 250);   --info-soft: oklch(95% 0.030 250);
 
   /* ── Accent: BLUE (Summit teal) is the default ramp ────────────────────── */
   --accent: #1b5a6e;
@@ -180,13 +181,10 @@
     --stat-2: oklch(80% 0.110 165);
     --stat-3: oklch(80% 0.130 65);
     --stat-4: oklch(72% 0.140 355);
-    --stat-1: oklch(72% 0.120 250);
-  --stat-2: oklch(80% 0.110 165);
-  --stat-3: oklch(80% 0.130 65);
-  --stat-4: oklch(72% 0.140 355);
-  --good: oklch(76% 0.150 152);   --good-soft: oklch(30% 0.060 152);
+    --good: oklch(76% 0.150 152);   --good-soft: oklch(30% 0.060 152);
     --warn: oklch(80% 0.130 74);    --warn-soft: oklch(31% 0.055 68);
     --danger: oklch(70% 0.160 25);  --danger-soft: oklch(31% 0.075 25);
+    --info: oklch(76% 0.110 250);   --info-soft: oklch(30% 0.055 250);
     --accent: #5fb0c4; --accent-strong: #83c6d6; --accent-soft: #14313a;
     --accent-tint: #101f25; --accent-ink: #06181e; --focus-ring: #5fb0c4;
   }
@@ -225,6 +223,7 @@
   --good: oklch(76% 0.150 152);   --good-soft: oklch(30% 0.060 152);
   --warn: oklch(80% 0.130 74);    --warn-soft: oklch(31% 0.055 68);
   --danger: oklch(70% 0.160 25);  --danger-soft: oklch(31% 0.075 25);
+  --info: oklch(76% 0.110 250);   --info-soft: oklch(30% 0.055 250);
   --accent: #5fb0c4; --accent-strong: #83c6d6; --accent-soft: #14313a;
   --accent-tint: #101f25; --accent-ink: #06181e; --focus-ring: #5fb0c4;
 }

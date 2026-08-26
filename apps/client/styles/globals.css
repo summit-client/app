@@ -1,3 +1,12 @@
+/* ============================================================================
+   Client (family) portal.
+
+   Every colour here resolves from @summit/design tokens, so the portal follows
+   the same theme and accent as the other three. Nothing is hardcoded: a
+   hardcoded light value would survive the dark switch and leave dark text on
+   dark ground. Type, ground and ink come from tokens.css via <body>.
+   ========================================================================== */
+
 * {
   box-sizing: border-box;
 }
@@ -8,8 +17,6 @@ body,
   min-height: 100%;
   margin: 0;
 }
-
-/* Type, ground and ink come from @summit/design tokens. */
 
 button,
 select {
@@ -23,22 +30,22 @@ select {
 
 .sidebar {
   width: 220px;
-  padding: 24px 16px;
-  background: #f4fbfb;
-  border-right: 1px solid #cbdfe1;
+  padding: var(--space-6) var(--space-4);
+  background: var(--surface-2);
+  border-right: 1px solid var(--line);
 }
 
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid #d5e5e6;
+  gap: var(--space-3);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--line);
 }
 
 .logo-icon {
   font-size: 28px;
-  color: #28b4a6;
+  color: var(--logo-1);
 }
 
 .sidebar-logo div:last-child {
@@ -52,17 +59,17 @@ select {
 
 .sidebar-logo span {
   margin-top: 2px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   letter-spacing: 1px;
-  color: #627e89;
+  color: var(--faint);
 }
 
 .sidebar-label {
-  margin: 24px 8px 10px;
-  font-size: 11px;
+  margin: var(--space-6) var(--space-2) 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 1px;
-  color: #718d96;
+  color: var(--faint);
 }
 
 .sidebar-nav {
@@ -73,23 +80,24 @@ select {
 
 .sidebar-link {
   width: 100%;
-  padding: 11px 12px;
+  padding: 11px var(--space-3);
   text-align: left;
-  color: #355969;
+  color: var(--muted);
   background: transparent;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .sidebar-link:hover {
-  background: #e4f2f2;
+  color: var(--ink);
+  background: var(--accent-tint);
 }
 
 .sidebar-link.active {
-  color: #0c6c70;
+  color: var(--accent);
   font-weight: 700;
-  background: #ccebea;
+  background: var(--accent-soft);
 }
 
 .dashboard-content {
@@ -101,26 +109,27 @@ select {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
-  margin-bottom: 24px;
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
 }
 
 .dashboard-header h1 {
   margin: 0 0 6px;
-  font-size: 28px;
+  font-size: var(--text-3xl);
 }
 
 .dashboard-header p {
   margin: 0;
-  color: #587783;
+  color: var(--muted);
 }
 
 .child-selector {
   min-width: 180px;
-  padding: 10px 12px;
-  background: white;
-  border: 1px solid #c9dadd;
-  border-radius: 8px;
+  padding: 10px var(--space-3);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--space-2);
 }
 
 .summary-grid {
@@ -132,9 +141,9 @@ select {
 
 .summary-card,
 .dashboard-card {
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid #c9dcdf;
-  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
 }
 
 .summary-card {
@@ -142,20 +151,20 @@ select {
 }
 
 .summary-card span {
-  color: #69838d;
+  color: var(--faint);
 }
 
 .summary-card strong {
   display: block;
   margin: 10px 0 4px;
-  font-size: 30px;
-  color: #1b6b8a;
+  font-size: var(--text-3xl);
+  color: var(--accent);
 }
 
 .summary-card p {
   margin: 0;
-  font-size: 13px;
-  color: #587783;
+  font-size: var(--text-sm);
+  color: var(--muted);
 }
 
 .dashboard-grid {
@@ -165,7 +174,7 @@ select {
 }
 
 .dashboard-card {
-  padding: 20px;
+  padding: var(--space-5);
 }
 
 .card-heading {
@@ -177,17 +186,17 @@ select {
 
 .card-heading h2 {
   margin: 0 0 4px;
-  font-size: 18px;
+  font-size: var(--text-lg);
 }
 
 .card-heading p {
   margin: 0;
-  font-size: 13px;
-  color: #69838d;
+  font-size: var(--text-sm);
+  color: var(--faint);
 }
 
 .text-button {
-  color: #177e86;
+  color: var(--accent);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -198,15 +207,16 @@ select {
   align-items: center;
   gap: 14px;
   padding: 14px 0;
-  border-top: 1px solid #d9e7e8;
+  border-top: 1px solid var(--line);
 }
 
 .date-box {
   width: 48px;
   padding: 7px;
   text-align: center;
+  color: var(--ink);
   background: var(--accent-soft);
-  border-radius: 8px;
+  border-radius: var(--space-2);
 }
 
 .date-box strong,
@@ -215,12 +225,12 @@ select {
 }
 
 .date-box strong {
-  font-size: 18px;
+  font-size: var(--text-lg);
 }
 
 .date-box span {
-  font-size: 10px;
-  color: #4f767d;
+  font-size: var(--text-2xs);
+  color: var(--muted);
 }
 
 .session-details {
@@ -231,108 +241,111 @@ select {
 }
 
 .session-details span {
-  font-size: 13px;
-  color: #607b85;
+  font-size: var(--text-sm);
+  color: var(--muted);
 }
 
 .status-pill {
   padding: 5px 10px;
-  font-size: 12px;
-  color: #137866;
-  background: #d9f3eb;
-  border-radius: 999px;
+  font-size: var(--text-xs);
+  color: var(--good);
+  background: var(--good-soft);
+  border-radius: var(--radius-full);
 }
 
 .status-pill.virtual {
-  color: #2a6ba3;
-  background: #deecf8;
+  color: var(--info);
+  background: var(--info-soft);
 }
 
 .progress-row {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 
 .progress-row > div:first-child {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   margin-bottom: 7px;
 }
 
 .progress-row span {
-  font-size: 12px;
-  color: #66818b;
+  font-size: var(--text-xs);
+  color: var(--faint);
 }
 
 .progress-track {
   height: 8px;
   overflow: hidden;
-  background: #dbe6e7;
-  border-radius: 999px;
+  background: var(--line);
+  border-radius: var(--radius-full);
 }
 
 .progress-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 }
 
+/* Three domains, three of the shared data accents — the same four the
+   Scheduler cycles across its stat cards, so a family's progress bars and a
+   clinician's charts speak the same colour language. */
 .progress-fill.communication {
   width: 75%;
-  background: #28b4a6;
+  background: var(--stat-2);
 }
 
 .progress-fill.living {
   width: 60%;
-  background: #1b83b1;
+  background: var(--stat-1);
 }
 
 .progress-fill.social {
   width: 45%;
-  background: #eda12c;
+  background: var(--stat-3);
 }
 
 .announcement {
   padding: 13px 0;
-  border-top: 1px solid #d9e7e8;
+  border-top: 1px solid var(--line);
 }
 
 .announcement p {
   margin: 5px 0;
-  color: #587783;
+  color: var(--muted);
 }
 
 .announcement span {
-  font-size: 12px;
-  color: #83979e;
+  font-size: var(--text-xs);
+  color: var(--faint);
 }
 
 .sensory-options {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .sensory-options button {
-  padding: 12px;
-  color: #355969;
-  background: #edf7f7;
-  border: 1px solid #c6dedf;
-  border-radius: 8px;
+  padding: var(--space-3);
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--space-2);
   cursor: pointer;
 }
 
 .sensory-options button:hover {
-  background: #d9eeee;
+  background: var(--accent-soft);
 }
 
 .primary-button {
   width: 100%;
-  padding: 12px;
-  color: white;
-  background: #1a3f5c;
+  padding: var(--space-3);
+  color: var(--accent-ink);
+  background: var(--accent);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--space-2);
   cursor: pointer;
 }
 
