@@ -15,6 +15,9 @@ export function AppNav({ activeKey }: AppNavProps) {
     <nav
       aria-label="Summit portals"
       style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
         display: 'flex',
         alignItems: 'center',
         gap: 'var(--space-1, 4px)',

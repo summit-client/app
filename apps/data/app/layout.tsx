@@ -42,13 +42,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </aside>
           <div className="main">
-            <header className="topbar">
-              <span className="topbar-title">Clinician Portal</span>
-              {/* Theme and accent live in Settings → Appearance & Branding */}
-              <Link href="/settings/appearance" className="btn ghost" style={{ textDecoration: "none" }} aria-label="Appearance settings">
-                Appearance
-              </Link>
-            </header>
             <main className="content">{children}</main>
           </div>
         </div>

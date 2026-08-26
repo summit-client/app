@@ -56,27 +56,24 @@
   transition: background var(--duration-fast) var(--ease-out-quart),
               color var(--duration-fast) var(--ease-out-quart);
 }
+.nav-icon { font-size: 14px; line-height: 1; opacity: 0.65; flex: none; width: 15px; text-align: center; }
 .nav-item:hover { background: var(--accent-tint); color: var(--ink); }
+.nav-item:hover .nav-icon { opacity: 0.85; }
+.nav-item[aria-current="page"] .nav-icon, .nav-item.active .nav-icon { opacity: 1; color: var(--accent); }
 .nav-item[aria-current="page"], .nav-item.active {
   background: var(--accent-soft); color: var(--accent-strong); font-weight: 500;
 }
 .sidebar-foot { padding: 14px 18px 18px; border-top: 1px solid var(--line); }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.topbar {
-  height: var(--topbar-h); flex: none; display: flex; align-items: center; gap: var(--space-4);
-  padding: 0 var(--space-6); background: var(--surface);
-  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20;
-}
-.topbar-title { font-weight: 600; font-size: var(--text-md); margin-right: auto; }
-.content { padding: var(--space-8) var(--space-6); max-width: 1180px; width: 100%; margin: 0 auto; }
+.content { flex: 1; padding: 32px 36px; overflow-y: auto; }
 
 /* ── Type ─────────────────────────────────────────────────────────────────── */
-.h-page { font-size: var(--text-3xl); font-weight: 600; letter-spacing: -0.02em; }
-.sub { color: var(--muted); font-size: var(--text-sm); margin-top: 5px; }
+.h-page { font-family: var(--font-body); font-size: 1.375rem; font-weight: 500; letter-spacing: -0.01em; }
+.sub { color: var(--muted); font-size: 0.875rem; margin-top: 4px; }
 .section-title {
-  font-family: var(--font-body); font-size: var(--text-md); font-weight: 600;
-  color: var(--ink); margin: var(--space-8) 0 var(--space-3); letter-spacing: -0.01em;
+  font-family: var(--font-body); font-size: 0.9375rem; font-weight: 500;
+  color: var(--ink); margin: var(--space-5) 0 var(--space-3); letter-spacing: 0;
 }
 .trend { font-variant-numeric: tabular-nums; font-size: var(--text-xs); color: var(--muted); }
 .trend b { color: var(--ink); font-weight: 600; }
@@ -101,10 +98,10 @@
 }
 .tile .l {
   font-size: var(--text-sm); color: var(--faint); margin-bottom: 6px;
-  text-transform: none; letter-spacing: 0;
+  text-transform: none; letter-spacing: 0; font-weight: 400;
 }
 .tile .n {
-  font-family: var(--font-body); font-size: var(--text-3xl); font-weight: 500;
+  font-family: var(--font-body); font-size: 1.75rem; font-weight: 500;
   line-height: 1.1; color: var(--stat-1); font-variant-numeric: tabular-nums;
 }
 .tile .s { font-size: var(--text-sm); color: var(--muted); margin-top: 4px; }

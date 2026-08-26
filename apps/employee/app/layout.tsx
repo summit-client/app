@@ -13,22 +13,22 @@ export const metadata: Metadata = {
   description: "Performance, professional development, credentials, documents and team collaboration.",
 };
 
-const NAV: { href: string; label: string; group?: string }[] = [
-  { href: "/", label: "Dashboard" },
-  { href: "/scoreboard", label: "Scoreboard", group: "Growth" },
-  { href: "/team", label: "My Team", group: "Growth" },
-  { href: "/recognition", label: "Recognition", group: "Growth" },
-  { href: "/career", label: "Career Progress", group: "Growth" },
-  { href: "/pd", label: "Professional Development", group: "Professional" },
-  { href: "/credentials", label: "My Credentials", group: "Professional" },
-  { href: "/training", label: "Training", group: "Professional" },
-  { href: "/certificates", label: "Certificates", group: "Professional" },
-  { href: "/documents", label: "My Documents", group: "Records" },
-  { href: "/onboarding", label: "My Onboarding", group: "Records" },
-  { href: "/policies", label: "Policies & Handbook", group: "Records" },
-  { href: "/time-off", label: "Time Off", group: "Records" },
-  { href: "/profile", label: "My Profile", group: "Records" },
-  { href: "/help", label: "Help", group: "Records" },
+const NAV: { href: string; label: string; group?: string; icon?: string }[] = [
+  { href: "/", label: "Dashboard", icon: "▦" },
+  { href: "/scoreboard", label: "Scoreboard", icon: "◈", group: "Growth" },
+  { href: "/team", label: "My Team", icon: "◎", group: "Growth" },
+  { href: "/recognition", label: "Recognition", icon: "✦", group: "Growth" },
+  { href: "/career", label: "Career Progress", icon: "▲", group: "Growth" },
+  { href: "/pd", label: "Professional Development", icon: "⊞", group: "Professional" },
+  { href: "/credentials", label: "My Credentials", icon: "⊙", group: "Professional" },
+  { href: "/training", label: "Training", icon: "◇", group: "Professional" },
+  { href: "/certificates", label: "Certificates", icon: "❖", group: "Professional" },
+  { href: "/documents", label: "My Documents", icon: "▤", group: "Records" },
+  { href: "/onboarding", label: "My Onboarding", icon: "◉", group: "Records" },
+  { href: "/policies", label: "Policies & Handbook", icon: "▣", group: "Records" },
+  { href: "/time-off", label: "Time Off", icon: "◷", group: "Records" },
+  { href: "/profile", label: "My Profile", icon: "⊕", group: "Records" },
+  { href: "/help", label: "Help", icon: "?", group: "Records" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -58,7 +58,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {NAV.map((n, i) => (
                 <React.Fragment key={n.href}>
                   {n.group && n.group !== NAV[i - 1]?.group ? <span className="nav-group">{n.group}</span> : null}
-                  <Link href={n.href} className="nav-item">{n.label}</Link>
+                  <Link href={n.href} className="nav-item">
+                    <span className="nav-icon" aria-hidden>{n.icon}</span>
+                    <span>{n.label}</span>
+                  </Link>
                 </React.Fragment>
               ))}
             </nav>
@@ -68,9 +71,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </aside>
           <div className="main">
-            <header className="topbar">
-              <span className="topbar-title">MySummitHR</span>
-            </header>
             <main className="content">{children}</main>
           </div>
         </div>

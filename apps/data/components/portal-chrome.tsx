@@ -25,18 +25,20 @@ export function PortalNav() {
   }, []);
 
   const NAV = [
-    { href: "/", label: "Today", id: "Today" },
-    { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload" },
-    { href: "/attention", label: "Attention", id: "Attention" },
-    { href: "/review", label: "Review Queue", id: "Review Queue" },
-    { href: "/settings", label: "Settings", id: "Settings" },
+    { href: "/", label: "Today", id: "Today", icon: "▦" },
+    { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙" },
+    { href: "/attention", label: "Attention", id: "Attention", icon: "◈" },
+    { href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" },
+    { href: "/settings", label: "Settings", id: "Settings", icon: "⚙" },
   ];
 
   return (
     <nav aria-label="Portal">
+      <span className="nav-group">Workspace</span>
       {NAV.filter((n) => !hidden.includes(n.id)).map((n) => (
         <Link key={n.href} href={n.href} className="nav-item">
-          {n.label}
+          <span className="nav-icon" aria-hidden>{n.icon}</span>
+          <span>{n.label}</span>
         </Link>
       ))}
     </nav>
