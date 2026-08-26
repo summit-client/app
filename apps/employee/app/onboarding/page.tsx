@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { CATEGORY_LABELS, HUB_COURSES, HUB_TASKS, WEEK_SUBTITLES, type HubTask } from "@/lib/content";
+import Link from "next/link";
 import {
-  dueDate, getProfile, getProgress, onboardingProgress, saveProfile, updateTask,
+  dueDate, effectiveProgress, getProfile, getProgress, onboardingProgress, saveProfile, updateTask,
   type TaskProgress, type TaskStatus, type VscStatus,
 } from "@/lib/hub";
 
@@ -32,9 +33,9 @@ export default function OnboardingPage() {
   if (!ready) return <p className="sub">Loading onboarding…</p>;
 
   const profile = getProfile();
-  const progress = getProgress();
+  const progress = effectiveProgress(getProgress());
   const byKey = new Map(progress.map((p) => [p.taskKey, p]));
-  const ob = onboardingProgress(progress);
+  const ob = onboardingProgress(getProgress());
 
   const setStatus = async (task: HubTask, status: TaskStatus) => {
     setSaveState("saving");
@@ -169,11 +170,22 @@ function TaskRow({ task, row, startDate, onStatus, onNotes }: {
           {task.description ? <p className="sub" style={{ marginTop: 4, maxWidth: "70ch" }}>{task.description}</p> : null}
 
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
-            <label className="sr-only" htmlFor={`st-${task.key}`}>Status for {task.title}</label>
-            <select id={`st-${task.key}`} className="input" style={{ width: "auto", padding: "6px 8px" }}
-              value={status} onChange={(e) => onStatus(e.target.value as TaskStatus)}>
-              {options.map((o) => <option key={o} value={o}>{STATUS_LABEL[o]}</option>)}
-            </select>
+            {task.courseKey ? (
+              <>
+                <span className="pill accent">syncs from Training</span>
+                <Link href="/training" className="btn ghost" style={{ textDecoration: "none" }}>
+                  {status === "COMPLETED" ? "View in Training" : "Record in Training"}
+                </Link>
+              </>
+            ) : (
+              <>
+                <label className="sr-only" htmlFor={`st-${task.key}`}>Status for {task.title}</label>
+                <select id={`st-${task.key}`} className="input" style={{ width: "auto", padding: "6px 8px" }}
+                  value={status} onChange={(e) => onStatus(e.target.value as TaskStatus)}>
+                  {options.map((o) => <option key={o} value={o}>{STATUS_LABEL[o]}</option>)}
+                </select>
+              </>
+            )}
             {url ? (
               <a href={url} target="_blank" rel="noopener noreferrer" className="btn ghost" style={{ textDecoration: "none" }}>
                 Open material ↗

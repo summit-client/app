@@ -132,8 +132,38 @@ export function inclusiveDays(start: string, end: string): number {
   return Math.max(0.5, Math.round(ms / 86_400_000) + 1);
 }
 
-/** Onboarding %: required + applicable tasks only. */
+/**
+ * Course-linked onboarding tasks derive from the training record: one
+ * completion, recorded once, reflected everywhere. Manual status entry on
+ * those tasks is disabled in the UI, so nothing is typed twice and nothing
+ * is forgotten in one place.
+ */
+export function derivedTaskProgress(taskKey: string): TaskProgress | null {
+  const task = HUB_TASKS.find((t) => t.key === taskKey);
+  if (!task?.courseKey) return null;
+  const rec = store().training.find((t) => t.courseKey === task.courseKey);
+  const stored = store().progress.find((p) => p.taskKey === taskKey);
+  const status: TaskStatus = rec?.status === "COMPLETED" ? "COMPLETED" : rec?.status === "IN_PROGRESS" ? "IN_PROGRESS" : "NOT_STARTED";
+  return {
+    taskKey,
+    status,
+    notes: stored?.notes ?? "",
+    applicable: stored?.applicable ?? true,
+    completedAt: rec?.completedAt ?? null,
+  };
+}
+
+/** Stored progress with course-linked tasks overlaid from training. */
+export function effectiveProgress(progress: TaskProgress[] = store().progress): TaskProgress[] {
+  const byKey = new Map(progress.map((p) => [p.taskKey, p]));
+  return HUB_TASKS.map((t) => derivedTaskProgress(t.key) ?? byKey.get(t.key) ?? {
+    taskKey: t.key, status: "NOT_STARTED" as TaskStatus, notes: "", applicable: true, completedAt: null,
+  });
+}
+
+/** Onboarding %: required + applicable tasks only, course tasks derived. */
 export function onboardingProgress(progress: TaskProgress[]) {
+  progress = effectiveProgress(progress);
   const byKey = new Map(progress.map((p) => [p.taskKey, p]));
   const required = HUB_TASKS.filter((t) => t.required !== false);
   const applicable = required.filter((t) => {
@@ -235,6 +265,9 @@ export function getProgress(): TaskProgress[] {
 export async function updateTask(taskKey: string, patch: { status?: TaskStatus; notes?: string; applicable?: boolean }): Promise<TaskProgress> {
   const task = HUB_TASKS.find((t) => t.key === taskKey);
   if (!task) throw new Error(`Unknown task ${taskKey}`);
+  if (task.courseKey && patch.status) {
+    throw new Error("This item completes from Training; record it there once and it reflects here.");
+  }
   const s = store();
   let row = s.progress.find((p) => p.taskKey === taskKey);
   if (!row) {
@@ -311,8 +344,9 @@ export async function setCourseStatus(courseKey: string, status: TrainingRecord[
       : `${course.kind} TRAINING${course.category ? ` · ${course.category.toUpperCase()}` : ""}`;
     issueCertificate(course.title, competency);
   }
-  const linked = HUB_TASKS.find((t) => t.courseKey === courseKey);
-  if (linked && status === "COMPLETED") await updateTask(linked.key, { status: "COMPLETED" });
+  // Course-linked onboarding tasks derive from this record; nothing is
+  // written twice. The certificate cascade re-checks with the derived state.
+  maybeIssueOnboardingCertificate();
   if (!IS_PREVIEW) {
     await sb().from("hub_employee_training").upsert({
       user_id: s.profile.id, course_key: courseKey, status, completed_at: rec.completedAt,
