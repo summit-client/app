@@ -53,6 +53,8 @@ interface HrStore {
   posts: ForumPost[];
   audit: HrAudit[];
   team: { name: string; role: string; team: string }[];
+  sites: { site: string; domains: Record<string, number> }[];
+  peerScores: number[];        // anonymous peer scores for the private percentile band
 }
 
 const KEY = "summit-hr-store";
@@ -89,7 +91,9 @@ function seed(): HrStore {
     acks: [],
     posts: [],
     audit: [],
-    team: [],
+    team: [],                   // populated from the clinician's Summit team membership
+    sites: [],                  // configured by the organization in Settings
+    peerScores: [],
   };
 }
 

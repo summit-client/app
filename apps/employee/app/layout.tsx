@@ -11,8 +11,9 @@ export const metadata: Metadata = {
 };
 
 const NAV: { href: string; label: string; group?: string }[] = [
-  { href: "/", label: "Overview" },
+  { href: "/", label: "Dashboard" },
   { href: "/scorecard", label: "My Scorecard", group: "Growth" },
+  { href: "/scoreboard", label: "Clinic Scoreboard", group: "Growth" },
   { href: "/team", label: "My Team", group: "Growth" },
   { href: "/recognition", label: "Recognition", group: "Growth" },
   { href: "/career", label: "Career Progress", group: "Growth" },

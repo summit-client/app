@@ -3,135 +3,207 @@
 import * as React from "react";
 import { getProfile } from "@/lib/hub";
 import {
-  computeEcosystem, DEFAULT_METRICS, RATING_SCALE, requiresExample, SOURCE_LABEL,
-  type MetricResponse, type RatingValue, type SourceKind,
+  BAND_LABEL, computeEcosystem, DEFAULT_METRICS, PEER_PROMPTS, RATING_SCALE, requiresExample,
+  type RatingValue,
 } from "@/lib/ecosystem";
 import { currentCycle, hr, hrAudit, saveHr } from "@/lib/hr-store";
+import { EggToast, ScoreRing, useEasterEggs } from "@/components/grove";
 
 /**
- * My Scorecard. Self reflection is entered here; peer, supervisor, objective
- * and professional-development inputs arrive from their own sources. Every
- * metric names an observable behaviour, rated on the anchored 1 to 5 scale.
+ * My Scorecard. Self ratings and peer feedback in one place, because they are
+ * one monthly act. Peers are pulled from the clinician's own team, so nothing
+ * is prefilled with names.
  */
 export default function ScorecardPage() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
+  const [tab, setTab] = React.useState<"self" | "peers">("self");
+  const eggs = useEasterEggs();
   React.useEffect(() => setReady(true), []);
-  if (!ready) return <p className="sub">Loading scorecard…</p>;
+  if (!ready) return <p className="sub">Loading…</p>;
 
   const s = hr();
-  const profile = getProfile();
   const eco = computeEcosystem(s.responses);
-  const selfMetrics = DEFAULT_METRICS.filter((m) => m.source === "SELF" || m.source === "PEER" || m.source === "OBJECTIVE" || m.source === "SUPERVISOR" || m.source === "PD");
-  const byKey = new Map(s.responses.filter((r) => r.source === "SELF").map((r) => [r.metricKey, r]));
-
-  const rate = (metricKey: string, rating: RatingValue) => {
-    const existing = s.responses.find((r) => r.metricKey === metricKey && r.source === "SELF");
-    const previous = existing?.rating;
-    if (existing) existing.rating = rating;
-    else s.responses.push({ metricKey, source: "SELF", rating, comment: "" });
-    saveHr();
-    hrAudit("scorecard.self_rating", `${metricKey} rated ${rating}`, { previous: previous ? String(previous) : undefined, next: String(rating) });
-    force();
-  };
-  const comment = (metricKey: string, text: string) => {
-    const r = s.responses.find((x) => x.metricKey === metricKey && x.source === "SELF");
-    if (r) { r.comment = text; saveHr(); }
-  };
-
-  const domains = [...new Set(selfMetrics.map((m) => m.domain))];
 
   return (
     <div>
-      <h1 className="h-page">My Scorecard</h1>
-      <p className="sub" style={{ maxWidth: "70ch" }}>
-        Cycle {currentCycle()}. Rate the behaviours you can observe in your own work. Your supervisor, peers and the
-        objective data sources contribute the rest. Ratings describe behaviour, never personality.
-      </p>
-
-      <div className="stat-row">
-        <div className="stat">
-          <div className="v" style={{ color: "var(--accent)" }}>{eco.score ?? "—"}</div>
-          <div className="k">Ecosystem Score</div>
-        </div>
-        {eco.breakdown.map((b) => (
-          <div className="stat" key={b.source}>
-            <div className="v" style={{ fontSize: "var(--text-lg)" }}>{b.meanRating ?? "—"}</div>
-            <div className="k">{SOURCE_LABEL[b.source]} · {b.weightPct}%</div>
-            <div className="d trend">{b.responses} response{b.responses === 1 ? "" : "s"}</div>
+      <EggToast toast={eggs.toast} />
+      <div className="hero">
+        <div className="hero-figure"><ScoreRing value={eco.score} /></div>
+        <div className="hero-main">
+          <h1 className="h-page" style={{ marginBottom: 2 }}>My Scorecard</h1>
+          <p className="sub" style={{ marginTop: 0 }}>{currentCycle()}</p>
+          <div className="split">
+            <span className="split-bar" role="img" aria-label={`Personal ${eco.personal.percent}, group ${eco.group.percent}`}>
+              <span className="me" style={{ width: `${eco.personal.percent / 2}%` }}>me {eco.personal.percent || ""}</span>
+              <span className="team" style={{ width: `${eco.group.percent / 2}%` }}>team {eco.group.percent || ""}</span>
+            </span>
           </div>
-        ))}
+          {eco.band ? <p className={`hero-band ${eco.band === "BONUS" ? "bonus" : eco.band === "FEEDBACK_PLAN" ? "plan" : "coach"}`} style={{ marginTop: 8 }}>{BAND_LABEL[eco.band]}</p> : null}
+        </div>
       </div>
-      {eco.missing.length ? (
-        <p className="sub">Waiting on: {eco.missing.join(", ")}. Absent sources are excluded from the score rather than counted as zero.</p>
-      ) : null}
 
-      <h2 className="section-title">Rating scale</h2>
-      <div className="attn">
-        {RATING_SCALE.map((r) => (
-          <div key={r.value}><span><b>{r.value} · {r.label}</b> {r.anchor}</span></div>
+      <div className="mode-tabs" role="tablist" aria-label="Scorecard sections">
+        {([["self", "My ratings"], ["peers", `Peers (${s.team.length})`]] as const).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={`mode-tab ${tab === k ? "active" : ""}`} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
 
-      {domains.map((d) => (
-        <React.Fragment key={d}>
-          <h2 className="section-title">{d}</h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {selfMetrics.filter((m) => m.domain === d).map((m) => {
-              const row = byKey.get(m.key);
-              const mine = m.source === "SELF" || m.source === "PEER" || m.source === "SUPERVISOR" || m.source === "OBJECTIVE" || m.source === "PD";
+      {tab === "self" ? <SelfTab onChange={force} /> : <PeerTab onChange={force} />}
+    </div>
+  );
+}
+
+function Scale({ value, onPick, label }: { value?: RatingValue; onPick: (v: RatingValue) => void; label: string }) {
+  return (
+    <div className="scale-row" role="group" aria-label={label}>
+      {RATING_SCALE.map((r) => (
+        <button key={r.value} className={`scale-btn ${value === r.value ? "on" : ""}`} title={`${r.label}: ${r.short}`}
+          aria-pressed={value === r.value} onClick={() => onPick(r.value)}>{r.value}</button>
+      ))}
+    </div>
+  );
+}
+
+function SelfTab({ onChange }: { onChange: () => void }) {
+  const s = hr();
+  const mine = new Map(s.responses.filter((r) => r.source === "SELF" || r.source === "OBJECTIVE" || r.source === "SUPERVISOR" || r.source === "PD").map((r) => [r.metricKey, r]));
+  const categories = [...new Set(DEFAULT_METRICS.map((m) => m.category))];
+
+  const rate = (key: string, source: string, rating: RatingValue) => {
+    const ex = s.responses.find((r) => r.metricKey === key && r.source === source);
+    const prev = ex?.rating;
+    if (ex) ex.rating = rating;
+    else s.responses.push({ metricKey: key, source: source as never, rating, comment: "" });
+    saveHr();
+    hrAudit("scorecard.rating", `${key} = ${rating}`, { previous: prev ? String(prev) : undefined, next: String(rating) });
+    onChange();
+  };
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {categories.map((cat) => {
+        const ms = DEFAULT_METRICS.filter((m) => m.category === cat);
+        const weight = ms.reduce((n, m) => n + m.weight, 0);
+        return (
+          <React.Fragment key={cat}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 22 }}>
+              <b>{cat}</b>
+              <span className="trend">{weight}% · {ms[0].type === "PERSONAL" ? "personal" : "group"}</span>
+            </div>
+            {ms.map((m) => {
+              const row = mine.get(m.key);
               return (
-                <div key={m.key} className="card card-pad">
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <b style={{ fontSize: "var(--text-sm)", maxWidth: "58ch" }}>{m.behaviour}</b>
-                    <span className="pill neutral">{SOURCE_LABEL[m.source]}</span>
+                <div key={m.key} className="task-row" style={{ marginTop: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "var(--text-sm)", maxWidth: "50ch" }}>{m.behaviour}</span>
+                    <Scale value={row?.rating} onPick={(v) => rate(m.key, m.source, v)} label={m.behaviour} />
                   </div>
-                  {mine ? (
-                    <>
-                      <div className="scale-row" style={{ marginTop: 10 }} role="group" aria-label={`Rating for ${m.behaviour}`}>
-                        {RATING_SCALE.map((r) => (
-                          <button key={r.value} className={`scale-btn ${row?.rating === r.value ? "on" : ""}`}
-                            aria-pressed={row?.rating === r.value} title={r.anchor}
-                            onClick={() => rate(m.key, r.value)}>
-                            {r.value}
-                          </button>
-                        ))}
-                      </div>
-                      {row && requiresExample(row.rating) ? (
-                        <div className="field" style={{ marginTop: 8 }}>
-                          <label htmlFor={`c-${m.key}`}>An example helps. What happened, and what would improvement look like?</label>
-                          <textarea id={`c-${m.key}`} className="input" rows={2} defaultValue={row.comment}
-                            onChange={(e) => comment(m.key, e.target.value)} />
-                        </div>
-                      ) : null}
-                    </>
+                  {row && requiresExample(row.rating) ? (
+                    <textarea className="input" rows={2} style={{ marginTop: 8 }} defaultValue={row.comment}
+                      aria-label={`Example for ${m.behaviour}`} placeholder="What happened, and what would help?"
+                      onChange={(e) => { row.comment = e.target.value; saveHr(); }} />
                   ) : null}
                 </div>
               );
             })}
-          </div>
-        </React.Fragment>
-      ))}
+          </React.Fragment>
+        );
+      })}
+      <div className="field" style={{ marginTop: 24 }}>
+        <label htmlFor="support">What would help you next month?</label>
+        <textarea id="support" className="input" rows={2}
+          defaultValue={s.responses.find((r) => r.metricKey === "support-request")?.comment ?? ""}
+          onChange={(e) => {
+            const r = s.responses.find((x) => x.metricKey === "support-request");
+            if (r) r.comment = e.target.value;
+            else s.responses.push({ metricKey: "support-request", source: "SELF", rating: 3, comment: e.target.value });
+            saveHr();
+          }} />
+      </div>
+    </div>
+  );
+}
 
-      <h2 className="section-title">Support</h2>
-      <div className="card card-pad">
-        <div className="field">
-          <label htmlFor="support">What support or resource would help you thrive next month?</label>
-          <textarea id="support" className="input" rows={3}
-            defaultValue={s.responses.find((r) => r.metricKey === "support-request")?.comment ?? ""}
-            onChange={(e) => {
-              const r = s.responses.find((x) => x.metricKey === "support-request");
-              if (r) r.comment = e.target.value;
-              else s.responses.push({ metricKey: "support-request", source: "SELF", rating: 3, comment: e.target.value });
-              saveHr();
-            }} />
-        </div>
-        <p className="sub">Shared with your supervisor. Answers here shape team support, not your score.</p>
+function PeerTab({ onChange }: { onChange: () => void }) {
+  const s = hr();
+  const me = getProfile().name;
+  const peers = s.team.filter((t) => t.name !== me);
+  const [subject, setSubject] = React.useState("");
+  const [ratings, setRatings] = React.useState<Record<string, RatingValue>>({});
+  const [notes, setNotes] = React.useState<Record<string, string>>({});
+  const peerMetrics = DEFAULT_METRICS.filter((m) => m.source === "PEER");
+
+  if (!peers.length) {
+    return (
+      <div className="card card-pad" style={{ marginTop: 16 }}>
+        <b>No teammates yet</b>
+        <p className="sub">Your peer list comes from your team. Add colleagues in My Team to review them here.</p>
+      </div>
+    );
+  }
+
+  const submit = () => {
+    for (const [metricKey, rating] of Object.entries(ratings)) {
+      s.responses.push({ metricKey, source: "PEER", rating, comment: notes[metricKey] ?? "", subject, rater: "anonymous" });
+    }
+    for (const p of PEER_PROMPTS) {
+      if (notes[p.key]?.trim()) s.responses.push({ metricKey: p.key, source: "PEER", rating: 3, comment: notes[p.key], subject, rater: "anonymous" });
+    }
+    saveHr();
+    hrAudit("peer_feedback.submitted", `Feedback for ${subject}`);
+    setRatings({}); setNotes({}); setSubject("");
+    onChange();
+  };
+
+  const blocked = Object.entries(ratings).some(([k, v]) => requiresExample(v) && !(notes[k] ?? "").trim());
+  const reviewed = new Set(s.responses.filter((r) => r.source === "PEER" && r.subject).map((r) => r.subject));
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div className="chip-row">
+        {peers.map((p) => (
+          <button key={p.name} className={`mode-tab ${subject === p.name ? "active" : ""}`} onClick={() => setSubject(p.name)}>
+            {reviewed.has(p.name) ? "✓ " : ""}{p.name}
+          </button>
+        ))}
       </div>
 
-      <p className="sub" style={{ marginTop: 16 }}>
-        Signed in as {profile.name}. Your individual score is private to you, your supervisor and HR.
-      </p>
+      {subject ? (
+        <div style={{ marginTop: 16 }}>
+          {peerMetrics.map((m) => (
+            <div key={m.key} className="task-row" style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "var(--text-sm)", maxWidth: "50ch" }}>{m.behaviour}</span>
+                <Scale value={ratings[m.key]} onPick={(v) => setRatings({ ...ratings, [m.key]: v })} label={m.behaviour} />
+              </div>
+              {ratings[m.key] && requiresExample(ratings[m.key]) ? (
+                <textarea className="input" rows={2} style={{ marginTop: 8 }} value={notes[m.key] ?? ""}
+                  aria-label={`Example for ${m.behaviour}`} placeholder="What happened, and what would help?"
+                  onChange={(e) => setNotes({ ...notes, [m.key]: e.target.value })} />
+              ) : null}
+            </div>
+          ))}
+
+          <div style={{ marginTop: 18 }}>
+            <b style={{ fontSize: "var(--text-sm)" }}>Two stars and a wish</b>
+            {PEER_PROMPTS.map((p) => (
+              <div className="field" key={p.key} style={{ marginTop: 8 }}>
+                <label htmlFor={`pp-${p.key}`}>{p.label}</label>
+                <input id={`pp-${p.key}`} className="input" value={notes[p.key] ?? ""} onChange={(e) => setNotes({ ...notes, [p.key]: e.target.value })} />
+              </div>
+            ))}
+          </div>
+
+          {blocked ? <p className="rule-note">A 1 or 2 needs an example.</p> : null}
+          <button className="btn" style={{ marginTop: 14 }} onClick={submit} disabled={!Object.keys(ratings).length || blocked}>
+            Submit for {subject}
+          </button>
+          <p className="sub">Anonymous to your teammate. They see themes, not names.</p>
+        </div>
+      ) : (
+        <p className="sub" style={{ marginTop: 16 }}>Pick a teammate to review.</p>
+      )}
     </div>
   );
 }

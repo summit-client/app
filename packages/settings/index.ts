@@ -238,7 +238,7 @@ export const SETTINGS: SettingDef[] = [
   { key: "recog.maxPerPerson", label: "Maximum points to one person per month", section: "ecosystem", scope: "org", type: "number", default: 4 },
   { key: "bonus.enabled", label: "Monthly bonus eligibility", description: "Eligibility only; monetary amounts are never stored in Summit.", section: "ecosystem", scope: "org", type: "toggle", default: true, keywords: ["bonus"] },
   { key: "bonus.minScore", label: "Minimum Ecosystem Score for bonus eligibility", section: "ecosystem", scope: "org", type: "number", default: 80 },
-  { key: "career.ladder", label: "Career development pathway (arrow-separated roles)", section: "ecosystem", scope: "org", type: "text", default: "Behaviour Therapist > Senior Behaviour Therapist > Supervised Behaviour Clinician > Clinical Leadership", keywords: ["pathway", "roles"] },
+  { key: "career.ladder", label: "Career development pathway (arrow-separated roles)", section: "ecosystem", scope: "org", type: "text", default: "Supervised Clinician > Lead Clinician > Supervisor Candidate > Clinical Leadership > Regional Leadership", keywords: ["pathway", "roles"] },
   { key: "eco.values", label: "Organizational values (comma-separated)", section: "ecosystem", scope: "org", type: "text", default: "Collaboration, Reciprocity, Learning, Reliability, Respect, Client Care, Mentorship", keywords: ["values", "serviceberry"] },
 
   /* Terminology (rendered by the custom Language section) */

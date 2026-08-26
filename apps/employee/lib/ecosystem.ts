@@ -1,155 +1,174 @@
 "use client";
 
 /**
- * Ecosystem Tracker: OBM-informed monthly scorecards, peer feedback,
- * recognition, and bonus eligibility.
+ * Ecosystem Tracker: the Interdependent Performance and Reinforcement System.
  *
- * Every metric names an observable behaviour. Vague traits ("good attitude",
- * "works hard") are excluded by design. The rating scale is behaviourally
- * anchored 1 to 5. Weights, allowances, thresholds and values are tenant
- * settings, never constants in components.
- *
- * Default domains are modelled on the organization's live monthly self and
- * peer feedback process: self reflection, collaboration and communication,
- * visibility and community engagement, environment, professional growth, and
- * a support question. Administrators reconfigure all of it in Settings.
+ * Individual contribution and clinic ecosystem each carry half the picture.
+ * Personal and Group subtotals normalize to 50 points each, so no one earns
+ * their way to the top alone and no one is carried. Every metric names an
+ * observable behaviour. Weights, thresholds, domains and reward names are
+ * tenant settings, never constants in components.
  */
 
 import { getSetting } from "@summit/settings";
 
 export type RatingValue = 1 | 2 | 3 | 4 | 5;
 
-export const RATING_SCALE: { value: RatingValue; label: string; anchor: string }[] = [
-  { value: 1, label: "Very Poor", anchor: "The behaviour is absent, well below expectation, or consistently problematic." },
-  { value: 2, label: "Fair / Developing", anchor: "The behaviour is emerging or inconsistent and needs support." },
-  { value: 3, label: "Good", anchor: "The employee demonstrates the expected behaviour at the required level." },
-  { value: 4, label: "Very Good", anchor: "The behaviour is consistently strong, independent, collaborative and reliable." },
-  { value: 5, label: "Excellent", anchor: "Role-model performance: anticipates needs, assists others, demonstrates leadership." },
+export const RATING_SCALE: { value: RatingValue; label: string; short: string }[] = [
+  { value: 1, label: "Very Poor", short: "Absent or consistently problematic" },
+  { value: 2, label: "Developing", short: "Emerging, inconsistent, needs support" },
+  { value: 3, label: "Good", short: "Meets the expected level" },
+  { value: 4, label: "Very Good", short: "Consistently strong and independent" },
+  { value: 5, label: "Excellent", short: "Role model, lifts others" },
 ];
 
+export type MetricType = "PERSONAL" | "GROUP";
 export type SourceKind = "SELF" | "PEER" | "SUPERVISOR" | "OBJECTIVE" | "PD" | "COMPLIANCE";
 
 export const SOURCE_LABEL: Record<SourceKind, string> = {
-  SELF: "Self reflection",
-  PEER: "Peer feedback",
-  SUPERVISOR: "Supervisor assessment",
-  OBJECTIVE: "Objective data",
-  PD: "Professional development",
-  COMPLIANCE: "Compliance",
+  SELF: "Self", PEER: "Peers", SUPERVISOR: "Supervisor", OBJECTIVE: "Objective data", PD: "Development", COMPLIANCE: "Compliance",
 };
 
 export interface ScorecardMetric {
   key: string;
-  domain: string;
-  behaviour: string;          // the observable behaviour being rated
+  category: string;
+  behaviour: string;
+  weight: number;          // percent of the individual 100
+  type: MetricType;        // personal contribution or group contribution
   source: SourceKind;
-  weight: number;             // relative weight inside its source
-  appliesToRoles: string[];   // empty means every role
+  evidence: string;        // where the data comes from
 }
 
-/** Tenant default metric set. Administrators add, remove and reweight these. */
+/** Individual evaluation, 100 points. Tenant default from the organization's system. */
 export const DEFAULT_METRICS: ScorecardMetric[] = [
-  { key: "doc-deadlines", domain: "Documentation", behaviour: "Completes session documentation by the required deadline", source: "OBJECTIVE", weight: 3, appliesToRoles: [] },
-  { key: "doc-quality", domain: "Documentation", behaviour: "Documentation contains the required objective data and is signed without follow-up", source: "SUPERVISOR", weight: 2, appliesToRoles: [] },
-  { key: "reliability-schedule", domain: "Reliability", behaviour: "Communicates schedule changes through the agreed channel and within the agreed notice", source: "OBJECTIVE", weight: 2, appliesToRoles: [] },
-  { key: "reliability-prepared", domain: "Reliability", behaviour: "Arrives prepared with materials and program plans ready for assigned duties", source: "PEER", weight: 2, appliesToRoles: [] },
-  { key: "clinical-implements", domain: "Clinical Quality", behaviour: "Implements supervisor recommendations in the next scheduled session", source: "SUPERVISOR", weight: 3, appliesToRoles: [] },
-  { key: "clinical-procedures", domain: "Clinical Quality", behaviour: "Follows written teaching procedures and prompting hierarchies as programmed", source: "SUPERVISOR", weight: 3, appliesToRoles: [] },
-  { key: "comms-response", domain: "Communication", behaviour: "Responds to team communication within the agreed response window", source: "PEER", weight: 2, appliesToRoles: [] },
-  { key: "comms-meetings", domain: "Communication", behaviour: "Contributes case-relevant observations during team meetings", source: "PEER", weight: 2, appliesToRoles: [] },
-  { key: "team-support", domain: "Teamwork", behaviour: "Supports colleagues with setup, coverage or problem-solving when asked and available", source: "PEER", weight: 2, appliesToRoles: [] },
-  { key: "team-environment", domain: "Environment", behaviour: "Returns materials and leaves shared spaces ready for the next session", source: "PEER", weight: 1, appliesToRoles: [] },
-  { key: "prof-boundaries", domain: "Professionalism", behaviour: "Maintains professional boundaries with clients, families and colleagues", source: "SUPERVISOR", weight: 2, appliesToRoles: [] },
-  { key: "engagement-community", domain: "Community Engagement", behaviour: "Contributes to community engagement activities within role boundaries", source: "PEER", weight: 1, appliesToRoles: [] },
-  { key: "growth-training", domain: "Professional Development", behaviour: "Completes assigned training by its due date", source: "PD", weight: 3, appliesToRoles: [] },
-  { key: "growth-credential", domain: "Professional Development", behaviour: "Keeps credential requirements on pace for the current cycle", source: "COMPLIANCE", weight: 2, appliesToRoles: [] },
-  { key: "self-reflection", domain: "Self Reflection", behaviour: "Identifies specific growth areas and the support that would help", source: "SELF", weight: 2, appliesToRoles: [] },
+  { key: "rev-billable", category: "Revenue Generating", behaviour: "Maintains the agreed billable hours each week", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Schedule and session logs" },
+  { key: "rev-leads", category: "Revenue Generating", behaviour: "Onboards new leads within 7 days", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Intake tracker timestamps" },
+  { key: "rev-retention", category: "Revenue Generating", behaviour: "Keeps clients engaged with few unplanned discharges", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Session consistency" },
+  { key: "skill-programs", category: "Skill & Performance", behaviour: "Develops and maintains program oversight", weight: 10, type: "PERSONAL", source: "SUPERVISOR", evidence: "Program bank updates, QA review" },
+  { key: "skill-teaching", category: "Skill & Performance", behaviour: "Teaches and models procedures for others", weight: 10, type: "PERSONAL", source: "SUPERVISOR", evidence: "Fidelity or IOA review" },
+  { key: "growth-ceu", category: "Professional Growth", behaviour: "Completes CEUs and attends supervision", weight: 10, type: "GROUP", source: "PD", evidence: "CEU tracker, supervision notes" },
+  { key: "support-feedback", category: "Student Support", behaviour: "Earns strong student and caregiver feedback", weight: 10, type: "GROUP", source: "OBJECTIVE", evidence: "Feedback forms" },
+  { key: "env-workspace", category: "Environment & Culture", behaviour: "Keeps the workspace clean and organized", weight: 10, type: "GROUP", source: "PEER", evidence: "Visual checklist, peer audit" },
+  { key: "collab-tone", category: "Collaboration & Communication", behaviour: "Cooperates with the team and keeps a respectful tone", weight: 10, type: "GROUP", source: "PEER", evidence: "QA logs, peer survey" },
+  { key: "community-events", category: "Community Engagement", behaviour: "Takes part in community events", weight: 5, type: "GROUP", source: "PEER", evidence: "Event attendance" },
+  { key: "self-reflection", category: "Self Reflection", behaviour: "Names growth areas and the support that would help", weight: 5, type: "PERSONAL", source: "SELF", evidence: "Monthly reflection" },
 ];
 
-export interface MetricResponse { metricKey: string; source: SourceKind; rating: RatingValue; comment: string; rater?: string }
+/** The five branch domains a site is scored on. */
+export const CLINIC_DOMAINS = [
+  { key: "environment", label: "Environment & Cleanliness", lead: "Environmental Lead" },
+  { key: "collaboration", label: "Collaboration & Culture", lead: "Collaboration Lead" },
+  { key: "student", label: "Student Support", lead: "Student Support Lead" },
+  { key: "visibility", label: "Visibility & Engagement", lead: "Visibility Lead" },
+  { key: "growth", label: "Professional Growth", lead: "Growth Lead" },
+];
 
-export interface EcosystemBreakdown {
-  source: SourceKind;
-  weightPct: number;
-  meanRating: number | null;   // 1 to 5
-  points: number;              // contribution to the 0 to 100 score
-  responses: number;
-}
+export interface MetricResponse { metricKey: string; source: SourceKind; rating: RatingValue; comment: string; subject?: string; rater?: string }
+
+export interface Subtotal { earned: number; possible: number; percent: number; responses: number }
 
 export interface EcosystemResult {
-  score: number | null;        // 0 to 100, null when nothing has been submitted
-  breakdown: EcosystemBreakdown[];
-  strongestDomain: string | null;
-  developmentDomain: string | null;
-  missing: string[];           // sources with no input yet
+  score: number | null;       // 0 to 100
+  personal: Subtotal;         // normalized to 50
+  group: Subtotal;            // normalized to 50
+  band: "BONUS" | "FEEDBACK_PLAN" | "COACHING" | null;
+  byCategory: { category: string; percent: number; weight: number }[];
+  strongest: string | null;
+  focus: string | null;
+  missing: string[];
 }
 
-function sourceWeights(): Record<SourceKind, number> {
-  return {
-    OBJECTIVE: Number(getSetting("eco.weightObjective")) || 0,
-    SUPERVISOR: Number(getSetting("eco.weightSupervisor")) || 0,
-    PEER: Number(getSetting("eco.weightPeer")) || 0,
-    SELF: Number(getSetting("eco.weightSelf")) || 0,
-    PD: Number(getSetting("eco.weightPd")) || 0,
-    COMPLIANCE: 0, // compliance gates bonus eligibility rather than scoring
-  };
-}
+const pct = (rating: number) => ((rating - 1) / 4) * 100;
 
 /**
- * Weighted Ecosystem Score. Sources with no responses are excluded and the
- * remaining weights are renormalized, so an absent peer round never reads as
- * poor performance.
+ * Weighted individual score. Personal and Group each normalize to 50 points,
+ * so a strong personal month cannot mask an absent contribution to the team.
+ * Metrics with no rating are excluded rather than counted as zero.
  */
 export function computeEcosystem(responses: MetricResponse[], metrics: ScorecardMetric[] = DEFAULT_METRICS): EcosystemResult {
-  const weights = sourceWeights();
-  const byMetric = new Map(metrics.map((m) => [m.key, m]));
-  const sources: SourceKind[] = ["OBJECTIVE", "SUPERVISOR", "PEER", "SELF", "PD"];
+  const latest = new Map<string, MetricResponse[]>();
+  for (const r of responses) latest.set(r.metricKey, [...(latest.get(r.metricKey) ?? []), r]);
 
-  const present = sources.filter((s) => responses.some((r) => r.source === s));
-  const totalWeight = present.reduce((sum, s) => sum + weights[s], 0);
-
-  const breakdown: EcosystemBreakdown[] = sources.map((s) => {
-    const rs = responses.filter((r) => r.source === s);
-    if (!rs.length) return { source: s, weightPct: weights[s], meanRating: null, points: 0, responses: 0 };
-    // weight each metric by its configured weight inside the source
-    let num = 0, den = 0;
-    for (const r of rs) {
-      const w = byMetric.get(r.metricKey)?.weight ?? 1;
-      num += r.rating * w;
-      den += w;
+  const side = (type: MetricType): Subtotal => {
+    const ms = metrics.filter((m) => m.type === type);
+    let earned = 0, possible = 0, n = 0;
+    for (const m of ms) {
+      const rs = latest.get(m.key);
+      if (!rs?.length) continue;
+      const mean = rs.reduce((s, r) => s + r.rating, 0) / rs.length;
+      earned += (pct(mean) / 100) * m.weight;
+      possible += m.weight;
+      n += rs.length;
     }
-    const mean = num / den;
-    const share = totalWeight > 0 ? weights[s] / totalWeight : 0;
-    return {
-      source: s,
-      weightPct: weights[s],
-      meanRating: Math.round(mean * 100) / 100,
-      points: Math.round(((mean - 1) / 4) * 100 * share * 10) / 10,
-      responses: rs.length,
-    };
+    const percent = possible ? Math.round((earned / possible) * 100) : 0;
+    return { earned: Math.round(earned * 10) / 10, possible, percent, responses: n };
+  };
+
+  const personal = side("PERSONAL");
+  const group = side("GROUP");
+  const any = personal.responses + group.responses > 0;
+  const score = any ? Math.round((personal.percent * 0.5) + (group.percent * 0.5)) : null;
+
+  const bonusMin = Number(getSetting("bonus.minScore")) || 85;
+  const coachingBelow = 70;
+  const band = score == null ? null : score >= bonusMin ? "BONUS" : score >= coachingBelow ? "FEEDBACK_PLAN" : "COACHING";
+
+  const cats = [...new Set(metrics.map((m) => m.category))].map((category) => {
+    const ms = metrics.filter((m) => m.category === category);
+    const rated = ms.filter((m) => latest.get(m.key)?.length);
+    const weight = ms.reduce((s, m) => s + m.weight, 0);
+    if (!rated.length) return { category, percent: -1, weight };
+    const p = rated.reduce((s, m) => {
+      const rs = latest.get(m.key)!;
+      return s + pct(rs.reduce((n, r) => n + r.rating, 0) / rs.length);
+    }, 0) / rated.length;
+    return { category, percent: Math.round(p), weight };
   });
-
-  const score = present.length ? Math.round(breakdown.reduce((s, b) => s + b.points, 0)) : null;
-
-  const domainMeans = new Map<string, { sum: number; n: number }>();
-  for (const r of responses) {
-    const d = byMetric.get(r.metricKey)?.domain;
-    if (!d) continue;
-    const cur = domainMeans.get(d) ?? { sum: 0, n: 0 };
-    domainMeans.set(d, { sum: cur.sum + r.rating, n: cur.n + 1 });
-  }
-  const ranked = [...domainMeans.entries()].map(([d, v]) => ({ d, mean: v.sum / v.n })).sort((a, b) => b.mean - a.mean);
+  const scored = cats.filter((c) => c.percent >= 0).sort((a, b) => b.percent - a.percent);
 
   return {
-    score,
-    breakdown,
-    strongestDomain: ranked[0]?.d ?? null,
-    developmentDomain: ranked.length > 1 ? ranked[ranked.length - 1].d : null,
-    missing: sources.filter((s) => !present.includes(s)).map((s) => SOURCE_LABEL[s]),
+    score, personal, group, band,
+    byCategory: cats,
+    strongest: scored[0]?.category ?? null,
+    focus: scored.length > 1 ? scored[scored.length - 1].category : null,
+    missing: metrics.filter((m) => !latest.get(m.key)?.length).map((m) => m.behaviour),
   };
 }
 
-/* ---- recognition -------------------------------------------------------------- */
+export const BAND_LABEL: Record<NonNullable<EcosystemResult["band"]>, string> = {
+  BONUS: "Reinforcer unlocked",
+  FEEDBACK_PLAN: "Feedback plan",
+  COACHING: "Coaching conversation",
+};
+
+/* ---- clinic scoreboard ---------------------------------------------------- */
+
+export interface ClinicScore {
+  site: string;
+  domains: Record<string, number>;   // domain key to percent
+  average: number;
+  unlocked: boolean;
+}
+
+export function clinicAverage(domains: Record<string, number>): number {
+  const vals = CLINIC_DOMAINS.map((d) => domains[d.key] ?? 0);
+  return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
+}
+
+export function rankSites(sites: ClinicScore[]): ClinicScore[] {
+  return [...sites].sort((a, b) => b.average - a.average);
+}
+
+/** Private percentile band. Individual scores never appear on a leaderboard. */
+export function percentileBand(score: number, peers: number[]): { band: string; detail: string } {
+  if (!peers.length) return { band: "No comparison yet", detail: "Your score is private to you, your supervisor and HR." };
+  const below = peers.filter((p) => p < score).length;
+  const p = Math.round((below / peers.length) * 100);
+  const band = p >= 75 ? "Top quarter" : p >= 50 ? "Upper half" : p >= 25 ? "Lower half" : "Building";
+  return { band, detail: "Shown only to you. Individual scores never appear on a leaderboard." };
+}
+
+/* ---- recognition ----------------------------------------------------------- */
 
 export const RECOGNITION_CATEGORIES = [
   "Helping Hand", "Above & Beyond", "Team Player", "Client Champion", "Problem Solver",
@@ -157,53 +176,38 @@ export const RECOGNITION_CATEGORIES = [
 ];
 
 export interface Recognition {
-  id: string;
-  from: string;
-  to: string;
-  category: string;
-  points: number;
-  message: string;      // behaviour-specific explanation, required
-  date: string;
-  flagged: string | null;
+  id: string; from: string; to: string; category: string; points: number;
+  message: string; date: string; flagged: string | null;
 }
 
 export interface RecognitionCheck { allowed: boolean; reason: string }
 
-/**
- * Anti-gaming rules: no self-recognition, a monthly giving allowance, a cap on
- * points to any one person, duplicate detection, and reciprocal flagging.
- */
 export function checkRecognition(
   draft: { from: string; to: string; points: number; message: string; category: string },
   monthToDate: Recognition[],
 ): RecognitionCheck {
-  if (draft.from === draft.to) return { allowed: false, reason: "Self-recognition is not permitted." };
-  if (!draft.message.trim() || draft.message.trim().length < 12) {
-    return { allowed: false, reason: "Describe the specific behaviour you are recognizing." };
-  }
+  if (draft.from === draft.to) return { allowed: false, reason: "You cannot recognize yourself." };
+  if (draft.message.trim().length < 12) return { allowed: false, reason: "Say what they actually did." };
   const allowance = Number(getSetting("recog.monthlyAllowance")) || 10;
   const perPerson = Number(getSetting("recog.maxPerPerson")) || 4;
   const given = monthToDate.filter((r) => r.from === draft.from);
   const spent = given.reduce((s, r) => s + r.points, 0);
-  if (spent + draft.points > allowance) {
-    return { allowed: false, reason: `That exceeds your ${allowance}-point monthly allowance (${allowance - spent} remaining).` };
-  }
+  if (spent + draft.points > allowance) return { allowed: false, reason: `${allowance - spent} points left this month.` };
   const toPerson = given.filter((r) => r.to === draft.to).reduce((s, r) => s + r.points, 0);
-  if (toPerson + draft.points > perPerson) {
-    return { allowed: false, reason: `The monthly maximum to one person is ${perPerson} points.` };
+  if (toPerson + draft.points > perPerson) return { allowed: false, reason: `Cap of ${perPerson} points per person each month.` };
+  if (given.some((r) => r.to === draft.to && r.category === draft.category && r.message.trim() === draft.message.trim())) {
+    return { allowed: false, reason: "You already sent that one." };
   }
-  const duplicate = given.some((r) => r.to === draft.to && r.category === draft.category && r.message.trim() === draft.message.trim());
-  if (duplicate) return { allowed: false, reason: "That recognition is a duplicate of one you already sent." };
   return { allowed: true, reason: "" };
 }
 
-/** Reciprocal pattern worth a manager's eye: mutual points inside the same month. */
 export function reciprocalFlag(draft: { from: string; to: string }, monthToDate: Recognition[]): string | null {
-  const back = monthToDate.some((r) => r.from === draft.to && r.to === draft.from);
-  return back ? "Reciprocal recognition this month. Visible to managers for review." : null;
+  return monthToDate.some((r) => r.from === draft.to && r.to === draft.from)
+    ? "Mutual recognition this month, visible to managers"
+    : null;
 }
 
-/* ---- bonus eligibility --------------------------------------------------------- */
+/* ---- reinforcer eligibility ------------------------------------------------ */
 
 export interface BonusInputs {
   score: number | null;
@@ -218,30 +222,25 @@ export interface BonusResult {
   reasons: { label: string; met: boolean; detail: string }[];
 }
 
-/**
- * Bonus eligibility, explained line by line. Summit stores eligibility only,
- * never monetary amounts, and no model decides compensation.
- */
+/** Eligibility only. Summit records no monetary amounts and no model decides it. */
 export function computeBonus(inputs: BonusInputs): BonusResult {
   if (getSetting("bonus.enabled") !== true) return { status: "NOT_ENABLED", reasons: [] };
-  const min = Number(getSetting("bonus.minScore")) || 80;
+  const min = Number(getSetting("bonus.minScore")) || 85;
   const reasons = [
-    { label: `Ecosystem Score at or above ${min}`, met: (inputs.score ?? -1) >= min, detail: inputs.score == null ? "The month has no submitted inputs yet." : `Score: ${inputs.score}` },
-    { label: "Required training complete", met: inputs.trainingComplete, detail: inputs.trainingComplete ? "Complete" : "Assigned training remains outstanding." },
-    { label: "Documentation complete", met: inputs.documentationComplete, detail: inputs.documentationComplete ? "Complete" : "Session documentation remains outstanding." },
-    { label: "Credential compliance on pace", met: inputs.credentialCompliant, detail: inputs.credentialCompliant ? "On pace" : "A credential cycle is behind pace." },
-    { label: "Policy acknowledgements current", met: inputs.policiesAcknowledged, detail: inputs.policiesAcknowledged ? "Current" : "A required policy acknowledgement is outstanding." },
+    { label: `Score ${min} or above`, met: (inputs.score ?? -1) >= min, detail: inputs.score == null ? "Waiting on this month's inputs" : `${inputs.score}` },
+    { label: "Training complete", met: inputs.trainingComplete, detail: inputs.trainingComplete ? "Done" : "Assigned training outstanding" },
+    { label: "Documentation complete", met: inputs.documentationComplete, detail: inputs.documentationComplete ? "Done" : "Notes outstanding" },
+    { label: "Credentials on pace", met: inputs.credentialCompliant, detail: inputs.credentialCompliant ? "On pace" : "A cycle is behind" },
+    { label: "Policies acknowledged", met: inputs.policiesAcknowledged, detail: inputs.policiesAcknowledged ? "Current" : "One outstanding" },
   ];
   if (inputs.score == null) return { status: "PENDING", reasons };
   return { status: reasons.every((r) => r.met) ? "QUALIFIED" : "NOT_QUALIFIED", reasons };
 }
 
-/** Peer feedback prompts: behaviour-focused, examples requested for low ratings. */
 export const PEER_PROMPTS = [
-  "What did this person do particularly well?",
-  "What behaviour positively affected the team?",
-  "Where could this person improve, and what would improvement look like?",
-  "What support might help?",
+  { key: "star1", label: "Star: what went well?" },
+  { key: "star2", label: "Star: what helped the team?" },
+  { key: "wish", label: "Wish: what would help them grow?" },
 ];
 
 export function requiresExample(rating: RatingValue): boolean {
