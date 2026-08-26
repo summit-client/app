@@ -3,6 +3,7 @@
 import * as React from "react";
 import { getSetting } from "@summit/settings";
 import { getCertificates, getProfile, getProgress, getTraining, onboardingProgress } from "@/lib/hub";
+import { EggToast, TheClimb, useEasterEggs } from "@/components/grove";
 import { computeCompliance } from "@/lib/credentials";
 import { hr, hrAudit, saveHr, type Goal } from "@/lib/hr-store";
 
@@ -15,6 +16,7 @@ import { hr, hrAudit, saveHr, type Goal } from "@/lib/hr-store";
 export default function CareerPage() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
+  const eggs = useEasterEggs();
   const [f, setF] = React.useState({ title: "", behaviour: "", target: "", due: "", measurement: "", support: "" });
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading career progress…</p>;
@@ -28,6 +30,8 @@ export default function CareerPage() {
   const ob = onboardingProgress(getProgress());
   const training = getTraining().filter((t) => t.status === "COMPLETED").length;
   const certs = getCertificates().length;
+  const receivedAll = s.recognition.filter((r) => r.to === profile.name).reduce((n, r) => n + r.points, 0);
+  const elevation = Math.min(100, Math.round(ob.percent * 0.4 + Math.min(training * 4, 30) + Math.min(receivedAll * 1.5, 30)));
   const compliances = s.credentials.map((c) => computeCompliance(c, s.allocations, s.activities)).filter((x): x is NonNullable<typeof x> => !!x);
 
   const addGoal = () => {
@@ -56,19 +60,15 @@ export default function CareerPage() {
         supervisor assessment, so treat it as development rather than a guaranteed promotion.
       </p>
 
-      <h2 className="section-title">Development pathway</h2>
-      <div className="attn">
-        {ladder.map((role, i) => (
-          <div key={role}>
-            <span>
-              <b style={{ color: i === currentIdx ? "var(--accent)" : undefined }}>{role}</b>
-              {i === currentIdx ? <span className="pill accent" style={{ marginLeft: 8 }}>current</span> : null}
-              {i === currentIdx + 1 ? <span className="pill neutral" style={{ marginLeft: 8 }}>next step</span> : null}
-            </span>
-            <span className="trend">{i <= currentIdx ? "reached" : "development step"}</span>
-          </div>
-        ))}
+      <h2 className="section-title">My Career Summit</h2>
+      <p className="sub" style={{ marginTop: -8 }}>Camps are the development pathway. Onboarding, modules and appreciation lift your elevation.</p>
+      <div
+        onPointerDown={() => { const t = setTimeout(() => eggs.unlock("grove", "No one rises alone. The ecosystem climbs together."), 900); const clear = () => { clearTimeout(t); window.removeEventListener("pointerup", clear); }; window.addEventListener("pointerup", clear); }}
+        style={{ maxWidth: 560, cursor: "pointer" }} title="My Career Summit">
+        <TheClimb elevation={elevation} camps={ladder} />
       </div>
+      <p className="trend">Elevation {elevation} of 100 · current camp: <b>{ladder[currentIdx]}</b></p>
+      <EggToast toast={eggs.toast} />
 
       <h2 className="section-title">Where you stand</h2>
       <div className="stat-row">

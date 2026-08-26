@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { getSetting } from "@summit/settings";
-import { getProfile, getProgress, getTraining, onboardingProgress } from "@/lib/hub";
+import { getProfile } from "@/lib/hub";
 import { checkRecognition, reciprocalFlag, RECOGNITION_CATEGORIES } from "@/lib/ecosystem";
 import { currentCycle, hr, hrAudit, saveHr } from "@/lib/hr-store";
-import { EggToast, Sparks, TheClimb, useEasterEggs } from "@/components/grove";
+import { EggToast, Sparks, useEasterEggs } from "@/components/grove";
 
 /**
  * Recognition. Sparks of appreciation from your team, and the climb: your
@@ -38,12 +38,6 @@ export default function RecognitionPage() {
   const received = month.filter((r) => r.to === me);
   const receivedAll = s.recognition.filter((r) => r.to === me).reduce((n, r) => n + r.points, 0);
   const earned = AWARDS.filter((a) => receivedAll >= a.at);
-
-  // Elevation: onboarding, training, and appreciation each lift the climber.
-  const ob = onboardingProgress(getProgress());
-  const trained = getTraining().filter((t) => t.status === "COMPLETED").length;
-  const camps = String(getSetting("career.ladder")).split(">").map((x) => x.trim()).filter(Boolean);
-  const elevation = Math.min(100, Math.round(ob.percent * 0.4 + Math.min(trained * 4, 30) + Math.min(receivedAll * 1.5, 30)));
 
   const send = () => {
     const check = checkRecognition({ ...f, from: me }, month);
@@ -78,15 +72,6 @@ export default function RecognitionPage() {
           </div>
         </div>
       </div>
-
-      <h2 className="section-title">The climb</h2>
-      <p className="sub" style={{ marginTop: -8 }}>Camps are the development pathway. Onboarding, modules and appreciation lift you.</p>
-      <div
-        onPointerDown={() => { const t = setTimeout(() => eggs.unlock("grove", "No one rises alone. The ecosystem climbs together."), 900); const clear = () => { clearTimeout(t); window.removeEventListener("pointerup", clear); }; window.addEventListener("pointerup", clear); }}
-        style={{ maxWidth: 560, cursor: "pointer" }} title="The climb">
-        <TheClimb elevation={elevation} camps={camps} />
-      </div>
-      <p className="trend">Elevation {elevation} of 100</p>
 
       <h2 className="section-title">Send a spark</h2>
       <div className="card card-pad" style={{ display: "grid", gap: 12 }}>

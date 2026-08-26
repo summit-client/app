@@ -70,7 +70,7 @@ export function ScoreRing({ value, max = 100, size = 108, label }: { value: numb
 }
 
 
-/** The climb: camps up the mountain are the career pathway, and the climber
+/** My Career Summit: camps up the mountain are the career pathway, and the
  * marker sits at your elevation. Elevation is earned, never guaranteed. */
 export function TheClimb({ elevation, camps, size = 300 }: { elevation: number; camps: string[]; size?: number }) {
   const p = Math.max(0, Math.min(100, elevation));
@@ -103,10 +103,8 @@ export function TheClimb({ elevation, camps, size = 300 }: { elevation: number; 
           </g>
         );
       })}
-      <g style={{ transition: "transform 900ms cubic-bezier(.2,.8,.3,1)", transform: `translate(${px}px, ${py}px)` }}>
-        <circle cx="0" cy="-9" r="5" fill="var(--ink)" />
-        <path d="M0,-4 L0,6 M0,0 L-6,4 M0,0 L6,4 M0,6 L-4,14 M0,6 L4,14" stroke="var(--ink)" strokeWidth="2.4" strokeLinecap="round" fill="none" />
-      </g>
+      <circle cx={px} cy={py} r="6" fill="var(--good)" stroke="#fff" strokeWidth="2.5"
+        style={{ transition: "cx 900ms cubic-bezier(.2,.8,.3,1), cy 900ms cubic-bezier(.2,.8,.3,1)" }} />
     </svg>
   );
 }

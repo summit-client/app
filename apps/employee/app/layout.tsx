@@ -6,7 +6,7 @@ import "./app.css";
 import { themeInitScript } from "@summit/design";
 
 export const metadata: Metadata = {
-  title: "My HR / My Documents",
+  title: "MySummitHR",
   description: "Performance, professional development, credentials, documents and team collaboration.",
 };
 
@@ -20,8 +20,8 @@ const NAV: { href: string; label: string; group?: string }[] = [
   { href: "/credentials", label: "My Credentials", group: "Professional" },
   { href: "/training", label: "Training", group: "Professional" },
   { href: "/certificates", label: "Certificates", group: "Professional" },
-  { href: "/onboarding", label: "My Onboarding", group: "Professional" },
   { href: "/documents", label: "My Documents", group: "Records" },
+  { href: "/onboarding", label: "My Onboarding", group: "Records" },
   { href: "/policies", label: "Policies & Handbook", group: "Records" },
   { href: "/time-off", label: "Time Off", group: "Records" },
   { href: "/profile", label: "My Profile", group: "Records" },
@@ -45,9 +45,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
-              <span className="brand-mark" aria-hidden />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/summit-badge.png" alt="" aria-hidden width={30} height={30} style={{ display: "block" }} />
               <span>
-                My <b>HR</b>
+                My<b>Summit</b>HR
               </span>
             </div>
             <nav aria-label="My HR and My Documents">
@@ -64,7 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </aside>
           <div className="main">
             <header className="topbar">
-              <span className="topbar-title">My HR / My Documents</span>
+              <span className="topbar-title">MySummitHR</span>
             </header>
             <main className="content">{children}</main>
           </div>
