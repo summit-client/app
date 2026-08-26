@@ -164,6 +164,7 @@ function TaskRow({ task, row, startDate, onStatus, onNotes }: {
             {task.required === false ? <span className="pill neutral">optional</span> : null}
             {task.evidenceRequired ? <span className="pill accent">evidence required</span> : null}
             {due ? <span style={overdue ? { color: "var(--danger)", fontWeight: 600 } : undefined}>Due {due}</span> : null}
+            {row?.completedAt && status === "COMPLETED" ? <span>Marked complete on {row.completedAt.slice(0, 10)}</span> : null}
           </div>
           {task.description ? <p className="sub" style={{ marginTop: 4, maxWidth: "70ch" }}>{task.description}</p> : null}
 

@@ -3,48 +3,12 @@
 import * as React from "react";
 
 /**
- * The visual language of the ecosystem: a Serviceberry grove that grows with
- * the team's score, a volcano that wakes at milestones, and summit peaks with
- * an altitude marker. A healthy grove shares its light, so the tree fills as
- * the site score climbs rather than as any one person's does.
+ * The visual language of the ecosystem: a volcano that wakes at milestones,
+ * summit peaks with an altitude marker, and the climb, a mountain whose camps
+ * are the career pathway with a climber marker at your elevation.
  *
  * Hidden finds live at the bottom of this file. Nothing here changes data.
  */
-
-/** Serviceberry tree. Canopy and fruit grow with `percent` (0 to 100). */
-export function ServiceberryTree({ percent, size = 180, golden = false }: { percent: number; size?: number; golden?: boolean }) {
-  const p = Math.max(0, Math.min(100, percent));
-  const grow = p / 100;
-  const berries = Math.round(grow * 11);
-  const canopy = 0.45 + grow * 0.55;
-  const leafFill = golden ? "#d9a412" : "var(--good)";
-
-  return (
-    <svg viewBox="0 0 120 130" width={size} height={size} role="img"
-      aria-label={`Grove health ${p} percent`} style={{ display: "block", overflow: "visible" }}>
-      <ellipse cx="60" cy="122" rx={26 + grow * 10} ry="5" fill="var(--surface-2)" />
-      <path d="M58 122 L58 74 Q60 68 62 74 L62 122 Z" fill="#6b4f3a" />
-      <path d="M60 92 L44 78" stroke="#6b4f3a" strokeWidth="3" strokeLinecap="round" fill="none" />
-      <path d="M60 88 L76 74" stroke="#6b4f3a" strokeWidth="3" strokeLinecap="round" fill="none" />
-      <path d="M60 100 L48 92" stroke="#6b4f3a" strokeWidth="2.4" strokeLinecap="round" fill="none" />
-      <g style={{ transformOrigin: "60px 78px", transform: `scale(${canopy})`, transition: "transform 700ms cubic-bezier(.2,.8,.3,1)" }}>
-        <circle cx="60" cy="52" r="24" fill={leafFill} opacity="0.9" />
-        <circle cx="42" cy="64" r="17" fill={leafFill} opacity="0.78" />
-        <circle cx="78" cy="64" r="17" fill={leafFill} opacity="0.78" />
-        <circle cx="60" cy="70" r="15" fill={leafFill} opacity="0.7" />
-      </g>
-      {Array.from({ length: berries }, (_, i) => {
-        const a = (i / 11) * Math.PI * 2;
-        const r = 20 + (i % 3) * 6;
-        return (
-          <circle key={i} cx={60 + Math.cos(a) * r * canopy} cy={58 + Math.sin(a) * r * 0.8 * canopy} r="3"
-            fill={golden ? "#f0c419" : "#c0334d"}
-            style={{ transition: "all 700ms ease", opacity: 0.95 }} />
-        );
-      })}
-    </svg>
-  );
-}
 
 /** Mount Etna. Erupts when the site unlocks its reward. */
 export function Volcano({ active, size = 150 }: { active: boolean; size?: number }) {
@@ -105,13 +69,67 @@ export function ScoreRing({ value, max = 100, size = 108, label }: { value: numb
   );
 }
 
+
+/** The climb: camps up the mountain are the career pathway, and the climber
+ * marker sits at your elevation. Elevation is earned, never guaranteed. */
+export function TheClimb({ elevation, camps, size = 300 }: { elevation: number; camps: string[]; size?: number }) {
+  const p = Math.max(0, Math.min(100, elevation));
+  // path from base (20,190) to summit (150,18)
+  const px = 20 + (p / 100) * 130;
+  const py = 190 - (p / 100) * 172;
+  const n = Math.max(camps.length, 2);
+  return (
+    <svg viewBox="0 0 300 210" width="100%" style={{ maxWidth: size * 1.6, display: "block" }} role="img"
+      aria-label={`Elevation ${p} of 100`}>
+      <defs>
+        <linearGradient id="climbfill" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stopColor="var(--accent)" stopOpacity="0.25" />
+          <stop offset="1" stopColor="var(--accent)" stopOpacity="0.95" />
+        </linearGradient>
+      </defs>
+      <polygon points="0,200 150,14 300,200" fill="url(#climbfill)" />
+      <polygon points="150,14 166,36 134,36" fill="#fff" opacity="0.92" />
+      <path d="M150,14 L162,26 L150,30 Z" fill="var(--danger)" />
+      <path d={`M20,190 L${150},18`} stroke="#fff" strokeWidth="2" strokeDasharray="4 5" opacity="0.7" fill="none" />
+      {camps.map((c, i) => {
+        const t = camps.length === 1 ? 1 : i / (camps.length - 1);
+        const cx = 20 + t * 130;
+        const cy = 190 - t * 172;
+        const reached = p >= (i / (n - 1)) * 100 - 0.5;
+        return (
+          <g key={c}>
+            <circle cx={cx} cy={cy} r="5" fill={reached ? "var(--good)" : "var(--surface)"} stroke={reached ? "var(--good)" : "var(--line-strong)"} strokeWidth="2" />
+            <text x={cx + 10} y={cy + 4} fontSize="9.5" fill={reached ? "var(--ink)" : "var(--muted)"} fontWeight={reached ? 700 : 500}>{c}</text>
+          </g>
+        );
+      })}
+      <g style={{ transition: "transform 900ms cubic-bezier(.2,.8,.3,1)", transform: `translate(${px}px, ${py}px)` }}>
+        <circle cx="0" cy="-9" r="5" fill="var(--ink)" />
+        <path d="M0,-4 L0,6 M0,0 L-6,4 M0,0 L6,4 M0,6 L-4,14 M0,6 L4,14" stroke="var(--ink)" strokeWidth="2.4" strokeLinecap="round" fill="none" />
+      </g>
+    </svg>
+  );
+}
+
+/** Sparks: a small starburst that plays over a recognition moment. */
+export function Sparks({ run }: { run: boolean }) {
+  if (!run) return null;
+  return (
+    <span className="sparks" aria-hidden>
+      {Array.from({ length: 8 }, (_, i) => (
+        <i key={i} style={{ transform: `rotate(${i * 45}deg)`, animationDelay: `${i * 0.03}s` }} />
+      ))}
+    </span>
+  );
+}
+
 /* ---- hidden finds ----------------------------------------------------------
    Small rewards for the curious. None of them touch data or scores. */
 
 const FINDS = [
   { id: "konami", label: "Golden berry", hint: "The old cheat code still works." },
   { id: "logo", label: "Eruption", hint: "Tap the volcano seven times." },
-  { id: "grove", label: "Serviceberry proverb", hint: "Hold the tree." },
+  { id: "grove", label: "Ecosystem proverb", hint: "Hold the mountain." },
 ];
 
 export function useEasterEggs() {

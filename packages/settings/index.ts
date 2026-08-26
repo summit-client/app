@@ -235,7 +235,7 @@ export const SETTINGS: SettingDef[] = [
   { key: "eco.weightPd", label: "Weight: professional development (%)", section: "ecosystem", scope: "org", type: "number", default: 10 },
   { key: "recog.enabled", label: "Peer recognition", section: "ecosystem", scope: "org", type: "toggle", default: true, keywords: ["points", "kudos"] },
   { key: "recog.monthlyAllowance", label: "Recognition points each employee may give per month", section: "ecosystem", scope: "org", type: "number", default: 10 },
-  { key: "recog.maxPerPerson", label: "Maximum points to one person per month", section: "ecosystem", scope: "org", type: "number", default: 4 },
+  { key: "recog.maxPerPerson", label: "Maximum points to one person per month", section: "ecosystem", scope: "org", type: "number", default: 5 },
   { key: "bonus.enabled", label: "Monthly bonus eligibility", description: "Eligibility only; monetary amounts are never stored in Summit.", section: "ecosystem", scope: "org", type: "toggle", default: true, keywords: ["bonus"] },
   { key: "bonus.minScore", label: "Minimum Ecosystem Score for bonus eligibility", section: "ecosystem", scope: "org", type: "number", default: 80 },
   { key: "career.ladder", label: "Career development pathway (arrow-separated roles)", section: "ecosystem", scope: "org", type: "text", default: "Supervised Clinician > Lead Clinician > Supervisor Candidate > Clinical Leadership > Regional Leadership", keywords: ["pathway", "roles"] },

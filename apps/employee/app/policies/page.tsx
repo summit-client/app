@@ -12,20 +12,20 @@ import { hr, hrAudit, saveHr } from "@/lib/hr-store";
 export default function PoliciesPage() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
-  const [preview, setPreview] = React.useState<{ id: string; name: string; url: string } | null>(null);
+  const [preview, setPreview] = React.useState<{ id: string; name: string; url: string | null; content: string | null } | null>(null);
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading policies…</p>;
 
   const s = hr();
   const ackFor = (id: string, version: string) => s.acks.find((a) => a.policyId === id && a.version === version);
 
-  const open = (id: string, version: string, name: string, url: string | null) => {
+  const open = (id: string, version: string, name: string, url: string | null, content: string | null) => {
     let a = ackFor(id, version);
     if (!a) { a = { policyId: id, version, openedAt: new Date().toISOString(), acknowledgedAt: null }; s.acks.push(a); }
     else if (!a.openedAt) a.openedAt = new Date().toISOString();
     saveHr();
     hrAudit("policy.opened", `${name} version ${version}`);
-    if (url) setPreview({ id, name, url: url.includes("drive.google.com") ? url.replace(/\/view.*$/, "/preview") : url });
+    setPreview({ id, name, url: url ? (url.includes("drive.google.com") ? url.replace(/\/view.*$/, "/preview") : url) : null, content });
     force();
   };
 
@@ -67,8 +67,8 @@ export default function PoliciesPage() {
                     {a?.acknowledgedAt ? <div className="trend">{a.acknowledgedAt.slice(0, 10)}</div> : null}
                   </td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <button className="btn ghost" onClick={() => open(p.id, p.version, p.name, p.url)}>
-                      {p.url ? "Open and preview" : "Open"}
+                    <button className="btn ghost" onClick={() => open(p.id, p.version, p.name, p.url, p.content)}>
+                      Preview
                     </button>
                     {a?.openedAt && !a.acknowledgedAt ? (
                       <button className="btn" style={{ marginLeft: 8 }} onClick={() => acknowledge(p.id, p.version, p.name)}>
@@ -89,7 +89,14 @@ export default function PoliciesPage() {
             <b style={{ fontSize: "var(--text-sm)" }}>{preview.name}</b>
             <button className="btn ghost" onClick={() => setPreview(null)}>Close</button>
           </div>
-          <iframe src={preview.url} title={`Preview of ${preview.name}`} style={{ width: "100%", height: "70vh", border: 0, display: "block" }} />
+          {preview.url ? (
+            <iframe src={preview.url} title={`Preview of ${preview.name}`} style={{ width: "100%", height: "70vh", border: 0, display: "block" }} />
+          ) : (
+            <div className="card-pad" style={{ maxWidth: "72ch" }}>
+              <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{preview.content ?? "This policy's document has not been attached yet."}</p>
+              <p className="trend" style={{ marginTop: 12 }}>Starter text. The signed organizational document replaces it when an administrator attaches it.</p>
+            </div>
+          )}
         </div>
       ) : null}
 

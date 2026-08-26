@@ -76,7 +76,7 @@ t("a single strong self rating with no other source is 100, not penalized", part
 
 /* ---- 5. Recognition anti-gaming ---- */
 console.log("Recognition guardrails");
-const ALLOWANCE = 10, PER_PERSON = 4;
+const ALLOWANCE = 10, PER_PERSON = 5;
 function check(draft, month) {
   if (draft.from === draft.to) return "self";
   if (!draft.message || draft.message.trim().length < 12) return "message";
@@ -92,11 +92,10 @@ t("empty explanation refused", check({ from: "A", to: "B", points: 1, message: "
 t("within allowance accepted", check({ from: "A", to: "B", points: 2, message: msg, category: "X" }, []) === null);
 t("over the per-person cap refused",
   check({ from: "A", to: "B", points: 2, message: msg, category: "X" },
-    [{ from: "A", to: "B", points: 3, message: msg, category: "X" }]) === "perPerson");
+    [{ from: "A", to: "B", points: 4, message: msg, category: "X" }]) === "perPerson");
 t("over the monthly allowance refused",
   check({ from: "A", to: "C", points: 2, message: msg, category: "X" },
-    [{ from: "A", to: "B", points: 4, message: msg, category: "Y" }, { from: "A", to: "D", points: 4, message: msg, category: "Z" },
-     { from: "A", to: "E", points: 1, message: msg, category: "W" }]) === "allowance");
+    [{ from: "A", to: "B", points: 5, message: msg, category: "Y" }, { from: "A", to: "D", points: 4, message: msg, category: "Z" }]) === "allowance");
 t("duplicate refused",
   check({ from: "A", to: "B", points: 1, message: msg, category: "X" },
     [{ from: "A", to: "B", points: 1, message: msg, category: "X" }]) === "duplicate");

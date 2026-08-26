@@ -29,6 +29,16 @@ export const SOURCE_LABEL: Record<SourceKind, string> = {
   SELF: "Self", PEER: "Peers", SUPERVISOR: "Supervisor", OBJECTIVE: "Objective data", PD: "Development", COMPLIANCE: "Compliance",
 };
 
+export type AutoSource = "scheduler" | "clinician_portal" | "client_lifecycle" | "training" | "recognition";
+
+export const AUTO_SOURCE_LABEL: Record<AutoSource, string> = {
+  scheduler: "Summit Scheduler",
+  clinician_portal: "Clinician portal activity",
+  client_lifecycle: "Client lifecycle",
+  training: "Training, certificates and onboarding",
+  recognition: "Recognition",
+};
+
 export interface ScorecardMetric {
   key: string;
   category: string;
@@ -37,22 +47,50 @@ export interface ScorecardMetric {
   type: MetricType;        // personal contribution or group contribution
   source: SourceKind;
   evidence: string;        // where the data comes from
+  auto?: AutoSource;       // pulled automatically, never self-scored
 }
 
 /** Individual evaluation, 100 points. Tenant default from the organization's system. */
 export const DEFAULT_METRICS: ScorecardMetric[] = [
-  { key: "rev-billable", category: "Revenue Generating", behaviour: "Maintains the agreed billable hours each week", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Schedule and session logs" },
-  { key: "rev-leads", category: "Revenue Generating", behaviour: "Onboards new leads within 7 days", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Intake tracker timestamps" },
-  { key: "rev-retention", category: "Revenue Generating", behaviour: "Keeps clients engaged with few unplanned discharges", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Session consistency" },
-  { key: "skill-programs", category: "Skill & Performance", behaviour: "Develops and maintains program oversight", weight: 10, type: "PERSONAL", source: "SUPERVISOR", evidence: "Program bank updates, QA review" },
-  { key: "skill-teaching", category: "Skill & Performance", behaviour: "Teaches and models procedures for others", weight: 10, type: "PERSONAL", source: "SUPERVISOR", evidence: "Fidelity or IOA review" },
-  { key: "growth-ceu", category: "Professional Growth", behaviour: "Completes CEUs and attends supervision", weight: 10, type: "GROUP", source: "PD", evidence: "CEU tracker, supervision notes" },
-  { key: "support-feedback", category: "Student Support", behaviour: "Earns strong student and caregiver feedback", weight: 10, type: "GROUP", source: "OBJECTIVE", evidence: "Feedback forms" },
+  { key: "rev-billable", auto: "scheduler", category: "Revenue Generating", behaviour: "Maintains the agreed billable hours each week", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Schedule and session logs" },
+  { key: "rev-leads", auto: "client_lifecycle", category: "Revenue Generating", behaviour: "Onboards new leads within 7 days", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Intake tracker timestamps" },
+  { key: "rev-retention", auto: "scheduler", category: "Revenue Generating", behaviour: "Keeps clients engaged with few unplanned discharges", weight: 10, type: "PERSONAL", source: "OBJECTIVE", evidence: "Session consistency" },
+  { key: "skill-programs", auto: "clinician_portal", category: "Skill & Performance", behaviour: "Develops and maintains program oversight", weight: 10, type: "PERSONAL", source: "SUPERVISOR", evidence: "Program bank updates, QA review" },
+  { key: "skill-teaching", auto: "clinician_portal", category: "Skill & Performance", behaviour: "Teaches and models procedures for others", weight: 10, type: "PERSONAL", source: "SUPERVISOR", evidence: "Fidelity or IOA review" },
+  { key: "growth-ceu", auto: "training", category: "Professional Growth", behaviour: "Completes CEUs and attends supervision", weight: 10, type: "GROUP", source: "PD", evidence: "CEU tracker, supervision notes" },
+  { key: "support-feedback", auto: "recognition", category: "Student Support", behaviour: "Earns strong student and caregiver feedback", weight: 10, type: "GROUP", source: "OBJECTIVE", evidence: "Feedback forms" },
   { key: "env-workspace", category: "Environment & Culture", behaviour: "Keeps the workspace clean and organized", weight: 10, type: "GROUP", source: "PEER", evidence: "Visual checklist, peer audit" },
   { key: "collab-tone", category: "Collaboration & Communication", behaviour: "Cooperates with the team and keeps a respectful tone", weight: 10, type: "GROUP", source: "PEER", evidence: "QA logs, peer survey" },
   { key: "community-events", category: "Community Engagement", behaviour: "Takes part in community events", weight: 5, type: "GROUP", source: "PEER", evidence: "Event attendance" },
   { key: "self-reflection", category: "Self Reflection", behaviour: "Names growth areas and the support that would help", weight: 5, type: "PERSONAL", source: "SELF", evidence: "Monthly reflection" },
 ];
+
+/**
+ * Auto-derived ratings. Revenue and skill metrics arrive from the scheduler
+ * and the clinician portal in live mode; in preview they stay pending and the
+ * weights renormalize. Growth derives from training, certificates and
+ * onboarding; student and caregiver feedback derives from recognition.
+ */
+export function computeAutoResponses(x: { trainingPct: number | null; onboardingPct: number; recogPoints: number }): MetricResponse[] {
+  const out: MetricResponse[] = [];
+  if (x.trainingPct != null) {
+    const p = x.trainingPct * 0.7 + x.onboardingPct * 0.3;
+    const rating = (p >= 90 ? 5 : p >= 75 ? 4 : p >= 50 ? 3 : p >= 25 ? 2 : 1) as RatingValue;
+    out.push({ metricKey: "growth-ceu", source: "PD", rating, comment: `Derived: training ${Math.round(x.trainingPct)}%, onboarding ${Math.round(x.onboardingPct)}%` });
+  }
+  if (x.recogPoints > 0) {
+    const rating = (x.recogPoints >= 5 ? 5 : x.recogPoints >= 3 ? 4 : 3) as RatingValue;
+    out.push({ metricKey: "support-feedback", source: "OBJECTIVE", rating, comment: `Derived: ${x.recogPoints} recognition points this month` });
+  }
+  return out;
+}
+
+/** Peer reviews are due by the 5th of each month. */
+export function peerReviewDue(now = new Date()): { due: string; overdue: boolean; daysLeft: number } {
+  const due = new Date(now.getFullYear(), now.getMonth(), 5);
+  const daysLeft = Math.ceil((due.getTime() - now.getTime()) / 86_400_000);
+  return { due: due.toISOString().slice(0, 10), overdue: now.getDate() > 5, daysLeft: Math.max(0, daysLeft) };
+}
 
 /** The five branch domains a site is scored on. */
 export const CLINIC_DOMAINS = [
@@ -189,7 +227,7 @@ export function checkRecognition(
   if (draft.from === draft.to) return { allowed: false, reason: "You cannot recognize yourself." };
   if (draft.message.trim().length < 12) return { allowed: false, reason: "Say what they actually did." };
   const allowance = Number(getSetting("recog.monthlyAllowance")) || 10;
-  const perPerson = Number(getSetting("recog.maxPerPerson")) || 4;
+  const perPerson = Number(getSetting("recog.maxPerPerson")) || 5;
   const given = monthToDate.filter((r) => r.from === draft.from);
   const spent = given.reduce((s, r) => s + r.points, 0);
   if (spent + draft.points > allowance) return { allowed: false, reason: `${allowance - spent} points left this month.` };

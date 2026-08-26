@@ -2,24 +2,32 @@
 
 import * as React from "react";
 import { getSetting } from "@summit/settings";
-import { getProfile } from "@/lib/hub";
+import { getProfile, getProgress, getTraining, onboardingProgress } from "@/lib/hub";
 import { checkRecognition, reciprocalFlag, RECOGNITION_CATEGORIES } from "@/lib/ecosystem";
 import { currentCycle, hr, hrAudit, saveHr } from "@/lib/hr-store";
+import { EggToast, Sparks, TheClimb, useEasterEggs } from "@/components/grove";
 
 /**
- * Recognition. Peers reinforce specific behaviours close to when they happen.
- * Guardrails keep it from becoming a popularity contest: a monthly allowance,
- * a per-person cap, no self-recognition, duplicate detection and reciprocal
- * flagging. Recognition nudges the score modestly; objective performance
- * carries far more weight.
+ * Recognition. Sparks of appreciation from your team, and the climb: your
+ * elevation up the mountain, where the camps are the career pathway.
  */
+
+const AWARDS = [
+  { at: 5, name: "First Spark", note: "5 points of appreciation" },
+  { at: 12, name: "Rising Ember", note: "12 points" },
+  { at: 25, name: "Signal Fire", note: "25 points" },
+  { at: 40, name: "Summit Beacon", note: "40 points" },
+];
+
 export default function RecognitionPage() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [f, setF] = React.useState({ to: "", category: RECOGNITION_CATEGORIES[0], points: 1, message: "" });
   const [error, setError] = React.useState<string | null>(null);
+  const [sparkOn, setSparkOn] = React.useState(false);
+  const eggs = useEasterEggs();
   React.useEffect(() => setReady(true), []);
-  if (!ready) return <p className="sub">Loading recognition…</p>;
+  if (!ready) return <p className="sub">Loading…</p>;
 
   const s = hr();
   const me = getProfile().name;
@@ -28,61 +36,87 @@ export default function RecognitionPage() {
   const allowance = Number(getSetting("recog.monthlyAllowance")) || 10;
   const spent = month.filter((r) => r.from === me).reduce((n, r) => n + r.points, 0);
   const received = month.filter((r) => r.to === me);
+  const receivedAll = s.recognition.filter((r) => r.to === me).reduce((n, r) => n + r.points, 0);
+  const earned = AWARDS.filter((a) => receivedAll >= a.at);
 
-  const teammates = s.team.length ? s.team.map((t) => t.name) : ["A colleague"];
+  // Elevation: onboarding, training, and appreciation each lift the climber.
+  const ob = onboardingProgress(getProgress());
+  const trained = getTraining().filter((t) => t.status === "COMPLETED").length;
+  const camps = String(getSetting("career.ladder")).split(">").map((x) => x.trim()).filter(Boolean);
+  const elevation = Math.min(100, Math.round(ob.percent * 0.4 + Math.min(trained * 4, 30) + Math.min(receivedAll * 1.5, 30)));
 
   const send = () => {
     const check = checkRecognition({ ...f, from: me }, month);
     if (!check.allowed) { setError(check.reason); return; }
-    const flag = reciprocalFlag({ from: me, to: f.to }, month);
     s.recognition.unshift({
       id: `r-${Date.now().toString(36)}`, from: me, to: f.to, category: f.category,
-      points: f.points, message: f.message.trim(), date: new Date().toISOString(), flagged: flag,
+      points: f.points, message: f.message.trim(), date: new Date().toISOString(),
+      flagged: reciprocalFlag({ from: me, to: f.to }, month),
     });
     saveHr();
     hrAudit("recognition.sent", `${f.points} ${f.category} to ${f.to}`);
     setF({ to: "", category: RECOGNITION_CATEGORIES[0], points: 1, message: "" });
     setError(null);
+    setSparkOn(true);
+    setTimeout(() => setSparkOn(false), 900);
     force();
   };
 
   return (
     <div>
-      <h1 className="h-page">Recognition</h1>
-      <p className="sub" style={{ maxWidth: "70ch" }}>
-        Recognize a specific behaviour a colleague showed. You have {allowance - spent} of {allowance} points left this
-        month, and at most {String(getSetting("recog.maxPerPerson"))} points may go to any one person.
-      </p>
+      <EggToast toast={eggs.toast} />
+      <div className="hero">
+        <div className="hero-main">
+          <h1 className="h-page" style={{ marginBottom: 2 }}>Recognition <Sparks run={sparkOn} /></h1>
+          <p className="sub" style={{ marginTop: 0 }}>{allowance - spent} of {allowance} points left to give this month</p>
+          <div className="chip-row" style={{ marginTop: 10 }}>
+            {AWARDS.map((a) => (
+              <span key={a.name} className={`pill ${earned.includes(a) ? "good" : "neutral"}`} title={a.note}>
+                {earned.includes(a) ? "✦ " : ""}{a.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
 
-      <h2 className="section-title">Recognize a colleague</h2>
+      <h2 className="section-title">The climb</h2>
+      <p className="sub" style={{ marginTop: -8 }}>Camps are the development pathway. Onboarding, modules and appreciation lift you.</p>
+      <div
+        onPointerDown={() => { const t = setTimeout(() => eggs.unlock("grove", "No one rises alone. The ecosystem climbs together."), 900); const clear = () => { clearTimeout(t); window.removeEventListener("pointerup", clear); }; window.addEventListener("pointerup", clear); }}
+        style={{ maxWidth: 560, cursor: "pointer" }} title="The climb">
+        <TheClimb elevation={elevation} camps={camps} />
+      </div>
+      <p className="trend">Elevation {elevation} of 100</p>
+
+      <h2 className="section-title">Send a spark</h2>
       <div className="card card-pad" style={{ display: "grid", gap: 12 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div className="field"><label htmlFor="r-to">Colleague</label>
             <input id="r-to" className="input" list="teammates" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} placeholder="Name" />
-            <datalist id="teammates">{teammates.map((t) => <option key={t} value={t} />)}</datalist>
+            <datalist id="teammates">{s.team.filter((t) => t.name !== me).map((t) => <option key={t.name} value={t.name} />)}</datalist>
           </div>
           <div className="field"><label htmlFor="r-cat">Category</label>
             <select id="r-cat" className="input" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>
               {RECOGNITION_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
             </select></div>
-          <div className="field" style={{ width: 100 }}><label htmlFor="r-pts">Points</label>
-            <input id="r-pts" type="number" min={1} max={4} className="input" value={f.points} onChange={(e) => setF({ ...f, points: Number(e.target.value) || 1 })} /></div>
+          <div className="field" style={{ width: 96 }}><label htmlFor="r-pts">Points</label>
+            <input id="r-pts" type="number" min={1} max={5} className="input" value={f.points} onChange={(e) => setF({ ...f, points: Number(e.target.value) || 1 })} /></div>
         </div>
         <div className="field">
           <label htmlFor="r-msg">What did they do?</label>
           <textarea id="r-msg" className="input" rows={2} value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })}
-            placeholder="Describe the behaviour, for example: stayed to reset the room and prep materials for the next session." />
+            placeholder="The specific behaviour, for example: stayed to reset the room for the next session." />
         </div>
         {error ? <p className="rule-note">{error}</p> : null}
-        <div><button className="btn" onClick={send} disabled={!f.to.trim() || !f.message.trim()}>Send recognition</button></div>
+        <div><button className="btn" onClick={send} disabled={!f.to.trim() || !f.message.trim()}>Send spark</button></div>
       </div>
 
-      <h2 className="section-title">You received</h2>
+      <h2 className="section-title">Sparks of appreciation <Sparks run={sparkOn} /></h2>
       <div className="attn">
         {received.map((r) => (
           <div key={r.id}>
-            <span>+{r.points} {r.category}: {r.message}</span>
-            <span className="trend">{r.date.slice(0, 10)}</span>
+            <span>✦ +{r.points} {r.category}: {r.message}</span>
+            <span className="trend">{r.from} · {r.date.slice(0, 10)}</span>
           </div>
         ))}
         {!received.length ? <div><span className="sub">Nothing yet this month.</span></div> : null}
@@ -92,13 +126,12 @@ export default function RecognitionPage() {
       <div className="attn">
         {month.slice(0, 12).map((r) => (
           <div key={r.id}>
-            <span>{r.from} recognized {r.to}: +{r.points} {r.category}</span>
-            <span className="trend">{r.flagged ? "flagged for manager review" : r.date.slice(0, 10)}</span>
+            <span>{r.from} → {r.to}: +{r.points} {r.category}</span>
+            <span className="trend">{r.flagged ? "manager review" : r.date.slice(0, 10)}</span>
           </div>
         ))}
         {!month.length ? <div><span className="sub">The wall is quiet this month.</span></div> : null}
       </div>
-      <p className="sub">Recognition is visible to the team. Performance scores and feedback detail are not.</p>
     </div>
   );
 }

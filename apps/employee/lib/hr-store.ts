@@ -27,6 +27,7 @@ export interface PolicyDoc {
   effectiveDate: string;
   owner: string;
   url: string | null;
+  content: string | null;   // inline starter text, previewable in place
   required: boolean;
 }
 
@@ -79,14 +80,14 @@ function seed(): HrStore {
     activities: [],
     allocations: [],
     policies: [
-      { id: "pol-handbook", name: "Employee Handbook", version: "2026.1", effectiveDate: `${y}-01-15`, owner: "HR Lead", url: "https://drive.google.com/file/d/1fmV5zENVnM6ffkTYJDWL0w-4BwdEzoqB/view", required: true },
-      { id: "pol-disconnect", name: "Right to Disconnect Policy", version: "1.0", effectiveDate: `${y}-01-15`, owner: "HR Lead", url: null, required: true },
-      { id: "pol-ai", name: "AI Use Policy", version: "1.0", effectiveDate: `${y}-03-01`, owner: "Clinical Director", url: null, required: true },
-      { id: "pol-privacy", name: "Privacy and Confidentiality Policy", version: "2.0", effectiveDate: `${y}-02-01`, owner: "Privacy Officer", url: null, required: true },
-      { id: "pol-violence", name: "Workplace Violence and Harassment Policy", version: "1.2", effectiveDate: `${y}-01-15`, owner: "HR Lead", url: null, required: true },
-      { id: "pol-conduct", name: "Code of Conduct", version: "1.1", effectiveDate: `${y}-01-15`, owner: "HR Lead", url: null, required: true },
-      { id: "pol-boundaries", name: "Professional Boundaries Policy", version: "1.0", effectiveDate: `${y}-01-15`, owner: "Clinical Director", url: null, required: true },
-      { id: "pol-incident", name: "Incident Reporting Policy", version: "1.3", effectiveDate: `${y}-04-01`, owner: "Health & Safety", url: null, required: true },
+      { id: "pol-handbook", name: "Employee Handbook", version: "2026.1", effectiveDate: `${y}-01-15`, owner: "HR Lead", url: "https://drive.google.com/file/d/1fmV5zENVnM6ffkTYJDWL0w-4BwdEzoqB/view", content: null, required: true },
+      { id: "pol-disconnect", name: "Right to Disconnect Policy", version: "1.0", effectiveDate: `${y}-01-15`, owner: "HR Lead", url: null, content: "Staff are not expected to read or respond to work communication outside scheduled hours, except during an on-call assignment. Sending a message after hours carries no expectation of a reply before the next scheduled shift. Urgent clinical matters follow the on-call procedure, never general chat.", required: true },
+      { id: "pol-ai", name: "AI Use Policy", version: "1.0", effectiveDate: `${y}-03-01`, owner: "Clinical Director", url: null, content: "AI tools may support drafting, scheduling and analysis. A clinician reviews and approves anything AI-drafted before it enters a clinical record, and AI never makes a clinical or compensation decision. Client information goes only into organization-approved tools configured for that purpose.", required: true },
+      { id: "pol-privacy", name: "Privacy and Confidentiality Policy", version: "2.0", effectiveDate: `${y}-02-01`, owner: "Privacy Officer", url: null, content: "Client information is collected, used and disclosed only for care, with consent, under PHIPA. Access follows the minimum necessary rule. Records stay inside approved systems; client details never appear in team chat, the forum, personal devices or personal email. Suspected privacy breaches are reported to the Privacy Officer the same day.", required: true },
+      { id: "pol-violence", name: "Workplace Violence and Harassment Policy", version: "1.2", effectiveDate: `${y}-01-15`, owner: "HR Lead", url: null, content: "Everyone is entitled to a workplace free of violence and harassment. Report incidents to your supervisor or the HR Lead; reports are investigated promptly and confidentially, and reprisal for reporting is itself a violation. Risk assessments and this policy are reviewed annually.", required: true },
+      { id: "pol-conduct", name: "Code of Conduct", version: "1.1", effectiveDate: `${y}-01-15`, owner: "HR Lead", url: null, content: "Treat clients, families and colleagues with respect. Arrive prepared, follow programming as written, document honestly, and raise concerns through your supervisor. Conflicts of interest are disclosed. Gifts beyond token value are declined.", required: true },
+      { id: "pol-boundaries", name: "Professional Boundaries Policy", version: "1.0", effectiveDate: `${y}-01-15`, owner: "Clinical Director", url: null, content: "Relationships with clients and families stay professional: no personal social media connections, no private arrangements outside service agreements, no exchange of personal contact information without approval. Concerns about boundaries, yours or a colleague's, go to your supervisor early.", required: true },
+      { id: "pol-incident", name: "Incident Reporting Policy", version: "1.3", effectiveDate: `${y}-04-01`, owner: "Health & Safety", url: null, content: "Any incident involving injury, a behavioural emergency, a medication event, or property damage is documented before the end of the shift and reported to the supervisor on duty. Serious incidents are escalated to the clinical director the same day. Debriefs follow every significant incident.", required: true },
     ],
     acks: [],
     posts: [],

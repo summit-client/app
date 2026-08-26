@@ -415,3 +415,20 @@ textarea.input { min-height: 80px; resize: vertical; }
 @media (prefers-reduced-motion: reduce) {
   .ember, .lava, .berry-burst span, .egg-toast { animation: none !important; }
 }
+.sparks { position: relative; display: inline-block; width: 0; height: 0; vertical-align: middle; }
+.sparks i {
+  position: absolute; left: -2px; top: -2px; width: 4px; height: 14px; border-radius: 2px;
+  background: #f0c419; transform-origin: 2px 2px; animation: sparkFly 700ms ease-out forwards;
+}
+@keyframes sparkFly { from { opacity: 1; scale: 0.4 } to { opacity: 0; translate: 0 -22px; scale: 1 } }
+@media (prefers-reduced-motion: reduce) { .sparks i { animation: none !important; opacity: 0 } }
+/* Widget dashboard ----------------------------------------------------------- */
+.widgets { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); }
+.widget {
+  display: flex; flex-direction: column; gap: 6px; padding: var(--space-4);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card); color: inherit; min-height: 118px;
+}
+a.widget:hover { border-color: var(--accent); }
+.widget-k { font-size: var(--text-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.widget-v { font-family: var(--font-display); font-size: var(--text-3xl); font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }

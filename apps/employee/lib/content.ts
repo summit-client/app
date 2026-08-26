@@ -59,7 +59,7 @@ const AIM = "https://autisminternetmodules.org/m";
 
 export const HUB_COURSES: HubCourse[] = [
   // In-house 22-module clinical competency program (shipped with this app).
-  { key: "megba-clinical-competency", title: "Clinical Competency Training Program", provider: "Mount Etna Global Behaviour Academy", kind: "CLINICAL", category: "MEGBA", externalUrl: "/clinical-training.html", deadlineBucket: "WEEK_1", order: 0 },
+  { key: "megba-clinical-competency", title: "Clinical Competency Training Program", provider: "Mount Etna Global Behaviour Academy", kind: "CLINICAL", category: "MEGBA", externalUrl: "/clinical-training.html", deadlineBucket: "CUSTOM", order: 0 },
   // Mandatory compliance (Week 1, due within 14 days)
   { key: "cc-aoda-accessibility", title: "Accessibility for Ontarians with Disability", provider: "BrightHR", kind: "COMPLIANCE", category: "AODA", externalUrl: `${B_HR}/aoda-awareness/${TID}`, deadlineBucket: "WITHIN_14_DAYS", order: 1 },
   { key: "cc-working-together", title: "Working Together: the Code and the AODA", provider: "BrightHR", kind: "COMPLIANCE", category: "AODA", externalUrl: `${B_HR}/workingtogether-the-code-the-aoda/${TID}`, deadlineBucket: "WITHIN_14_DAYS", order: 2 },
@@ -84,13 +84,17 @@ export const HUB_COURSES: HubCourse[] = [
   { key: "clin-m5-rules-routines", title: "Module 5: Rules & Routines", provider: "Autism Internet Modules", kind: "CLINICAL", externalUrl: `${AIM}/499`, deadlineBucket: "WEEK_2", order: 5 },
   { key: "clin-m6-transitioning", title: "Module 6: Transitioning Between Activities", provider: "Autism Internet Modules", kind: "CLINICAL", externalUrl: `${AIM}/472`, deadlineBucket: "WEEK_2", order: 6 },
   { key: "clin-m7-visual-supports", title: "Module 7: Visual Supports", provider: "Autism Internet Modules", kind: "CLINICAL", externalUrl: `${AIM}/1048`, deadlineBucket: "WEEK_2", order: 7 },
-  // Role-assigned clinical catalog
-  { key: "clin-cpi", title: "CPI (Crisis Prevention)", kind: "CLINICAL", category: "Role-assigned", deadlineBucket: "CUSTOM", order: 40 },
-  { key: "clin-ndbi", title: "NDBI for Autism", kind: "CLINICAL", category: "Role-assigned", deadlineBucket: "CUSTOM", order: 41 },
-  { key: "clin-caregiver-mediated", title: "Caregiver-Mediated Support", kind: "CLINICAL", category: "Role-assigned", deadlineBucket: "CUSTOM", order: 42 },
-  { key: "clin-social-thinking", title: "Social Thinking", kind: "CLINICAL", category: "Role-assigned", deadlineBucket: "CUSTOM", order: 43 },
-  { key: "clin-aac", title: "AAC Supports", kind: "CLINICAL", category: "Role-assigned", deadlineBucket: "CUSTOM", order: 44 },
+  // Summit modules 8 to 13: resource + competency check, certificate on pass.
+  { key: "mod-8-cpi", title: "Module 8: CPI (Crisis Prevention)", kind: "CLINICAL", category: "Summit Module", externalUrl: "https://youtube.com/playlist?list=PLLcEhzcGwl2e9RbHrotqlgFaSzZnhT62r&si=9PTK_SgEEd6L7wM0", deadlineBucket: "CUSTOM", order: 8 },
+  { key: "mod-9-ndbi", title: "Module 9: Naturalistic Developmental Behaviour Interventions", kind: "CLINICAL", category: "Summit Module", externalUrl: "https://drive.google.com/file/d/1_dxvkVsRR9mbbv1IVRRltiLrQdwvWFRN/view?usp=drive_link", deadlineBucket: "CUSTOM", order: 9 },
+  { key: "mod-10-social-thinking", title: "Module 10: Social Thinking", kind: "CLINICAL", category: "Summit Module", externalUrl: "https://drive.google.com/file/d/1-4CE3Ro9ya0vgEW1vxh8O0SFw0ghoNBy/view?usp=drive_link", deadlineBucket: "CUSTOM", order: 10 },
+  { key: "mod-11-caregiver", title: "Module 11: Caregiver-Mediated Support", kind: "CLINICAL", category: "Summit Module", externalUrl: "https://drive.google.com/file/d/1sjfTnMpwjnTaaErj3Tb0RsLkAS2G1Y7q/view?usp=sharing", deadlineBucket: "CUSTOM", order: 11 },
+  { key: "mod-12-coughdrop", title: "Module 12: CoughDrop AAC", kind: "CLINICAL", category: "Summit Module", externalUrl: "https://drive.google.com/file/d/1gCjkvJ506WscSEI0tgx2si6PN8PxXbVi/view?usp=drive_link", deadlineBucket: "CUSTOM", order: 12 },
+  { key: "mod-13-lamp", title: "Module 13: LAMP AAC", kind: "CLINICAL", category: "Summit Module", externalUrl: "https://drive.google.com/file/d/1wd0B5P1A1tZ5iOiv67qbQ4N0DROdPaPP/view?usp=drive_link", deadlineBucket: "CUSTOM", order: 13 },
 ];
+
+/** The digital binder with all module resources and additional videos. */
+export const BINDER_URL = "https://drive.google.com/drive/folders/1srSLI9XH_N58f_3YrxjTRN-BKz4WSS1E?usp=drive_link";
 
 let o = 0;
 const next = () => (o += 1);

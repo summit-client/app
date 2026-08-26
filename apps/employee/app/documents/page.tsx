@@ -3,10 +3,26 @@
 import * as React from "react";
 import { HUB_DOCUMENTS } from "@/lib/content";
 
-/** My Documents: handbook, onboarding checklists and shared-drive material,
- * opened as inline previews rather than downloads. */
+interface Upload { id: string; kind: "VSC" | "OTHER"; label: string; fileName: string; date: string }
+
+/** My Documents: previews, plus your own uploads: the Vulnerable Sector Check
+ * and anything else, labelled however you need. */
 export default function DocumentsPage() {
   const [preview, setPreview] = React.useState<{ name: string; url: string } | null>(null);
+  const [uploads, setUploads] = React.useState<Upload[]>([]);
+  const [otherLabel, setOtherLabel] = React.useState("");
+
+  React.useEffect(() => {
+    try { setUploads(JSON.parse(localStorage.getItem("summit-my-uploads") ?? "[]") as Upload[]); } catch { /* none */ }
+  }, []);
+
+  const addUpload = (kind: "VSC" | "OTHER", label: string, file: File | null) => {
+    if (!file) return;
+    const next = [{ id: `u-${Date.now().toString(36)}`, kind, label, fileName: file.name, date: new Date().toISOString().slice(0, 10) }, ...uploads];
+    setUploads(next);
+    localStorage.setItem("summit-my-uploads", JSON.stringify(next));
+    if (kind === "OTHER") setOtherLabel("");
+  };
 
   // Drive /view links embed via their /preview form; local PDFs embed directly.
   const embedUrl = (url: string) =>
@@ -18,7 +34,37 @@ export default function DocumentsPage() {
       <h1 className="h-page">My Documents</h1>
       <p className="sub">The handbook, the onboarding checklist this hub is built from, and the shared team drive.</p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
+      <h2 className="section-title">My uploads</h2>
+      <div className="card card-pad" style={{ display: "grid", gap: 14 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div className="field"><label htmlFor="up-vsc">Vulnerable Sector Check</label>
+            <input id="up-vsc" type="file" accept="application/pdf,image/*" className="input" style={{ padding: 7 }}
+              onChange={(e) => addUpload("VSC", "Vulnerable Sector Check", e.target.files?.[0] ?? null)} /></div>
+          <span className="sub" style={{ marginTop: 0 }}>Verified by the office before observation begins.</span>
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div className="field"><label htmlFor="up-label">Other document</label>
+            <input id="up-label" className="input" placeholder="Label it, for example First Aid card" value={otherLabel}
+              onChange={(e) => setOtherLabel(e.target.value)} /></div>
+          <div className="field"><label htmlFor="up-other">File</label>
+            <input id="up-other" type="file" accept="application/pdf,image/*" className="input" style={{ padding: 7 }}
+              disabled={!otherLabel.trim()}
+              onChange={(e) => addUpload("OTHER", otherLabel.trim(), e.target.files?.[0] ?? null)} /></div>
+        </div>
+        {uploads.length ? (
+          <div className="attn">
+            {uploads.map((u) => (
+              <div key={u.id}>
+                <span>{u.label} <span className="trend">{u.fileName}</span></span>
+                <span className="trend">{u.date} · {u.kind === "VSC" ? "awaiting office verification" : "on file"}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <h2 className="section-title">Organization documents</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {HUB_DOCUMENTS.map((d) => (
           <div key={d.name} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div style={{ minWidth: 0, maxWidth: "60ch" }}>

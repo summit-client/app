@@ -28,10 +28,7 @@ export default function CredentialsPage() {
   return (
     <div>
       <h1 className="h-page">My Credentials</h1>
-      <p className="sub" style={{ maxWidth: "72ch" }}>
-        Each credential tracks against the rule version that governs its cycle. Activities are recorded once in
-        Professional Development and allocated per credential, so a two hour course stays two hours.
-      </p>
+      <p className="sub">One activity, recorded once, allocated per credential.</p>
 
       {compliances.map((c) => {
         const pct = Math.min(100, Math.round((c.totalCompleted / c.totalRequired) * 100));
@@ -82,8 +79,11 @@ export default function CredentialsPage() {
               </div>
             ) : null}
 
-            {c.rule.notes.map((n) => <p key={n} className="sub">{n}</p>)}
-            {c.flags.map((f) => <p key={f} className="rule-note">{f}</p>)}
+            <details style={{ marginTop: 10 }}>
+              <summary className="trend" style={{ cursor: "pointer" }}>Rule details and instructions</summary>
+              {c.rule.notes.map((n) => <p key={n} className="sub">{n}</p>)}
+              {c.flags.map((f) => <p key={f} className="rule-note">{f}</p>)}
+            </details>
           </div>
         );
       })}
@@ -142,10 +142,13 @@ export default function CredentialsPage() {
           </tbody>
         </table>
       </div>
-      <p className="sub">
-        Rules are configurable, versioned data. An administrator uploads the governing handbook in Manager &amp; Admin,
-        reviews the proposed changes, and approves a new version. Nothing changes a professional regulation on its own.
-      </p>
+      <details style={{ marginTop: 8 }}>
+        <summary className="trend" style={{ cursor: "pointer" }}>How rule versions change</summary>
+        <p className="sub">
+          Rules are configurable, versioned data. An administrator uploads the governing handbook, reviews the proposed
+          changes, and approves a new version. Nothing changes a professional regulation on its own.
+        </p>
+      </details>
     </div>
   );
 }

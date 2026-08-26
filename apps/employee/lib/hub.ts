@@ -45,7 +45,7 @@ export interface EmployeeProfile {
   vscStatus: VscStatus;
 }
 
-export interface TaskProgress { taskKey: string; status: TaskStatus; notes: string; applicable: boolean }
+export interface TaskProgress { taskKey: string; status: TaskStatus; notes: string; applicable: boolean; completedAt: string | null }
 export interface TrainingRecord { courseKey: string; status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED"; completedAt: string | null }
 export interface PdRecord {
   id: string; title: string; provider: string; hours: number; date: string; verified: boolean;
@@ -238,7 +238,7 @@ export async function updateTask(taskKey: string, patch: { status?: TaskStatus; 
   const s = store();
   let row = s.progress.find((p) => p.taskKey === taskKey);
   if (!row) {
-    row = { taskKey, status: "NOT_STARTED", notes: "", applicable: true };
+    row = { taskKey, status: "NOT_STARTED", notes: "", applicable: true, completedAt: null };
     s.progress.push(row);
   }
   if (patch.status) {
@@ -246,6 +246,7 @@ export async function updateTask(taskKey: string, patch: { status?: TaskStatus; 
     row.status = patch.status === "COMPLETED" && task.supervisorSignoffRequired && s.profile.role === "EMPLOYEE"
       ? "AWAITING_SIGNOFF"
       : patch.status;
+    row.completedAt = row.status === "COMPLETED" ? new Date().toISOString() : null;
   }
   if (patch.notes !== undefined) row.notes = patch.notes;
   if (patch.applicable !== undefined) row.applicable = patch.applicable;
@@ -266,6 +267,7 @@ export async function signOffTask(taskKey: string): Promise<void> {
   const row = s.progress.find((p) => p.taskKey === taskKey);
   if (!row || row.status !== "AWAITING_SIGNOFF") return;
   row.status = "COMPLETED";
+  row.completedAt = new Date().toISOString();
   persist();
   audit("onboarding.signoff", HUB_TASKS.find((t) => t.key === taskKey)?.title ?? taskKey);
   maybeIssueOnboardingCertificate();
@@ -277,6 +279,15 @@ export async function signOffTask(taskKey: string): Promise<void> {
 
 export function getTraining(): TrainingRecord[] {
   return store().training;
+}
+
+export const REFRESH_DAYS = 365;
+
+/** Completions refresh yearly: past the refresh date a course is due again. */
+export function refreshDue(rec: TrainingRecord | undefined): { due: boolean; refreshOn: string | null } {
+  if (!rec?.completedAt || rec.status !== "COMPLETED") return { due: false, refreshOn: null };
+  const refreshOn = new Date(new Date(rec.completedAt).getTime() + REFRESH_DAYS * 86_400_000);
+  return { due: refreshOn.getTime() < Date.now(), refreshOn: refreshOn.toISOString().slice(0, 10) };
 }
 
 /** Completing a course also completes the matching onboarding task (replica behaviour). */
@@ -292,9 +303,13 @@ export async function setCourseStatus(courseKey: string, status: TrainingRecord[
   persist();
   const course = HUB_COURSES.find((c) => c.key === courseKey);
   audit("training.updated", `${course?.title ?? courseKey} → ${status}`);
-  // Every completed course earns its Summit credential.
+  // Every completed course earns its Summit credential. Numbered modules
+  // carry their module number on the certificate, like the MEGBA program.
   if (course && status === "COMPLETED") {
-    issueCertificate(course.title, `${course.kind} TRAINING${course.category ? ` · ${course.category.toUpperCase()}` : ""}`);
+    const competency = course.category === "Summit Module"
+      ? `MODULE # ${String(course.order).padStart(2, "0")}`
+      : `${course.kind} TRAINING${course.category ? ` · ${course.category.toUpperCase()}` : ""}`;
+    issueCertificate(course.title, competency);
   }
   const linked = HUB_TASKS.find((t) => t.courseKey === courseKey);
   if (linked && status === "COMPLETED") await updateTask(linked.key, { status: "COMPLETED" });
