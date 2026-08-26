@@ -219,10 +219,10 @@ create policy hub_timeoff_own_insert on hub_time_off_requests for insert with ch
 
 -- supervisor: linked team; admin: whole clinic
 create or replace function hub_can_manage(subject uuid) returns boolean
-language sql stable security definer set search_path = public as $$
-  select auth_role() = 'admin'
+language sql stable security definer set search_path = public, pg_temp as $$
+  select public.auth_role() = 'admin'
       or exists (
-        select 1 from profiles p
+        select 1 from public.profiles p
         where p.id = subject and p.supervisor_id = auth.uid()
       );
 $$;

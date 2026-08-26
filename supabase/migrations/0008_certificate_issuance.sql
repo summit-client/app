@@ -42,14 +42,14 @@ alter table hub_certificate_registry enable row level security;
 -- No policy: reached only through the security definer functions below.
 
 create or replace function hub_next_cert_number(p_clinic uuid)
-returns text language plpgsql security definer set search_path = public as $$
+returns text language plpgsql security definer set search_path = public, pg_temp as $$
 declare y integer := extract(year from current_date)::integer;
 declare n integer;
 begin
-  insert into hub_certificate_registry (clinic_id, year, last_seq)
+  insert into public.hub_certificate_registry (clinic_id, year, last_seq)
   values (p_clinic, y, 1)
   on conflict (clinic_id, year)
-    do update set last_seq = hub_certificate_registry.last_seq + 1
+    do update set last_seq = public.hub_certificate_registry.last_seq + 1
   returning last_seq into n;
   return 'SUMMIT-' || y || '-' || lpad(n::text, 6, '0');
 end $$;
@@ -62,33 +62,33 @@ end $$;
 -- after a dropped connection does not burn a registry number.
 create or replace function hub_issue_course_certificate(
   p_course_key text, p_title text, p_competency text
-) returns uuid language plpgsql security definer set search_path = public as $$
+) returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_user uuid := auth.uid();
 declare v_clinic uuid;
 declare v_id uuid;
 begin
   if v_user is null then raise exception 'not signed in'; end if;
 
-  select clinic_id into v_clinic from profiles where id = v_user;
+  select clinic_id into v_clinic from public.profiles where id = v_user;
   if v_clinic is null then raise exception 'no clinic on profile'; end if;
 
   -- the whole point: the caller cannot assert this, only satisfy it
   if not exists (
-    select 1 from hub_employee_training
+    select 1 from public.hub_employee_training
     where user_id = v_user and course_key = p_course_key and status = 'COMPLETED'
   ) then
     raise exception 'course % is not complete for this user', p_course_key;
   end if;
 
-  select id into v_id from hub_certificates
+  select id into v_id from public.hub_certificates
    where user_id = v_user and title = p_title and source = 'SUMMIT_ISSUED';
   if v_id is not null then return v_id; end if;
 
-  insert into hub_certificates (user_id, clinic_id, source, cert_number, title, competency, verified, verified_at)
-  values (v_user, v_clinic, 'SUMMIT_ISSUED', hub_next_cert_number(v_clinic), p_title, p_competency, true, now())
+  insert into public.hub_certificates (user_id, clinic_id, source, cert_number, title, competency, verified, verified_at)
+  values (v_user, v_clinic, 'SUMMIT_ISSUED', public.hub_next_cert_number(v_clinic), p_title, p_competency, true, now())
   returning id into v_id;
 
-  insert into hub_audit_events (clinic_id, actor, subject, action, detail)
+  insert into public.hub_audit_events (clinic_id, actor, subject, action, detail)
   values (v_clinic, v_user, v_user, 'certificate.issued', jsonb_build_object('title', p_title, 'competency', p_competency));
 
   return v_id;
@@ -99,32 +99,32 @@ end $$;
 -- supervisor is held to their linked team and an admin to their clinic.
 create or replace function hub_issue_certificate(
   p_user uuid, p_title text, p_competency text, p_expiry date default null
-) returns uuid language plpgsql security definer set search_path = public as $$
+) returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_clinic uuid;
 declare v_id uuid;
 begin
   if auth.uid() is null then raise exception 'not signed in'; end if;
-  if not hub_can_manage(p_user) then
+  if not public.hub_can_manage(p_user) then
     raise exception 'not permitted to issue certificates for this user';
   end if;
 
-  select clinic_id into v_clinic from profiles where id = p_user;
+  select clinic_id into v_clinic from public.profiles where id = p_user;
   if v_clinic is null then raise exception 'no clinic on profile'; end if;
-  if v_clinic is distinct from auth_clinic_id() then
+  if v_clinic is distinct from public.auth_clinic_id() then
     raise exception 'cross-clinic issuance refused';
   end if;
 
-  select id into v_id from hub_certificates
+  select id into v_id from public.hub_certificates
    where user_id = p_user and title = p_title and source = 'SUMMIT_ISSUED';
   if v_id is not null then return v_id; end if;
 
-  insert into hub_certificates (user_id, clinic_id, source, cert_number, title, competency,
+  insert into public.hub_certificates (user_id, clinic_id, source, cert_number, title, competency,
                                 expiry_date, verified, verified_by, verified_at)
-  values (p_user, v_clinic, 'SUMMIT_ISSUED', hub_next_cert_number(v_clinic), p_title, p_competency,
+  values (p_user, v_clinic, 'SUMMIT_ISSUED', public.hub_next_cert_number(v_clinic), p_title, p_competency,
           p_expiry, true, auth.uid(), now())
   returning id into v_id;
 
-  insert into hub_audit_events (clinic_id, actor, subject, action, detail)
+  insert into public.hub_audit_events (clinic_id, actor, subject, action, detail)
   values (v_clinic, auth.uid(), p_user, 'certificate.issued', jsonb_build_object('title', p_title, 'competency', p_competency, 'issued_by', 'manager'));
 
   return v_id;

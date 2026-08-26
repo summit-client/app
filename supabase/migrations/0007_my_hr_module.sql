@@ -354,7 +354,7 @@ create policy acks_own_update on policy_acknowledgements for update
 -- employee could take an unacknowledged row and repoint it at a different
 -- policy or version. Mirrors forbid_signed_report_update() in 0003.
 create or replace function forbid_ack_identity_change() returns trigger
-language plpgsql set search_path = public as $$
+language plpgsql set search_path = public, pg_temp as $$
 begin
   if new.policy_id is distinct from old.policy_id
      or new.version is distinct from old.version
