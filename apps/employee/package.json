@@ -1,1 +1,27 @@
-{"name":"@summit/employee","version":"0.0.1","private":true,"dependencies":{"@supabase/ssr":"^0.10.3"}}
+{
+  "name": "@summit/employee",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3004",
+    "build": "next build",
+    "start": "next start -p 3004",
+    "typecheck": "tsc --noEmit",
+    "test": "node qa.mjs && node tests/onboarding-certificates.test.mjs"
+  },
+  "dependencies": {
+    "@summit/design": "workspace:*",
+    "@summit/settings": "workspace:*",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.106.1",
+    "next": "16.2.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "6.0.2"
+  }
+}
