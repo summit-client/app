@@ -1,13 +1,12 @@
 {
   "name": "@summit/nav",
   "version": "0.1.0",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.tsx",
+  "module": "./src/index.tsx",
+  "types": "./src/index.tsx",
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "default": "./src/index.tsx"
     }
   },
   "scripts": {

@@ -1,54 +1,118 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Hanken+Grotesk:ital,wght@0,300..800;1,300..500&display=swap');
+
 /* ============================================================================
-   Summit design tokens — one structural system, themable surface.
+   Summit design tokens — the Scheduler's design language, platform wide.
+
+   Adopted from apps/scheduler: Bricolage Grotesque over Hanken Grotesk, an
+   OKLCH palette tinted toward the brand hue, a fixed rem type scale, the 4pt
+   spacing rhythm, brand-tinted shadows and named easings. Light, warm, calm.
 
    Two axes, set as attributes on <html> and persisted in localStorage:
-     data-theme  = "light" | "dark"          (absent = follow the OS)
+     data-theme  = "light" | "dark"                       (absent = follow OS)
      data-accent = "blue" | "green" | "pink" | "orange"   (default: blue)
 
-   Components consume ONLY the semantic variables (--bg, --surface, --ink,
-   --accent, …). Accent ramps swap by attribute; neutrals swap by theme.
-   Spacing / radii / type scale are fixed — that constancy is what keeps the
-   four accents and both themes reading as one product.
+   Both vocabularies resolve from this one file: the semantic Summit names
+   (--surface, --ink, --accent) and the Scheduler's own (--brand-500,
+   --color-text-primary), so every app and the shared nav read the same values.
+   Spacing, radii and type are fixed; that constancy is what keeps four accents
+   and two themes reading as one product.
    ========================================================================== */
 
 :root {
-  /* structural scale (theme-invariant) */
-  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
-  --space-6: 24px; --space-8: 32px; --space-12: 48px;
-  --radius-sm: 7px; --radius-md: 10px; --radius-lg: 14px; --radius-full: 9999px;
-  --font-display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  /* ── Brand scale (OKLCH, perceptually uniform) ─────────────────────────── */
+  --brand-50:  oklch(97%  0.014 192);
+  --brand-100: oklch(92%  0.035 191);
+  --brand-200: oklch(83%  0.075 190);
+  --brand-300: oklch(73%  0.110 189);
+  --brand-400: oklch(64%  0.135 188);
+  --brand-500: oklch(55%  0.130 194);
+  --brand-600: oklch(46%  0.115 200);
+  --brand-700: oklch(37%  0.095 208);
+  --brand-800: oklch(28%  0.072 213);
+  --brand-900: oklch(20%  0.050 215);
+
+  /* ── Typography ────────────────────────────────────────────────────────── */
+  --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --text-xs: 12px; --text-sm: 13.5px; --text-md: 15px; --text-lg: 17px;
-  --text-xl: 21px; --text-2xl: 26px; --text-3xl: 32px;
-  --topbar-h: 60px; --sidebar-w: 244px;
 
-  /* light neutrals (cool, accent-agnostic) */
-  --bg: #f4f7f8;
-  --surface: #ffffff;
-  --surface-2: #eceff1;
-  --ink: #172127;
-  --muted: #5b6b74;
-  --line: #dde4e7;
-  --line-strong: #c3ced4;
-  --shadow-card: 0 1px 2px rgba(23, 33, 39, 0.05), 0 8px 24px -18px rgba(23, 33, 39, 0.25);
-  --scrim: rgba(23, 33, 39, 0.45);
+  --text-2xs: 0.6875rem;  /* 11 */
+  --text-xs:  0.75rem;    /* 12 */
+  --text-sm:  0.8125rem;  /* 13 */
+  --text-base: 0.9375rem; /* 15 */
+  --text-md:  1rem;       /* 16 */
+  --text-lg:  1.125rem;   /* 18 */
+  --text-xl:  1.25rem;    /* 20 */
+  --text-2xl: 1.5rem;     /* 24 */
+  --text-3xl: 1.875rem;   /* 30 */
+  --text-4xl: 2.25rem;    /* 36 */
 
-  /* semantic status (theme-adjusted below, accent-invariant) */
-  --good: #2e8e5c;  --good-soft: #e3f2ea;
-  --warn: #9c6b0a;  --warn-soft: #f7efdb;
-  --danger: #b43a2a; --danger-soft: #f9e7e4;
+  /* ── Spacing (4pt) ─────────────────────────────────────────────────────── */
+  --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+  --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
 
-  /* accent — BLUE (Summit teal) is the default ramp */
+  /* ── Radius ────────────────────────────────────────────────────────────── */
+  --radius-xs: 4px; --radius-sm: 7px; --radius-md: 10px;
+  --radius-lg: 14px; --radius-xl: 20px; --radius-full: 9999px;
+
+  /* ── Layout ────────────────────────────────────────────────────────────── */
+  --topbar-h: 60px; --sidebar-w: 244px; --portalnav-h: 41px;
+
+  /* ── Motion ────────────────────────────────────────────────────────────── */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 110ms; --duration-base: 190ms; --duration-slow: 340ms;
+
+  /* ── Light surfaces, text and borders (brand-tinted neutrals) ──────────── */
+  --bg: oklch(94.5% 0.016 192);
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(96.5% 0.012 192);
+  --ink: oklch(21% 0.042 212);
+  --muted: oklch(47% 0.048 200);
+  --faint: oklch(63% 0.034 196);
+  --line: oklch(91% 0.012 192);
+  --line-strong: oklch(84% 0.018 192);
+  --scrim: oklch(21% 0.042 212 / 0.45);
+
+  /* ── Shadows (tinted toward the brand hue) ─────────────────────────────── */
+  --shadow-xs: 0 1px 2px oklch(21% 0.042 212 / 0.05);
+  --shadow-sm: 0 1px 3px oklch(21% 0.042 212 / 0.07), 0 1px 2px oklch(21% 0.042 212 / 0.04);
+  --shadow-md: 0 4px 12px oklch(21% 0.042 212 / 0.09), 0 2px 4px oklch(21% 0.042 212 / 0.04);
+  --shadow-lg: 0 12px 32px oklch(21% 0.042 212 / 0.11), 0 4px 8px oklch(21% 0.042 212 / 0.05);
+  --shadow-xl: 0 24px 48px oklch(21% 0.042 212 / 0.14), 0 8px 16px oklch(21% 0.042 212 / 0.06);
+  --shadow-card: var(--shadow-sm);
+
+  /* ── Semantic status (accent-invariant) ────────────────────────────────── */
+  --good: oklch(52% 0.148 152);   --good-soft: oklch(94% 0.040 152);
+  --warn: oklch(58% 0.130 68);    --warn-soft: oklch(95% 0.045 68);
+  --danger: oklch(54% 0.205 25);  --danger-soft: oklch(96% 0.035 25);
+
+  /* ── Accent: BLUE (Summit teal) is the default ramp ────────────────────── */
   --accent: #1b5a6e;
   --accent-strong: #134555;
   --accent-soft: #e7f1f3;
   --accent-tint: #f0f7f8;
-  --accent-ink: #ffffff;    /* text on accent */
+  --accent-ink: #ffffff;
   --focus-ring: #2e8588;
+
+  /* ── Scheduler vocabulary (same values, its own names) ─────────────────── */
+  --color-background-primary: var(--surface);
+  --color-background-secondary: var(--surface-2);
+  --color-background-tertiary: var(--bg);
+  --color-border-primary: var(--accent);
+  --color-border-secondary: var(--line-strong);
+  --color-border-tertiary: var(--line);
+  --color-text-primary: var(--ink);
+  --color-text-secondary: var(--muted);
+  --color-text-tertiary: var(--faint);
+  --color-success: var(--good);   --color-success-subtle: var(--good-soft);
+  --color-warning: var(--warn);   --color-warning-subtle: var(--warn-soft);
+  --color-error: var(--danger);   --color-error-subtle: var(--danger-soft);
 }
 
-/* ---- accent ramps (light values) ---- */
+/* ---- accent ramps (light) ------------------------------------------------ */
 :root[data-accent="green"] {
   --accent: #2f5d3a; --accent-strong: #264a2e; --accent-soft: #e9f1ea;
   --accent-tint: #f2f7f3; --accent-ink: #ffffff; --focus-ring: #4c7d58;
@@ -62,16 +126,28 @@
   --accent-tint: #fbf5ee; --accent-ink: #ffffff; --focus-ring: #cf7c42;
 }
 
-/* ---- dark theme: neutrals + status + accent lightened for contrast ---- */
+/* ---- dark theme ----------------------------------------------------------
+   The same OKLCH families, dropped in lightness and eased in chroma so the
+   calm reads at night too. Accents lighten to hold contrast on dark ground. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1417; --surface: #161c20; --surface-2: #1d2529;
-    --ink: #e6edef; --muted: #93a5ad; --line: #273238; --line-strong: #37454d;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 30px -20px rgba(0, 0, 0, 0.7);
-    --scrim: rgba(0, 0, 0, 0.6);
-    --good: #57c98b; --good-soft: #12301f;
-    --warn: #d9a94a; --warn-soft: #33270c;
-    --danger: #e57761; --danger-soft: #3a1712;
+    --bg: oklch(17% 0.020 213);
+    --surface: oklch(21% 0.022 212);
+    --surface-2: oklch(25% 0.024 211);
+    --ink: oklch(94% 0.012 192);
+    --muted: oklch(72% 0.026 196);
+    --faint: oklch(58% 0.026 198);
+    --line: oklch(30% 0.022 210);
+    --line-strong: oklch(38% 0.026 208);
+    --scrim: oklch(12% 0.020 214 / 0.62);
+    --shadow-xs: 0 1px 2px oklch(0% 0 0 / 0.30);
+    --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.38), 0 1px 2px oklch(0% 0 0 / 0.24);
+    --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.44), 0 2px 4px oklch(0% 0 0 / 0.26);
+    --shadow-lg: 0 12px 32px oklch(0% 0 0 / 0.50), 0 4px 8px oklch(0% 0 0 / 0.30);
+    --shadow-xl: 0 24px 48px oklch(0% 0 0 / 0.56), 0 8px 16px oklch(0% 0 0 / 0.34);
+    --good: oklch(76% 0.150 152);   --good-soft: oklch(30% 0.060 152);
+    --warn: oklch(80% 0.130 74);    --warn-soft: oklch(31% 0.055 68);
+    --danger: oklch(70% 0.160 25);  --danger-soft: oklch(31% 0.075 25);
     --accent: #5fb0c4; --accent-strong: #83c6d6; --accent-soft: #14313a;
     --accent-tint: #101f25; --accent-ink: #06181e; --focus-ring: #5fb0c4;
   }
@@ -89,13 +165,23 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f1417; --surface: #161c20; --surface-2: #1d2529;
-  --ink: #e6edef; --muted: #93a5ad; --line: #273238; --line-strong: #37454d;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 30px -20px rgba(0, 0, 0, 0.7);
-  --scrim: rgba(0, 0, 0, 0.6);
-  --good: #57c98b; --good-soft: #12301f;
-  --warn: #d9a94a; --warn-soft: #33270c;
-  --danger: #e57761; --danger-soft: #3a1712;
+  --bg: oklch(17% 0.020 213);
+  --surface: oklch(21% 0.022 212);
+  --surface-2: oklch(25% 0.024 211);
+  --ink: oklch(94% 0.012 192);
+  --muted: oklch(72% 0.026 196);
+  --faint: oklch(58% 0.026 198);
+  --line: oklch(30% 0.022 210);
+  --line-strong: oklch(38% 0.026 208);
+  --scrim: oklch(12% 0.020 214 / 0.62);
+  --shadow-xs: 0 1px 2px oklch(0% 0 0 / 0.30);
+  --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.38), 0 1px 2px oklch(0% 0 0 / 0.24);
+  --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.44), 0 2px 4px oklch(0% 0 0 / 0.26);
+  --shadow-lg: 0 12px 32px oklch(0% 0 0 / 0.50), 0 4px 8px oklch(0% 0 0 / 0.30);
+  --shadow-xl: 0 24px 48px oklch(0% 0 0 / 0.56), 0 8px 16px oklch(0% 0 0 / 0.34);
+  --good: oklch(76% 0.150 152);   --good-soft: oklch(30% 0.060 152);
+  --warn: oklch(80% 0.130 74);    --warn-soft: oklch(31% 0.055 68);
+  --danger: oklch(70% 0.160 25);  --danger-soft: oklch(31% 0.075 25);
   --accent: #5fb0c4; --accent-strong: #83c6d6; --accent-soft: #14313a;
   --accent-tint: #101f25; --accent-ink: #06181e; --focus-ring: #5fb0c4;
 }
@@ -112,20 +198,60 @@
   --accent-tint: #24160b; --accent-ink: #291303; --focus-ring: #e59a5e;
 }
 
-/* ---- base ---- */
-*, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body {
-  margin: 0; background: var(--bg); color: var(--ink);
-  font-family: var(--font-body); font-size: var(--text-md); line-height: 1.55;
+/* ---- base ---------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
-h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
-p { margin: 0; }
-a { color: var(--accent); text-underline-offset: 3px; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.55;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+a { color: var(--accent); text-decoration: none; text-underline-offset: 3px; }
+a:hover { color: var(--accent-strong); }
+
+select, input, textarea, button { font-family: var(--font-body); font-size: var(--text-base); }
+select:focus, input:focus, textarea:focus {
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--focus-ring) 18%, transparent);
+}
+
+button { cursor: pointer; transition: all var(--duration-fast) var(--ease-out-quart); }
+button:active { transform: scale(0.98); }
+button:disabled { cursor: not-allowed; }
+button:disabled:active { transform: none; }
+
 :focus { outline: none; }
-:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-xs); }
+::selection { background: var(--accent-soft); color: var(--accent-strong); }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: var(--radius-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--faint); }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  button:active { transform: none; }
 }

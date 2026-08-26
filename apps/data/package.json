@@ -17,7 +17,8 @@
     "react-dom": "19.2.4",
     "@summit/analytics": "workspace:*",
     "@summit/clinical-ai": "workspace:*",
-    "@summit/settings": "workspace:*"
+    "@summit/settings": "workspace:*",
+    "@summit/nav": "workspace:*"
   },
   "devDependencies": {
     "typescript": "6.0.2",

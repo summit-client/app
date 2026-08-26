@@ -3,6 +3,7 @@ import "@summit/design/tokens.css";
 import "./app.css";
 import Link from "next/link";
 import { themeInitScript } from "@summit/design";
+import { AppNav } from "@summit/nav";
 import { PortalNav, SettingsEffects } from "@/components/portal-chrome";
 
 export const metadata: Metadata = {
@@ -17,13 +18,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
-        />
       </head>
       <body>
         <SettingsEffects />
+        <AppNav activeKey="clinician" />
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">

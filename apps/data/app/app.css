@@ -1,11 +1,11 @@
 /* App shell + shared component classes. Every color comes from tokens.css. */
 
-.shell { display: flex; min-height: 100vh; }
+.shell { display: flex; min-height: calc(100vh - var(--portalnav-h)); }
 .sidebar {
   width: var(--sidebar-w); flex: none; background: var(--surface);
   border-right: 1px solid var(--line); padding: var(--space-4) var(--space-3);
   display: flex; flex-direction: column; gap: var(--space-6);
-  position: sticky; top: 0; height: 100vh;
+  position: sticky; top: 0; height: calc(100vh - var(--portalnav-h));
 }
 .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: var(--text-lg); padding: 0 var(--space-2); }
 .brand b { color: var(--accent); font-weight: 700; }
