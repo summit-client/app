@@ -1,12 +1,16 @@
 /**
  * The four Summit portals. URLs resolve per environment so the bar works the
  * same locally and in production: no dead links in dev, no localhost in prod.
+ *
+ * DEV_PORTS must match each app's `dev` script in apps/<app>/package.json,
+ * which in turn matches the nginx proxy_pass port for that subdomain. All
+ * three are pinned explicitly so the bar cannot drift out of step with them.
  */
 const DEV_PORTS: Record<string, number> = {
-  scheduler: 3010,
-  clinician: 3004,
-  employee: 3006,
-  client: 3008,
+  scheduler: 3000,
+  clinician: 3002,
+  client: 3003,
+  employee: 3004,
 };
 
 const PROD_HOSTS: Record<string, string> = {
