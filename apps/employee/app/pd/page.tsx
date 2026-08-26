@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import Link from "next/link";
 import { addPd, getPd } from "@/lib/hub";
@@ -19,6 +21,14 @@ const CAT_PILL = { BACB_CEU: "accent", CPBAO_CE: "accent", IBAO_CEU: "accent", G
  * authority on every claim.
  */
 export default function PdPage() {
+  return (
+    <HubGate>
+      <PdScreen />
+    </HubGate>
+  );
+}
+
+function PdScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [f, setF] = React.useState({ title: "", provider: "", hours: 1, date: new Date().toISOString().slice(0, 10) });

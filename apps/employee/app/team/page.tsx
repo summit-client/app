@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import { getProfile } from "@/lib/hub";
 import { hr, hrAudit, saveHr } from "@/lib/hr-store";
@@ -12,6 +14,14 @@ import { hr, hrAudit, saveHr } from "@/lib/hr-store";
 const FORUM_CATEGORIES = ["General", "Learning", "Resources", "Wins", "Questions", "Professional Development", "Site Updates", "Ideas"];
 
 export default function TeamPage() {
+  return (
+    <HubGate>
+      <TeamScreen />
+    </HubGate>
+  );
+}
+
+function TeamScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [tab, setTab] = React.useState<"team" | "forum">("team");

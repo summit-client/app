@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import { getSetting } from "@summit/settings";
 import { getCertificates, getProfile, getProgress, getTraining, onboardingProgress } from "@/lib/hub";
@@ -14,6 +16,14 @@ import { hr, hrAudit, saveHr, type Goal } from "@/lib/hr-store";
  * promotion.
  */
 export default function CareerPage() {
+  return (
+    <HubGate>
+      <CareerScreen />
+    </HubGate>
+  );
+}
+
+function CareerScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const eggs = useEasterEggs();

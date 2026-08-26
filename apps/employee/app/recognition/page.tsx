@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import { getSetting } from "@summit/settings";
 import { getProfile } from "@/lib/hub";
@@ -20,6 +22,14 @@ const AWARDS = [
 ];
 
 export default function RecognitionPage() {
+  return (
+    <HubGate>
+      <RecognitionScreen />
+    </HubGate>
+  );
+}
+
+function RecognitionScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [f, setF] = React.useState({ to: "", category: RECOGNITION_CATEGORIES[0], points: 1, message: "" });

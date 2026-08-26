@@ -1,12 +1,15 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/settings";
 import { HUB_TASKS } from "@/lib/content";
 import { hr, hrAudit, saveHr, type StaffMember } from "@/lib/hr-store";
 import {
   decideTimeOff, getAudit, getPd, getProfile, getProgress, getTimeOff, getTraining,
-  onboardingProgress, signOffTask, verifyPd,
+  issueOnboardingCertificate, onboardingProgress, pendingOnboardingCertificates,
+  signOffTask, verifyPd,
 } from "@/lib/hub";
 import { SessionGate, useIdentity } from "@/components/session-provider";
 
@@ -21,9 +24,9 @@ export default function AdminPage() {
   // holds. The previous check read a role out of localStorage that My Profile
   // let anyone set, so any signed-in employee could open this console.
   return (
-    <SessionGate requires={["SUPERVISOR", "ADMIN"]}>
+    <HubGate requires={["SUPERVISOR", "ADMIN"]}>
       <AdminConsole />
-    </SessionGate>
+    </HubGate>
   );
 }
 
@@ -55,6 +58,11 @@ function AdminConsole() {
     .map((p) => ({ ...p, task: HUB_TASKS.find((t) => t.key === p.taskKey) }));
   const pendingTimeOff = getTimeOff().filter((r) => r.status === "REQUESTED");
   const unverifiedPd = getPd().filter((r) => !r.verified);
+  // Onboarding certificates are no longer minted in the browser: nothing there
+  // could verify they were earned, and the registry number came from a counter
+  // in localStorage. Earned-but-unissued ones queue here for a supervisor.
+  const pendingCerts = pendingOnboardingCertificates();
+
   const trainingDue = (() => {
     const done = new Set(getTraining().filter((t) => t.status === "COMPLETED").map((t) => t.courseKey));
     return HUB_TASKS.filter((t) => t.courseKey && !done.has(t.courseKey)).length;
@@ -99,6 +107,22 @@ function AdminConsole() {
           </div>
         ))}
         {!pendingSignoffs.length ? <div className="card card-pad"><p className="sub">Nothing awaiting sign-off.</p></div> : null}
+      </div>
+
+      <h2 className="section-title">Certificates to issue {pendingCerts.length ? <span className="pill warn">{pendingCerts.length}</span> : null}</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {pendingCerts.map((c) => (
+          <div key={c.title} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <b style={{ fontSize: "var(--text-sm)" }}>{c.title}</b>
+              <p className="trend" style={{ marginTop: 4 }}>{profile.name} · {c.competency} · earned, awaiting issue</p>
+            </div>
+            <button className="btn" onClick={() => void issueOnboardingCertificate(c.title, c.competency).then(force)}>
+              Issue certificate
+            </button>
+          </div>
+        ))}
+        {!pendingCerts.length ? <div className="card card-pad"><p className="sub">No certificates waiting to be issued.</p></div> : null}
       </div>
 
       <h2 className="section-title">Time-off requests {pendingTimeOff.length ? <span className="pill warn">{pendingTimeOff.length}</span> : null}</h2>

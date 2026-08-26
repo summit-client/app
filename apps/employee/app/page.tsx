@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import Link from "next/link";
 import { HUB_COURSES } from "@/lib/content";
@@ -14,6 +16,14 @@ import { BerryBurst, EggToast, ScoreRing, SummitPeaks, Volcano, useEasterEggs } 
 
 /** Dashboard: widgets. Where you stand, what is due, and the ecosystem. */
 export default function DashboardPage() {
+  return (
+    <HubGate>
+      <DashboardScreen />
+    </HubGate>
+  );
+}
+
+function DashboardScreen() {
   const [ready, setReady] = React.useState(false);
   const [taps, setTaps] = React.useState(0);
   const [burst, setBurst] = React.useState(false);

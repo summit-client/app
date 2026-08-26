@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import { getProfile, saveProfile } from "@/lib/hub";
 import { IS_PREVIEW, setPreviewRole, type HubRole } from "@/lib/session";
@@ -9,9 +11,9 @@ import { SessionGate, useIdentity, useSession } from "@/components/session-provi
  * onboarding and training deadline; role controls what the Admin page shows. */
 export default function ProfilePage() {
   return (
-    <SessionGate>
+    <HubGate>
       <Profile />
-    </SessionGate>
+    </HubGate>
   );
 }
 

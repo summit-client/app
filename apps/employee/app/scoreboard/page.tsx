@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import { getProfile, getProgress, getTraining, onboardingProgress, refreshDue } from "@/lib/hub";
 import { HUB_COURSES } from "@/lib/content";
@@ -13,6 +15,14 @@ import { PerformanceCheckin, PeerReviews } from "@/components/checkin";
  * private band shown only to the person it belongs to.
  */
 export default function ScoreboardPage() {
+  return (
+    <HubGate>
+      <ScoreboardScreen />
+    </HubGate>
+  );
+}
+
+function ScoreboardScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [burst, setBurst] = React.useState(false);

@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -66,6 +68,14 @@ const SERIF = '"Playfair Display", Georgia, serif';
 const SANS = '"Public Sans", Inter, system-ui, sans-serif';
 
 export default function CertificateViewPage() {
+  return (
+    <HubGate>
+      <CertificateViewScreen />
+    </HubGate>
+  );
+}
+
+function CertificateViewScreen() {
   const params = useParams<{ id: string }>();
   const [cert, setCert] = React.useState<Certificate | null | "loading">("loading");
   const [name, setName] = React.useState("");
