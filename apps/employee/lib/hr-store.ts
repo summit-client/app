@@ -40,6 +40,21 @@ export interface ForumPost {
 
 export interface HrAudit { id: string; action: string; detail: string; who: string; at: string; previous?: string; next?: string }
 
+/** The staff registry. The peer group, recognition list and scoreboard all
+ * read from this one list; the admin portal is its only writer. */
+export interface StaffMember {
+  name: string;
+  role: string;                 // job title, e.g. Lead Clinician
+  team: string;
+  email?: string;
+  employeeNumber?: string;
+  site?: string;
+  accessLevel?: "EMPLOYEE" | "SUPERVISOR" | "ADMIN";
+  supervisor?: string;
+  permissions?: string[];       // module keys the person may manage
+  status?: "ACTIVE" | "INVITED" | "DISABLED";
+}
+
 interface HrStore {
   cycle: string;                     // YYYY-MM
   responses: MetricResponse[];
@@ -53,7 +68,7 @@ interface HrStore {
   acks: PolicyAck[];
   posts: ForumPost[];
   audit: HrAudit[];
-  team: { name: string; role: string; team: string }[];
+  team: StaffMember[];
   sites: { site: string; domains: Record<string, number> }[];
   peerScores: number[];        // anonymous peer scores for the private percentile band
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import "@summit/design/tokens.css";
 import "./app.css";
 import { themeInitScript } from "@summit/design";
+import { SupportButton } from "@/components/support";
 
 export const metadata: Metadata = {
   title: "MySummitHR",
@@ -25,8 +26,7 @@ const NAV: { href: string; label: string; group?: string }[] = [
   { href: "/policies", label: "Policies & Handbook", group: "Records" },
   { href: "/time-off", label: "Time Off", group: "Records" },
   { href: "/profile", label: "My Profile", group: "Records" },
-  { href: "/admin", label: "Manager & Admin", group: "Manage" },
-  { href: "/help", label: "Help", group: "Manage" },
+  { href: "/help", label: "Help", group: "Records" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -60,7 +60,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               ))}
             </nav>
             <div className="sidebar-foot">
-              {process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" ? <span className="pill warn">Preview data</span> : null}
+              <SupportButton />
+              {process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" ? <span className="pill warn" style={{ marginTop: 8, display: "inline-block" }}>Preview data</span> : null}
             </div>
           </aside>
           <div className="main">
