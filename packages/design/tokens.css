@@ -66,8 +66,13 @@
   --radius-xs: 4px; --radius-sm: 7px; --radius-md: 10px;
   --radius-lg: 14px; --radius-xl: 20px; --radius-full: 9999px;
 
-  /* ── Layout ────────────────────────────────────────────────────────────── */
-  --topbar-h: 60px; --sidebar-w: 244px; --portalnav-h: 41px;
+  /* ── Layout ──────────────────────────────────────────────────────────────
+     --portalnav-h is the height of the cross-portal bar, and AppNav sets its
+     own height from it, so measurement and token cannot drift apart. Anything
+     sitting under the bar — the shell, the sidebar, a sticky sub-header —
+     offsets by this. The per-app topbar it replaced is gone; --topbar-h with
+     it. */
+  --sidebar-w: 244px; --portalnav-h: 51px;
 
   /* ── Motion ──────────────────────────────────────────────────────────────
      One curve everywhere. The older names are kept as aliases so nothing that

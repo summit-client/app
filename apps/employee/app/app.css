@@ -53,7 +53,7 @@
 
 /* Run Session --------------------------------------------------------------- */
 .session-bar {
-  position: sticky; top: calc(var(--topbar-h, 60px) + 8px); z-index: 5;
+  position: sticky; top: calc(var(--portalnav-h, 51px) + 8px); z-index: 5;
   display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
   padding: 10px var(--space-4); margin-top: var(--space-2);
 }
@@ -106,7 +106,7 @@
 
 /* Settings ------------------------------------------------------------------ */
 .settings-shell { display: flex; gap: var(--space-6); align-items: flex-start; }
-.settings-nav { width: 230px; flex: none; position: sticky; top: calc(var(--topbar-h, 60px) + 16px); }
+.settings-nav { width: 230px; flex: none; position: sticky; top: calc(var(--portalnav-h, 51px) + 16px); }
 .settings-link {
   display: block; padding: 7px 10px; border-radius: var(--radius-sm); font-size: var(--text-sm);
   color: var(--muted); text-decoration: none;
@@ -226,7 +226,7 @@
 .hub-progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .hub-progress > div { height: 100%; border-radius: 999px; background: var(--accent); transition: width 200ms ease; }
 .hub-sticky {
-  position: sticky; top: calc(var(--topbar-h, 60px) + 8px); z-index: 5;
+  position: sticky; top: calc(var(--portalnav-h, 51px) + 8px); z-index: 5;
   padding: 12px var(--space-4);
 }
 .hub-banner { border-left: 3px solid var(--warn); }

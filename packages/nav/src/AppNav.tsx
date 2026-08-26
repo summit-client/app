@@ -23,7 +23,11 @@ export function AppNav({ activeKey, settingsHref }: AppNavProps) {
         display: 'flex',
         alignItems: 'center',
         gap: 'var(--space-1, 4px)',
-        padding: '10px var(--space-5, 20px)',
+        // The bar declares its own height from the same token the shell below
+        // it subtracts, border included, so the two cannot disagree.
+        height: 'var(--portalnav-h, 51px)',
+        boxSizing: 'border-box',
+        padding: '0 var(--space-5, 20px)',
         background: 'var(--brand-800, #1A3F5C)',
         borderBottom: '1px solid var(--brand-600, #28B4A6)',
       }}

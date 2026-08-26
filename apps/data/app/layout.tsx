@@ -3,7 +3,6 @@ import "@summit/design/tokens.css";
 import "@summit/design/components.css";
 import "@summit/design/motion.css";
 import "./app.css";
-import Link from "next/link";
 import { themeInitScript } from "@summit/design";
 import { AppNav } from "@summit/nav";
 import { PortalNav, SettingsEffects } from "@/components/portal-chrome";
