@@ -245,8 +245,14 @@ export function supabaseBackend(session: Session): HubBackend {
         })),
         audit: (audit.data ?? []).map((r) => ({
           id: String(r.id), action: r.action as string,
-          detail: typeof r.detail === "string" ? r.detail : JSON.stringify(r.detail ?? {}),
-          at: r.at as string, who: "",
+          // detail is jsonb; surface the note if there is one, else the object
+          detail: typeof r.detail === "string"
+            ? r.detail
+            : (r.detail as { note?: string } | null)?.note ?? JSON.stringify(r.detail ?? {}),
+          at: r.at as string,
+          // The actor is a uuid. Resolve the caller's own name here; other
+          // actors resolve through the HR directory, which the admin screen has.
+          who: r.actor === uid ? session.fullName ?? "You" : "",
         })),
       };
     },
