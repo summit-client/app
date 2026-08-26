@@ -19,17 +19,27 @@
    ========================================================================== */
 
 :root {
+  /* ── Hue: the one dial the accent turns ────────────────────────────────── */
+  --hue: 190;        /* surfaces, borders, light brand steps */
+  --hue-deep: 212;   /* ink, deep brand steps, shadows */
+
   /* ── Brand scale (OKLCH, perceptually uniform) ─────────────────────────── */
-  --brand-50:  oklch(97%  0.014 192);
-  --brand-100: oklch(92%  0.035 191);
-  --brand-200: oklch(83%  0.075 190);
-  --brand-300: oklch(73%  0.110 189);
-  --brand-400: oklch(64%  0.135 188);
-  --brand-500: oklch(55%  0.130 194);
-  --brand-600: oklch(46%  0.115 200);
-  --brand-700: oklch(37%  0.095 208);
-  --brand-800: oklch(28%  0.072 213);
-  --brand-900: oklch(20%  0.050 215);
+  --brand-50:  oklch(97%  0.014 var(--hue));
+  --brand-100: oklch(92%  0.035 var(--hue));
+  --brand-200: oklch(83%  0.075 var(--hue));
+  --brand-300: oklch(73%  0.110 var(--hue));
+  --brand-400: oklch(64%  0.135 var(--hue));
+  --brand-500: oklch(55%  0.130 var(--hue-deep));
+  --brand-600: oklch(46%  0.115 var(--hue-deep));
+  --brand-700: oklch(37%  0.095 var(--hue-deep));
+  --brand-800: oklch(28%  0.072 var(--hue-deep));
+  --brand-900: oklch(20%  0.050 var(--hue-deep));
+
+  /* ── Logo and graphic colours: fixed Summit teal, never re-tinted ──────── */
+  --logo-1: oklch(64% 0.135 188);
+  --logo-2: oklch(46% 0.115 200);
+  --logo-3: oklch(37% 0.095 208);
+  --logo-ink: oklch(21% 0.042 212);
 
   /* ── Typography ────────────────────────────────────────────────────────── */
   --font-display: "Bricolage Grotesque", system-ui, sans-serif;
@@ -66,22 +76,22 @@
   --duration-fast: 110ms; --duration-base: 190ms; --duration-slow: 340ms;
 
   /* ── Light surfaces, text and borders (brand-tinted neutrals) ──────────── */
-  --bg: oklch(94.5% 0.016 192);
+  --bg: oklch(94.5% 0.016 var(--hue));
   --surface: oklch(100% 0 0);
-  --surface-2: oklch(96.5% 0.012 192);
-  --ink: oklch(21% 0.042 212);
-  --muted: oklch(47% 0.048 200);
-  --faint: oklch(63% 0.034 196);
-  --line: oklch(91% 0.012 192);
-  --line-strong: oklch(84% 0.018 192);
-  --scrim: oklch(21% 0.042 212 / 0.45);
+  --surface-2: oklch(96.5% 0.012 var(--hue));
+  --ink: oklch(21% 0.042 var(--hue-deep));
+  --muted: oklch(47% 0.048 var(--hue-deep));
+  --faint: oklch(63% 0.034 var(--hue));
+  --line: oklch(91% 0.012 var(--hue));
+  --line-strong: oklch(84% 0.018 var(--hue));
+  --scrim: oklch(21% 0.042 var(--hue-deep) / 0.45);
 
   /* ── Shadows (tinted toward the brand hue) ─────────────────────────────── */
-  --shadow-xs: 0 1px 2px oklch(21% 0.042 212 / 0.05);
-  --shadow-sm: 0 1px 3px oklch(21% 0.042 212 / 0.07), 0 1px 2px oklch(21% 0.042 212 / 0.04);
-  --shadow-md: 0 4px 12px oklch(21% 0.042 212 / 0.09), 0 2px 4px oklch(21% 0.042 212 / 0.04);
-  --shadow-lg: 0 12px 32px oklch(21% 0.042 212 / 0.11), 0 4px 8px oklch(21% 0.042 212 / 0.05);
-  --shadow-xl: 0 24px 48px oklch(21% 0.042 212 / 0.14), 0 8px 16px oklch(21% 0.042 212 / 0.06);
+  --shadow-xs: 0 1px 2px oklch(21% 0.042 var(--hue-deep) / 0.05);
+  --shadow-sm: 0 1px 3px oklch(21% 0.042 var(--hue-deep) / 0.07), 0 1px 2px oklch(21% 0.042 var(--hue-deep) / 0.04);
+  --shadow-md: 0 4px 12px oklch(21% 0.042 var(--hue-deep) / 0.09), 0 2px 4px oklch(21% 0.042 var(--hue-deep) / 0.04);
+  --shadow-lg: 0 12px 32px oklch(21% 0.042 var(--hue-deep) / 0.11), 0 4px 8px oklch(21% 0.042 var(--hue-deep) / 0.05);
+  --shadow-xl: 0 24px 48px oklch(21% 0.042 var(--hue-deep) / 0.14), 0 8px 16px oklch(21% 0.042 var(--hue-deep) / 0.06);
   --shadow-card: var(--shadow-sm);
 
   /* ── Data accents: the four the Scheduler cycles across stat cards ─────── */
@@ -120,14 +130,17 @@
 
 /* ---- accent ramps (light) ------------------------------------------------ */
 :root[data-accent="green"] {
+  --hue: 150; --hue-deep: 155;
   --accent: #2f5d3a; --accent-strong: #264a2e; --accent-soft: #e9f1ea;
   --accent-tint: #f2f7f3; --accent-ink: #ffffff; --focus-ring: #4c7d58;
 }
 :root[data-accent="pink"] {
+  --hue: 355; --hue-deep: 358;
   --accent: #a83a66; --accent-strong: #8a2d53; --accent-soft: #f7e9f0;
   --accent-tint: #fbf3f7; --accent-ink: #ffffff; --focus-ring: #c05f88;
 }
 :root[data-accent="orange"] {
+  --hue: 62; --hue-deep: 55;
   --accent: #b65a1f; --accent-strong: #96491a; --accent-soft: #f8ede2;
   --accent-tint: #fbf5ee; --accent-ink: #ffffff; --focus-ring: #cf7c42;
 }
@@ -137,15 +150,15 @@
    calm reads at night too. Accents lighten to hold contrast on dark ground. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: oklch(17% 0.020 213);
-    --surface: oklch(21% 0.022 212);
-    --surface-2: oklch(25% 0.024 211);
-    --ink: oklch(94% 0.012 192);
-    --muted: oklch(72% 0.026 196);
-    --faint: oklch(58% 0.026 198);
-    --line: oklch(30% 0.022 210);
-    --line-strong: oklch(38% 0.026 208);
-    --scrim: oklch(12% 0.020 214 / 0.62);
+    --bg: oklch(17% 0.020 var(--hue-deep));
+    --surface: oklch(21% 0.022 var(--hue-deep));
+    --surface-2: oklch(25% 0.024 var(--hue-deep));
+    --ink: oklch(94% 0.012 var(--hue));
+    --muted: oklch(72% 0.026 var(--hue));
+    --faint: oklch(58% 0.026 var(--hue));
+    --line: oklch(30% 0.022 var(--hue-deep));
+    --line-strong: oklch(38% 0.026 var(--hue-deep));
+    --scrim: oklch(12% 0.020 var(--hue-deep) / 0.62);
     --shadow-xs: 0 1px 2px oklch(0% 0 0 / 0.30);
     --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.38), 0 1px 2px oklch(0% 0 0 / 0.24);
     --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.44), 0 2px 4px oklch(0% 0 0 / 0.26);
@@ -179,15 +192,15 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: oklch(17% 0.020 213);
-  --surface: oklch(21% 0.022 212);
-  --surface-2: oklch(25% 0.024 211);
-  --ink: oklch(94% 0.012 192);
-  --muted: oklch(72% 0.026 196);
-  --faint: oklch(58% 0.026 198);
-  --line: oklch(30% 0.022 210);
-  --line-strong: oklch(38% 0.026 208);
-  --scrim: oklch(12% 0.020 214 / 0.62);
+  --bg: oklch(17% 0.020 var(--hue-deep));
+  --surface: oklch(21% 0.022 var(--hue-deep));
+  --surface-2: oklch(25% 0.024 var(--hue-deep));
+  --ink: oklch(94% 0.012 var(--hue));
+  --muted: oklch(72% 0.026 var(--hue));
+  --faint: oklch(58% 0.026 var(--hue));
+  --line: oklch(30% 0.022 var(--hue-deep));
+  --line-strong: oklch(38% 0.026 var(--hue-deep));
+  --scrim: oklch(12% 0.020 var(--hue-deep) / 0.62);
   --shadow-xs: 0 1px 2px oklch(0% 0 0 / 0.30);
   --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.38), 0 1px 2px oklch(0% 0 0 / 0.24);
   --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.44), 0 2px 4px oklch(0% 0 0 / 0.26);

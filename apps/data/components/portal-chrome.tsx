@@ -29,7 +29,6 @@ export function PortalNav() {
     { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙" },
     { href: "/attention", label: "Attention", id: "Attention", icon: "◈" },
     { href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" },
-    { href: "/settings", label: "Settings", id: "Settings", icon: "⚙" },
   ];
 
   return (

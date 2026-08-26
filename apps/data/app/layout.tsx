@@ -22,14 +22,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <SettingsEffects />
-        <AppNav activeKey="clinician" />
+        <AppNav activeKey="clinician" settingsHref="/settings" />
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
               <svg className="brand-mark" viewBox="0 0 32 28" fill="none" aria-hidden>
-                <polygon points="16,2 26,22 6,22" fill="var(--brand-400)" opacity="0.9" />
-                <polygon points="8,8 16,22 0,22" fill="var(--brand-600)" opacity="0.85" />
-                <polygon points="24,8 32,22 16,22" fill="var(--brand-700)" opacity="0.8" />
+                <polygon points="16,2 26,22 6,22" fill="var(--logo-1)" opacity="0.9" />
+                <polygon points="8,8 16,22 0,22" fill="var(--logo-2)" opacity="0.85" />
+                <polygon points="24,8 32,22 16,22" fill="var(--logo-3)" opacity="0.8" />
               </svg>
               <div className="brand-text">
                 <div className="brand-name">Summit</div>
