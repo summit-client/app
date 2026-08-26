@@ -8,8 +8,7 @@ import {
   AUTO_SOURCE_LABEL, computeAutoResponses, DEFAULT_METRICS, PEER_PROMPTS, RATING_SCALE, requiresExample,
   type RatingValue,
 } from "@/lib/ecosystem";
-import { currentCycle } from "@/lib/hr-store";
-import { hr, hrAudit, saveHr } from "@/lib/hr-store";
+import { currentCycle, directory, hr, rate as saveRating, submitPeerFeedback } from "@/lib/hr-store";
 
 /** Performance Checkin (self ratings) and Peer Reviews, shared by the
  * Scoreboard tabs. Peers come from the clinician's own team. */
@@ -41,13 +40,7 @@ export function PerformanceCheckin({ onChange }: { onChange: () => void }) {
   const auto = new Map(computeAutoResponses({ trainingPct, onboardingPct: ob.percent, recogPoints }).map((r) => [r.metricKey, r]));
 
   const rate = (key: string, source: string, rating: RatingValue) => {
-    const ex = s.responses.find((r) => r.metricKey === key && r.source === source);
-    const prev = ex?.rating;
-    if (ex) ex.rating = rating;
-    else s.responses.push({ metricKey: key, source: source as never, rating, comment: "" });
-    saveHr();
-    hrAudit("scorecard.rating", `${key} = ${rating}`, { previous: prev ? String(prev) : undefined, next: String(rating) });
-    onChange();
+    void saveRating(key, source as never, rating).then(onChange).catch(() => onChange());
   };
 
   return (
@@ -92,7 +85,7 @@ export function PerformanceCheckin({ onChange }: { onChange: () => void }) {
                   {row && requiresExample(row.rating) ? (
                     <textarea className="input" rows={2} style={{ marginTop: 8 }} defaultValue={row.comment}
                       aria-label={`Example for ${m.behaviour}`} placeholder="What happened, and what would help?"
-                      onChange={(e) => { row.comment = e.target.value; saveHr(); }} />
+                      onBlur={(e) => { void saveRating(m.key, row.source, row.rating, e.target.value); }} />
                   ) : null}
                 </div>
               );
@@ -104,12 +97,7 @@ export function PerformanceCheckin({ onChange }: { onChange: () => void }) {
         <label htmlFor="support">What would help you next month?</label>
         <textarea id="support" className="input" rows={2}
           defaultValue={s.responses.find((r) => r.metricKey === "support-request")?.comment ?? ""}
-          onChange={(e) => {
-            const r = s.responses.find((x) => x.metricKey === "support-request");
-            if (r) r.comment = e.target.value;
-            else s.responses.push({ metricKey: "support-request", source: "SELF", rating: 3, comment: e.target.value });
-            saveHr();
-          }} />
+          onBlur={(e) => { void saveRating("support-request", "SELF", 3, e.target.value); }} />
       </div>
     </div>
   );
@@ -118,7 +106,8 @@ export function PerformanceCheckin({ onChange }: { onChange: () => void }) {
 export function PeerReviews({ onChange }: { onChange: () => void }) {
   const s = hr();
   const me = getProfile().name;
-  const peers = s.team.filter((t) => t.name !== me);
+  // Peers are people with accounts, not names typed into this browser.
+  const peers = directory().filter((p) => p.name !== me);
   const [subject, setSubject] = React.useState("");
   const [ratings, setRatings] = React.useState<Record<string, RatingValue>>({});
   const [notes, setNotes] = React.useState<Record<string, string>>({});
@@ -134,16 +123,18 @@ export function PeerReviews({ onChange }: { onChange: () => void }) {
   }
 
   const submit = () => {
-    for (const [metricKey, rating] of Object.entries(ratings)) {
-      s.responses.push({ metricKey, source: "PEER", rating, comment: notes[metricKey] ?? "", subject, rater: "anonymous" });
-    }
-    for (const p of PEER_PROMPTS) {
-      if (notes[p.key]?.trim()) s.responses.push({ metricKey: p.key, source: "PEER", rating: 3, comment: notes[p.key], subject, rater: "anonymous" });
-    }
-    saveHr();
-    hrAudit("peer_feedback.submitted", `Feedback for ${subject}`);
-    setRatings({}); setNotes({}); setSubject("");
-    onChange();
+    const rows = [
+      ...Object.entries(ratings).map(([metricKey, rating]) => ({
+        metricKey, source: "PEER" as const, rating, comment: notes[metricKey] ?? "",
+      })),
+      ...PEER_PROMPTS.filter((p) => notes[p.key]?.trim()).map((p) => ({
+        metricKey: p.key, source: "PEER" as const, rating: 3 as RatingValue, comment: notes[p.key],
+      })),
+    ];
+    void submitPeerFeedback(subject, rows).then(() => {
+      setRatings({}); setNotes({}); setSubject("");
+      onChange();
+    }).catch(() => onChange());
   };
 
   const blocked = Object.entries(ratings).some(([k, v]) => requiresExample(v) && !(notes[k] ?? "").trim());

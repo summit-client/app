@@ -1,7 +1,10 @@
 "use client";
 
+import { HrGate } from "@/components/hr-provider";
+
 import * as React from "react";
-import { hr, hrAudit, saveHr } from "@/lib/hr-store";
+import { acknowledgePolicy, hr, openPolicy } from "@/lib/hr-store";
+import { useHrAction, WriteError } from "@/components/hr-provider";
 
 /**
  * Policies & Handbook. Versioned documents with an open, read, acknowledge
@@ -10,6 +13,15 @@ import { hr, hrAudit, saveHr } from "@/lib/hr-store";
  * and compensation agreements are out of scope for this module by design.
  */
 export default function PoliciesPage() {
+  return (
+    <HrGate>
+      <PoliciesScreen />
+    </HrGate>
+  );
+}
+
+function PoliciesScreen() {
+  const { run, error: writeError, clearError } = useHrAction();
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [preview, setPreview] = React.useState<{ id: string; name: string; url: string | null; content: string | null } | null>(null);
@@ -19,30 +31,22 @@ export default function PoliciesPage() {
   const s = hr();
   const ackFor = (id: string, version: string) => s.acks.find((a) => a.policyId === id && a.version === version);
 
-  const open = (id: string, version: string, name: string, url: string | null, content: string | null) => {
-    let a = ackFor(id, version);
-    if (!a) { a = { policyId: id, version, openedAt: new Date().toISOString(), acknowledgedAt: null }; s.acks.push(a); }
-    else if (!a.openedAt) a.openedAt = new Date().toISOString();
-    saveHr();
-    hrAudit("policy.opened", `${name} version ${version}`);
-    setPreview({ id, name, url: url ? (url.includes("drive.google.com") ? url.replace(/\/view.*$/, "/preview") : url) : null, content });
-    force();
-  };
+  const open = (id: string, version: string, name: string, url: string | null, content: string | null) =>
+    void run(async () => {
+      await openPolicy(id, version, name);
+      setPreview({ id, name, url: url ? (url.includes("drive.google.com") ? url.replace(/\/view.*$/, "/preview") : url) : null, content });
+      force();
+    });
 
-  const acknowledge = (id: string, version: string, name: string) => {
-    const a = ackFor(id, version);
-    if (!a) return;
-    a.acknowledgedAt = new Date().toISOString();
-    saveHr();
-    hrAudit("policy.acknowledged", `${name} version ${version}`, { next: version });
-    force();
-  };
+  const acknowledge = (id: string, version: string, name: string) =>
+    void run(async () => { await acknowledgePolicy(id, version, name); force(); });
 
   const outstanding = s.policies.filter((p) => p.required && !ackFor(p.id, p.version)?.acknowledgedAt).length;
 
   return (
     <div>
       <h1 className="h-page">Policies &amp; Handbook</h1>
+      <WriteError error={writeError} onDismiss={clearError} />
       <p className="sub" style={{ maxWidth: "72ch" }}>
         {outstanding > 0
           ? `${outstanding} required acknowledgement${outstanding === 1 ? "" : "s"} outstanding. Open a policy, read it, then acknowledge the version you read.`

@@ -1,13 +1,14 @@
 "use client";
 
-import { HubGate } from "@/components/hub-provider";
+import { HrGate } from "@/components/hr-provider";
 
 import * as React from "react";
 import { getSetting } from "@summit/settings";
 import { getCertificates, getProfile, getProgress, getTraining, onboardingProgress } from "@/lib/hub";
 import { EggToast, TheClimb, useEasterEggs } from "@/components/grove";
 import { computeCompliance } from "@/lib/credentials";
-import { hr, hrAudit, saveHr, type Goal } from "@/lib/hr-store";
+import { addGoal as createGoal, hr, setGoalStatus, type Goal } from "@/lib/hr-store";
+import { useHrAction, WriteError } from "@/components/hr-provider";
 
 /**
  * Career Progress. A development pathway with the competencies, training and
@@ -17,13 +18,14 @@ import { hr, hrAudit, saveHr, type Goal } from "@/lib/hr-store";
  */
 export default function CareerPage() {
   return (
-    <HubGate>
+    <HrGate>
       <CareerScreen />
-    </HubGate>
+    </HrGate>
   );
 }
 
 function CareerScreen() {
+  const { run, error: writeError, clearError } = useHrAction();
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const eggs = useEasterEggs();
@@ -44,27 +46,18 @@ function CareerScreen() {
   const elevation = Math.min(100, Math.round(ob.percent * 0.4 + Math.min(training * 4, 30) + Math.min(receivedAll * 1.5, 30)));
   const compliances = s.credentials.map((c) => computeCompliance(c, s.allocations, s.activities)).filter((x): x is NonNullable<typeof x> => !!x);
 
-  const addGoal = () => {
-    const g: Goal = { id: `g-${Date.now().toString(36)}`, ...f, status: "OPEN" };
-    s.goals.unshift(g);
-    saveHr();
-    hrAudit("goal.created", g.title);
+  const addGoal = () => void run(async () => {
+    await createGoal(f);
     setF({ title: "", behaviour: "", target: "", due: "", measurement: "", support: "" });
     force();
-  };
-  const setStatus = (id: string, status: Goal["status"]) => {
-    const g = s.goals.find((x) => x.id === id);
-    if (!g) return;
-    const prev = g.status;
-    g.status = status;
-    saveHr();
-    hrAudit("goal.status", `${g.title}: ${prev} to ${status}`, { previous: prev, next: status });
-    force();
-  };
+  });
+  const setStatus = (id: string, status: Goal["status"]) =>
+    void run(async () => { await setGoalStatus(id, status); force(); });
 
   return (
     <div>
       <h1 className="h-page">Career Progress</h1>
+      <WriteError error={writeError} onDismiss={clearError} />
       <p className="sub" style={{ maxWidth: "72ch" }}>
         A development pathway showing what each step asks for. Progressing along it depends on organizational need and
         supervisor assessment, so treat it as development rather than a guaranteed promotion.

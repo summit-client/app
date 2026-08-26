@@ -1,6 +1,6 @@
 "use client";
 
-import { HubGate } from "@/components/hub-provider";
+import { HrGate } from "@/components/hr-provider";
 
 import * as React from "react";
 import Link from "next/link";
@@ -17,9 +17,9 @@ import { BerryBurst, EggToast, ScoreRing, SummitPeaks, Volcano, useEasterEggs } 
 /** Dashboard: widgets. Where you stand, what is due, and the ecosystem. */
 export default function DashboardPage() {
   return (
-    <HubGate>
+    <HrGate>
       <DashboardScreen />
-    </HubGate>
+    </HrGate>
   );
 }
 

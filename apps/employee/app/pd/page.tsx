@@ -1,6 +1,6 @@
 "use client";
 
-import { HubGate } from "@/components/hub-provider";
+import { HrGate } from "@/components/hr-provider";
 
 import * as React from "react";
 import Link from "next/link";
@@ -8,9 +8,9 @@ import { addPd, getPd } from "@/lib/hub";
 import { classifyPdCertificate, extractPdfText, PD_CATEGORY_LABEL, type PdClassification } from "@/lib/pd-cert";
 import {
   CATEGORY_LABEL, computeCompliance, CREDENTIAL_LABEL, maximizeMyCredits, validateAllocation,
-  type ContentCategory, type PdActivity,
-} from "@/lib/credentials";
-import { hr, hrAudit, saveHr } from "@/lib/hr-store";
+  type ContentCategory, type PdActivity, type CreditAllocation } from "@/lib/credentials";
+import { addActivity as recordActivity, hr } from "@/lib/hr-store";
+import { useHrAction, WriteError } from "@/components/hr-provider";
 
 const CAT_PILL = { BACB_CEU: "accent", CPBAO_CE: "accent", IBAO_CEU: "accent", GENERAL_PD: "neutral" } as const;
 
@@ -22,9 +22,9 @@ const CAT_PILL = { BACB_CEU: "accent", CPBAO_CE: "accent", IBAO_CEU: "accent", G
  */
 export default function PdPage() {
   return (
-    <HubGate>
+    <HrGate>
       <PdScreen />
-    </HubGate>
+    </HrGate>
   );
 }
 
@@ -168,6 +168,7 @@ function CrossCredit() {
   const compliances = s.credentials.map((c) => computeCompliance(c, s.allocations, s.activities)).filter((x): x is NonNullable<typeof x> => !!x);
   const maximize = maximizeMyCredits(compliances);
 
+  const { run, error: writeError, clearError } = useHrAction();
   const addActivity = () => {
     const act: PdActivity = {
       id: `act-${Date.now().toString(36)}`,
@@ -178,8 +179,8 @@ function CrossCredit() {
       verification: "VERIFICATION_REQUIRED",
       notes: "",
     };
-    s.activities.unshift(act);
     // Propose an allocation to every credential whose rule can use this content.
+    const allocations: CreditAllocation[] = [];
     for (const c of s.credentials) {
       const rule = compliances.find((x) => x.credential.id === c.id)?.rule;
       if (!rule) continue;
@@ -196,13 +197,14 @@ function CrossCredit() {
       const alloc = { activityId: act.id, credentialId: c.id, amount: act.durationHours, byCategory };
       const err = validateAllocation(alloc, act, c);
       if (err) { setError(`${CREDENTIAL_LABEL[c.credential]}: ${err}`); continue; }
-      s.allocations.push(alloc);
+      allocations.push(alloc);
     }
-    saveHr();
-    hrAudit("pd.activity_added", `${act.title} (${act.durationHours}h) allocated across ${s.credentials.length} credentials`);
-    setA({ ...a, title: "", provider: "", instructor: "", aceProvider: "" });
-    setCats([]);
-    force();
+    void run(async () => {
+      await recordActivity(act, allocations);
+      setA({ ...a, title: "", provider: "", instructor: "", aceProvider: "" });
+      setCats([]);
+      force();
+    });
   };
 
   return (

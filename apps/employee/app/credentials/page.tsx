@@ -1,5 +1,7 @@
 "use client";
 
+import { HrGate } from "@/components/hr-provider";
+
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -14,6 +16,14 @@ import { hr } from "@/lib/hr-store";
  * categories never inflate a total.
  */
 export default function CredentialsPage() {
+  return (
+    <HrGate>
+      <CredentialsScreen />
+    </HrGate>
+  );
+}
+
+function CredentialsScreen() {
   const [ready, setReady] = React.useState(false);
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading credentials…</p>;

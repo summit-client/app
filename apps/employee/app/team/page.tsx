@@ -1,10 +1,11 @@
 "use client";
 
-import { HubGate } from "@/components/hub-provider";
+import { HrGate } from "@/components/hr-provider";
 
 import * as React from "react";
 import { getProfile } from "@/lib/hub";
-import { hr, hrAudit, saveHr } from "@/lib/hr-store";
+import { addForumComment, addForumPost, directory, hr } from "@/lib/hr-store";
+import { useHrAction, WriteError } from "@/components/hr-provider";
 
 /**
  * My Team. Membership and the team forum. Peer reviews live in My Scorecard,
@@ -15,9 +16,9 @@ const FORUM_CATEGORIES = ["General", "Learning", "Resources", "Wins", "Questions
 
 export default function TeamPage() {
   return (
-    <HubGate>
+    <HrGate>
       <TeamScreen />
-    </HubGate>
+    </HrGate>
   );
 }
 
@@ -58,13 +59,10 @@ function TeamTab() {
   const [f, setF] = React.useState({ name: "", role: "", team: "Clinical Services" });
   const [, force] = React.useReducer((n: number) => n + 1, 0);
 
-  const add = () => {
-    s.team.push({ ...f });
-    saveHr();
-    hrAudit("team.member_added", `${f.name} (${f.role})`);
-    setF({ name: "", role: "", team: f.team });
-    force();
-  };
+  // The peer group is everyone in the clinic with an account. It used to be a
+  // list you typed into, stored in this browser - so "your team" was whatever
+  // you had personally typed, and nobody else ever saw it.
+  const people = directory().filter((p) => p.id !== profile.id);
 
   return (
     <>
@@ -80,47 +78,41 @@ function TeamTab() {
         <table className="data">
           <thead><tr><th>Name</th><th>Role</th><th>Team</th></tr></thead>
           <tbody>
-            {s.team.map((m) => (
-              <tr key={m.name}><td><b>{m.name}</b></td><td>{m.role}</td><td>{m.team}</td></tr>
+            {people.map((m) => (
+              <tr key={m.id}><td><b>{m.name}</b></td><td>{m.jobTitle ?? "\u2014"}</td><td>{m.accessLevel.toLowerCase()}</td></tr>
             ))}
-            {!s.team.length ? <tr><td colSpan={3} style={{ color: "var(--muted)" }}>Your peer group comes from your Summit team. Add colleagues to review them in My Scorecard.</td></tr> : null}
+            {!people.length ? <tr><td colSpan={3} style={{ color: "var(--muted)" }}>Nobody else in your clinic has a Summit account yet. An administrator creates accounts; your peer group appears here once they do.</td></tr> : null}
           </tbody>
         </table>
       </div>
-      <div className="card card-pad" style={{ marginTop: 12, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <div className="field"><label htmlFor="t-name">Name</label>
-          <input id="t-name" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-        <div className="field"><label htmlFor="t-role">Role</label>
-          <input id="t-role" className="input" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} /></div>
-        <div className="field"><label htmlFor="t-team">Team</label>
-          <input id="t-team" className="input" value={f.team} onChange={(e) => setF({ ...f, team: e.target.value })} /></div>
-        <button className="btn secondary" onClick={add} disabled={!f.name.trim()}>Add colleague</button>
-      </div>
+      <p className="sub" style={{ marginTop: 8 }}>
+        Your peer group is everyone in your clinic with a Summit account. It is not a list you keep yourself \u2014
+        an administrator creates accounts, and people appear here automatically.
+      </p>
     </>
   );
 }
 
 function ForumTab({ onChange }: { onChange: () => void }) {
+  const { run, error: writeError, clearError } = useHrAction();
   const s = hr();
   const me = getProfile().name;
   const [f, setF] = React.useState({ category: FORUM_CATEGORIES[0], title: "", body: "" });
   const [replyTo, setReplyTo] = React.useState<string | null>(null);
   const [reply, setReply] = React.useState("");
 
-  const post = () => {
-    s.posts.unshift({ id: `p-${Date.now().toString(36)}`, category: f.category, author: me, title: f.title, body: f.body, date: new Date().toISOString(), comments: [] });
-    saveHr();
-    hrAudit("forum.posted", f.title);
+  const post = () => void run(async () => {
+    await addForumPost({ category: f.category, author: me, title: f.title, body: f.body });
     setF({ category: f.category, title: "", body: "" });
     onChange();
-  };
+  });
   const comment = (id: string) => {
-    const p = s.posts.find((x) => x.id === id);
-    if (!p || !reply.trim()) return;
-    p.comments.push({ author: me, body: reply.trim(), date: new Date().toISOString() });
-    saveHr();
-    setReply(""); setReplyTo(null);
-    onChange();
+    if (!reply.trim()) return;
+    void run(async () => {
+      await addForumComment(id, reply.trim(), me);
+      setReply(""); setReplyTo(null);
+      onChange();
+    });
   };
 
   return (

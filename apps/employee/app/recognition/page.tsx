@@ -1,12 +1,13 @@
 "use client";
 
-import { HubGate } from "@/components/hub-provider";
+import { HrGate } from "@/components/hr-provider";
 
 import * as React from "react";
 import { getSetting } from "@summit/settings";
 import { getProfile } from "@/lib/hub";
 import { checkRecognition, reciprocalFlag, RECOGNITION_CATEGORIES } from "@/lib/ecosystem";
-import { currentCycle, hr, hrAudit, saveHr } from "@/lib/hr-store";
+import { currentCycle, hr, sendRecognition } from "@/lib/hr-store";
+import { useHrAction, WriteError } from "@/components/hr-provider";
 import { EggToast, Sparks, useEasterEggs } from "@/components/grove";
 
 /**
@@ -23,13 +24,14 @@ const AWARDS = [
 
 export default function RecognitionPage() {
   return (
-    <HubGate>
+    <HrGate>
       <RecognitionScreen />
-    </HubGate>
+    </HrGate>
   );
 }
 
 function RecognitionScreen() {
+  const { run, error: writeError, clearError } = useHrAction();
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [f, setF] = React.useState({ to: "", category: RECOGNITION_CATEGORIES[0], points: 1, message: "" });
@@ -52,13 +54,12 @@ function RecognitionScreen() {
   const send = () => {
     const check = checkRecognition({ ...f, from: me }, month);
     if (!check.allowed) { setError(check.reason); return; }
-    s.recognition.unshift({
-      id: `r-${Date.now().toString(36)}`, from: me, to: f.to, category: f.category,
-      points: f.points, message: f.message.trim(), date: new Date().toISOString(),
-      flagged: reciprocalFlag({ from: me, to: f.to }, month),
+    void run(async () => {
+      await sendRecognition({
+        from: me, to: f.to, category: f.category, points: f.points,
+        message: f.message.trim(), flagged: reciprocalFlag({ from: me, to: f.to }, month),
+      });
     });
-    saveHr();
-    hrAudit("recognition.sent", `${f.points} ${f.category} to ${f.to}`);
     setF({ to: "", category: RECOGNITION_CATEGORIES[0], points: 1, message: "" });
     setError(null);
     setSparkOn(true);
@@ -68,6 +69,7 @@ function RecognitionScreen() {
 
   return (
     <div>
+      <WriteError error={writeError} onDismiss={clearError} />
       <EggToast toast={eggs.toast} />
       <div className="hero">
         <div className="hero-main">
