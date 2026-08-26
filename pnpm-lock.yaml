@@ -20,6 +20,9 @@ importers:
       '@summit/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@summit/design':
+        specifier: workspace:*
+        version: link:../../packages/design
       '@summit/nav':
         specifier: workspace:*
         version: link:../../packages/nav

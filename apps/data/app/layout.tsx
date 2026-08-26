@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "@summit/design/tokens.css";
+import "@summit/design/components.css";
 import "./app.css";
 import Link from "next/link";
 import { themeInitScript } from "@summit/design";
@@ -25,10 +26,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
-              <span className="brand-mark" aria-hidden />
-              <span>
-                Summit <b>Clinician</b>
-              </span>
+              <svg className="brand-mark" viewBox="0 0 32 28" fill="none" aria-hidden>
+                <polygon points="16,2 26,22 6,22" fill="var(--brand-400)" opacity="0.9" />
+                <polygon points="8,8 16,22 0,22" fill="var(--brand-600)" opacity="0.85" />
+                <polygon points="24,8 32,22 16,22" fill="var(--brand-700)" opacity="0.8" />
+              </svg>
+              <div className="brand-text">
+                <div className="brand-name">Summit</div>
+                <div className="brand-sub">Clinician</div>
+              </div>
             </div>
             <PortalNav />
             <div className="sidebar-foot">

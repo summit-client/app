@@ -2,8 +2,8 @@
   min-height: calc(100vh - 40px);
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
-  background: #edf7f8;
-  color: #173247;
+  background: var(--surface-2);
+  color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -11,7 +11,7 @@
   min-height: calc(100vh - 40px);
   padding: 22px 14px;
   background: #f9fcfd;
-  border-right: 1px solid #d4e2e8;
+  border-right: 1px solid var(--line);
 }
 
 .brand {
@@ -29,7 +29,7 @@
   place-items: center;
   border-radius: 11px;
   color: #2fb7a8;
-  background: #dff4f1;
+  background: var(--accent-soft);
   font-weight: 900;
 }
 
@@ -105,7 +105,7 @@
 
 .header h1 {
   margin: 0;
-  color: #173f5f;
+  color: var(--ink);
   font-size: 30px;
   letter-spacing: -0.02em;
 }
@@ -128,9 +128,9 @@
   height: 42px;
   display: grid;
   place-items: center;
-  color: #173f5f;
-  background: #ffffff;
-  border: 1px solid #d4e2e8;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 12px;
   cursor: pointer;
 }
@@ -144,9 +144,9 @@
   display: grid;
   place-items: center;
   padding: 0 5px;
-  color: #ffffff;
+  color: var(--surface);
   background: #e05573;
-  border: 2px solid #edf7f8;
+  border: 2px solid var(--surface-2);
   border-radius: 999px;
   font-size: 9px;
   font-weight: 900;
@@ -155,9 +155,9 @@
 .clientSelect {
   min-width: 162px;
   padding: 11px 13px;
-  color: #173247;
-  background: #ffffff;
-  border: 1px solid #d4e2e8;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 11px;
   font-weight: 700;
 }
@@ -177,8 +177,8 @@
   gap: 13px;
   min-height: 112px;
   padding: 17px;
-  background: #ffffff;
-  border: 1px solid #d4e2e8;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: 0 8px 24px rgba(20, 60, 80, 0.05);
 }
@@ -189,12 +189,12 @@
   display: grid;
   place-items: center;
   color: #197f78;
-  background: #dff4f1;
+  background: var(--accent-soft);
   border-radius: 12px;
 }
 
 .metricValue {
-  color: #173f5f;
+  color: var(--ink);
   font-size: 28px;
   font-weight: 900;
   line-height: 1;
@@ -224,15 +224,15 @@
 
 .card {
   overflow: hidden;
-  background: #ffffff;
-  border: 1px solid #d4e2e8;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: 0 8px 24px rgba(20, 60, 80, 0.05);
 }
 
 .cardBody {
   padding: 20px 19px 22px;
-  color: #607987;
+  color: var(--muted);
 }
 
 .cardBody strong {
@@ -244,7 +244,7 @@
 
 .cardBody p {
   margin: 0;
-  color: #607987;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -260,7 +260,7 @@
 
 .cardHeader h2 {
   margin: 0;
-  color: #173247;
+  color: var(--ink);
   font-size: 17px;
 }
 
@@ -289,7 +289,7 @@
   align-items: center;
   gap: 13px;
   padding: 16px 0;
-  border-bottom: 1px solid #e7eef2;
+  border-bottom: 1px solid var(--surface-2);
 }
 
 .sessionRow:last-child {
@@ -299,7 +299,7 @@
 .dateTile {
   padding: 8px 4px;
   color: #116f68;
-  background: #dff4f1;
+  background: var(--accent-soft);
   border-radius: 11px;
   text-align: center;
   line-height: 1;
@@ -427,7 +427,7 @@
   grid-template-columns: 40px 1fr;
   gap: 12px;
   padding: 15px 0;
-  border-bottom: 1px solid #e7eef2;
+  border-bottom: 1px solid var(--surface-2);
 }
 
 .announcement:last-child {
@@ -452,7 +452,7 @@
 
 .announcement p {
   margin: 0 0 5px;
-  color: #607987;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -494,8 +494,8 @@
   width: calc(100% - 36px);
   margin: 0 18px 18px;
   padding: 12px 15px;
-  color: #ffffff;
-  background: #173f5f;
+  color: var(--surface);
+  background: var(--ink);
   border: 0;
   border-radius: 11px;
   font-weight: 800;

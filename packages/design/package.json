@@ -5,6 +5,7 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./tokens.css": "./tokens.css"
+    "./tokens.css": "./tokens.css",
+    "./components.css": "./components.css"
   }
 }

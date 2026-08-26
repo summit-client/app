@@ -1,3 +1,5 @@
+import '@summit/design/tokens.css'
+import '@summit/design/components.css'
 import '../styles/globals.css'
 import type { AppProps } from 'next/app'
 import Head from 'next/head'

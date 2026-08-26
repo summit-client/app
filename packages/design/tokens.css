@@ -84,6 +84,12 @@
   --shadow-xl: 0 24px 48px oklch(21% 0.042 212 / 0.14), 0 8px 16px oklch(21% 0.042 212 / 0.06);
   --shadow-card: var(--shadow-sm);
 
+  /* ── Data accents: the four the Scheduler cycles across stat cards ─────── */
+  --stat-1: oklch(58% 0.130 250);
+  --stat-2: oklch(72% 0.115 165);
+  --stat-3: oklch(72% 0.145 65);
+  --stat-4: oklch(58% 0.155 355);
+
   /* ── Semantic status (accent-invariant) ────────────────────────────────── */
   --good: oklch(52% 0.148 152);   --good-soft: oklch(94% 0.040 152);
   --warn: oklch(58% 0.130 68);    --warn-soft: oklch(95% 0.045 68);
@@ -145,7 +151,15 @@
     --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.44), 0 2px 4px oklch(0% 0 0 / 0.26);
     --shadow-lg: 0 12px 32px oklch(0% 0 0 / 0.50), 0 4px 8px oklch(0% 0 0 / 0.30);
     --shadow-xl: 0 24px 48px oklch(0% 0 0 / 0.56), 0 8px 16px oklch(0% 0 0 / 0.34);
-    --good: oklch(76% 0.150 152);   --good-soft: oklch(30% 0.060 152);
+    --stat-1: oklch(72% 0.120 250);
+    --stat-2: oklch(80% 0.110 165);
+    --stat-3: oklch(80% 0.130 65);
+    --stat-4: oklch(72% 0.140 355);
+    --stat-1: oklch(72% 0.120 250);
+  --stat-2: oklch(80% 0.110 165);
+  --stat-3: oklch(80% 0.130 65);
+  --stat-4: oklch(72% 0.140 355);
+  --good: oklch(76% 0.150 152);   --good-soft: oklch(30% 0.060 152);
     --warn: oklch(80% 0.130 74);    --warn-soft: oklch(31% 0.055 68);
     --danger: oklch(70% 0.160 25);  --danger-soft: oklch(31% 0.075 25);
     --accent: #5fb0c4; --accent-strong: #83c6d6; --accent-soft: #14313a;
@@ -179,6 +193,10 @@
   --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.44), 0 2px 4px oklch(0% 0 0 / 0.26);
   --shadow-lg: 0 12px 32px oklch(0% 0 0 / 0.50), 0 4px 8px oklch(0% 0 0 / 0.30);
   --shadow-xl: 0 24px 48px oklch(0% 0 0 / 0.56), 0 8px 16px oklch(0% 0 0 / 0.34);
+  --stat-1: oklch(72% 0.120 250);
+  --stat-2: oklch(80% 0.110 165);
+  --stat-3: oklch(80% 0.130 65);
+  --stat-4: oklch(72% 0.140 355);
   --good: oklch(76% 0.150 152);   --good-soft: oklch(30% 0.060 152);
   --warn: oklch(80% 0.130 74);    --warn-soft: oklch(31% 0.055 68);
   --danger: oklch(70% 0.160 25);  --danger-soft: oklch(31% 0.075 25);

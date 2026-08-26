@@ -199,7 +199,7 @@ const KEY = "summit-hub-store";
 function defaultStore(): Store {
   return {
     profile: {
-      id: "preview-user", name: "Preview Employee", employeeNumber: "EMP-0001",
+      id: "preview-user", name: "Sherpa Doe", employeeNumber: "EMP-0001",
       jobTitle: "Behaviour Clinician", location: "Main Clinic", role: "ADMIN",
       startDate: new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10), // day 4 of onboarding
       vscStatus: "APPLIED",

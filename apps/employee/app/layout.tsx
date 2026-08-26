@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import * as React from "react";
 import Link from "next/link";
 import "@summit/design/tokens.css";
+import "@summit/design/components.css";
 import "./app.css";
 import { themeInitScript } from "@summit/design";
 import { AppNav } from "@summit/nav";
@@ -43,11 +44,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/summit-badge.png" alt="" aria-hidden width={30} height={30} style={{ display: "block" }} />
-              <span>
-                My<b>Summit</b>HR
-              </span>
+              <svg className="brand-mark" viewBox="0 0 32 28" fill="none" aria-hidden>
+                <polygon points="16,2 26,22 6,22" fill="var(--brand-400)" opacity="0.9" />
+                <polygon points="8,8 16,22 0,22" fill="var(--brand-600)" opacity="0.85" />
+                <polygon points="24,8 32,22 16,22" fill="var(--brand-700)" opacity="0.8" />
+              </svg>
+              <div className="brand-text">
+                <div className="brand-name">MySummitHR</div>
+                <div className="brand-sub">Employee</div>
+              </div>
             </div>
             <nav aria-label="My HR and My Documents">
               {NAV.map((n, i) => (
