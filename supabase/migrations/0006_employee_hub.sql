@@ -67,18 +67,57 @@ create table if not exists hub_pd_records (
 -- Certificates: sequential registry number per year; Module 00 is auto-issued
 -- when every required applicable onboarding task completes (app logic,
 -- idempotent — the unique index makes double-issue impossible).
+-- Certificates come from two places and the difference matters.
+--
+-- SELF_REPORTED: the employee brings a certificate earned outside Summit (BACB,
+-- CPI, first aid). They upload it themselves; it starts unverified and carries
+-- the issuing body's own number, or none.
+--
+-- SUMMIT_ISSUED: Summit generated it - the Module 00 onboarding certificate and
+-- the two phase certificates - and it renders on the clinic's approved template
+-- with a registry number from the SUMMIT-<year>-<seq> sequence.
+--
+-- They share a table, so the registry number is what must not be forgeable: an
+-- employee who could mint one could produce a certificate that renders on clinic
+-- letterhead for training they never did. Hence cert_number is nullable, unique
+-- only within the issued namespace, and required only for issued rows.
+--
+-- `verified` mirrors hub_pd_records: outside evidence arrives unverified and a
+-- manager attests to it later. That is the gate, already in place, whenever you
+-- decide who turns the key.
 create table if not exists hub_certificates (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   clinic_id uuid references clinics(id),
-  cert_number text not null unique,
+  source text not null default 'SELF_REPORTED'
+    check (source in ('SELF_REPORTED', 'SUMMIT_ISSUED')),
+  cert_number text,
+  issuer text,                     -- external issuing body, for self-reported
   title text not null,
   competency text,
   instructor text,
   issued_date date not null default current_date,
   expiry_date date,
-  created_at timestamptz not null default now()
+  file_name text,                  -- the uploaded certificate, as hub_pd_records
+  verified boolean not null default false,
+  verified_by uuid references auth.users(id),
+  verified_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint hub_certs_issued_needs_number
+    check (source <> 'SUMMIT_ISSUED' or cert_number is not null),
+  -- The SUMMIT- prefix is the clinic's registry namespace. Reserve it at the
+  -- table, not in a policy: an employee may record the issuing body's own
+  -- number on an upload, but neither they nor a manager may type a number that
+  -- reads as one Summit awarded. Without this, the source check alone still
+  -- lets a self-reported row carry SUMMIT-2026-000042.
+  constraint hub_certs_registry_prefix_reserved
+    check (source = 'SUMMIT_ISSUED' or cert_number is null or cert_number not like 'SUMMIT-%')
 );
+
+-- Registry numbers are unique among issued certificates only. An external body's
+-- numbering is its own business and must not collide with Summit's sequence.
+create unique index if not exists hub_certs_issued_number_idx
+  on hub_certificates(cert_number) where source = 'SUMMIT_ISSUED';
 create unique index if not exists hub_certificates_once
   on hub_certificates(user_id, title);
 
@@ -151,7 +190,26 @@ create policy hub_training_own_update on hub_employee_training for update
 
 create policy hub_pd_own on hub_pd_records for select using (user_id = auth.uid());
 create policy hub_pd_own_insert on hub_pd_records for insert with check (user_id = auth.uid());
+-- Employees upload their own outside certificates: insert and correct freely
+-- while the record is still self-reported and unverified. They cannot mint a
+-- registry number, cannot mark a record SUMMIT_ISSUED, and cannot verify
+-- themselves - and once a manager verifies it, the row freezes.
 create policy hub_certs_own on hub_certificates for select using (user_id = auth.uid());
+create policy hub_certs_own_insert on hub_certificates for insert
+  with check (
+    user_id = auth.uid()
+    and source = 'SELF_REPORTED'
+    and verified = false
+    and verified_by is null
+  );
+create policy hub_certs_own_update on hub_certificates for update
+  using (user_id = auth.uid() and source = 'SELF_REPORTED' and verified = false)
+  with check (
+    user_id = auth.uid()
+    and source = 'SELF_REPORTED'
+    and verified = false
+    and verified_by is null
+  );
 create policy hub_timeoff_own on hub_time_off_requests for select using (user_id = auth.uid());
 create policy hub_timeoff_own_insert on hub_time_off_requests for insert with check (user_id = auth.uid());
 
@@ -187,14 +245,21 @@ create policy hub_pd_manage on hub_pd_records for update
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
   with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 
--- Certificates are issued, never edited or revoked in place: select + insert
--- only, and insert is manager-only. A self-issued certificate is a forgery
--- vector, so the employee's own policy above stays select-only. Automatic
--- issuance on onboarding completion moves to a security-definer routine in the
--- data-layer change; it must not become a client-side insert.
+-- Managers read their team's certificates, record one on someone's behalf, and
+-- verify a self-reported upload. Update is how verification happens, so it stays
+-- open to them; delete is not granted to anyone.
+--
+-- Note managers can insert SUMMIT_ISSUED rows: that is deliberate, so a
+-- supervisor can record a certificate the clinic awarded offline. Automatic
+-- issuance on onboarding completion is separate and still has to move to a
+-- security-definer routine in the data-layer change - the app currently mints
+-- the registry number client-side, which no policy here permits.
 create policy hub_certs_manage_select on hub_certificates for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 create policy hub_certs_manage_insert on hub_certificates for insert
+  with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+create policy hub_certs_manage_update on hub_certificates for update
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id))
   with check (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
 
 create policy hub_timeoff_manage on hub_time_off_requests for update
