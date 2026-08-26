@@ -23,7 +23,8 @@ var t=localStorage.getItem("${THEME_STORAGE_KEY}");
 if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);
 var a=localStorage.getItem("${ACCENT_STORAGE_KEY}");
 if(a==="green"||a==="pink"||a==="orange")document.documentElement.setAttribute("data-accent",a);
-}catch(e){}})();`;
+}catch(e){}
+try{document.documentElement.classList.add("motion-ready");}catch(e){}})();`;
 
 export function applyTheme(theme: Theme): void {
   const el = document.documentElement;

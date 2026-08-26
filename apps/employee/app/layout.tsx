@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import "@summit/design/tokens.css";
 import "@summit/design/components.css";
+import "@summit/design/motion.css";
 import "./app.css";
 import { themeInitScript } from "@summit/design";
 import { AppNav } from "@summit/nav";

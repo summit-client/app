@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "@summit/design/tokens.css";
 import "@summit/design/components.css";
+import "@summit/design/motion.css";
 import "./app.css";
 import Link from "next/link";
 import { themeInitScript } from "@summit/design";

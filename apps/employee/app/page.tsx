@@ -11,6 +11,7 @@ import {
 } from "@/lib/ecosystem";
 import { currentCycle, hr } from "@/lib/hr-store";
 import { BerryBurst, EggToast, ScoreRing, SummitPeaks, Volcano, useEasterEggs } from "@/components/grove";
+import { Flourish, Reveal } from "@summit/design/motion";
 
 /** Dashboard: widgets. Where you stand, what is due, and the ecosystem. */
 export default function DashboardPage() {
@@ -77,7 +78,7 @@ export default function DashboardPage() {
           <Volcano active={!!mySite?.unlocked || burst} size={120} />
         </div>
         <div className="hero-main">
-          <h1 className="h-page" style={{ marginBottom: 2 }}>Hi {profile.name.split(" ")[0]}</h1>
+          <h1 className="h-page" style={{ marginBottom: 2 }}><Flourish>Hi {profile.name.split(" ")[0]}</Flourish></h1>
           <p className="sub" style={{ marginTop: 0 }}>{currentCycle()} · {profile.location ?? "No site set"}</p>
           {eco.band ? <p className={`hero-band ${eco.band === "BONUS" ? "bonus" : eco.band === "FEEDBACK_PLAN" ? "plan" : "coach"}`} style={{ marginTop: 6 }}>{BAND_LABEL[eco.band]}</p> : null}
         </div>
@@ -164,7 +165,7 @@ export default function DashboardPage() {
       </div>
 
       {ob.percent < 100 || trainingDue.length ? (
-        <>
+        <Reveal>
           <h2 className="section-title">Do next</h2>
           <div className="attn">
             {ob.percent < 100 ? (
@@ -174,7 +175,7 @@ export default function DashboardPage() {
               <Link key={c.key} href="/training"><span>{c.title}</span><span className="trend">{dueDate(profile.startDate, c.deadlineBucket) ?? ""}</span></Link>
             ))}
           </div>
-        </>
+        </Reveal>
       ) : null}
     </div>
   );

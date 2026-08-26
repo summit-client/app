@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { getClients, getTodaySessions } from "@/lib/data";
+import { Flourish, Reveal } from "@summit/design/motion";
 import type { ClientRow, ScheduledSession } from "@/lib/types";
 
 export default function TodayPage() {
@@ -18,15 +19,18 @@ export default function TodayPage() {
 
   return (
     <div>
-      <h1 className="h-page">Today</h1>
+      <h1 className="h-page"><Flourish>Today</Flourish></h1>
       <p className="sub">Your sessions and caseload at a glance. Sessions run from inside each client&rsquo;s record.</p>
 
+      <Reveal>
       <div className="tiles" style={{ marginTop: 20 }}>
         <div className="card tile"><div className="n">{sessions.length}</div><div className="l">Sessions today</div></div>
         <div className="card tile"><div className="n">{active}</div><div className="l">Active clients</div></div>
         <div className="card tile"><div className="n">{goals}</div><div className="l">Active goals</div></div>
       </div>
+      </Reveal>
 
+      <Reveal delay={120}>
       <h2 className="section-title">Today&rsquo;s sessions</h2>
       <div className="card table-wrap">
         <table className="data">
@@ -54,6 +58,7 @@ export default function TodayPage() {
           </tbody>
         </table>
       </div>
+      </Reveal>
     </div>
   );
 }
