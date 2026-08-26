@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { certLifecycle, getCertificates } from "@/lib/hub";
-import { PdfExport, PrintSection } from "@/components/pdf-export";
 
 const LIFE_PILL = { ACTIVE: "good", EXPIRING_SOON: "warn", EXPIRED: "danger" } as const;
 
@@ -38,16 +38,9 @@ export default function CertificatesPage() {
                   {c.expiryDate ? ` · expires ${c.expiryDate}` : ""} · instructor: {c.instructor}
                 </p>
               </div>
-              <PdfExport title="Certificate of Completion" subtitle={`${c.title} · ${c.certNumber}`} authors={[c.instructor]}>
-                <div style={{ textAlign: "center", padding: "24pt 0" }}>
-                  <p style={{ fontSize: "10pt", letterSpacing: "0.2em", textTransform: "uppercase" }}>This certifies that</p>
-                  <p style={{ fontSize: "20pt", fontWeight: 700, margin: "8pt 0" }}>the named employee</p>
-                  <p style={{ fontSize: "10pt" }}>has successfully completed</p>
-                  <p style={{ fontSize: "15pt", fontWeight: 700, margin: "8pt 0" }}>{c.title}</p>
-                  <p style={{ fontSize: "10.5pt" }}>{c.competency}</p>
-                </div>
-                <PrintSection heading="Registry" text={`Certificate number: ${c.certNumber}\nIssued: ${c.issuedDate}${c.expiryDate ? `\nExpires: ${c.expiryDate}` : ""}\nInstructor: ${c.instructor}`} />
-              </PdfExport>
+              <Link href={`/certificates/${c.id}`} className="btn secondary" style={{ textDecoration: "none", alignSelf: "center" }}>
+                View certificate
+              </Link>
             </div>
           );
         })}
