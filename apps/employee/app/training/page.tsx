@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import { BINDER_URL, HUB_COURSES, type CourseKind } from "@/lib/content";
 import { dueDate, getProfile, getTraining, refreshDue, setCourseStatus } from "@/lib/hub";
@@ -13,6 +15,14 @@ import { BerryBurst } from "@/components/grove";
  * competency program is open ended with no due date.
  */
 export default function TrainingPage() {
+  return (
+    <HubGate>
+      <TrainingScreen />
+    </HubGate>
+  );
+}
+
+function TrainingScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [quizFor, setQuizFor] = React.useState<string | null>(null);

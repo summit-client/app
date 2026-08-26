@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import Link from "next/link";
 import { certLifecycle, getCertificates } from "@/lib/hub";
@@ -9,6 +11,14 @@ const LIFE_PILL = { ACTIVE: "good", EXPIRING_SOON: "warn", EXPIRED: "danger" } a
 /** My Certificates: issued certificates with lifecycle status and PDF export.
  * The Module 00 onboarding certificate is auto-issued when onboarding completes. */
 export default function CertificatesPage() {
+  return (
+    <HubGate>
+      <CertificatesScreen />
+    </HubGate>
+  );
+}
+
+function CertificatesScreen() {
   const [ready, setReady] = React.useState(false);
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading certificates…</p>;

@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import { CATEGORY_LABELS, HUB_COURSES, HUB_TASKS, WEEK_SUBTITLES, type HubTask } from "@/lib/content";
 import Link from "next/link";
@@ -24,6 +26,14 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 };
 
 export default function OnboardingPage() {
+  return (
+    <HubGate>
+      <OnboardingScreen />
+    </HubGate>
+  );
+}
+
+function OnboardingScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [saveState, setSaveState] = React.useState<"idle" | "saving" | "saved">("idle");

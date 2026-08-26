@@ -206,6 +206,5 @@ export const CATEGORY_LABELS: Record<TaskCategory, string> = {
 export const HUB_DOCUMENTS = [
   { name: "Employee Handbook (2026)", kind: "Handbook", url: "https://drive.google.com/file/d/1fmV5zENVnM6ffkTYJDWL0w-4BwdEzoqB/view", note: "Code of conduct, PHIPA and confidentiality, incident reporting. Sign the Chapter 12 acknowledgement in Week 2." },
   { name: "Onboarding Checklist 2026 (PDF)", kind: "Onboarding", url: "/hub-docs/onboarding-checklist-2026.pdf", note: "The source document for the onboarding board." },
-  { name: "Onboarding Checklist (original PDF)", kind: "Onboarding", url: "/hub-docs/onboarding-checklist.pdf", note: "Earlier revision, kept for reference." },
   { name: "Shared Team Drive", kind: "Drive", url: "https://drive.google.com/drive/folders/1ksWVzQTDVCvFu3DXIaeyJQbPFvCZYcxr", note: "Training videos and extra observation material." },
 ];

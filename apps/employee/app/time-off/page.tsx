@@ -1,5 +1,7 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
 import {
   computeEntitlements, decideTimeOff, getProfile, getTimeOff, inclusiveDays, requestTimeOff,
@@ -11,6 +13,14 @@ const STATUS_PILL = { REQUESTED: "warn", APPROVED: "good", DENIED: "danger", CAN
  * request form and history. Vacation follows the Ontario ESA; sick days are
  * organization policy. */
 export default function TimeOffPage() {
+  return (
+    <HubGate>
+      <TimeOffScreen />
+    </HubGate>
+  );
+}
+
+function TimeOffScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [f, setF] = React.useState({ type: "VACATION" as "VACATION" | "SICK", start: "", end: "", note: "" });

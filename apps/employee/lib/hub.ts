@@ -16,47 +16,16 @@
  *    5 sick/mental-health days per entitlement year, reset on the anniversary.
  */
 
-import { createBrowserClient } from "@supabase/ssr";
 import { HUB_COURSES, HUB_TASKS, type DeadlineBucket, type HubTask } from "./content";
+import { IS_PREVIEW, type HubRole, type Session } from "./session";
+import { previewBackend, supabaseBackend, type HubBackend, type HubSnapshot } from "./hub-backend";
 
-export const IS_PREVIEW = process.env.NEXT_PUBLIC_DEV_PREVIEW === "1";
-
-function sb() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-  );
-}
-
-/* ---- types ------------------------------------------------------------------ */
-
-export type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "AWAITING_SIGNOFF" | "NOT_APPLICABLE";
-export type VscStatus = "NOT_SUBMITTED" | "APPLIED" | "PENDING" | "CLEARED" | "REQUIRES_FOLLOWUP";
-export type HubRole = "EMPLOYEE" | "SUPERVISOR" | "ADMIN";
-
-export interface EmployeeProfile {
-  id: string;
-  name: string;
-  employeeNumber: string;
-  jobTitle: string | null;
-  location: string | null;
-  role: HubRole;
-  startDate: string | null;        // ISO; drives every deadline
-  vscStatus: VscStatus;
-}
-
-export interface TaskProgress { taskKey: string; status: TaskStatus; notes: string; applicable: boolean; completedAt: string | null }
-export interface TrainingRecord { courseKey: string; status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED"; completedAt: string | null }
-export interface PdRecord {
-  id: string; title: string; provider: string; hours: number; date: string; verified: boolean;
-  category: "BACB_CEU" | "CPBAO_CE" | "IBAO_CEU" | "GENERAL_PD";
-  ceuUnits: number | null;
-  fileName: string | null;      // uploaded certificate PDF
-  detection: string;            // what the reader detected (or why it fell back)
-}
-export interface Certificate { id: string; certNumber: string; title: string; competency: string; instructor: string; issuedDate: string; expiryDate: string | null }
-export interface TimeOffRequest { id: string; type: "VACATION" | "SICK"; startDate: string; endDate: string; days: number; status: "REQUESTED" | "APPROVED" | "DENIED" | "CANCELLED"; note: string }
-export interface AuditEvent { id: string; action: string; detail: string; at: string; who: string }
+export { IS_PREVIEW };
+export * from "./hub-types";
+import type {
+  AuditEvent, Certificate, EmployeeProfile, PdRecord, TaskProgress,
+  TaskStatus, TimeOffRequest, TrainingRecord,
+} from "./hub-types";
 
 export const ONBOARDING_CERT_TITLE = "New Team Member Onboarding";
 export const ONBOARDING_CERT_COMPETENCY = "MODULE # 00";
@@ -141,8 +110,8 @@ export function inclusiveDays(start: string, end: string): number {
 export function derivedTaskProgress(taskKey: string): TaskProgress | null {
   const task = HUB_TASKS.find((t) => t.key === taskKey);
   if (!task?.courseKey) return null;
-  const rec = store().training.find((t) => t.courseKey === task.courseKey);
-  const stored = store().progress.find((p) => p.taskKey === taskKey);
+  const rec = requireSnap().training.find((t) => t.courseKey === task.courseKey);
+  const stored = requireSnap().progress.find((p) => p.taskKey === taskKey);
   const status: TaskStatus = rec?.status === "COMPLETED" ? "COMPLETED" : rec?.status === "IN_PROGRESS" ? "IN_PROGRESS" : "NOT_STARTED";
   return {
     taskKey,
@@ -154,7 +123,7 @@ export function derivedTaskProgress(taskKey: string): TaskProgress | null {
 }
 
 /** Stored progress with course-linked tasks overlaid from training. */
-export function effectiveProgress(progress: TaskProgress[] = store().progress): TaskProgress[] {
+export function effectiveProgress(progress: TaskProgress[] = requireSnap().progress): TaskProgress[] {
   const byKey = new Map(progress.map((p) => [p.taskKey, p]));
   return HUB_TASKS.map((t) => derivedTaskProgress(t.key) ?? byKey.get(t.key) ?? {
     taskKey: t.key, status: "NOT_STARTED" as TaskStatus, notes: "", applicable: true, completedAt: null,
@@ -181,80 +150,80 @@ export function isOnboardingComplete(progress: TaskProgress[]): boolean {
   return p.applicable > 0 && p.completed === p.applicable;
 }
 
-/* ---- preview store ----------------------------------------------------------- */
+/* ---- the loaded snapshot --------------------------------------------------- */
 
-interface Store {
-  profile: EmployeeProfile;
-  progress: TaskProgress[];
-  training: TrainingRecord[];
-  pd: PdRecord[];
-  certificates: Certificate[];
-  timeOff: TimeOffRequest[];
-  audit: AuditEvent[];
-  certSeq: number;
+/**
+ * hub.ts keeps synchronous reads on purpose: 37 call sites across 14 screens
+ * read getProgress() and friends inline during render, and making them async
+ * would have meant rewriting all of them. Instead the provider loads once,
+ * before any screen renders, and these read the loaded snapshot.
+ *
+ * Mutations are async because they now genuinely go somewhere.
+ */
+
+let backend: HubBackend | null = null;
+let snap: HubSnapshot | null = null;
+const listeners = new Set<() => void>();
+
+function requireSnap(): HubSnapshot {
+  if (!snap) throw new Error("hub read before loadHub() - screen is not inside <HubGate>");
+  return snap;
 }
 
-const KEY = "summit-hub-store";
-
-function defaultStore(): Store {
-  return {
-    profile: {
-      id: "preview-user", name: "Sherpa Doe", employeeNumber: "EMP-0001",
-      jobTitle: "Behaviour Clinician", location: "Main Clinic", role: "ADMIN",
-      startDate: new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10), // day 4 of onboarding
-      vscStatus: "APPLIED",
-    },
-    progress: [], training: [], pd: [], certificates: [], timeOff: [], audit: [], certSeq: 0,
-  };
+function changed(): void {
+  for (const l of listeners) l();
 }
 
-let mem: Store | null = null;
-
-function store(): Store {
-  if (mem) return mem;
-  if (typeof window === "undefined") return defaultStore();
-  try {
-    const raw = localStorage.getItem(KEY);
-    mem = raw ? { ...defaultStore(), ...(JSON.parse(raw) as Store) } : defaultStore();
-  } catch {
-    mem = defaultStore();
-  }
-  return mem;
+/** Subscribe to mutations, so a screen re-renders after a write. */
+export function onHubChange(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
 }
 
-function persist(): void {
-  if (mem) localStorage.setItem(KEY, JSON.stringify(mem));
+/** Load everything for this session. Called by <HubProvider>. */
+export async function loadHub(session: Session): Promise<void> {
+  backend = IS_PREVIEW ? previewBackend(session) : supabaseBackend(session);
+  snap = await backend.load();
+  changed();
 }
 
-function audit(action: string, detail: string): void {
-  const s = store();
-  s.audit.unshift({ id: `au-${Date.now().toString(36)}-${s.audit.length}`, action, detail, at: new Date().toISOString(), who: s.profile.name });
+export function isHubLoaded(): boolean {
+  return snap !== null;
+}
+
+function be(): HubBackend {
+  if (!backend) throw new Error("hub mutation before loadHub()");
+  return backend;
+}
+
+async function audit(action: string, detail: string): Promise<void> {
+  const s = requireSnap();
+  s.audit.unshift({
+    id: `au-${Date.now().toString(36)}-${s.audit.length}`,
+    action, detail, at: new Date().toISOString(), who: s.profile.name,
+  });
   s.audit = s.audit.slice(0, 100);
-  persist();
+  await be().audit(action, detail);
 }
 
 /* ---- reads/writes (preview now; live seam noted per function) ----------------- */
 
 export function getProfile(): EmployeeProfile {
-  return store().profile;
+  return requireSnap().profile;
 }
 
 export async function saveProfile(patch: Partial<EmployeeProfile>): Promise<EmployeeProfile> {
-  const s = store();
-  s.profile = { ...s.profile, ...patch };
-  persist();
-  audit("profile.updated", Object.keys(patch).join(", "));
-  if (!IS_PREVIEW) {
-    await sb().from("hub_employee_profiles").upsert({
-      user_id: s.profile.id, employee_number: s.profile.employeeNumber, job_title: s.profile.jobTitle,
-      location: s.profile.location, start_date: s.profile.startDate, vsc_status: s.profile.vscStatus,
-    }, { onConflict: "user_id" });
-  }
-  return s.profile;
+  const s = requireSnap();
+  const next = { ...s.profile, ...patch };
+  await be().saveProfile(patch, next);
+  s.profile = next;
+  await audit("profile.updated", Object.keys(patch).join(", "));
+  changed();
+  return next;
 }
 
 export function getProgress(): TaskProgress[] {
-  return store().progress;
+  return requireSnap().progress;
 }
 
 /**
@@ -268,7 +237,7 @@ export async function updateTask(taskKey: string, patch: { status?: TaskStatus; 
   if (task.courseKey && patch.status) {
     throw new Error("This item completes from Training; record it there once and it reflects here.");
   }
-  const s = store();
+  const s = requireSnap();
   let row = s.progress.find((p) => p.taskKey === taskKey);
   if (!row) {
     row = { taskKey, status: "NOT_STARTED", notes: "", applicable: true, completedAt: null };
@@ -283,35 +252,26 @@ export async function updateTask(taskKey: string, patch: { status?: TaskStatus; 
   }
   if (patch.notes !== undefined) row.notes = patch.notes;
   if (patch.applicable !== undefined) row.applicable = patch.applicable;
-  persist();
-  audit("onboarding.updated", `${task.title} → ${row.status}`);
-  maybeIssueOnboardingCertificate();
-  if (!IS_PREVIEW) {
-    await sb().from("hub_task_progress").upsert({
-      user_id: s.profile.id, task_key: taskKey, status: row.status, notes: row.notes, applicable: row.applicable,
-    }, { onConflict: "user_id,task_key" });
-  }
+  await be().upsertTask(row);
+  await audit("onboarding.updated", `${task.title} → ${row.status}`);
+  changed();
   return row;
 }
 
 /** Supervisor/admin sign-off: AWAITING_SIGNOFF → COMPLETED, recorded. */
-export async function signOffTask(taskKey: string): Promise<void> {
-  const s = store();
+export async function signOffTask(taskKey: string, subjectId?: string): Promise<void> {
+  const s = requireSnap();
   const row = s.progress.find((p) => p.taskKey === taskKey);
   if (!row || row.status !== "AWAITING_SIGNOFF") return;
   row.status = "COMPLETED";
   row.completedAt = new Date().toISOString();
-  persist();
-  audit("onboarding.signoff", HUB_TASKS.find((t) => t.key === taskKey)?.title ?? taskKey);
-  maybeIssueOnboardingCertificate();
-  if (!IS_PREVIEW) {
-    await sb().from("hub_task_progress").update({ status: "COMPLETED", signed_off_by: s.profile.id, signed_off_at: new Date().toISOString() })
-      .eq("task_key", taskKey);
-  }
+  await be().signOffTask(taskKey, subjectId ?? s.profile.id);
+  await audit("onboarding.signoff", HUB_TASKS.find((t) => t.key === taskKey)?.title ?? taskKey);
+  changed();
 }
 
 export function getTraining(): TrainingRecord[] {
-  return store().training;
+  return requireSnap().training;
 }
 
 export const REFRESH_DAYS = 365;
@@ -325,7 +285,7 @@ export function refreshDue(rec: TrainingRecord | undefined): { due: boolean; ref
 
 /** Completing a course also completes the matching onboarding task (replica behaviour). */
 export async function setCourseStatus(courseKey: string, status: TrainingRecord["status"]): Promise<void> {
-  const s = store();
+  const s = requireSnap();
   let rec = s.training.find((t) => t.courseKey === courseKey);
   if (!rec) {
     rec = { courseKey, status: "NOT_STARTED", completedAt: null };
@@ -333,74 +293,47 @@ export async function setCourseStatus(courseKey: string, status: TrainingRecord[
   }
   rec.status = status;
   rec.completedAt = status === "COMPLETED" ? new Date().toISOString() : null;
-  persist();
   const course = HUB_COURSES.find((c) => c.key === courseKey);
-  audit("training.updated", `${course?.title ?? courseKey} → ${status}`);
+  // Persist the training record BEFORE asking for the certificate: the database
+  // function checks for a COMPLETED row and would refuse otherwise.
+  await be().upsertTraining(rec);
+  await audit("training.updated", `${course?.title ?? courseKey} → ${status}`);
   // Every completed course earns its Summit credential. Numbered modules
   // carry their module number on the certificate, like the MEGBA program.
   if (course && status === "COMPLETED") {
     const competency = course.category === "Summit Module"
       ? `MODULE # ${String(course.order).padStart(2, "0")}`
       : `${course.kind} TRAINING${course.category ? ` · ${course.category.toUpperCase()}` : ""}`;
-    issueCertificate(course.title, competency);
+    const cert = await be().issueCourseCertificate(courseKey, course.title, competency);
+    if (cert && !s.certificates.some((c) => c.id === cert.id)) s.certificates.unshift(cert);
   }
-  // Course-linked onboarding tasks derive from this record; nothing is
-  // written twice. The certificate cascade re-checks with the derived state.
-  maybeIssueOnboardingCertificate();
-  if (!IS_PREVIEW) {
-    await sb().from("hub_employee_training").upsert({
-      user_id: s.profile.id, course_key: courseKey, status, completed_at: rec.completedAt,
-    }, { onConflict: "user_id,course_key" });
-  }
+  changed();
 }
 
 export function getPd(): PdRecord[] {
-  return store().pd;
+  return requireSnap().pd;
 }
 
 export async function addPd(entry: Omit<PdRecord, "id" | "verified">): Promise<void> {
-  const s = store();
-  s.pd.unshift({ ...entry, id: `pd-${Date.now().toString(36)}`, verified: false });
-  persist();
-  audit("pd.added", `${entry.title} (${entry.hours}h · ${entry.category})`);
-  if (!IS_PREVIEW) {
-    await sb().from("hub_pd_records").insert({
-      user_id: s.profile.id, title: entry.title, provider: entry.provider, hours: entry.hours, date: entry.date,
-      category: entry.category, ceu_units: entry.ceuUnits, file_name: entry.fileName, detection: entry.detection,
-    });
-  }
+  const s = requireSnap();
+  const row = await be().addPd(entry);
+  s.pd.unshift(row);
+  await audit("pd.added", `${entry.title} (${entry.hours}h · ${entry.category})`);
+  changed();
 }
 
 export async function verifyPd(id: string): Promise<void> {
-  const s = store();
+  const s = requireSnap();
   const r = s.pd.find((x) => x.id === id);
-  if (r) { r.verified = true; persist(); audit("pd.verified", r.title); }
-  if (!IS_PREVIEW) await sb().from("hub_pd_records").update({ verified: true }).eq("id", id);
+  if (!r) return;
+  await be().verifyPd(id);
+  r.verified = true;
+  await audit("pd.verified", r.title);
+  changed();
 }
 
 export function getCertificates(): Certificate[] {
-  return store().certificates;
-}
-
-/** Idempotent issuance by title, numbered SUMMIT-<year>-<seq> (sequential registry). */
-export function issueCertificate(title: string, competency: string): Certificate {
-  const s = store();
-  const existing = s.certificates.find((c) => c.title === title);
-  if (existing) return existing;
-  s.certSeq += 1;
-  const cert: Certificate = {
-    id: `cert-${Date.now().toString(36)}-${s.certSeq}`,
-    certNumber: `SUMMIT-${new Date().getFullYear()}-${String(s.certSeq).padStart(6, "0")}`,
-    title,
-    competency,
-    instructor: "", // unsigned Summit credential; the issuing organization renders from Settings
-    issuedDate: new Date().toISOString().slice(0, 10),
-    expiryDate: null,
-  };
-  s.certificates.unshift(cert);
-  persist();
-  audit("certificate.issued", `${cert.title} · ${cert.certNumber}`);
-  return cert;
+  return requireSnap().certificates;
 }
 
 /** Phase progress: required + applicable tasks of one week only. */
@@ -415,47 +348,71 @@ function weekComplete(week: 1 | 2, progress: TaskProgress[]): boolean {
 }
 
 /**
- * Certificate cascade: every completed phase earns its credential, up to full
- * completion: Phase 1 (Week 1) → Phase 2 (Week 2) → Module 00. Each is
- * idempotent; called after every task change.
+ * Which onboarding credentials this person has EARNED but has not been issued.
+ *
+ * The client used to mint these itself, with a registry number from a counter in
+ * localStorage. It cannot any more and should not: nothing here can verify "all
+ * required tasks are complete" in a way the person completing them cannot edit,
+ * and while the task template lives in code the database cannot verify it
+ * either. So a supervisor issues them, and this is what puts them in the queue.
+ * Migration 0008 has the full reasoning.
  */
-export function maybeIssueOnboardingCertificate(): Certificate | null {
-  const s = store();
-  if (weekComplete(1, s.progress)) issueCertificate(PHASE1_CERT_TITLE, "ONBOARDING · PHASE 1");
-  if (weekComplete(2, s.progress)) issueCertificate(PHASE2_CERT_TITLE, "ONBOARDING · PHASE 2");
-  if (isOnboardingComplete(s.progress)) return issueCertificate(ONBOARDING_CERT_TITLE, ONBOARDING_CERT_COMPETENCY);
-  return null;
+export function pendingOnboardingCertificates(
+  // effectiveProgress(), not raw progress. 12 of the 36 required Week 1 tasks
+  // and 3 of Week 2's are course-linked, and since course-linked tasks were made
+  // to DERIVE from the training record rather than store their own row, they are
+  // never COMPLETED in raw progress. weekComplete() read raw progress, so Week 1
+  // could never complete and the certificate cascade was unreachable - it had
+  // been dead since the single-source-of-truth commit.
+  progress: TaskProgress[] = effectiveProgress(),
+): { title: string; competency: string }[] {
+  const held = new Set(requireSnap().certificates.map((c) => c.title));
+  const earned: { title: string; competency: string }[] = [];
+  if (weekComplete(1, progress)) earned.push({ title: PHASE1_CERT_TITLE, competency: "ONBOARDING · PHASE 1" });
+  if (weekComplete(2, progress)) earned.push({ title: PHASE2_CERT_TITLE, competency: "ONBOARDING · PHASE 2" });
+  if (isOnboardingComplete(progress)) earned.push({ title: ONBOARDING_CERT_TITLE, competency: ONBOARDING_CERT_COMPETENCY });
+  return earned.filter((e) => !held.has(e.title));
+}
+
+/** Issue an earned onboarding certificate. Manager-only, enforced in the
+ *  database by hub_issue_certificate() -> hub_can_manage(); the button that
+ *  calls this is inside a HubGate that already requires SUPERVISOR or ADMIN,
+ *  but the gate that matters is the one the browser cannot reach past. */
+export async function issueOnboardingCertificate(title: string, competency: string): Promise<void> {
+  const s = requireSnap();
+  const cert = await be().issueOnboardingCertificate(s.profile.id, title, competency);
+  if (cert && !s.certificates.some((c) => c.id === cert.id)) s.certificates.unshift(cert);
+  await audit("certificate.issued", title);
+  changed();
 }
 
 export function getTimeOff(): TimeOffRequest[] {
-  return store().timeOff;
+  return requireSnap().timeOff;
 }
 
 export async function requestTimeOff(req: Omit<TimeOffRequest, "id" | "status" | "days">): Promise<void> {
-  const s = store();
+  const s = requireSnap();
   const days = inclusiveDays(req.startDate, req.endDate);
-  s.timeOff.unshift({ ...req, id: `to-${Date.now().toString(36)}`, days, status: "REQUESTED" });
-  persist();
-  audit("timeoff.requested", `${req.type} ${req.startDate} → ${req.endDate} (${days}d)`);
-  if (!IS_PREVIEW) {
-    await sb().from("hub_time_off_requests").insert({
-      user_id: s.profile.id, type: req.type, start_date: req.startDate, end_date: req.endDate, days, note: req.note,
-    });
-  }
+  const row = await be().requestTimeOff(req, days);
+  s.timeOff.unshift(row);
+  await audit("timeoff.requested", `${req.type} ${req.startDate} → ${req.endDate} (${days}d)`);
+  changed();
 }
 
 export async function decideTimeOff(id: string, decision: "APPROVED" | "DENIED" | "CANCELLED"): Promise<void> {
-  const s = store();
+  const s = requireSnap();
   const r = s.timeOff.find((x) => x.id === id);
-  if (r) { r.status = decision; persist(); audit("timeoff.decided", `${r.type} ${r.startDate} → ${decision}`); }
-  if (!IS_PREVIEW) await sb().from("hub_time_off_requests").update({ status: decision, decided_at: new Date().toISOString() }).eq("id", id);
+  if (!r) return;
+  await be().decideTimeOff(id, decision);
+  r.status = decision;
+  await audit("timeoff.decided", `${r.type} ${r.startDate} → ${decision}`);
+  changed();
 }
 
 export function getAudit(): AuditEvent[] {
-  return store().audit;
+  return requireSnap().audit;
 }
 
-/** Preview helper: switch the acting role to demo the admin/supervisor views. */
-export async function setRole(role: HubRole): Promise<void> {
-  await saveProfile({ role });
-}
+/* setRole() removed. The acting role is no longer something the browser can
+   write: it comes from profiles.role through lib/session.ts, and the preview
+   switcher lives in setPreviewRole(), which is a no-op outside preview. */

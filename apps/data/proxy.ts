@@ -2,13 +2,22 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 /**
- * Auth gate for the clinician portal (Next 16: file `proxy.ts`, export `proxy`).
+ * Auth gate for the clinician portal (apps/data, port 3002) — Next 16: file `proxy.ts`, export `proxy`.
  * Uses getUser() so the JWT is verified server-side, not just read from the
- * cookie. DEV_PREVIEW bypasses auth entirely so the portal can be explored with
- * fixtures and no Supabase project.
+ * cookie.
+ *
+ * NEXT_PUBLIC_DEV_PREVIEW=1 lets the portal be explored on fixtures with no
+ * Supabase project. It bypasses auth entirely, so it is gated twice here: the
+ * flag must be "1" AND the build must not be production. Previously the flag
+ * alone was enough, which meant one stray env value on the droplet would open
+ * the portal to the internet. The flag name is unchanged — 9 other call sites
+ * read it, and layout.tsx needs it client-side for the "Preview data" pill.
  */
+const PREVIEW_BYPASS =
+  process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
+
 export async function proxy(request: NextRequest) {
-  if (process.env.NEXT_PUBLIC_DEV_PREVIEW === "1") return NextResponse.next();
+  if (PREVIEW_BYPASS) return NextResponse.next();
 
   const response = NextResponse.next();
   const supabase = createServerClient(

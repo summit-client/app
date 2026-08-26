@@ -8,6 +8,7 @@ import "./app.css";
 import { themeInitScript } from "@summit/design";
 import { AppNav } from "@summit/nav";
 import { SupportButton } from "@/components/support";
+import { SessionProvider } from "@/components/session-provider";
 
 export const metadata: Metadata = {
   title: "MySummitHR",
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <AppNav activeKey="employee" />
+        <SessionProvider>
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
@@ -75,6 +77,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="content">{children}</main>
           </div>
         </div>
+        </SessionProvider>
       </body>
     </html>
   );

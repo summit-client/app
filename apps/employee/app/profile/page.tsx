@@ -1,11 +1,25 @@
 "use client";
 
+import { HubGate } from "@/components/hub-provider";
+
 import * as React from "react";
-import { getProfile, saveProfile, setRole, type HubRole } from "@/lib/hub";
+import { getProfile, saveProfile } from "@/lib/hub";
+import { IS_PREVIEW, setPreviewRole, type HubRole } from "@/lib/session";
+import { SessionGate, useIdentity, useSession } from "@/components/session-provider";
 
 /** My Profile: the fields that drive the hub. The start date sets every
  * onboarding and training deadline; role controls what the Admin page shows. */
 export default function ProfilePage() {
+  return (
+    <HubGate>
+      <Profile />
+    </HubGate>
+  );
+}
+
+function Profile() {
+  const identity = useIdentity();
+  const { reload } = useSession();
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => setReady(true), []);
@@ -32,16 +46,23 @@ export default function ProfilePage() {
           </select></div>
         <div className="field"><label htmlFor="pr-start">Start date</label>
           <input id="pr-start" type="date" className="input" defaultValue={p.startDate ?? ""} onBlur={(e) => patch("startDate", e.target.value)} /></div>
-        <div className="field"><label htmlFor="pr-role">Role (preview switcher)</label>
-          <select id="pr-role" className="input" value={p.role} onChange={(e) => void setRole(e.target.value as HubRole).then(force)}>
-            <option value="EMPLOYEE">Employee</option>
-            <option value="SUPERVISOR">Supervisor</option>
-            <option value="ADMIN">Admin</option>
-          </select></div>
+        {IS_PREVIEW ? (
+          <div className="field"><label htmlFor="pr-role">Role (preview switcher)</label>
+            <select id="pr-role" className="input" value={identity.role}
+              onChange={(e) => { setPreviewRole(e.target.value as HubRole); reload(); }}>
+              <option value="EMPLOYEE">Employee</option>
+              <option value="SUPERVISOR">Supervisor</option>
+              <option value="ADMIN">Admin</option>
+            </select></div>
+        ) : (
+          <div className="field"><label htmlFor="pr-role">Role</label>
+            <input id="pr-role" className="input" value={identity.role} readOnly disabled /></div>
+        )}
       </div>
       <p className="sub" style={{ marginTop: 10 }}>
-        In live mode identity comes from your Summit sign-in; the role switcher exists only in preview to demo the
-        supervisor and admin views.
+        {IS_PREVIEW
+          ? "Preview mode: the role switcher demos the supervisor and admin views. Signed in, your role comes from your Summit account and cannot be changed here."
+          : "Your role comes from your Summit account. An administrator changes it."}
       </p>
     </div>
   );

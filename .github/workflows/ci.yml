@@ -50,7 +50,7 @@ jobs:
           CHANGED=$(git diff --name-only origin/main...HEAD)
           echo "Changed files:"
           echo "$CHANGED"
-          for app in scheduler web data client; do
+          for app in scheduler web data client employee; do
             if echo "$CHANGED" | grep -q "^apps/$app/\|^packages/"; then
               echo "${app}_changed=true" >> $GITHUB_OUTPUT
             else
@@ -94,6 +94,24 @@ jobs:
       - name: Build client
         if: steps.changes.outputs.client_changed == 'true'
         run: pnpm --filter ./apps/client build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Build employee
+        # apps/employee is a stub until the employee hub merges: same guard as
+        # apps/data above, for the same reason. Self-healing: builds once the
+        # script exists. NOT in deploy.yml yet - it is added there when the app
+        # is actually brought online (env file present, pm2 process started),
+        # or `test -f .env.local` and `pm2 restart employee` fail every deploy.
+        if: steps.changes.outputs.employee_changed == 'true'
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./apps/employee/package.json').scripts && require('./apps/employee/package.json').scripts.build ? 0 : 1)"; then
+            pnpm --filter ./apps/employee build
+          else
+            echo "::notice::apps/employee has no build script (stub package) - skipping"
+          fi
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}

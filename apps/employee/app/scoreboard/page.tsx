@@ -1,10 +1,12 @@
 "use client";
 
+import { HrGate } from "@/components/hr-provider";
+
 import * as React from "react";
 import { getProfile, getProgress, getTraining, onboardingProgress, refreshDue } from "@/lib/hub";
 import { HUB_COURSES } from "@/lib/content";
 import { BAND_LABEL, CLINIC_DOMAINS, clinicAverage, computeAutoResponses, computeEcosystem, percentileBand, rankSites } from "@/lib/ecosystem";
-import { currentCycle, hr, saveHr } from "@/lib/hr-store";
+import { currentCycle, hr, saveLocal } from "@/lib/hr-store";
 import { BerryBurst, EggToast, ScoreRing, useEasterEggs, Volcano } from "@/components/grove";
 import { PerformanceCheckin, PeerReviews } from "@/components/checkin";
 
@@ -13,6 +15,14 @@ import { PerformanceCheckin, PeerReviews } from "@/components/checkin";
  * private band shown only to the person it belongs to.
  */
 export default function ScoreboardPage() {
+  return (
+    <HrGate>
+      <ScoreboardScreen />
+    </HrGate>
+  );
+}
+
+function ScoreboardScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [burst, setBurst] = React.useState(false);
@@ -41,7 +51,7 @@ export default function ScoreboardPage() {
     if (!row) return;
     const was = clinicAverage(row.domains) >= 85;
     row.domains[key] = value;
-    saveHr();
+    saveLocal();
     if (!was && clinicAverage(row.domains) >= 85) {
       setBurst(true);
       setTimeout(() => setBurst(false), 2800);
@@ -52,7 +62,7 @@ export default function ScoreboardPage() {
   const addSite = (name: string) => {
     if (!name.trim() || s.sites.some((x) => x.site === name)) return;
     s.sites.push({ site: name.trim(), domains: Object.fromEntries(CLINIC_DOMAINS.map((d) => [d.key, 0])) });
-    saveHr();
+    saveLocal();
     force();
   };
 

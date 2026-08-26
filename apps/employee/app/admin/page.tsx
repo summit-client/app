@@ -1,13 +1,17 @@
 "use client";
 
+import { HrGate } from "@/components/hr-provider";
+
 import * as React from "react";
 import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/settings";
 import { HUB_TASKS } from "@/lib/content";
-import { hr, hrAudit, saveHr, type StaffMember } from "@/lib/hr-store";
+import { directory, hr } from "@/lib/hr-store";
 import {
   decideTimeOff, getAudit, getPd, getProfile, getProgress, getTimeOff, getTraining,
-  onboardingProgress, signOffTask, verifyPd,
+  issueOnboardingCertificate, onboardingProgress, pendingOnboardingCertificates,
+  signOffTask, verifyPd,
 } from "@/lib/hub";
+import { SessionGate, useIdentity } from "@/components/session-provider";
 
 /**
  * Admin: the supervisor and admin console with team directory, pending sign-off
@@ -16,29 +20,33 @@ import {
  * live mode; the preview store holds one employee).
  */
 export default function AdminPage() {
+  // Gate on profiles.role via RLS-backed identity, not on a role the browser
+  // holds. The previous check read a role out of localStorage that My Profile
+  // let anyone set, so any signed-in employee could open this console.
+  return (
+    <HrGate requires={["SUPERVISOR", "ADMIN"]}>
+      <AdminConsole />
+    </HrGate>
+  );
+}
+
+function AdminConsole() {
+  const identity = useIdentity();
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [tab, setTab] = React.useState<"queues" | "staff" | "settings">("queues");
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading admin…</p>;
 
-  const profile = getProfile();
-  if (profile.role === "EMPLOYEE") {
-    return (
-      <div>
-        <h1 className="h-page">Admin</h1>
-        <div className="card card-pad" style={{ marginTop: 16 }}>
-          <p className="sub">This area is for supervisors and administrators. In preview, switch your role from My Profile to demo it.</p>
-        </div>
-      </div>
-    );
-  }
+  // The record on screen still comes from the hub store; only the ROLE that
+  // decides what this console exposes comes from identity.
+  const profile = { ...getProfile(), role: identity.role };
 
   if (tab !== "queues") {
     return (
       <div>
         <AdminTabs tab={tab} setTab={setTab} role={profile.role} />
-        {tab === "staff" ? <StaffTab onChange={force} /> : <BackendSettingsTab />}
+        {tab === "staff" ? <StaffTab /> : <BackendSettingsTab />}
       </div>
     );
   }
@@ -50,6 +58,11 @@ export default function AdminPage() {
     .map((p) => ({ ...p, task: HUB_TASKS.find((t) => t.key === p.taskKey) }));
   const pendingTimeOff = getTimeOff().filter((r) => r.status === "REQUESTED");
   const unverifiedPd = getPd().filter((r) => !r.verified);
+  // Onboarding certificates are no longer minted in the browser: nothing there
+  // could verify they were earned, and the registry number came from a counter
+  // in localStorage. Earned-but-unissued ones queue here for a supervisor.
+  const pendingCerts = pendingOnboardingCertificates();
+
   const trainingDue = (() => {
     const done = new Set(getTraining().filter((t) => t.status === "COMPLETED").map((t) => t.courseKey));
     return HUB_TASKS.filter((t) => t.courseKey && !done.has(t.courseKey)).length;
@@ -94,6 +107,22 @@ export default function AdminPage() {
           </div>
         ))}
         {!pendingSignoffs.length ? <div className="card card-pad"><p className="sub">Nothing awaiting sign-off.</p></div> : null}
+      </div>
+
+      <h2 className="section-title">Certificates to issue {pendingCerts.length ? <span className="pill warn">{pendingCerts.length}</span> : null}</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {pendingCerts.map((c) => (
+          <div key={c.title} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <b style={{ fontSize: "var(--text-sm)" }}>{c.title}</b>
+              <p className="trend" style={{ marginTop: 4 }}>{profile.name} · {c.competency} · earned, awaiting issue</p>
+            </div>
+            <button className="btn" onClick={() => void issueOnboardingCertificate(c.title, c.competency).then(force)}>
+              Issue certificate
+            </button>
+          </div>
+        ))}
+        {!pendingCerts.length ? <div className="card card-pad"><p className="sub">No certificates waiting to be issued.</p></div> : null}
       </div>
 
       <h2 className="section-title">Time-off requests {pendingTimeOff.length ? <span className="pill warn">{pendingTimeOff.length}</span> : null}</h2>
@@ -164,127 +193,58 @@ const PERMISSION_KEYS = ["Onboarding", "Training", "Credentials", "Scorecards", 
 const ACCESS_LEVELS = ["EMPLOYEE", "SUPERVISOR", "ADMIN"] as const;
 
 /**
- * Staff & Teams. The one writer of the staff registry: everything else (peer
- * group, recognition, reviews) reads from it. Adding a person here is what
- * puts them in the ecosystem.
+ * Staff & Teams: the clinic directory, read from `profiles`.
+ *
+ * This used to be a form. Typing a name pushed a row into this browser's
+ * localStorage and marked it "INVITED", and the note underneath claimed that
+ * live mode "sends a Summit invitation and these rows live in profiles with
+ * RLS". None of that existed - no account was created, no invitation sent, and
+ * nobody else ever saw the entry.
+ *
+ * Recognition, peer review and the scoreboard all need a real auth user
+ * (recognitions.to_user and scorecard_responses.rater are uuid references), so
+ * the directory now shows who actually has an account, and says plainly what is
+ * needed to add someone. Provisioning belongs beside auth as a platform
+ * capability, not in this tab.
  */
-function StaffTab({ onChange }: { onChange: () => void }) {
-  const s = hr();
-  const [f, setF] = React.useState({ name: "", email: "", employeeNumber: "", role: "Supervised Clinician", team: "Clinical Services", site: "", accessLevel: "EMPLOYEE" as StaffMember["accessLevel"], supervisor: "" });
-  const [editing, setEditing] = React.useState<string | null>(null);
-
-  const add = () => {
-    s.team.push({ ...f, permissions: [], status: "INVITED" });
-    saveHr();
-    hrAudit("staff.added", `${f.name} (${f.role}, ${f.accessLevel})`);
-    setF({ ...f, name: "", email: "", employeeNumber: "" });
-    onChange();
-  };
-  const patch = (name: string, changes: Partial<StaffMember>) => {
-    const m = s.team.find((x) => x.name === name);
-    if (!m) return;
-    Object.assign(m, changes);
-    saveHr();
-    hrAudit("staff.updated", `${name}: ${Object.keys(changes).join(", ")}`);
-    onChange();
-  };
-  const togglePermission = (name: string, key: string) => {
-    const m = s.team.find((x) => x.name === name);
-    if (!m) return;
-    m.permissions = m.permissions?.includes(key) ? m.permissions.filter((p) => p !== key) : [...(m.permissions ?? []), key];
-    saveHr();
-    hrAudit("staff.permissions", `${name}: ${key}`);
-    onChange();
-  };
+function StaffTab() {
+  const people = directory();
 
   return (
     <div style={{ marginTop: 16 }}>
-      <h2 className="section-title" style={{ marginTop: 0 }}>Add staff</h2>
-      <div className="card card-pad" style={{ display: "grid", gap: 12 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <div className="field" style={{ minWidth: 180 }}><label htmlFor="st-name">Name</label>
-            <input id="st-name" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-          <div className="field" style={{ minWidth: 200 }}><label htmlFor="st-email">Email</label>
-            <input id="st-email" className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
-          <div className="field" style={{ width: 130 }}><label htmlFor="st-num">Employee #</label>
-            <input id="st-num" className="input" value={f.employeeNumber} onChange={(e) => setF({ ...f, employeeNumber: e.target.value })} /></div>
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <div className="field"><label htmlFor="st-role">Role</label>
-            <input id="st-role" className="input" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} /></div>
-          <div className="field"><label htmlFor="st-team">Team</label>
-            <input id="st-team" className="input" value={f.team} onChange={(e) => setF({ ...f, team: e.target.value })} /></div>
-          <div className="field"><label htmlFor="st-site">Site</label>
-            <input id="st-site" className="input" value={f.site} onChange={(e) => setF({ ...f, site: e.target.value })} placeholder="e.g. Bowmanville" /></div>
-          <div className="field"><label htmlFor="st-access">Access</label>
-            <select id="st-access" className="input" value={f.accessLevel} onChange={(e) => setF({ ...f, accessLevel: e.target.value as StaffMember["accessLevel"] })}>
-              {ACCESS_LEVELS.map((a) => <option key={a} value={a}>{a.toLowerCase()}</option>)}
-            </select></div>
-          <div className="field"><label htmlFor="st-sup">Supervisor</label>
-            <input id="st-sup" className="input" list="supervisors" value={f.supervisor} onChange={(e) => setF({ ...f, supervisor: e.target.value })} />
-            <datalist id="supervisors">{s.team.filter((m) => m.accessLevel !== "EMPLOYEE").map((m) => <option key={m.name} value={m.name} />)}</datalist></div>
-        </div>
-        <div><button className="btn" onClick={add} disabled={!f.name.trim()}>Add staff member</button></div>
-      </div>
-
-      <h2 className="section-title">Staff</h2>
+      <h2 className="section-title" style={{ marginTop: 0 }}>Clinic directory</h2>
       <div className="card table-wrap">
         <table className="data">
-          <thead><tr><th>Name</th><th>Role</th><th>Team</th><th>Site</th><th>Access</th><th>Supervisor</th><th>Status</th><th aria-label="Actions" /></tr></thead>
+          <thead><tr><th>Name</th><th>Access</th><th>Supervisor</th></tr></thead>
           <tbody>
-            {s.team.map((m) => (
-              <tr key={m.name}>
-                <td><b>{m.name}</b>{m.email ? <div className="trend">{m.email}</div> : null}</td>
-                <td>{m.role}</td>
-                <td>
-                  <input className="input" style={{ width: 140, padding: "4px 8px" }} value={m.team} aria-label={`Team for ${m.name}`}
-                    onChange={(e) => patch(m.name, { team: e.target.value })} />
-                </td>
-                <td>{m.site ?? "—"}</td>
-                <td>
-                  <select className="input" style={{ width: "auto", padding: "4px 8px" }} value={m.accessLevel ?? "EMPLOYEE"} aria-label={`Access for ${m.name}`}
-                    onChange={(e) => patch(m.name, { accessLevel: e.target.value as StaffMember["accessLevel"] })}>
-                    {ACCESS_LEVELS.map((a) => <option key={a} value={a}>{a.toLowerCase()}</option>)}
-                  </select>
-                </td>
-                <td>
-                  <input className="input" style={{ width: 130, padding: "4px 8px" }} value={m.supervisor ?? ""} aria-label={`Supervisor for ${m.name}`}
-                    onChange={(e) => patch(m.name, { supervisor: e.target.value })} />
-                </td>
-                <td><span className={`pill ${m.status === "ACTIVE" ? "good" : m.status === "DISABLED" ? "danger" : "warn"}`}>{(m.status ?? "ACTIVE").toLowerCase()}</span></td>
-                <td style={{ whiteSpace: "nowrap" }}>
-                  <button className="btn ghost" onClick={() => setEditing(editing === m.name ? null : m.name)}>Permissions</button>
-                  <button className="btn ghost" onClick={() => patch(m.name, { status: m.status === "DISABLED" ? "ACTIVE" : "DISABLED" })}>
-                    {m.status === "DISABLED" ? "Enable" : "Disable"}
-                  </button>
-                </td>
+            {people.map((m) => (
+              <tr key={m.id}>
+                <td><b>{m.name}</b></td>
+                <td><span className="pill">{m.accessLevel.toLowerCase()}</span></td>
+                <td>{people.find((x) => x.id === m.supervisorId)?.name ?? "\u2014"}</td>
               </tr>
             ))}
-            {!s.team.length ? <tr><td colSpan={8} style={{ color: "var(--muted)" }}>No staff yet. Add the first person above.</td></tr> : null}
+            {!people.length ? (
+              <tr><td colSpan={3} style={{ color: "var(--muted)" }}>
+                No accounts found for this clinic.
+              </td></tr>
+            ) : null}
           </tbody>
         </table>
       </div>
-
-      {editing ? (
-        <div className="card card-pad" style={{ marginTop: 12 }}>
-          <b style={{ fontSize: "var(--text-sm)" }}>Manage permissions for {editing}</b>
-          <p className="sub">What this person may manage beyond their own records. Access level controls the portal views; these refine module rights.</p>
-          <div className="chip-row" style={{ marginTop: 10 }}>
-            {PERMISSION_KEYS.map((k) => {
-              const on = s.team.find((x) => x.name === editing)?.permissions?.includes(k);
-              return (
-                <button key={k} className={`mode-tab ${on ? "active" : ""}`} aria-pressed={on} onClick={() => togglePermission(editing, k)}>
-                  {k}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-      <p className="sub" style={{ marginTop: 10 }}>
-        In live mode, adding staff sends a Summit invitation and these rows live in profiles with RLS. This registry is
-        the one source the peer group, reviews and recognition read from.
-      </p>
+      <div className="card card-pad" style={{ marginTop: 12 }}>
+        <b style={{ fontSize: "var(--text-sm)" }}>Adding someone</b>
+        <p className="sub" style={{ marginTop: 6 }}>
+          Everyone here has a Summit account. Recognition, peer review and scorecards all record who did what
+          against that account, so a person has to exist before they can appear in them.
+        </p>
+        <p className="sub" style={{ marginTop: 6 }}>
+          Accounts are created centrally for the whole platform, not from this tab \u2014 the same account signs
+          into the scheduler and the clinician portal. Until self-serve invitations exist, an administrator
+          creates the account and sets <code>profiles.clinic_id</code>, <code>role</code> and{" "}
+          <code>supervisor_id</code>; the person then appears here automatically.
+        </p>
+      </div>
     </div>
   );
 }
