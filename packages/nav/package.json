@@ -9,16 +9,12 @@
       "default": "./src/index.tsx"
     }
   },
-  "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch"
-  },
   "peerDependencies": {
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@types/node": "^22",
     "@types/react": "19.2.14",
-    "tsup": "^8.5.1",
     "typescript": "6.0.2"
   }
 }
