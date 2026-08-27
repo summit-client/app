@@ -12,7 +12,10 @@ import { createServerClient } from "@supabase/ssr";
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_TOKENS_CAP = 4096;
 const MAX_PROMPT_CHARS = 60_000;
-const STAFF_ROLES = new Set(["admin", "scheduler", "supervisor", "clinician", "staff"]);
+// `profiles.role` values allowed to call this route: auth_is_staff()'s three,
+// plus scheduler, which needs matching without clinical read. "staff" was in
+// this set and is not a role the database issues.
+const STAFF_ROLES = new Set(["admin", "scheduler", "supervisor", "clinician"]);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
