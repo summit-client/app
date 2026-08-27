@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["."]
+}
