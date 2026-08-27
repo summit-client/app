@@ -1,39 +1,26 @@
-const SCHEDULER = process.env.NEXT_PUBLIC_URL_SCHEDULER ?? 'https://scheduler.summitclient.io'
-const DATA      = process.env.NEXT_PUBLIC_URL_DATA      ?? 'https://data.summitclient.io'
-const EMPLOYEE  = process.env.NEXT_PUBLIC_URL_EMPLOYEE  ?? 'https://employee.summitclient.io'
-const CLIENT    = process.env.NEXT_PUBLIC_URL_CLIENT    ?? 'https://client.summitclient.io'
-
 /**
- * The portal URLs, environment-overridable. `packages/nav/src/portals.config.ts`
- * hardcodes the same four with no override, so the platform encodes this map
- * twice — set NEXT_PUBLIC_URL_EMPLOYEE and sign-in honours it while the portal
- * bar does not. Exported so there is somewhere for nav to read from when that
- * gets unified.
- */
-export const PORTAL_URLS = { SCHEDULER, DATA, EMPLOYEE, CLIENT } as const
-
-/**
- * Where each `profiles.role` lands after sign-in. Keys are the vocabulary
- * migration 0001 defines on the column — nothing else is a role.
+ * Where each `profiles.role` lands after sign-in.
  *
- * This used to send `staff` to the employee portal. `staff` is not a role the
- * database issues, and apps/employee has no mapping for it, so the one role
- * pointed at that portal would have been turned away by it. `supervisor` was
- * missing entirely and fell through to the scheduler.
+ * Both the map and the URLs come from @summit/portals now, so this file no
+ * longer holds a second copy of either. It used to hold both: four URL
+ * constants the portal bar hardcoded independently, and a role map that sent
+ * `staff` — not a role the database issues — to the employee portal while
+ * omitting `supervisor` entirely.
  *
- * Clinical roles land in the clinician portal because that is their daily work
- * — caseload, review queue, supervision. MySummitHR is where they go for
- * onboarding, training and time off, which is a visit rather than a home, so
- * it is reached from the portal bar rather than being anyone's landing page.
+ * See `homePortal` in the registry for why clinical roles land in the clinician
+ * portal and MySummitHR is nobody's landing page.
  */
-export const ROLE_REDIRECTS: Record<string, string> = {
-  admin:      SCHEDULER,
-  scheduler:  SCHEDULER,
-  supervisor: DATA,
-  clinician:  DATA,
-  client:     CLIENT,
-}
 
+import { APP_ROLES, homeUrlFor } from '@summit/portals'
+
+export { homeUrlFor }
+
+/** Every role's landing URL, resolved for this environment. */
+export const ROLE_REDIRECTS: Record<string, string> = Object.fromEntries(
+  APP_ROLES.map((role) => [role, homeUrlFor(role)]),
+)
+
+/** Falls back to the scheduler for a role the registry does not know. */
 export function redirectForRole(role?: string | null) {
-  return (role && ROLE_REDIRECTS[role]) || SCHEDULER
+  return homeUrlFor(role)
 }

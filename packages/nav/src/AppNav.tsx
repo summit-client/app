@@ -1,10 +1,31 @@
 import React from 'react';
-import { portals } from './portals.config';
+import { type AppRole, portals, portalsFor } from './portals.config';
 
 interface AppNavProps {
   activeKey: string;
   /** When set, a settings cogwheel sits at the right of the bar. */
   settingsHref?: string;
+  /**
+   * The viewer's `profiles.role`. Identity resolves asynchronously (it's a
+   * Supabase round trip), so callers pass `undefined` while it's in flight and
+   * the real value once it lands - `role` is not an optional extra, every
+   * caller is expected to wire it up as it gains identity.
+   *
+   * `undefined` (still resolving) shows only `activeKey`: the viewer is
+   * already on that portal, so it is certainly permitted, and this is what
+   * stops the bar from flashing all four portals - including ones the role
+   * will turn out not to admit - before the role is known. A parent briefly
+   * seeing "Clinician Portal" while the family portal's identity call is in
+   * flight is the exact leak this guards against.
+   *
+   * `null` gets the same treatment, not `portalsFor(null)`'s empty list.
+   * `null` means identity resolved with no admitted role - NO_PROFILE, or a
+   * role string the registry doesn't recognise - and a zero-portal bar reads
+   * as broken chrome, not as a gate; the screen underneath already carries
+   * `explainProblem()`'s explanation. Only a real `AppRole` narrows the bar
+   * to `portalsFor(role)`.
+   */
+  role?: AppRole | null;
 }
 
 /**
@@ -12,7 +33,10 @@ interface AppNavProps {
  * Client so staff move between them from any screen. Colours come from the
  * shared tokens, so it follows the theme and accent like everything else.
  */
-export function AppNav({ activeKey, settingsHref }: AppNavProps) {
+export function AppNav({ activeKey, settingsHref, role }: AppNavProps) {
+  const visible = role == null
+    ? portals.filter((p) => p.key === activeKey)
+    : portalsFor(role);
   return (
     <nav
       aria-label="Summit portals"
@@ -32,7 +56,7 @@ export function AppNav({ activeKey, settingsHref }: AppNavProps) {
         borderBottom: '1px solid var(--brand-600, #28B4A6)',
       }}
     >
-      {portals.map((p) => {
+      {visible.map((p) => {
         const isActive = p.key === activeKey;
         return (
           <a

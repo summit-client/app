@@ -6,7 +6,7 @@ import "@summit/design/components.css";
 import "@summit/design/motion.css";
 import "./app.css";
 import { themeInitScript } from "@summit/design";
-import { AppNav } from "@summit/nav";
+import { PortalBar } from "@/components/portal-bar";
 import { SupportButton } from "@/components/support";
 import { SessionProvider } from "@/components/session-provider";
 
@@ -42,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
-        <AppNav activeKey="employee" />
+        <PortalBar activeKey="employee" />
         <SessionProvider>
         <div className="shell">
           <aside className="sidebar">
