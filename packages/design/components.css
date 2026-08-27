@@ -78,12 +78,16 @@
 .trend { font-variant-numeric: tabular-nums; font-size: var(--text-xs); color: var(--muted); }
 .trend b { color: var(--ink); font-weight: 600; }
 
-/* ── Card ─────────────────────────────────────────────────────────────────── */
+/* ── Card ─────────────────────────────────────────────────────────────────
+   --radius-lg / --shadow-card are what data and employee were each already
+   redefining this rule to, immediately after importing this file. The shared
+   card therefore never rendered anywhere. The apps' copies are gone and the
+   value they agreed on lives here. */
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-xs);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 .card-pad { padding: var(--space-4) var(--space-5); }
 

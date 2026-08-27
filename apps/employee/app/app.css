@@ -3,7 +3,6 @@
 .shell { display: flex; min-height: calc(100vh - var(--portalnav-h)); }
 
 /* primitives */
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); }
 
 /* big touch targets for live collection */
 .tap-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
@@ -241,10 +240,6 @@
 .task-dot.progress { border-color: var(--accent); background: var(--accent-soft); }
 .task-dot.await { border-color: var(--warn); background: var(--warn-soft); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.nav-group {
-  display: block; margin: var(--space-4) var(--space-2) 4px; font-size: 10px; font-weight: 700;
-  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); opacity: 0.75;
-}
 .stat-row { display: flex; gap: var(--space-5); flex-wrap: wrap; padding: var(--space-4) 0; border-bottom: 1px solid var(--line); }
 .stat { min-width: 140px; }
 .stat .v { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
