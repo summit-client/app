@@ -19,7 +19,8 @@
     "@summit/clinical-ai": "workspace:*",
     "@summit/settings": "workspace:*",
     "@summit/nav": "workspace:*",
-    "@summit/portals": "workspace:*"
+    "@summit/portals": "workspace:*",
+    "@summit/session": "workspace:*"
   },
   "devDependencies": {
     "typescript": "6.0.2",

@@ -29,6 +29,9 @@ importers:
       '@summit/portals':
         specifier: workspace:*
         version: link:../../packages/portals
+      '@summit/session':
+        specifier: workspace:*
+        version: link:../../packages/session
       '@supabase/ssr':
         specifier: ^0.10.3
         version: 0.10.3(@supabase/supabase-js@2.106.1)
@@ -69,6 +72,9 @@ importers:
       '@summit/portals':
         specifier: workspace:*
         version: link:../../packages/portals
+      '@summit/session':
+        specifier: workspace:*
+        version: link:../../packages/session
       '@summit/settings':
         specifier: workspace:*
         version: link:../../packages/settings

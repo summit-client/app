@@ -10,7 +10,7 @@ export default function App({ Component, pageProps }) {
 
   return (
     <>
-      <AppNav activeKey="scheduler" />
+      <AppNav activeKey="scheduler" role={user?.role} />
       <UserContext.Provider value={user}>
         <Component {...pageProps} signOut={signOut} />
       </UserContext.Provider>
