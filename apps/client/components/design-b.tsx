@@ -313,7 +313,9 @@ export default function DesignB({
                         </div>
 
                         <span
-                          className={`${styles.status} ${styles.confirmed}`}
+                          className={`${styles.status} ${
+                            styles[statusClass(session.status)]
+                          }`}
                         >
                           {formatStatus(
                             session.status
@@ -468,6 +470,17 @@ function formatSessionTime(
   return `${displayHour}:${String(
     safeMinute
   ).padStart(2, "0")} ${period}`;
+}
+
+function statusClass(status: string | null) {
+  switch (status?.toLowerCase()) {
+    case "cancelled":
+      return "cancelled";
+    case "completed":
+      return "completed";
+    default:
+      return "confirmed";
+  }
 }
 
 function formatStatus(status: string | null) {
