@@ -93,7 +93,14 @@
   --surface-2: oklch(96.5% 0.012 var(--hue));
   --ink: oklch(21% 0.042 var(--hue-deep));
   --muted: oklch(47% 0.048 var(--hue-deep));
-  --faint: oklch(63% 0.034 var(--hue));
+  /* Two text tones, not three. --faint was a third step below --muted, but at
+     the 11px it carries — captions, helper text, the uppercase section labels —
+     it measured 3.0:1 in light and 3.8:1 in dark against the surfaces it lands
+     on, under the 4.5:1 small-text standard. Darkening it enough to pass put it
+     within a few points of --muted anyway, so it resolves to --muted and the
+     hierarchy is ink over muted. The name is kept because a hundred rules use
+     it and because a third tone can come back here if one is ever wanted. */
+  --faint: var(--muted);
   --line: oklch(91% 0.012 var(--hue));
   --line-strong: oklch(84% 0.018 var(--hue));
   --scrim: oklch(21% 0.042 var(--hue-deep) / 0.45);
@@ -106,15 +113,19 @@
   --shadow-xl: 0 24px 48px oklch(21% 0.042 var(--hue-deep) / 0.14), 0 8px 16px oklch(21% 0.042 var(--hue-deep) / 0.06);
   --shadow-card: var(--shadow-sm);
 
-  /* ── Data accents: the four the Scheduler cycles across stat cards ─────── */
-  --stat-1: oklch(58% 0.130 250);
-  --stat-2: oklch(72% 0.115 165);
-  --stat-3: oklch(72% 0.145 65);
-  --stat-4: oklch(58% 0.155 355);
+  /* ── Data accents: the four the Scheduler cycles across stat cards ───────
+     components.css colours the big tile numbers with these, so they are large
+     text as well as chart fills and have to clear 3:1 on the light surfaces.
+     2 and 3 sat at 72% and measured 2.03 and 2.20; they join 1 and 4 in the
+     high 50s / low 60s, which also evens out a set that was split 58/72. */
+  --stat-1: oklch(58%   0.130 250);
+  --stat-2: oklch(61.5% 0.115 165);
+  --stat-3: oklch(64%   0.145 65);
+  --stat-4: oklch(58%   0.155 355);
 
   /* ── Semantic status (accent-invariant) ────────────────────────────────── */
-  --good: oklch(52% 0.148 152);   --good-soft: oklch(94% 0.040 152);
-  --warn: oklch(58% 0.130 68);    --warn-soft: oklch(95% 0.045 68);
+  --good: oklch(50.5% 0.148 152); --good-soft: oklch(94% 0.040 152);
+  --warn: oklch(53.5% 0.130 68);  --warn-soft: oklch(95% 0.045 68);
   --danger: oklch(54% 0.205 25);  --danger-soft: oklch(96% 0.035 25);
   --info: oklch(52% 0.130 250);   --info-soft: oklch(95% 0.030 250);
 
@@ -168,7 +179,7 @@
     --surface-2: oklch(25% 0.024 var(--hue-deep));
     --ink: oklch(94% 0.012 var(--hue));
     --muted: oklch(72% 0.026 var(--hue));
-    --faint: oklch(58% 0.026 var(--hue));
+    --faint: var(--muted);          /* two tones — see the note in :root */
     --line: oklch(30% 0.022 var(--hue-deep));
     --line-strong: oklch(38% 0.026 var(--hue-deep));
     --scrim: oklch(12% 0.020 var(--hue-deep) / 0.62);
@@ -207,7 +218,7 @@
   --surface-2: oklch(25% 0.024 var(--hue-deep));
   --ink: oklch(94% 0.012 var(--hue));
   --muted: oklch(72% 0.026 var(--hue));
-  --faint: oklch(58% 0.026 var(--hue));
+  --faint: var(--muted);          /* two tones — see the note in :root */
   --line: oklch(30% 0.022 var(--hue-deep));
   --line-strong: oklch(38% 0.026 var(--hue-deep));
   --scrim: oklch(12% 0.020 var(--hue-deep) / 0.62);
