@@ -1,0 +1,89 @@
+/* ============================================================================
+   Summit motion — restrained editorial.
+
+   Motion guides attention and then gets out of the way. Every effect runs
+   once. Nothing loops, nothing parallaxes, nothing hijacks the scroll, and
+   entrances fire only on section-level moments that deserve a beat.
+
+   One curve. Two durations. One gesture.
+     curve      cubic-bezier(0.22, 1, 0.36, 1) — arrives fast, settles soft
+     feedback   200ms  hover, toggles, state changes
+     entrance   600ms  fade up 24px, once, on reveal
+     stagger    120ms per item, five items maximum
+
+   Content is never hidden unless JavaScript is present to reveal it: the
+   hidden state hangs off .motion-ready, which the inline theme script sets.
+   Without scripting, or with reduced motion, everything is simply visible.
+   ========================================================================== */
+
+:root {
+  --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-feedback: 200ms;
+  --dur-entrance: 600ms;
+  --stagger: 120ms;
+}
+
+/* ── Entrance: one gesture, fade plus a 24px rise ─────────────────────────── */
+.motion-ready .reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity var(--dur-entrance) var(--ease-editorial),
+    transform var(--dur-entrance) var(--ease-editorial);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+.motion-ready .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+  will-change: auto;
+}
+
+/* ── Interactive feedback: a 2px lift and a colour change, nothing more ───── */
+.lift { transition: transform var(--dur-feedback) var(--ease-editorial),
+                    background var(--dur-feedback) var(--ease-editorial),
+                    border-color var(--dur-feedback) var(--ease-editorial),
+                    color var(--dur-feedback) var(--ease-editorial); }
+.lift:hover { transform: translateY(-2px); }
+
+/* ── Signature flourish: one per page, a drawn underline ──────────────────── */
+.flourish { position: relative; display: inline-block; }
+.flourish::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: -6px;
+  height: 2px; width: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+.motion-ready .flourish.is-visible::after {
+  animation: drawUnderline var(--dur-entrance) var(--ease-editorial) 120ms forwards;
+}
+@keyframes drawUnderline { to { transform: scaleX(1); } }
+/* The flourish observes itself, so a title that never scrolls still draws. */
+/* Without scripting the underline is simply drawn. */
+html:not(.motion-ready) .flourish::after { transform: scaleX(1); }
+
+/* ── Reduced motion: instant, and never hidden ────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .motion-ready .reveal,
+  .motion-ready .reveal.is-visible {
+    opacity: 1 !important;
+    transform: none !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+  .flourish::after,
+  .motion-ready .flourish.is-visible::after {
+    animation: none !important;
+    transform: scaleX(1) !important;
+  }
+  .lift:hover { transform: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import * as React from "react";
 import Link from "next/link";
 import "@summit/design/tokens.css";
+import "@summit/design/components.css";
+import "@summit/design/motion.css";
 import "./app.css";
 import { themeInitScript } from "@summit/design";
+import { AppNav } from "@summit/nav";
 import { SupportButton } from "@/components/support";
 import { SessionProvider } from "@/components/session-provider";
 
@@ -12,22 +15,22 @@ export const metadata: Metadata = {
   description: "Performance, professional development, credentials, documents and team collaboration.",
 };
 
-const NAV: { href: string; label: string; group?: string }[] = [
-  { href: "/", label: "Dashboard" },
-  { href: "/scoreboard", label: "Scoreboard", group: "Growth" },
-  { href: "/team", label: "My Team", group: "Growth" },
-  { href: "/recognition", label: "Recognition", group: "Growth" },
-  { href: "/career", label: "Career Progress", group: "Growth" },
-  { href: "/pd", label: "Professional Development", group: "Professional" },
-  { href: "/credentials", label: "My Credentials", group: "Professional" },
-  { href: "/training", label: "Training", group: "Professional" },
-  { href: "/certificates", label: "Certificates", group: "Professional" },
-  { href: "/documents", label: "My Documents", group: "Records" },
-  { href: "/onboarding", label: "My Onboarding", group: "Records" },
-  { href: "/policies", label: "Policies & Handbook", group: "Records" },
-  { href: "/time-off", label: "Time Off", group: "Records" },
-  { href: "/profile", label: "My Profile", group: "Records" },
-  { href: "/help", label: "Help", group: "Records" },
+const NAV: { href: string; label: string; group?: string; icon?: string }[] = [
+  { href: "/", label: "Dashboard", icon: "▦" },
+  { href: "/scoreboard", label: "Scoreboard", icon: "◈", group: "Growth" },
+  { href: "/team", label: "My Team", icon: "◎", group: "Growth" },
+  { href: "/recognition", label: "Recognition", icon: "✦", group: "Growth" },
+  { href: "/career", label: "Career Progress", icon: "▲", group: "Growth" },
+  { href: "/pd", label: "Professional Development", icon: "⊞", group: "Professional" },
+  { href: "/credentials", label: "My Credentials", icon: "⊙", group: "Professional" },
+  { href: "/training", label: "Training", icon: "◇", group: "Professional" },
+  { href: "/certificates", label: "Certificates", icon: "❖", group: "Professional" },
+  { href: "/documents", label: "My Documents", icon: "▤", group: "Records" },
+  { href: "/onboarding", label: "My Onboarding", icon: "◉", group: "Records" },
+  { href: "/policies", label: "Policies & Handbook", icon: "▣", group: "Records" },
+  { href: "/time-off", label: "Time Off", icon: "◷", group: "Records" },
+  { href: "/profile", label: "My Profile", icon: "⊕", group: "Records" },
+  { href: "/help", label: "Help", icon: "?", group: "Records" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -37,27 +40,31 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700;800&family=Public+Sans:wght@400;500;600&display=swap"
-        />
       </head>
       <body>
+        <AppNav activeKey="employee" />
         <SessionProvider>
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/summit-badge.png" alt="" aria-hidden width={30} height={30} style={{ display: "block" }} />
-              <span>
-                My<b>Summit</b>HR
-              </span>
+              <svg className="brand-mark" viewBox="0 0 32 28" fill="none" aria-hidden>
+                <polygon points="16,2 26,22 6,22" fill="var(--logo-1)" opacity="0.9" />
+                <polygon points="8,8 16,22 0,22" fill="var(--logo-2)" opacity="0.85" />
+                <polygon points="24,8 32,22 16,22" fill="var(--logo-3)" opacity="0.8" />
+              </svg>
+              <div className="brand-text">
+                <div className="brand-name">MySummitHR</div>
+                <div className="brand-sub">Employee</div>
+              </div>
             </div>
             <nav aria-label="My HR and My Documents">
               {NAV.map((n, i) => (
                 <React.Fragment key={n.href}>
                   {n.group && n.group !== NAV[i - 1]?.group ? <span className="nav-group">{n.group}</span> : null}
-                  <Link href={n.href} className="nav-item">{n.label}</Link>
+                  <Link href={n.href} className="nav-item">
+                    <span className="nav-icon" aria-hidden>{n.icon}</span>
+                    <span>{n.label}</span>
+                  </Link>
                 </React.Fragment>
               ))}
             </nav>
@@ -67,9 +74,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </aside>
           <div className="main">
-            <header className="topbar">
-              <span className="topbar-title">MySummitHR</span>
-            </header>
             <main className="content">{children}</main>
           </div>
         </div>

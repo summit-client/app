@@ -5,6 +5,15 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./tokens.css": "./tokens.css"
+    "./tokens.css": "./tokens.css",
+    "./components.css": "./components.css",
+    "./motion.css": "./motion.css",
+    "./motion": "./motion.tsx"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19"
   }
 }

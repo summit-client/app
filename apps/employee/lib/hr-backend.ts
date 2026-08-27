@@ -104,7 +104,7 @@ export function emptySnapshot(session: Session, seedPolicies: PolicyDoc[]): HrSn
   return {
     cycle: thisCycle(),
     directory: [{
-      id: session.userId, name: session.fullName ?? "Preview Employee",
+      id: session.userId, name: session.fullName ?? "Sherpa Doe",
       jobTitle: "Behaviour Clinician", accessLevel: session.role, supervisorId: null,
     }],
     responses: [], history: [], recognition: [], goals: [],

@@ -71,7 +71,7 @@ function emptySnapshot(session: Session): HubSnapshot {
   return {
     profile: {
       id: session.userId,
-      name: session.fullName ?? "Preview Employee",
+      name: session.fullName ?? "Sherpa Doe",
       employeeNumber: "EMP-0001",
       jobTitle: "Behaviour Clinician",
       location: "Main Clinic",

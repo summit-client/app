@@ -23,8 +23,8 @@ export function Volcano({ active, size = 150 }: { active: boolean; size?: number
           ))}
         </g>
       ) : null}
-      <path d="M8 104 L54 40 Q70 26 86 40 L132 104 Z" fill="var(--accent)" />
-      <path d="M8 104 L54 40 Q62 32 70 34 L70 104 Z" fill="var(--accent)" opacity="0.78" />
+      <path d="M8 104 L54 40 Q70 26 86 40 L132 104 Z" fill="var(--logo-2)" />
+      <path d="M8 104 L54 40 Q62 32 70 34 L70 104 Z" fill="var(--logo-2)" opacity="0.78" />
       <path d="M54 40 Q70 26 86 40 L78 44 Q70 38 62 44 Z" fill="#fff" opacity="0.85" />
       {active ? <path d="M70 40 L60 78 L80 74 Z" fill="#e8641c" opacity="0.75" className="lava" /> : null}
     </svg>
@@ -39,8 +39,8 @@ export function SummitPeaks({ percent, height = 90 }: { percent: number; height?
     <svg viewBox="0 0 220 100" width="100%" height={height} role="img" aria-label={`Altitude ${p} percent`} style={{ display: "block" }}>
       <defs>
         <linearGradient id="peakfill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="var(--accent)" stopOpacity="0.9" />
-          <stop offset="1" stopColor="var(--accent)" stopOpacity="0.35" />
+          <stop offset="0" stopColor="var(--logo-2)" stopOpacity="0.9" />
+          <stop offset="1" stopColor="var(--logo-2)" stopOpacity="0.35" />
         </linearGradient>
       </defs>
       <polygon points="10,96 58,34 106,96" fill="url(#peakfill)" />
@@ -60,7 +60,7 @@ export function ScoreRing({ value, max = 100, size = 108, label }: { value: numb
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label={label ?? `Score ${value ?? "none"}`}>
       <circle cx="50" cy="50" r={r} fill="none" stroke="var(--surface-2)" strokeWidth="9" />
-      <circle cx="50" cy="50" r={r} fill="none" stroke="var(--accent)" strokeWidth="9" strokeLinecap="round"
+      <circle cx="50" cy="50" r={r} fill="none" stroke="var(--logo-2)" strokeWidth="9" strokeLinecap="round"
         strokeDasharray={`${c * p} ${c}`} transform="rotate(-90 50 50)"
         style={{ transition: "stroke-dasharray 800ms cubic-bezier(.2,.8,.3,1)" }} />
       <text x="50" y="54" textAnchor="middle" fontSize="26" fontWeight="700" fill="var(--ink)"
@@ -83,8 +83,8 @@ export function TheClimb({ elevation, camps, size = 300 }: { elevation: number; 
       aria-label={`Elevation ${p} of 100`}>
       <defs>
         <linearGradient id="climbfill" x1="0" y1="1" x2="0" y2="0">
-          <stop offset="0" stopColor="var(--accent)" stopOpacity="0.25" />
-          <stop offset="1" stopColor="var(--accent)" stopOpacity="0.95" />
+          <stop offset="0" stopColor="var(--logo-2)" stopOpacity="0.25" />
+          <stop offset="1" stopColor="var(--logo-2)" stopOpacity="0.95" />
         </linearGradient>
       </defs>
       <polygon points="0,200 150,14 300,200" fill="url(#climbfill)" />

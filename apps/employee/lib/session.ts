@@ -78,7 +78,7 @@ function previewSession(role: HubRole = "ADMIN"): Session {
     clinicId: PREVIEW_CLINIC_ID,
     appRole: role === "ADMIN" ? "admin" : role === "SUPERVISOR" ? "supervisor" : "clinician",
     role,
-    fullName: "Preview Employee",
+    fullName: "Sherpa Doe",
     supervisorId: null,
     problem: null,
     isPreview: true,

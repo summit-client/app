@@ -232,7 +232,10 @@ export function DashboardSection() {
 
 /* ---- Navigation ------------------------------------------------------------------- */
 
-const MODULES = ["Today", "My Caseload", "Attention", "Review Queue", "Settings"];
+// Sidebar modules only. Settings moved out of the sidebar and onto the
+// cogwheel in the portal bar, so it is no longer something this list governs;
+// leaving it here showed a locked row that controlled nothing.
+const MODULES = ["Today", "My Caseload", "Attention", "Review Queue"];
 
 export function NavigationSection() {
   const [hidden, setHidden] = useJsonPref<string[]>("summit-nav-hidden", []);
@@ -240,7 +243,7 @@ export function NavigationSection() {
     <div className="set-list">
       <p className="sub">Hide the modules you don&rsquo;t use; mandatory items are locked by your administrator. The sidebar updates immediately.</p>
       {MODULES.map((m) => {
-        const mandatory = m === "Settings" || m === "Today";
+        const mandatory = m === "Today";
         const isHidden = hidden.includes(m);
         return (
           <div key={m} className="set-row" style={{ alignItems: "center" }}>

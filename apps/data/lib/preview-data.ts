@@ -7,10 +7,10 @@ import type { ClientRow, Program, ScheduledSession } from "./types";
  */
 
 export const previewClients: ClientRow[] = [
-  { id: 101, name: "Arjun S.", age: 6, funding: "OAP-funded", serviceType: "Comprehensive ABA", status: "active", activeGoals: 4, masteredGoals: 7, nextSession: today(), supervisor: "Jane Smith", lastSession: daysAgo(3), interests: ["Trains", "Bubbles", "Sensory bin", "Tablet time"] },
-  { id: 102, name: "Maya T.", age: 9, funding: "OAP-funded", serviceType: "Focused ABA", status: "active", activeGoals: 3, masteredGoals: 12, nextSession: today(), supervisor: "Jane Smith", lastSession: daysAgo(2), interests: ["Drawing", "Lego", "Music"] },
-  { id: 103, name: "Leo K.", age: 5, funding: "Private pay", serviceType: "Comprehensive ABA", status: "intake", activeGoals: 1, masteredGoals: 0, nextSession: null, supervisor: "Omar Haddad", lastSession: null, interests: ["Cars", "Playdough"] },
-  { id: 104, name: "Sofia R.", age: 12, funding: "OAP-registered", serviceType: "Focused ABA", status: "maintenance", activeGoals: 2, masteredGoals: 19, nextSession: null, supervisor: "Omar Haddad", lastSession: daysAgo(9), interests: ["Reading", "Board games"] },
+  { id: 101, name: "Arjun S.", age: 6, funding: "OAP-funded", serviceType: "Comprehensive ABA", status: "active", activeGoals: 4, masteredGoals: 7, nextSession: today(), supervisor: "Sherpa Doe", lastSession: daysAgo(3), interests: ["Trains", "Bubbles", "Sensory bin", "Tablet time"] },
+  { id: 102, name: "Maya T.", age: 9, funding: "OAP-funded", serviceType: "Focused ABA", status: "active", activeGoals: 3, masteredGoals: 12, nextSession: today(), supervisor: "Sherpa Doe", lastSession: daysAgo(2), interests: ["Drawing", "Lego", "Music"] },
+  { id: 103, name: "Leo K.", age: 5, funding: "Private pay", serviceType: "Comprehensive ABA", status: "intake", activeGoals: 1, masteredGoals: 0, nextSession: null, supervisor: "Sherpa Doe", lastSession: null, interests: ["Cars", "Playdough"] },
+  { id: 104, name: "Sofia R.", age: 12, funding: "OAP-registered", serviceType: "Focused ABA", status: "maintenance", activeGoals: 2, masteredGoals: 19, nextSession: null, supervisor: "Sherpa Doe", lastSession: daysAgo(9), interests: ["Reading", "Board games"] },
 ];
 
 export const previewSessions: ScheduledSession[] = [

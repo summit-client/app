@@ -92,7 +92,7 @@ function CertificateViewScreen() {
 
   return (
     <>
-      <style>{`@media print { @page { size: A4 landscape; margin: 0; } .no-print { display: none !important; } body { background: #fff; } .shell aside, .topbar { display: none !important; } .content { padding: 0 !important; max-width: none !important; } .cert-scroll { overflow: visible !important; } } .cert-scroll { overflow-x: auto; }`}</style>
+      <style>{`@media print { @page { size: A4 landscape; margin: 0; } .no-print { display: none !important; } body { background: #fff; } .shell aside, nav[aria-label="Summit portals"] { display: none !important; } .content { padding: 0 !important; max-width: none !important; } .cert-scroll { overflow: visible !important; } } .cert-scroll { overflow-x: auto; }`}</style>
 
       <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <Link href="/certificates" className="sub" style={{ color: "var(--accent)" }}>← Back to certificates</Link>

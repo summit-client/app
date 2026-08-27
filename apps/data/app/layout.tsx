@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import "@summit/design/tokens.css";
+import "@summit/design/components.css";
+import "@summit/design/motion.css";
 import "./app.css";
-import Link from "next/link";
 import { themeInitScript } from "@summit/design";
+import { AppNav } from "@summit/nav";
 import { PortalNav, SettingsEffects } from "@/components/portal-chrome";
 
 export const metadata: Metadata = {
@@ -17,20 +19,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
-        />
       </head>
       <body>
         <SettingsEffects />
+        <AppNav activeKey="clinician" settingsHref="/settings" />
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
-              <span className="brand-mark" aria-hidden />
-              <span>
-                Summit <b>Clinician</b>
-              </span>
+              <svg className="brand-mark" viewBox="0 0 32 28" fill="none" aria-hidden>
+                <polygon points="16,2 26,22 6,22" fill="var(--logo-1)" opacity="0.9" />
+                <polygon points="8,8 16,22 0,22" fill="var(--logo-2)" opacity="0.85" />
+                <polygon points="24,8 32,22 16,22" fill="var(--logo-3)" opacity="0.8" />
+              </svg>
+              <div className="brand-text">
+                <div className="brand-name">Summit</div>
+                <div className="brand-sub">Clinician</div>
+              </div>
             </div>
             <PortalNav />
             <div className="sidebar-foot">
@@ -38,13 +42,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </aside>
           <div className="main">
-            <header className="topbar">
-              <span className="topbar-title">Clinician Portal</span>
-              {/* Theme and accent live in Settings → Appearance & Branding */}
-              <Link href="/settings/appearance" className="btn ghost" style={{ textDecoration: "none" }} aria-label="Appearance settings">
-                Appearance
-              </Link>
-            </header>
             <main className="content">{children}</main>
           </div>
         </div>
