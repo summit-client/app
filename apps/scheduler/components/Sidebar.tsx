@@ -1,9 +1,15 @@
 import { useRouter } from "next/router";
 
+// Roles are `profiles.role` values — see UserRole in lib/useUser.ts. "staff"
+// used to stand in for clinical accounts here; it was never a role the database
+// issued, so supervisors and clinicians matched nothing and got an empty
+// sidebar. They are named directly now.
+const CLINICAL = ["supervisor", "clinician"];
+
 const NAV = [
-  { id: "dashboard", label: "Dashboard", icon: "▦", roles: ["admin", "scheduler", "staff", "client"] },
-  { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler", "staff", "client"] },
-  { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler", "staff", "client"] },
+  { id: "dashboard", label: "Dashboard", icon: "▦", roles: ["admin", "scheduler", ...CLINICAL, "client"] },
+  { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler", ...CLINICAL, "client"] },
+  { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler", ...CLINICAL, "client"] },
   { id: "clients",   label: "Clients",   icon: "⊙", roles: ["admin", "scheduler"] },
   { id: "employees", label: "Staff",     icon: "◎", roles: ["admin", "scheduler"] },
   { id: "sessiontypes", label: "Session Types", icon: "◈", roles: ["admin", "scheduler"] },

@@ -2,7 +2,20 @@ import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
-export type UserRole = "admin" | "scheduler" | "staff" | "client";
+/**
+ * The one role vocabulary, matching `profiles.role` as migration 0001 defines
+ * it and as `auth_role()` / `auth_is_staff()` read it.
+ *
+ * The scheduler used to carry its own set, with a "staff" role the database
+ * never recognised and without "supervisor" or "clinician", which it does. A
+ * clinician signing into the scheduler was an unhandled role.
+ */
+export type UserRole =
+  | "admin"
+  | "scheduler"
+  | "supervisor"
+  | "clinician"
+  | "client";
 
 export interface AppUser {
   id: string;
