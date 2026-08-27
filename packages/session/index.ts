@@ -14,8 +14,12 @@
  *
  *   Here          identity, and the problems that are true regardless of which
  *                 portal you are standing in — not signed in, no profile row,
- *                 no clinic. Plus PORTAL_ACCESS, which is the single statement
- *                 of who may use what.
+ *                 no clinic.
+ *
+ *   @summit/portals  which portals exist and who may use each. Identity and the
+ *                 portal catalogue are different facts with different lifetimes
+ *                 — the catalogue becomes per-tenant configuration in phase 2 —
+ *                 so this package reads that one rather than owning it.
  *
  *   In each app   what that portal does about it. The employee hub maps
  *                 AppRole to its own three-way HubRole; the clinician portal
@@ -29,55 +33,11 @@
  */
 
 import { createBrowserClient } from "@supabase/ssr";
+import { admits, isAppRole, portal, type AppRole, type PortalKey } from "@summit/portals";
+
+export type { AppRole, PortalKey };
 
 export const IS_PREVIEW = process.env.NEXT_PUBLIC_DEV_PREVIEW === "1";
-
-/**
- * `profiles.role` — the app permission, as migration 0001 defines it on the
- * column and as auth_role() / auth_is_staff() read it.
- *
- * NOT `staff.role`, which is the clinical credential (BCBA / BCaBA / RBT /
- * Supervisor) written by the scheduler's admin page. Two different columns with
- * the same name; never conflate them.
- */
-export type AppRole = "admin" | "supervisor" | "clinician" | "scheduler" | "client";
-
-export const APP_ROLES: readonly AppRole[] = [
-  "admin", "supervisor", "clinician", "scheduler", "client",
-] as const;
-
-export function isAppRole(v: unknown): v is AppRole {
-  return typeof v === "string" && (APP_ROLES as readonly string[]).includes(v);
-}
-
-export type PortalKey = "scheduler" | "clinician" | "employee" | "client";
-
-/**
- * Who may use which portal. **This is the only place that knows.** The gate in
- * each portal, the portal bar's link list and (eventually) the post-sign-in
- * redirect all read it, so they cannot disagree with each other the way
- * apps/scheduler and apps/web did before the role vocabulary was unified.
- *
- * `clinician` and `employee` mirror auth_is_staff() deliberately: those two
- * portals read clinic data under policies that call it, so admitting a role
- * here that the function rejects would produce a portal that renders and shows
- * nothing — the failure mode NO_CLINIC exists to explain.
- */
-export const PORTAL_ACCESS: Record<PortalKey, readonly AppRole[]> = {
-  scheduler: ["admin", "scheduler"],
-  clinician: ["admin", "supervisor", "clinician"],
-  employee: ["admin", "supervisor", "clinician"],
-  client: ["client"],
-};
-
-export function admits(portal: PortalKey, role: AppRole | null): boolean {
-  return role != null && PORTAL_ACCESS[portal].includes(role);
-}
-
-/** The portals a role may use, in a stable order. Drives the portal bar. */
-export function portalsFor(role: AppRole | null): PortalKey[] {
-  return (Object.keys(PORTAL_ACCESS) as PortalKey[]).filter((p) => admits(p, role));
-}
 
 /** Why identity is unusable, when it is. Null means it is good. */
 export type SessionProblem =
@@ -220,18 +180,11 @@ export function refreshIdentity(): Promise<Identity> {
  * telling someone their role is wrong when they have no clinic sends them to
  * the wrong administrator.
  */
-export function gate(identity: Identity, portal: PortalKey): Identity {
+export function gate(identity: Identity, key: PortalKey): Identity {
   if (identity.problem) return identity;
-  if (admits(portal, identity.appRole)) return identity;
+  if (admits(key, identity.appRole)) return identity;
   return { ...identity, problem: "ROLE_EXCLUDED" };
 }
-
-const PORTAL_NAME: Record<PortalKey, string> = {
-  scheduler: "the Scheduler",
-  clinician: "the clinician portal",
-  employee: "MySummitHR",
-  client: "the family portal",
-};
 
 /**
  * What to render for each problem. Deliberately says what to DO, and who does
@@ -239,7 +192,7 @@ const PORTAL_NAME: Record<PortalKey, string> = {
  */
 export function explainProblem(
   problem: SessionProblem,
-  portal: PortalKey,
+  key: PortalKey,
 ): { title: string; detail: string } {
   switch (problem) {
     case "NOT_SIGNED_IN":
@@ -261,10 +214,10 @@ export function explainProblem(
           "Your profile has no clinic_id, so every record is correctly hidden from you. This is not a sign-in problem. An administrator sets profiles.clinic_id for your account.",
       };
     case "ROLE_EXCLUDED": {
-      const allowed = PORTAL_ACCESS[portal].join(", ");
+      const p = portal(key);
       return {
-        title: `${PORTAL_NAME[portal]} is not for your role`,
-        detail: `This portal covers ${allowed} accounts. Your other portals are listed in the bar at the top of the page.`,
+        title: `${p.label} is not for your role`,
+        detail: `This portal covers ${p.roles.join(", ")} accounts. Your other portals are listed in the bar at the top of the page.`,
       };
     }
   }

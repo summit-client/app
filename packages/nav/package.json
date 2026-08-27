@@ -16,5 +16,8 @@
     "@types/node": "^22",
     "@types/react": "19.2.14",
     "typescript": "6.0.2"
+  },
+  "dependencies": {
+    "@summit/portals": "workspace:*"
   }
 }

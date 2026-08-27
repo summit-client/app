@@ -1,0 +1,168 @@
+/**
+ * @summit/portals — the portal registry.
+ *
+ * What Summit's portals are, where they live, and which roles may use each.
+ * Pure data: no React, no Supabase, no browser APIs, so a server-side redirect
+ * can import it as cheaply as the nav bar can.
+ *
+ * It exists because this was previously spread across three files that each
+ * knew part of it and could drift from the others:
+ *
+ *   packages/nav/src/portals.config.ts   keys, labels, URLs (hardcoded)
+ *   apps/web/lib/role-redirects.ts       URLs again (env-overridable), and
+ *                                        where each role lands after sign-in
+ *   auth_is_staff() / HUB_ROLE           who may actually read anything
+ *
+ * They disagreed. The nav bar advertised URLs the sign-in redirect could be
+ * configured away from, and the role sets did not match the database's.
+ *
+ * Consumers: @summit/nav renders the bar from it, @summit/session gates on it,
+ * apps/web redirects with it.
+ *
+ * Phase 2 note: per-tenant portal visibility — a clinic that has not bought the
+ * employee portal — belongs in org settings, not here. When that lands, ACCESS
+ * below becomes the default a per-org row overrides, which is a substitution
+ * rather than a refactor. That is why this is its own package and not folded
+ * into whichever consumer happened to need it first.
+ */
+
+export type PortalKey = "scheduler" | "clinician" | "employee" | "client";
+
+/**
+ * `profiles.role` — the app permission, as migration 0001 defines it on the
+ * column and as auth_role() / auth_is_staff() read it.
+ *
+ * NOT `staff.role`, which is the clinical credential (BCBA / BCaBA / RBT /
+ * Supervisor) written by the scheduler's admin page. Two different columns with
+ * the same name; never conflate them.
+ */
+export type AppRole = "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+
+export const APP_ROLES: readonly AppRole[] = [
+  "admin", "supervisor", "clinician", "scheduler", "client",
+] as const;
+
+export function isAppRole(v: unknown): v is AppRole {
+  return typeof v === "string" && (APP_ROLES as readonly string[]).includes(v);
+}
+
+/**
+ * Dev ports match each app's `dev` script in apps/<app>/package.json, which in
+ * turn matches the nginx proxy_pass port for that subdomain. All three are
+ * pinned explicitly so they cannot drift apart.
+ */
+const DEV_PORT: Record<PortalKey, number> = {
+  scheduler: 3000,
+  clinician: 3002,
+  client: 3003,
+  employee: 3004,
+};
+
+const PROD_HOST: Record<PortalKey, string> = {
+  scheduler: "https://scheduler.summitclient.io",
+  clinician: "https://data.summitclient.io",
+  employee: "https://employee.summitclient.io",
+  client: "https://client.summitclient.io",
+};
+
+/**
+ * Per-portal environment override. Next inlines `process.env.NEXT_PUBLIC_*` at
+ * build time, so these must be written out rather than indexed dynamically —
+ * `process.env[\`NEXT_PUBLIC_URL_${key}\`]` compiles to undefined in the
+ * browser bundle.
+ */
+function override(key: PortalKey): string | undefined {
+  switch (key) {
+    case "scheduler": return process.env.NEXT_PUBLIC_URL_SCHEDULER;
+    case "clinician": return process.env.NEXT_PUBLIC_URL_DATA;
+    case "employee": return process.env.NEXT_PUBLIC_URL_EMPLOYEE;
+    case "client": return process.env.NEXT_PUBLIC_URL_CLIENT;
+  }
+}
+
+const isDev =
+  typeof process !== "undefined" && process.env?.NODE_ENV === "development";
+
+/** An explicit override wins everywhere; otherwise localhost in dev, the real
+ *  host in production. No dead links locally, no localhost in prod. */
+export function urlFor(key: PortalKey): string {
+  return override(key) ?? (isDev ? `http://localhost:${DEV_PORT[key]}` : PROD_HOST[key]);
+}
+
+/**
+ * Who may use which portal.
+ *
+ * `clinician` and `employee` mirror auth_is_staff() deliberately: both read
+ * clinic data under policies that call it, so admitting a role here that the
+ * function rejects produces a portal that renders and then shows nothing.
+ */
+const ACCESS: Record<PortalKey, readonly AppRole[]> = {
+  scheduler: ["admin", "scheduler"],
+  clinician: ["admin", "supervisor", "clinician"],
+  employee: ["admin", "supervisor", "clinician"],
+  client: ["client"],
+};
+
+export interface Portal {
+  key: PortalKey;
+  label: string;
+  /** Resolved for the current environment. */
+  url: string;
+  roles: readonly AppRole[];
+}
+
+const LABEL: Record<PortalKey, string> = {
+  scheduler: "Scheduler",
+  clinician: "Clinician Portal",
+  employee: "Employee Portal",
+  client: "Client Portal",
+};
+
+export const PORTAL_KEYS: readonly PortalKey[] = [
+  "scheduler", "clinician", "employee", "client",
+] as const;
+
+/** Every portal, in display order. URLs resolve when this module loads. */
+export const PORTALS: readonly Portal[] = PORTAL_KEYS.map((key) => ({
+  key,
+  label: LABEL[key],
+  url: urlFor(key),
+  roles: ACCESS[key],
+}));
+
+export function portal(key: PortalKey): Portal {
+  return PORTALS.find((p) => p.key === key)!;
+}
+
+export function admits(key: PortalKey, role: AppRole | null | undefined): boolean {
+  return role != null && ACCESS[key].includes(role);
+}
+
+/** The portals a role may use, in display order. Drives the portal bar. */
+export function portalsFor(role: AppRole | null | undefined): readonly Portal[] {
+  return PORTALS.filter((p) => admits(p.key, role));
+}
+
+/**
+ * Where a role lands after sign-in.
+ *
+ * Clinical roles land in the clinician portal because that is their daily work
+ * — caseload, review queue, supervision. MySummitHR is where they go for
+ * onboarding, training and time off, which is a visit rather than a home, so it
+ * is reached from the portal bar rather than being anyone's landing page.
+ */
+const HOME: Record<AppRole, PortalKey> = {
+  admin: "scheduler",
+  scheduler: "scheduler",
+  supervisor: "clinician",
+  clinician: "clinician",
+  client: "client",
+};
+
+export function homePortal(role: AppRole | null | undefined): PortalKey {
+  return (role && HOME[role]) || "scheduler";
+}
+
+export function homeUrlFor(role: string | null | undefined): string {
+  return urlFor(homePortal(isAppRole(role) ? role : null));
+}

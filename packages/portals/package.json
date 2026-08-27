@@ -1,5 +1,5 @@
 {
-  "name": "@summit/session",
+  "name": "@summit/portals",
   "version": "0.1.0",
   "private": true,
   "main": "./index.ts",
@@ -10,16 +10,8 @@
       "default": "./index.ts"
     }
   },
-  "dependencies": {
-    "@supabase/ssr": "^0.10.3",
-    "@summit/portals": "workspace:*"
-  },
-  "peerDependencies": {
-    "react": "^19.0.0"
-  },
   "devDependencies": {
     "@types/node": "^22",
-    "@types/react": "19.2.14",
     "typescript": "6.0.2"
   }
 }

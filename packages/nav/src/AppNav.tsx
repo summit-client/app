@@ -1,10 +1,20 @@
 import React from 'react';
-import { portals } from './portals.config';
+import { type AppRole, portals, portalsFor } from './portals.config';
 
 interface AppNavProps {
   activeKey: string;
   /** When set, a settings cogwheel sits at the right of the bar. */
   settingsHref?: string;
+  /**
+   * The viewer's `profiles.role`. When given, the bar lists only the portals
+   * that role may use; when omitted it lists all four, which is what every
+   * caller did before the registry existed.
+   *
+   * Leaving it out is a real choice, not an oversight: the family portal
+   * currently advertises the clinician and employee portals to parents. Passing
+   * the role is what stops that, and each app does it as it gains identity.
+   */
+  role?: AppRole | null;
 }
 
 /**
@@ -12,7 +22,8 @@ interface AppNavProps {
  * Client so staff move between them from any screen. Colours come from the
  * shared tokens, so it follows the theme and accent like everything else.
  */
-export function AppNav({ activeKey, settingsHref }: AppNavProps) {
+export function AppNav({ activeKey, settingsHref, role }: AppNavProps) {
+  const visible = role === undefined ? portals : portalsFor(role);
   return (
     <nav
       aria-label="Summit portals"
@@ -32,7 +43,7 @@ export function AppNav({ activeKey, settingsHref }: AppNavProps) {
         borderBottom: '1px solid var(--brand-600, #28B4A6)',
       }}
     >
-      {portals.map((p) => {
+      {visible.map((p) => {
         const isActive = p.key === activeKey;
         return (
           <a
