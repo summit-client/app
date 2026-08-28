@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { sessionFreshness } from "@summit/proxy-auth";
+import { loginUrl, refreshUrl, urlFor } from "@summit/portals";
 
 /**
  * Auth gate for the employee portal (apps/employee, port 3004) — Next 16: file `proxy.ts`, export `proxy`.
@@ -17,9 +18,8 @@ import { sessionFreshness } from "@summit/proxy-auth";
 const PREVIEW_BYPASS =
   process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
 
-const IS_PROD = process.env.NODE_ENV === "production";
-const LOGIN_URL = IS_PROD ? "https://summitclient.io/login" : "http://localhost:3001/login";
-const REFRESH_URL = IS_PROD ? "https://summitclient.io/api/auth/refresh" : "http://localhost:3001/api/auth/refresh";
+const LOGIN_URL = loginUrl();
+const REFRESH_URL = refreshUrl();
 // Behind nginx, request.url reflects the address the Next.js process itself
 // is bound to (http://localhost:3004) rather than the public hostname the
 // browser actually used - confirmed live: a stale session sent
@@ -28,8 +28,10 @@ const REFRESH_URL = IS_PROD ? "https://summitclient.io/api/auth/refresh" : "http
 // page instead of coming back here. request.nextUrl.pathname/search are
 // still correct either way (they come off the request line, not the Host
 // header), so build the redirect target from a known public origin instead
-// of trusting request.url's.
-const PUBLIC_ORIGIN = IS_PROD ? "https://employee.summitclient.io" : "http://localhost:3004";
+// of trusting request.url's. Reads the same registry the nav bar and
+// sign-in redirect do (@summit/portals), rather than a fourth hardcoded
+// copy of this app's own host.
+const PUBLIC_ORIGIN = urlFor("employee");
 
 export async function proxy(request: NextRequest) {
   if (PREVIEW_BYPASS) return NextResponse.next();

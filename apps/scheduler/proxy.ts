@@ -2,13 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sessionFreshness } from "@summit/proxy-auth";
+import { refreshUrl, urlFor } from "@summit/portals";
 
 // Scheduler's sign-in page is same-origin (/login), unlike the other three
 // portals which bounce to apps/web. The refresh endpoint, though, only ever
 // lives at apps/web - see @summit/proxy-auth's file header for why no portal
 // is allowed to redeem a refresh token itself.
-const IS_PROD = process.env.NODE_ENV === "production";
-const REFRESH_URL = IS_PROD ? "https://summitclient.io/api/auth/refresh" : "http://localhost:3001/api/auth/refresh";
+const REFRESH_URL = refreshUrl();
 // Behind nginx, req.url reflects the address the Next.js process itself is
 // bound to (http://localhost:3000) rather than the public hostname the
 // browser actually used - confirmed live on apps/employee's equivalent code:
@@ -17,8 +17,10 @@ const REFRESH_URL = IS_PROD ? "https://summitclient.io/api/auth/refresh" : "http
 // user stuck on an error page instead of coming back here.
 // req.nextUrl.pathname/search are still correct either way (they come off
 // the request line, not the Host header), so build the redirect target from
-// a known public origin instead of trusting req.url's.
-const PUBLIC_ORIGIN = IS_PROD ? "https://scheduler.summitclient.io" : "http://localhost:3000";
+// a known public origin instead of trusting req.url's. Reads the same
+// registry the nav bar and sign-in redirect do (@summit/portals), rather
+// than a fifth hardcoded copy of this app's own host.
+const PUBLIC_ORIGIN = urlFor("scheduler");
 
 export async function proxy(req: NextRequest) {
   // All four portals share one .summitclient.io session cookie. If this

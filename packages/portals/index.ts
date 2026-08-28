@@ -17,7 +17,9 @@
  * configured away from, and the role sets did not match the database's.
  *
  * Consumers: @summit/nav renders the bar from it, @summit/session gates on it,
- * apps/web redirects with it.
+ * apps/web redirects with it, and every portal's proxy.ts (2026-08-28) reads
+ * its own PUBLIC_ORIGIN/LOGIN_URL/REFRESH_URL from it instead of the fourth
+ * independent copy of the same values each one used to hardcode.
  *
  * Phase 2 note: per-tenant portal visibility — a clinic that has not bought the
  * employee portal — belongs in org settings, not here. When that lands, ACCESS
@@ -87,6 +89,28 @@ const isDev =
  *  host in production. No dead links locally, no localhost in prod. */
 export function urlFor(key: PortalKey): string {
   return override(key) ?? (isDev ? `http://localhost:${DEV_PORT[key]}` : PROD_HOST[key]);
+}
+
+/**
+ * apps/web's own origin - not a PortalKey, since it's the sign-in hub every
+ * portal bounces to rather than one of the four a signed-in user moves
+ * between. Every portal's proxy.ts needs it (login redirect, and the token
+ * refresh endpoint that only ever lives at apps/web - see
+ * @summit/proxy-auth's file header for why no portal is allowed to redeem a
+ * refresh token itself) and used to hardcode it independently, four times,
+ * with no shared override.
+ */
+function webOverride(): string | undefined {
+  return process.env.NEXT_PUBLIC_URL_WEB;
+}
+export function webUrl(): string {
+  return webOverride() ?? (isDev ? "http://localhost:3001" : "https://summitclient.io");
+}
+export function loginUrl(): string {
+  return `${webUrl()}/login`;
+}
+export function refreshUrl(): string {
+  return `${webUrl()}/api/auth/refresh`;
 }
 
 /**

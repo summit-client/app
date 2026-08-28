@@ -158,14 +158,36 @@ that, most awkward first:
    is closed: every portal now loads the same rows from the same clinic.
    Freshness is load-time (each portal fetches on load/session start), not a
    live push to a session already open elsewhere — see `decisions.md`.
-6. **Portal URLs are encoded twice.** `packages/nav/src/portals.config.ts`
-   hardcodes the four production hosts with no environment override, while
-   `apps/web/lib/role-redirects.ts` reads `NEXT_PUBLIC_URL_*`. Set
-   `NEXT_PUBLIC_URL_EMPLOYEE` and login honours it while the nav bar keeps
-   pointing at the hardcoded host. *Note: `@summit/portals` now exists as the
-   single source of truth for portal URLs/access (shipped 2026-08-27, PR #49)
-   — re-check whether this specific double-encoding still exists against that
-   package before treating it as current.*
+6. ~~**Portal URLs are encoded twice.**~~ **CONFIRMED FIXED 2026-08-28** (was
+   flagged here as needing a re-check against `@summit/portals`, done now).
+   `packages/nav/src/portals.config.ts` is a two-line re-export of
+   `@summit/portals`'s `PORTALS`/`portalsFor`, and `apps/web/lib/role-redirects.ts`
+   builds `ROLE_REDIRECTS` from that same package's `APP_ROLES`/`homeUrlFor` -
+   both read one registry, no independent copy of a URL or a role map left in
+   either file. Confirmed by reading both files directly, not inferred from
+   the PR #49 changelog note.
+   ~~One related but distinct duplication remained, out of this item's
+   original scope: every portal's `proxy.ts` hardcoded its own
+   `PUBLIC_ORIGIN`/`LOGIN_URL`/`REFRESH_URL`.~~ **FIXED 2026-08-28.**
+   `@summit/portals` gained `webUrl()`/`loginUrl()`/`refreshUrl()` (apps/web
+   isn't a `PortalKey` - it's the sign-in hub every portal bounces to, not
+   one of the four a signed-in user moves between - so these needed their
+   own export, `NEXT_PUBLIC_URL_WEB`-overridable same as the four portal
+   URLs). All four `proxy.ts` files now read `urlFor()`/`loginUrl()`/
+   `refreshUrl()` instead of a fifth hardcoded copy of each value.
+   `apps/client`'s pre-existing `NEXT_PUBLIC_LOGIN_URL` override (decided in
+   PR #32, a full `/login` URL, not an origin) was kept as its own outermost
+   override rather than folded into `NEXT_PUBLIC_URL_WEB` - the two have
+   never meant the same thing and no other portal has ever set it.
+   `apps/employee` was missing `@summit/portals` as a declared dependency
+   (it only reached it transitively through `@summit/nav`'s re-export,
+   which resolved for React imports but not for `tsc`) - added directly,
+   matching the other three portals. Verified: `apps/data` and
+   `apps/employee` build clean end-to-end including the `Proxy (Middleware)`
+   bundle; `apps/scheduler`/`apps/client`/`apps/web` compile and typecheck
+   clean but fail later at page-data collection on missing Supabase env
+   vars in this environment - confirmed pre-existing and unrelated by
+   reproducing the identical failure with the change stashed out.
 7. **The portal list is a static array with fixed labels** and no per-org
    visibility, bypassing the settings system that already has a "navigation"
    section for exactly this.

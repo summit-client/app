@@ -121,6 +121,9 @@ importers:
       '@summit/nav':
         specifier: workspace:*
         version: link:../../packages/nav
+      '@summit/portals':
+        specifier: workspace:*
+        version: link:../../packages/portals
       '@summit/proxy-auth':
         specifier: workspace:*
         version: link:../../packages/proxy-auth
