@@ -12,19 +12,24 @@ export async function proxy(req: NextRequest) {
       cookies: {
   getAll: () => req.cookies.getAll(),
   setAll: (cookies) => cookies.forEach(({ name, value, options }) =>
-    res.cookies.set(name, value, { ...options, domain: '.summitclient.io' })
+    res.cookies.set(name, value, {
+      ...options,
+      domain: process.env.NODE_ENV === "production" ? ".summitclient.io" : undefined,
+    })
   ),
 },
     }
   );
 
-  const { data: { session } } = await supabase.auth.getSession();
+  // getUser() verifies the JWT against the auth server; getSession() only
+  // reads the cookie, which is enough to spoof a stale or forged session.
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!session && req.nextUrl.pathname !== "/login") {
+  if (!user && req.nextUrl.pathname !== "/login") {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  if (session && req.nextUrl.pathname === "/login") {
+  if (user && req.nextUrl.pathname === "/login") {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
