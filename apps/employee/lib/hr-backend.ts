@@ -111,6 +111,7 @@ export function thisCycle(): string {
 export interface InviteTeammateInput {
   email: string;
   role: "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+  fullName?: string;
   supervisorId?: string;
   clientId?: number;
 }
@@ -140,6 +141,7 @@ export async function inviteTeammate(input: InviteTeammateInput): Promise<void> 
   await invoke("invite-teammate", {
     email: input.email,
     role: input.role,
+    full_name: input.fullName,
     supervisor_id: input.supervisorId,
     client_id: input.clientId,
   });
