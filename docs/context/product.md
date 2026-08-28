@@ -83,14 +83,38 @@ that, most awkward first:
    `scorecard_metrics` and `hub_certificate_registry` both have `clinic_id`
    but zero RLS policies at all (default-deny for everyone, a functional gap
    rather than a tenant-isolation one).
-1. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
+1. ~~**Clinician/supervisor logins had zero database access to `clients` and
+   `sessions`, so the clinician portal's caseload list was always empty.**~~
+   **FIXED 2026-08-28, migration 0014.** Migration 0013 gave those two
+   tables clinic scoping but deliberately preserved their prior access
+   exactly (admin/scheduler only, via `auth_is_scheduling_staff()`) since its
+   scope was the tenant-boundary retrofit, not a permissions redesign. That
+   preservation carried the gap forward: `apps/data`'s `getClients()` /
+   `getTodaySessions()` (and `apps/data/lib/server/retriever.ts`'s
+   single-client lookup) run under the signed-in user's own RLS context with
+   no elevation, and no policy on either table ever named `clinician` or
+   `supervisor` - confirmed via `pg_policies`, not assumed. A real clinician
+   login got a plain, RLS-filtered empty array back, indistinguishable in the
+   UI from "no clients." 0014 adds a clinic-scoped, read-only select policy
+   for both tables gated on `auth_is_staff()` (the same admin/supervisor/
+   clinician set every other clinical table already grants), matching this
+   schema's existing grain rather than inventing a narrower per-clinician
+   caseload/assignment concept that doesn't exist anywhere else in the data
+   model. If "a clinician sees only their assigned clients" (not their whole
+   clinic's) becomes an actual product requirement, it needs its own
+   assignment table - a bigger change than this RLS add, and still open.
+   Verified against a local two-clinic fixture: clinician/supervisor now read
+   their own clinic's `clients`/`sessions` rows, still cannot write to
+   either (no insert/update/delete policy was added), and still see nothing
+   from a second clinic.
+3. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
    onto `org_settings` / `role_settings` / `user_settings` / `settings_audit`
    for real now in live mode (preview still uses localStorage, unchanged).
    The org-scope-setting-doesn't-reach-other-portals problem this described
    is closed: every portal now loads the same rows from the same clinic.
    Freshness is load-time (each portal fetches on load/session start), not a
    live push to a session already open elsewhere — see `decisions.md`.
-2. **Portal URLs are encoded twice.** `packages/nav/src/portals.config.ts`
+4. **Portal URLs are encoded twice.** `packages/nav/src/portals.config.ts`
    hardcodes the four production hosts with no environment override, while
    `apps/web/lib/role-redirects.ts` reads `NEXT_PUBLIC_URL_*`. Set
    `NEXT_PUBLIC_URL_EMPLOYEE` and login honours it while the nav bar keeps
@@ -98,17 +122,17 @@ that, most awkward first:
    single source of truth for portal URLs/access (shipped 2026-08-27, PR #49)
    — re-check whether this specific double-encoding still exists against that
    package before treating it as current.*
-3. **The portal list is a static array with fixed labels** and no per-org
+5. **The portal list is a static array with fixed labels** and no per-org
    visibility, bypassing the settings system that already has a "navigation"
    section for exactly this.
-4. **Brand strings are hardcoded** — "MySummitHR", "Summit Clinician", support
+6. **Brand strings are hardcoded** — "MySummitHR", "Summit Clinician", support
    email subjects — rather than read from `org.name`, which already exists in
    the settings registry.
-5. **~4.8 MB of Mount Etna material sits in `apps/employee/public`** — MEGBA
+7. **~4.8 MB of Mount Etna material sits in `apps/employee/public`** — MEGBA
    logos, a scanned signature, a 1.2 MB training HTML file, nine locale files —
    plus five hardcoded Google Drive links in `lib/content.ts`. Fine for phase 1,
    this is the block to unpick for a packaged product.
-6. **`--logo-1/2/3` are fixed and never re-tinted.** Right for a single brand,
+8. **`--logo-1/2/3` are fixed and never re-tinted.** Right for a single brand,
    but a tenant cannot have their own logo colours while everything around the
    logo re-tints.
 
