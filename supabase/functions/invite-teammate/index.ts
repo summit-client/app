@@ -28,6 +28,7 @@ const MAX_INVITES_PER_HOUR = 20;
 interface InviteRequest {
   email?: string;
   role?: string;
+  full_name?: string;
   /** Only meaningful when role === "clinician". */
   supervisor_id?: string;
   /**
@@ -115,6 +116,8 @@ Deno.serve(async (req) => {
   } else {
     const { error: profileErr } = await admin.from("profiles").insert({
       id: newUserId,
+      email: invited.user.email,
+      full_name: body.full_name?.trim() || null,
       role,
       clinic_id: caller.clinic_id,
       supervisor_id: supervisorId,

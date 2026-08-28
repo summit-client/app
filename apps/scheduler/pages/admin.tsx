@@ -667,6 +667,7 @@ function InvitePanel({
   const unlinkedClients = clients.filter((c) => !c.user_id);
 
   const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
   const [inviteRole, setInviteRole] = useState<string>(roleOptions[roleOptions.length - 1]);
   const [clientId, setClientId] = useState<number | ''>('');
   const [sending, setSending] = useState(false);
@@ -683,6 +684,7 @@ function InvitePanel({
     const { data, error: fnErr } = await supabase.functions.invoke('invite-teammate', {
       body: {
         email: email.trim(),
+        full_name: inviteRole !== 'client' && fullName.trim() ? fullName.trim() : undefined,
         role: inviteRole,
         client_id: inviteRole === 'client' ? clientId : undefined,
       },
@@ -693,6 +695,7 @@ function InvitePanel({
       return;
     }
     setEmail('');
+    setFullName('');
     setClientId('');
     onDone(`Invite sent to ${email.trim()}.`);
   }
@@ -701,6 +704,13 @@ function InvitePanel({
     <div style={{ background: 'white', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid #E5E7EB' }}>
       <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Invite portal access</div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {inviteRole !== 'client' ? (
+          <input
+            type="text" placeholder="Full name" value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #E5E7EB', minWidth: 160 }}
+          />
+        ) : null}
         <input
           type="email" placeholder="Email address" value={email}
           onChange={(e) => setEmail(e.target.value)}

@@ -299,6 +299,7 @@ function InviteForm({
   people, onDone, onError,
 }: { people: ReturnType<typeof directory>; onDone: (text: string) => void; onError: (text: string) => void }) {
   const [email, setEmail] = React.useState("");
+  const [fullName, setFullName] = React.useState("");
   const [role, setRole] = React.useState<(typeof INVITE_ROLES)[number]>("clinician");
   const [supervisorId, setSupervisorId] = React.useState("");
   const [sending, setSending] = React.useState(false);
@@ -307,9 +308,15 @@ function InviteForm({
     if (!email.trim()) return;
     setSending(true);
     try {
-      await inviteTeammate({ email: email.trim(), role, supervisorId: role === "clinician" && supervisorId ? supervisorId : undefined });
+      await inviteTeammate({
+        email: email.trim(),
+        fullName: fullName.trim() || undefined,
+        role,
+        supervisorId: role === "clinician" && supervisorId ? supervisorId : undefined,
+      });
       onDone(`Invite sent to ${email.trim()}.`);
       setEmail("");
+      setFullName("");
       setSupervisorId("");
     } catch (e) {
       onError(e instanceof ProvisioningError ? e.message : "Could not send the invite.");
@@ -321,6 +328,11 @@ function InviteForm({
   return (
     <div className="card card-pad" style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, maxWidth: 420 }}>
       <b style={{ fontSize: "var(--text-sm)" }}>Invite a teammate</b>
+      <input
+        type="text" placeholder="Full name" value={fullName}
+        onChange={(e) => setFullName(e.target.value)}
+        style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ccc)" }}
+      />
       <input
         type="email" placeholder="Email address" value={email}
         onChange={(e) => setEmail(e.target.value)}

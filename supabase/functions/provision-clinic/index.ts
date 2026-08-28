@@ -17,6 +17,7 @@ interface ProvisionRequest {
   clinic_name?: string;
   clinic_slug?: string;
   admin_email?: string;
+  admin_full_name?: string;
 }
 
 Deno.serve(async (req) => {
@@ -73,6 +74,8 @@ Deno.serve(async (req) => {
 
   const { error: profileErr } = await admin.from("profiles").insert({
     id: invited.user.id,
+    email: invited.user.email,
+    full_name: body.admin_full_name?.trim() || null,
     role: "admin",
     clinic_id: clinic.id,
   });
