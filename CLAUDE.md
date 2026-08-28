@@ -11,6 +11,13 @@ tailored solution for one ABA clinic ("Mount Etna"); phase 2 packages the same
 product for other clinics on a subscription. **Treat clinic-specific values as
 temporary and say so when you add one.**
 
+This handles PHI. **PHIPA (Ontario) and PIPEDA (federal Canada) are the
+binding regimes** — the anchor client, Mount Etna Child & Family Services
+Inc., is Canadian. HIPAA is not binding, but HIPAA-shaped artifacts (a BAA)
+are still the right thing to obtain, since that's the contractual instrument
+vendors offer. See `docs/context/compliance.md` for what actually gates
+revenue and what's still open.
+
 | App | Port | Domain | Live |
 |---|---|---|---|
 | `apps/web` | 3001 | `summitclient.io` | yes — marketing + the sign-in hub |
@@ -45,6 +52,33 @@ app's `next.config`. A `tsup` build in `nav` once failed on a missing
 `@types/node` and took down all five app builds with it, because turbo's
 `dependsOn: ["^build"]` kills siblings when a dependency fails.
 
+## Hard constraints
+
+These are never violated regardless of what a task seems to ask for:
+
+- The service role key bypasses RLS entirely. Server-side only, never behind a
+  `NEXT_PUBLIC_` prefix, never in an app `.env.local`. Apps get the anon key
+  only.
+- Anything named `NEXT_PUBLIC_*` is readable by the browser. Never gate auth
+  or security behavior on one. A preview/bypass flag must be gated on the flag
+  **and** `NODE_ENV !== "production"` (see `NEXT_PUBLIC_DEV_PREVIEW` below).
+- Every PHI table carries `clinic_id` and RLS policies. No exceptions.
+- Auth gates use `getUser()`, never `getSession()`. `getUser()` verifies the
+  JWT against the auth server; `getSession()` trusts the cookie. (`apps/scheduler/proxy.ts`
+  still uses `getSession()` — known debt, not a pattern to copy.)
+- `security definer` functions must schema-qualify every reference and name
+  `pg_temp` last. `set search_path = public` alone does **not** exclude
+  `pg_temp` — this was exploited on this schema (temp-table shadowing let any
+  authenticated user insert themselves as admin of any clinic) and fixed in
+  migration `0009`. See `docs/context/compliance.md`.
+- No real PHI in the system until the Supabase BAA is signed.
+- Never send identifiable data to a third-party model without a signed
+  agreement covering it. `packages/clinical-ai` routes PHI to Azure OpenAI by
+  default for this reason; Anthropic is only used for non-PHI scheduler
+  matching.
+- RLS policies are written per command, never `for all` — deletes are denied
+  by default across this schema and `for all` would silently reopen them.
+
 ## One role vocabulary
 
 `profiles.role` is `admin | supervisor | clinician | scheduler | client`. That
@@ -59,6 +93,9 @@ turned them away.
 Do not confuse `profiles.role` with `staff.role`, a different column on a
 different table holding the clinical credential (`BCBA | BCaBA | RBT |
 Supervisor`), written by the scheduler's admin page.
+
+Confirmed shipped: `fix/role-vocabulary` merged as PR #48 (2026-08-27). Any
+older doc that calls this "merge status unverified" is stale.
 
 ## Where things belong
 
@@ -156,14 +193,36 @@ the `summitclient-deploy-ssh.md` doc in the Claude project.
 
 ## Known open work
 
-- `packages/settings` persistence — the next substantial piece
-- `apps/client` has no `proxy.ts`; its guard is per-page in `getServerSideProps`,
-  so a new page is public unless you remember
+Fixed since the last pass, so don't re-fix: `apps/client` now has a `proxy.ts`
+edge guard (PR #50), and `design-b.tsx`'s status pill now reflects the
+session's real status instead of hardcoding "confirmed" (PR #50).
+
+- `packages/settings` persistence — the next substantial piece. It's
+  `localStorage` only despite `org_settings`/`role_settings`/`user_settings`/
+  `settings_audit` existing in production with zero writes. Ordering matters:
+  this was deliberately sequenced *after* `@summit/session` existed (now
+  shipped), not before — see `docs/context/decisions.md`.
 - `apps/scheduler/proxy.ts` uses `getSession()` (reads the cookie) where the
   others use `getUser()` (verifies the JWT), and sets the cookie domain
   unconditionally including in dev
-- `apps/client/components/design-b.tsx` hardcodes `styles.confirmed` on every
-  session status pill, so a cancelled session renders as confirmed
 - ~4.8 MB of clinic-specific assets in `apps/employee/public`, and a BrightHR
   tenant token in `lib/content.ts`
 - `.gitattributes` for the CRLF problem
+
+The full list — compliance gaps, product debt, ops debt, and unresolved
+conflicts between past sessions — lives in `docs/context/`. Read the relevant
+file before starting work in that area, and treat items there tagged OPEN as
+genuinely undecided, not as a backlog to just pick up:
+
+- `docs/context/decisions.md` — what was decided, what was only proposed, what
+  is still open, and what was rejected and why.
+- `docs/context/environments.md` — server, deploy pipeline, env files, and
+  failure modes with their diagnostic tells.
+- `docs/context/compliance.md` — regulatory regimes, what gates revenue, PHI
+  handling rules, open compliance questions.
+- `docs/context/product.md` — who this is for, portal-to-app naming, scope
+  boundaries, commercial model.
+
+These were assembled 2026-08-27 from project chat history and are already
+missing that day's later merges (PR #49, #50) — cross-check dates against
+`git log` before trusting a status claim in them.
