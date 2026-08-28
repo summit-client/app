@@ -78,11 +78,24 @@ that, most awkward first:
    backfilled to Mount Etna (the only clinic that existed), and its RLS
    rewritten per-command with the boundary actually checked. Verified
    against a local two-clinic fixture: same-clinic access preserved exactly
-   as before, cross-clinic reads AND writes both correctly blocked. Two
-   unrelated things the same audit surfaced but this migration didn't touch:
-   `scorecard_metrics` and `hub_certificate_registry` both have `clinic_id`
-   but zero RLS policies at all (default-deny for everyone, a functional gap
-   rather than a tenant-isolation one).
+   as before, cross-clinic reads AND writes both correctly blocked. This
+   migration also left one residual gap unaddressed by design: nothing
+   stops a row's own `clinic_id` from disagreeing with the `clinic_id` of
+   whatever it references (a session tagged clinic A pointing its
+   `client_id` at a clinic B client) - flagged then as "worth doing before a
+   second clinic goes live for real," which is now happening; see the
+   migration `0016` entry below.
+   Two other things the same audit surfaced, re-checked 2026-08-28 rather
+   than left as originally recorded: `scorecard_metrics` genuinely had
+   `clinic_id` and zero RLS policies (default-deny for everyone, a
+   functional gap, not a tenant-isolation one) - **FIXED, migration 0015**,
+   see below. `hub_certificate_registry` was a false alarm on re-check: its
+   lack of policy is deliberate and correct (migration 0008's own comment:
+   "No policy: reached only through the security definer functions below")
+   - it's an internal counter table never queried directly, only through
+   `hub_next_cert_number()`/`hub_issue_certificate()`, which run as
+   `security definer` and don't need RLS to have already let the caller in.
+   No fix needed there.
 1. ~~**Clinician/supervisor logins had zero database access to `clients` and
    `sessions`, so the clinician portal's caseload list was always empty.**~~
    **FIXED 2026-08-28, migration 0014.** Migration 0013 gave those two
@@ -107,14 +120,45 @@ that, most awkward first:
    their own clinic's `clients`/`sessions` rows, still cannot write to
    either (no insert/update/delete policy was added), and still see nothing
    from a second clinic.
-3. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
+2. ~~**`scorecard_metrics` had RLS enabled and zero policies - default-deny
+   for everyone, including the admin meant to define these metrics.**~~
+   **FIXED 2026-08-28, migration 0015.** Not an active bug: `apps/employee`
+   never queries this table today (metric labels come from a hardcoded list;
+   the tables the app does use - `scorecard_cycles`, `scorecard_responses` -
+   already had correct policies from `0007`). Closed anyway before it became
+   the next "empty caseload"-shaped bug report: a clinic-scoped read policy
+   (plus `clinic_id is null` for shared/system-default metrics, matching
+   `credential_rule_versions`'s existing pattern in the same file) and an
+   admin-only write policy, no delete - the same shape every sibling table in
+   `0007`'s "Ecosystem Tracker" section already got except this one. Verified
+   against a local fixture: a clinician now reads both a global and their own
+   clinic's metric, cannot write one, and a second clinic's admin can read
+   the global metric but not Etna's clinic-specific one.
+3. ~~**No cross-table `clinic_id` consistency check on the eight legacy
+   scheduler tables.**~~ **FIXED 2026-08-28, migration 0016.** Flagged but
+   deliberately left out of `0013` to keep that migration reviewable. The
+   actual hole: `0013`'s insert policies only check that a row's *own*
+   `clinic_id` matches the writer's clinic - they say nothing about what a
+   `client_id`/`employee_id`/`calendar_id` on that row actually points at,
+   and those are plain guessable bigints. Confirmed exploitable locally
+   before this fix: a second clinic's admin could insert a `sessions` row
+   correctly tagged with their own `clinic_id` that referenced clinic one's
+   `client_id` or `employee_id` by guessed id, and RLS alone allowed it.
+   `0016` adds a `before insert or update` trigger on `sessions`,
+   `client_availability` and `staff_availability` that looks up each
+   reference's real `clinic_id` and refuses the write on any mismatch
+   (including when the caller can't even see the referenced row under RLS -
+   that fails closed too, correctly). Verified against a local two-clinic
+   fixture: all four cross-clinic reference attempts blocked, legitimate
+   same-clinic writes unaffected.
+5. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
    onto `org_settings` / `role_settings` / `user_settings` / `settings_audit`
    for real now in live mode (preview still uses localStorage, unchanged).
    The org-scope-setting-doesn't-reach-other-portals problem this described
    is closed: every portal now loads the same rows from the same clinic.
    Freshness is load-time (each portal fetches on load/session start), not a
    live push to a session already open elsewhere — see `decisions.md`.
-4. **Portal URLs are encoded twice.** `packages/nav/src/portals.config.ts`
+6. **Portal URLs are encoded twice.** `packages/nav/src/portals.config.ts`
    hardcodes the four production hosts with no environment override, while
    `apps/web/lib/role-redirects.ts` reads `NEXT_PUBLIC_URL_*`. Set
    `NEXT_PUBLIC_URL_EMPLOYEE` and login honours it while the nav bar keeps
@@ -122,17 +166,17 @@ that, most awkward first:
    single source of truth for portal URLs/access (shipped 2026-08-27, PR #49)
    — re-check whether this specific double-encoding still exists against that
    package before treating it as current.*
-5. **The portal list is a static array with fixed labels** and no per-org
+7. **The portal list is a static array with fixed labels** and no per-org
    visibility, bypassing the settings system that already has a "navigation"
    section for exactly this.
-6. **Brand strings are hardcoded** — "MySummitHR", "Summit Clinician", support
+8. **Brand strings are hardcoded** — "MySummitHR", "Summit Clinician", support
    email subjects — rather than read from `org.name`, which already exists in
    the settings registry.
-7. **~4.8 MB of Mount Etna material sits in `apps/employee/public`** — MEGBA
+9. **~4.8 MB of Mount Etna material sits in `apps/employee/public`** — MEGBA
    logos, a scanned signature, a 1.2 MB training HTML file, nine locale files —
    plus five hardcoded Google Drive links in `lib/content.ts`. Fine for phase 1,
    this is the block to unpick for a packaged product.
-8. **`--logo-1/2/3` are fixed and never re-tinted.** Right for a single brand,
+10. **`--logo-1/2/3` are fixed and never re-tinted.** Right for a single brand,
    but a tenant cannot have their own logo colours while everything around the
    logo re-tints.
 

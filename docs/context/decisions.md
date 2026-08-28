@@ -240,6 +240,26 @@ multi-tenant-readiness list for verification detail. If "a clinician sees only
 their assigned clients" becomes a real requirement, that is new schema work,
 not a policy tweak — left OPEN.
 
+**DECIDED (2026-08-28)** — Close the two remaining items `0013`'s audit
+flagged but didn't fix, now that a second clinic is actually being seeded:
+cross-table `clinic_id` consistency on the eight legacy scheduler tables, and
+`scorecard_metrics`'s missing RLS policy. On re-check, `hub_certificate_registry`
+(the other table `0013` flagged alongside `scorecard_metrics`) turned out to
+be a false alarm — its lack of a policy is deliberate (migration `0008`: "No
+policy: reached only through the security definer functions below") and needs
+no fix. Migration `0015` gives `scorecard_metrics` a clinic-scoped read policy
+(plus a `clinic_id is null` shared-metric case, matching `credential_rule_versions`)
+and an admin-only write policy — not an active bug (nothing in `apps/employee`
+queries this table yet), but the same silent-empty-result trap as the
+caseload bug, closed before it became one. Migration `0016` adds a trigger on
+`sessions`/`client_availability`/`staff_availability` verifying that whatever
+a row's `client_id`/`employee_id`/`calendar_id` points at actually belongs to
+that row's own `clinic_id` — confirmed, before this fix, that a second
+clinic's admin could otherwise insert an own-clinic-tagged `sessions` row
+referencing another clinic's client or staff by guessed numeric id, since
+`0013`'s insert policies only ever checked the row's own `clinic_id` column.
+See `product.md`'s multi-tenant-readiness list for verification detail.
+
 **CONFLICTED, needs verification** — "Schema changes ship as SQL migration
 files in the PR, never made in the Supabase dashboard, because dashboard edits
 leave no diff to review." That is the stated rule. In practice migrations
