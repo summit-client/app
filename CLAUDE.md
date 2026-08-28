@@ -127,12 +127,20 @@ reads as an auth bug and is not one. Gate on role in the app and *say* something
 every policy evaluates false, and the portal is blank. Same symptom, different
 cause. `NO_CLINIC` vs `ROLE_EXCLUDED` distinguishes them.
 
-**`packages/settings` does not persist.** It is `localStorage` only, despite its
-own header claiming it writes to the `0005` tables. `org_settings`,
-`role_settings`, `user_settings` and `settings_audit` exist in production and
-nothing writes to them. Every setting is per-browser and per-subdomain, so an
-"organization setting" reaches nobody else. Do not build features that assume
-otherwise until this is fixed.
+**`packages/settings` persists for real now (2026-08-28).** It still starts as
+`localStorage` for preview (`NEXT_PUBLIC_DEV_PREVIEW=1`), but live mode backs
+onto the `0005` tables via `@summit/session`'s identity — call `initSettings()`
+once near the app root (see `apps/data`/`apps/employee`'s `SessionProvider`)
+before reading anything. Every read (`getSetting`, `resolve`, `term`,
+`readAudit`) is still fully synchronous — it reads an in-memory cache that's
+`{}` (falls back to each setting's own default) until `initSettings()`
+resolves, then the real values, with `onSettingsChange()` firing so
+subscribers re-render. `setSetting()` is now `async` (optimistic update,
+rolls back on a failed write) — existing fire-and-forget call sites don't
+need to change, but a new one that cares about failure should `await` it.
+Known gap: an org setting change doesn't push live to someone already using
+the app elsewhere — it's fresh on next load, not real-time push (a deliberate
+v1 scope call, not an oversight).
 
 **`NEXT_PUBLIC_DEV_PREVIEW=1` is double-gated.** The flag must be `1` *and* the
 build must not be production. Preview mode therefore needs `next dev`, not

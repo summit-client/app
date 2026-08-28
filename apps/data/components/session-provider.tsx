@@ -17,6 +17,7 @@ import { AppNav } from "@summit/nav";
 import {
   explainProblem, gate, getIdentity, refreshIdentity, type Identity,
 } from "@summit/session";
+import { initSettings, refreshSettings } from "@summit/settings";
 
 interface Ctx { identity: Identity | null; loading: boolean; reload: () => void }
 
@@ -28,6 +29,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const load = React.useCallback((fresh = false) => {
     setLoading(true);
+    void (fresh ? refreshSettings() : initSettings());
     (fresh ? refreshIdentity() : getIdentity())
       .then((i) => setIdentity(gate(i, "clinician")))
       .finally(() => setLoading(false));
