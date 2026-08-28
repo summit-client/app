@@ -52,23 +52,27 @@ export const WEEK_SUBTITLES: Record<number, string> = {
   2: "Deeper clinical learning, supervised practice and readiness sign-off.",
 };
 
-const B_HR = "https://elearning.brighthr.com/ca";
-const B_SAFE = "https://elearning.brightsafe.com/ca";
-const TID = "?tid=2a856fee-a895-436b-89c6-96ade3116943";
+// BrightHR/BrightSafe URLs embed a vendor tenant ID. This file is imported by
+// client components (training/page.tsx renders straight from it), so the raw
+// URL can't live here without shipping that ID to every employee's browser.
+// These 8 courses instead point at /api/course-link/<key>, which resolves the
+// real URL server-side (lib/content-server.ts) and redirects. See that file
+// for the ones this excludes on purpose.
+const courseLink = (key: string) => `/api/course-link/${key}`;
 const AIM = "https://autisminternetmodules.org/m";
 
 export const HUB_COURSES: HubCourse[] = [
   // In-house 22-module clinical competency program (shipped with this app).
   { key: "megba-clinical-competency", title: "Clinical Competency Training Program", provider: "Mount Etna Global Behaviour Academy", kind: "CLINICAL", category: "MEGBA", externalUrl: "/clinical-training.html", deadlineBucket: "CUSTOM", order: 0 },
   // Mandatory compliance (Week 1, due within 14 days)
-  { key: "cc-aoda-accessibility", title: "Accessibility for Ontarians with Disability", provider: "BrightHR", kind: "COMPLIANCE", category: "AODA", externalUrl: `${B_HR}/aoda-awareness/${TID}`, deadlineBucket: "WITHIN_14_DAYS", order: 1 },
-  { key: "cc-working-together", title: "Working Together: the Code and the AODA", provider: "BrightHR", kind: "COMPLIANCE", category: "AODA", externalUrl: `${B_HR}/workingtogether-the-code-the-aoda/${TID}`, deadlineBucket: "WITHIN_14_DAYS", order: 2 },
-  { key: "cc-ohsa", title: "Occupational Health & Safety Act", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: `${B_SAFE}/getting-to-know-the-ohsa-in-ontario/${TID}#/`, deadlineBucket: "WITHIN_14_DAYS", order: 3 },
-  { key: "cc-whmis", title: "WHMIS", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: `${B_SAFE}/whmis-v2/${TID}#/`, deadlineBucket: "WITHIN_14_DAYS", order: 4 },
-  { key: "cc-violence-harassment", title: "Workplace Violence and Harassment", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: `${B_SAFE}/workplace-violence-and-harassment/${TID}#/`, deadlineBucket: "WITHIN_14_DAYS", order: 5 },
-  { key: "cc-hs-four-steps", title: "Health & Safety Awareness in 4 Steps", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: `${B_SAFE}/worker-health-safety-awareness-four-steps/${TID}#/`, deadlineBucket: "WITHIN_14_DAYS", order: 6 },
-  { key: "cc-hazardous-substances", title: "Hazardous Substances", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: `${B_SAFE}/hazardoussubstances/${TID}#/`, deadlineBucket: "WITHIN_14_DAYS", order: 7 },
-  { key: "cc-wellbeing", title: "Wellbeing at Work", provider: "BrightSafe", kind: "COMPLIANCE", category: "Wellbeing", externalUrl: `${B_SAFE}/wellbeing-at-work/${TID}#/`, deadlineBucket: "WITHIN_14_DAYS", order: 8 },
+  { key: "cc-aoda-accessibility", title: "Accessibility for Ontarians with Disability", provider: "BrightHR", kind: "COMPLIANCE", category: "AODA", externalUrl: courseLink("cc-aoda-accessibility"), deadlineBucket: "WITHIN_14_DAYS", order: 1 },
+  { key: "cc-working-together", title: "Working Together: the Code and the AODA", provider: "BrightHR", kind: "COMPLIANCE", category: "AODA", externalUrl: courseLink("cc-working-together"), deadlineBucket: "WITHIN_14_DAYS", order: 2 },
+  { key: "cc-ohsa", title: "Occupational Health & Safety Act", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: courseLink("cc-ohsa"), deadlineBucket: "WITHIN_14_DAYS", order: 3 },
+  { key: "cc-whmis", title: "WHMIS", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: courseLink("cc-whmis"), deadlineBucket: "WITHIN_14_DAYS", order: 4 },
+  { key: "cc-violence-harassment", title: "Workplace Violence and Harassment", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: courseLink("cc-violence-harassment"), deadlineBucket: "WITHIN_14_DAYS", order: 5 },
+  { key: "cc-hs-four-steps", title: "Health & Safety Awareness in 4 Steps", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: courseLink("cc-hs-four-steps"), deadlineBucket: "WITHIN_14_DAYS", order: 6 },
+  { key: "cc-hazardous-substances", title: "Hazardous Substances", provider: "BrightSafe", kind: "COMPLIANCE", category: "Health & Safety", externalUrl: courseLink("cc-hazardous-substances"), deadlineBucket: "WITHIN_14_DAYS", order: 7 },
+  { key: "cc-wellbeing", title: "Wellbeing at Work", provider: "BrightSafe", kind: "COMPLIANCE", category: "Wellbeing", externalUrl: courseLink("cc-wellbeing"), deadlineBucket: "WITHIN_14_DAYS", order: 8 },
   // Additional mandatory compliance for the first 30 days (URLs set by admin)
   { key: "cc-duty-to-report", title: "Duty to Report (child abuse and neglect)", kind: "COMPLIANCE", category: "Safeguarding", deadlineBucket: "WITHIN_30_DAYS", order: 20 },
   { key: "cc-mental-health", title: "Mental Health Awareness", kind: "COMPLIANCE", category: "Wellbeing", deadlineBucket: "WITHIN_30_DAYS", order: 21 },
