@@ -166,15 +166,28 @@ that, most awkward first:
    both read one registry, no independent copy of a URL or a role map left in
    either file. Confirmed by reading both files directly, not inferred from
    the PR #49 changelog note.
-   One related but distinct duplication remains, out of this item's original
-   scope: every portal's `proxy.ts` (`apps/scheduler`, `apps/data`,
-   `apps/employee`, `apps/client`) hardcodes its own `PUBLIC_ORIGIN`/
-   `LOGIN_URL`/`REFRESH_URL` instead of importing from `@summit/portals` -
-   currently harmless (the values agree with the registry today, and nothing
-   overrides `NEXT_PUBLIC_URL_*` in production), but an env override would
-   desync a portal's own edge auth gate from what the nav bar and sign-in
-   redirect resolve to. Not fixed here - touches every portal's auth gate,
-   so it wants its own deliberate pass rather than folding into this item.
+   ~~One related but distinct duplication remained, out of this item's
+   original scope: every portal's `proxy.ts` hardcoded its own
+   `PUBLIC_ORIGIN`/`LOGIN_URL`/`REFRESH_URL`.~~ **FIXED 2026-08-28.**
+   `@summit/portals` gained `webUrl()`/`loginUrl()`/`refreshUrl()` (apps/web
+   isn't a `PortalKey` - it's the sign-in hub every portal bounces to, not
+   one of the four a signed-in user moves between - so these needed their
+   own export, `NEXT_PUBLIC_URL_WEB`-overridable same as the four portal
+   URLs). All four `proxy.ts` files now read `urlFor()`/`loginUrl()`/
+   `refreshUrl()` instead of a fifth hardcoded copy of each value.
+   `apps/client`'s pre-existing `NEXT_PUBLIC_LOGIN_URL` override (decided in
+   PR #32, a full `/login` URL, not an origin) was kept as its own outermost
+   override rather than folded into `NEXT_PUBLIC_URL_WEB` - the two have
+   never meant the same thing and no other portal has ever set it.
+   `apps/employee` was missing `@summit/portals` as a declared dependency
+   (it only reached it transitively through `@summit/nav`'s re-export,
+   which resolved for React imports but not for `tsc`) - added directly,
+   matching the other three portals. Verified: `apps/data` and
+   `apps/employee` build clean end-to-end including the `Proxy (Middleware)`
+   bundle; `apps/scheduler`/`apps/client`/`apps/web` compile and typecheck
+   clean but fail later at page-data collection on missing Supabase env
+   vars in this environment - confirmed pre-existing and unrelated by
+   reproducing the identical failure with the change stashed out.
 7. **The portal list is a static array with fixed labels** and no per-org
    visibility, bypassing the settings system that already has a "navigation"
    section for exactly this.

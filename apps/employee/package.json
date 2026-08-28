@@ -19,7 +19,8 @@
     "react-dom": "19.2.4",
     "@summit/nav": "workspace:*",
     "@summit/session": "workspace:*",
-    "@summit/proxy-auth": "workspace:*"
+    "@summit/proxy-auth": "workspace:*",
+    "@summit/portals": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24",

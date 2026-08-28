@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { sessionFreshness } from "@summit/proxy-auth";
+import { loginUrl, refreshUrl, urlFor } from "@summit/portals";
 
 /**
  * Auth gate for the family portal (apps/client, port 3003) — Next 16: file `proxy.ts`, export `proxy`.
@@ -11,12 +12,15 @@ import { sessionFreshness } from "@summit/proxy-auth";
  * page, so a new page was public by default unless someone remembered to add
  * it. This makes every page protected unless explicitly excluded below.
  */
-const IS_PROD = process.env.NODE_ENV === "production";
-const LOGIN_URL =
-  process.env.NEXT_PUBLIC_LOGIN_URL || (IS_PROD ? "https://summitclient.io/login" : "http://localhost:3001/login");
+// NEXT_PUBLIC_LOGIN_URL is this app's own decided override (PR #32) for the
+// sign-in link specifically - kept as the outermost override here rather
+// than folded into @summit/portals's NEXT_PUBLIC_URL_WEB, since the two
+// have never meant the same thing (a full /login URL vs. apps/web's origin)
+// and only this portal has ever set it.
+const LOGIN_URL = process.env.NEXT_PUBLIC_LOGIN_URL || loginUrl();
 // The refresh endpoint only ever lives at apps/web, regardless of any
 // NEXT_PUBLIC_LOGIN_URL override for the sign-in page itself.
-const REFRESH_URL = IS_PROD ? "https://summitclient.io/api/auth/refresh" : "http://localhost:3001/api/auth/refresh";
+const REFRESH_URL = refreshUrl();
 // Behind nginx, request.url reflects the address the Next.js process itself
 // is bound to (http://localhost:3003) rather than the public hostname the
 // browser actually used - confirmed live on apps/employee's equivalent code:
@@ -25,8 +29,10 @@ const REFRESH_URL = IS_PROD ? "https://summitclient.io/api/auth/refresh" : "http
 // user stuck on an error page instead of coming back here.
 // request.nextUrl.pathname/search are still correct either way (they come
 // off the request line, not the Host header), so build the redirect target
-// from a known public origin instead of trusting request.url's.
-const PUBLIC_ORIGIN = IS_PROD ? "https://client.summitclient.io" : "http://localhost:3003";
+// from a known public origin instead of trusting request.url's. Reads the
+// same registry the nav bar and sign-in redirect do (@summit/portals),
+// rather than a fourth hardcoded copy of this app's own host.
+const PUBLIC_ORIGIN = urlFor("client");
 
 export async function proxy(request: NextRequest) {
   // All four portals share one .summitclient.io session cookie. If this
