@@ -9,5 +9,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
   clearViewAsCookie(res);
-  res.redirect(302, "/admin/select-client");
+  res.redirect(302, "/");
 }

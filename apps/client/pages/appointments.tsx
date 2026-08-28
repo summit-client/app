@@ -248,7 +248,8 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   const resolved = await resolveViewedClient(supabase, req as NextApiRequest, user.id);
 
   if (resolved.kind === "needs-selection") {
-    return { redirect: { destination: "/admin/select-client", permanent: false } };
+    // The picker lives on the landing page, not here.
+    return { redirect: { destination: "/", permanent: false } };
   }
   if (resolved.kind === "not-permitted") {
     const { data: profile } = await supabase
