@@ -115,6 +115,7 @@ Deno.serve(async (req) => {
   } else {
     const { error: profileErr } = await admin.from("profiles").insert({
       id: newUserId,
+      email: invited.user.email,
       role,
       clinic_id: caller.clinic_id,
       supervisor_id: supervisorId,

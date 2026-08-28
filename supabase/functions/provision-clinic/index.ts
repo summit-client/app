@@ -73,6 +73,7 @@ Deno.serve(async (req) => {
 
   const { error: profileErr } = await admin.from("profiles").insert({
     id: invited.user.id,
+    email: invited.user.email,
     role: "admin",
     clinic_id: clinic.id,
   });
