@@ -27,9 +27,14 @@ export interface ViewedClient {
   isAdminViewingAs: boolean;
 }
 
+export interface SelectableClient {
+  id: string;
+  name: string | null;
+}
+
 export type ResolveResult =
   | { kind: "viewing"; viewed: ViewedClient }
-  | { kind: "needs-selection" }
+  | { kind: "needs-selection"; clinicId: string }
   | { kind: "not-permitted" };
 
 /**
@@ -75,7 +80,7 @@ export async function resolveViewedClient(
 
   if (profile?.role === "admin" && profile.clinic_id) {
     const cookieClientId = req.cookies[VIEW_AS_COOKIE];
-    if (!cookieClientId) return { kind: "needs-selection" };
+    if (!cookieClientId) return { kind: "needs-selection", clinicId: profile.clinic_id };
 
     // Re-validated against the admin's own clinic on every request - the
     // cookie only says which id to check, never grants access on its own.
@@ -86,7 +91,7 @@ export async function resolveViewedClient(
       .eq("clinic_id", profile.clinic_id)
       .maybeSingle();
 
-    if (!client) return { kind: "needs-selection" };
+    if (!client) return { kind: "needs-selection", clinicId: profile.clinic_id };
 
     return {
       kind: "viewing",
@@ -95,6 +100,20 @@ export async function resolveViewedClient(
   }
 
   return { kind: "not-permitted" };
+}
+
+/** The clients an admin can choose to view as, for the landing page's
+ *  inline selector - always scoped to their own clinic. */
+export async function listClinicClients(
+  supabase: SupabaseClient,
+  clinicId: string,
+): Promise<SelectableClient[]> {
+  const { data } = await supabase
+    .from("clients")
+    .select("id, name")
+    .eq("clinic_id", clinicId)
+    .order("name", { ascending: true });
+  return data ?? [];
 }
 
 export function setViewAsCookie(res: NextApiResponse, clientId: string) {

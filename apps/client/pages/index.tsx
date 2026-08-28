@@ -8,20 +8,33 @@ import DesignB, {
   type DashboardSession,
 } from "../components/design-b";
 import { createClient } from "../lib/supabase-server";
-import { resolveViewedClient } from "../lib/admin-view-as";
+import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
 import { AdminViewBanner } from "../components/admin-view-banner";
+import { SelectClient } from "../components/select-client";
 import { homeUrlFor } from "@summit/portals";
 
-type PageProps = {
+type DashboardProps = {
+  mode: "dashboard";
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
   isAdminViewingAs: boolean;
 };
 
+type SelectProps = {
+  mode: "select";
+  clients: SelectableClient[];
+};
+
+type PageProps = DashboardProps | SelectProps;
+
 export default function ClientDashboard(
   props: InferGetServerSidePropsType<typeof getServerSideProps>
 ) {
+  if (props.mode === "select") {
+    return <SelectClient clients={props.clients} />;
+  }
+
   return (
     <>
       {props.isAdminViewingAs ? <AdminViewBanner clientName={props.clientName} /> : null}
@@ -58,7 +71,10 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   const resolved = await resolveViewedClient(supabase, req as NextApiRequest, user.id);
 
   if (resolved.kind === "needs-selection") {
-    return { redirect: { destination: "/admin/select-client", permanent: false } };
+    // The admin picker lives right here on the landing page, not a separate
+    // route - the first thing an admin sees after following the nav link.
+    const clients = await listClinicClients(supabase, resolved.clinicId);
+    return { props: { mode: "select", clients } };
   }
   if (resolved.kind === "not-permitted") {
     // Some other staff role (scheduler, clinician, ...) reached this app -
@@ -112,6 +128,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   return {
     props: {
+      mode: "dashboard",
       familyName,
       clientName: viewed.clientName || "Client",
       sessions: (sessions ?? []) as DashboardSession[],
