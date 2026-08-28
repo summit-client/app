@@ -133,6 +133,18 @@ this work started. See `product.md`'s multi-tenant-readiness list for the
 authorization-matrix detail and what was verified versus what a live
 Deno-less sandbox couldn't execute.
 
+**Confirmed working end-to-end 2026-08-28** by an actual human run, after
+two real bugs surfaced by live testing that neither code review nor the
+local RLS test could have caught: `profiles.email` is `NOT NULL` and
+neither function set it (fixed), and a database trigger creates a default
+`profiles` row on every new `auth.users` insert - including via the Admin
+API - which a plain `insert` always lost the race against (fixed by
+switching to `upsert` on `id`). Also disabled edge-gateway JWT verification
+(`verify_jwt`), which rejected this project's asymmetric (ES256) tokens
+before either function's own `auth.getUser()` check - the real one - ever
+ran. A real clinic, a real admin invite, and a real sign-in with correct
+role-based portal access all confirmed live.
+
 **OPEN (since 2026-05-16)** — `session_data` JSONB schema for the 8 ABA data
 collection methods (DTT, NET, Frequency, Duration, Interval, ABC, Task
 Analysis, Yes/No/Inc). The proposal was a locked shared envelope
