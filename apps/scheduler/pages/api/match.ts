@@ -17,6 +17,25 @@ const MAX_PROMPT_CHARS = 60_000;
 // this set and is not a role the database issues.
 const STAFF_ROLES = new Set(["admin", "scheduler", "supervisor", "clinician"]);
 
+// Auth pins this to a known staff account, but nothing capped how often one
+// account could call it - unbounded means unbounded spend against the org's
+// Anthropic key from a single compromised or careless account. Keyed on
+// user.id (verified, not client-suppliable) rather than IP, since the caller
+// is always an authenticated identity here. In-memory, per-process - fine for
+// the current single fork-mode PM2 process; move to a shared store if this
+// ever runs clustered.
+const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const RATE_LIMIT_MAX = 20;                  // 20 match calls per user per window
+const hits = new Map<string, number[]>();
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const recent = (hits.get(userId) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  recent.push(now);
+  hits.set(userId, recent);
+  return recent.length > RATE_LIMIT_MAX;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
@@ -38,6 +57,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
   if (!profile || !STAFF_ROLES.has(profile.role)) {
     return res.status(403).json({ error: "AI match is available to staff accounts." });
+  }
+
+  if (isRateLimited(user.id)) {
+    return res.status(429).json({ error: "Too many match requests. Try again in a few minutes." });
   }
 
   // 2. Accept only the prompt; everything else is pinned server-side.
