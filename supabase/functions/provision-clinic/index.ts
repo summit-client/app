@@ -81,7 +81,7 @@ Deno.serve(async (req) => {
   });
   if (profileErr) {
     return json(500, {
-      error: `Clinic created (id ${clinic.id}) and invite sent, but creating the admin profile failed: ${profileErr.message}`,
+      error: `Clinic created (id ${clinic.id}) and invite sent to user id ${invited.user.id} (email on the invited auth user: ${invited.user.email}), but creating the admin profile failed: ${profileErr.message}`,
     });
   }
 
