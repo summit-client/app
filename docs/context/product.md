@@ -158,14 +158,23 @@ that, most awkward first:
    is closed: every portal now loads the same rows from the same clinic.
    Freshness is load-time (each portal fetches on load/session start), not a
    live push to a session already open elsewhere — see `decisions.md`.
-6. **Portal URLs are encoded twice.** `packages/nav/src/portals.config.ts`
-   hardcodes the four production hosts with no environment override, while
-   `apps/web/lib/role-redirects.ts` reads `NEXT_PUBLIC_URL_*`. Set
-   `NEXT_PUBLIC_URL_EMPLOYEE` and login honours it while the nav bar keeps
-   pointing at the hardcoded host. *Note: `@summit/portals` now exists as the
-   single source of truth for portal URLs/access (shipped 2026-08-27, PR #49)
-   — re-check whether this specific double-encoding still exists against that
-   package before treating it as current.*
+6. ~~**Portal URLs are encoded twice.**~~ **CONFIRMED FIXED 2026-08-28** (was
+   flagged here as needing a re-check against `@summit/portals`, done now).
+   `packages/nav/src/portals.config.ts` is a two-line re-export of
+   `@summit/portals`'s `PORTALS`/`portalsFor`, and `apps/web/lib/role-redirects.ts`
+   builds `ROLE_REDIRECTS` from that same package's `APP_ROLES`/`homeUrlFor` -
+   both read one registry, no independent copy of a URL or a role map left in
+   either file. Confirmed by reading both files directly, not inferred from
+   the PR #49 changelog note.
+   One related but distinct duplication remains, out of this item's original
+   scope: every portal's `proxy.ts` (`apps/scheduler`, `apps/data`,
+   `apps/employee`, `apps/client`) hardcodes its own `PUBLIC_ORIGIN`/
+   `LOGIN_URL`/`REFRESH_URL` instead of importing from `@summit/portals` -
+   currently harmless (the values agree with the registry today, and nothing
+   overrides `NEXT_PUBLIC_URL_*` in production), but an env override would
+   desync a portal's own edge auth gate from what the nav bar and sign-in
+   redirect resolve to. Not fixed here - touches every portal's auth gate,
+   so it wants its own deliberate pass rather than folding into this item.
 7. **The portal list is a static array with fixed labels** and no per-org
    visibility, bypassing the settings system that already has a "navigation"
    section for exactly this.
