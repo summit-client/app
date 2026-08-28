@@ -412,9 +412,18 @@ enabled = true
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
 
+# verify_jwt = false on all three functions below: this project signs access
+# tokens asymmetrically (ES256), and the gateway's own verifier rejected
+# those with UNAUTHORIZED_ASYMMETRIC_JWT before the function ever ran -
+# confirmed live, not assumed. Each function still verifies the caller
+# itself via auth.getUser() (supabase/functions/_shared/auth.ts), which
+# checks the token against the auth server directly rather than verifying
+# the signature locally, so this is not a lost security check - it only
+# removes a redundant gateway-level one that turned out to be incompatible
+# with this project's JWT signing mode.
 [functions.invite-teammate]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/invite-teammate/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -425,7 +434,7 @@ entrypoint = "./functions/invite-teammate/index.ts"
 
 [functions.edit-teammate]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/edit-teammate/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -436,7 +445,7 @@ entrypoint = "./functions/edit-teammate/index.ts"
 
 [functions.provision-clinic]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/provision-clinic/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx

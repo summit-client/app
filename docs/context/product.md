@@ -172,12 +172,31 @@ that, most awkward first:
    the send side was missing. Verified: local RLS test
    (`supabase/tests/provisioning_rls.sql`) confirms the two new tables grant
    nothing via RLS; `apps/employee`/`apps/scheduler` typecheck and build
-   clean with the new UI wired in. **Not verified**: the Edge Functions
-   themselves were reviewed by hand but never executed - no Deno runtime was
-   reachable in this sandbox (network egress to deno.land is blocked).
-   `supabase functions serve` plus a real end-to-end invite is the first
-   real test, same shape as the second-clinic smoke test still pending from
-   earlier this session.
+   clean with the new UI wired in. The Edge Functions themselves couldn't be
+   executed in that sandbox (no Deno runtime reachable), so they shipped
+   reviewed-by-hand only - and live testing against the real project (same
+   day) found two real bugs neither review nor the local RLS test could have
+   caught:
+   - `profiles.email` is `NOT NULL` (the column predates this repo's
+     migration history, like several other tables this session) and neither
+     function set it - fixed, both now pull it from the invite response.
+     While in there, also set `full_name` (nullable, so this wasn't a crash,
+     but every invite would have shown up "Unnamed" in the directory) and
+     wired a name field through both invite UIs.
+   - This project signs access tokens asymmetrically (ES256). The edge
+     gateway's own `verify_jwt` check doesn't handle that and rejected every
+     call with `UNAUTHORIZED_ASYMMETRIC_JWT` before the function code ever
+     ran. Fixed by setting `verify_jwt = false` on all three functions -
+     not a lost security check: `getUser()` inside each function already
+     verifies the caller against the auth server directly (same pattern
+     every `proxy.ts` uses), which works regardless of signing algorithm
+     and was always the real check; `verify_jwt = true` was only ever a
+     redundant gateway-level one, and it happened to be the one incompatible
+     with this project's JWT mode.
+   Not yet re-confirmed end-to-end after this fix - a real clinic and a real
+   invite email were both produced by the pre-fix calls, but the profile
+   insert (and therefore a working sign-up) never completed on any attempt
+   so far.
 5. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
    onto `org_settings` / `role_settings` / `user_settings` / `settings_audit`
    for real now in live mode (preview still uses localStorage, unchanged).

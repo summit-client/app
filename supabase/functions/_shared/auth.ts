@@ -7,11 +7,13 @@
 // trusts elsewhere: createClient() + auth.getUser() to verify a JWT against
 // the auth server (see apps/*/proxy.ts - "getUser(), never getSession()").
 //
-// Defense in depth, not either/or: config.toml sets verify_jwt = true for
-// all three functions, so the edge gateway itself already rejects a request
-// with no valid Supabase JWT before this code ever runs. getUser() below is
-// a second, explicit check inside the function - it is what tells us WHICH
-// user is calling, not just that some valid JWT was presented.
+// config.toml sets verify_jwt = false for all three functions - the edge
+// gateway's own verifier rejected this project's asymmetric (ES256) access
+// tokens with UNAUTHORIZED_ASYMMETRIC_JWT before the function code ever ran
+// (confirmed live). getUser() below is what actually authenticates the
+// caller instead: it checks the token against the auth server directly,
+// which works regardless of signing algorithm, and is also what tells us
+// WHICH user is calling, not just that some token was presented.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 export type AppRole = "admin" | "supervisor" | "clinician" | "scheduler" | "client";
