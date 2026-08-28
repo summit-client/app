@@ -223,6 +223,23 @@ item). Treat "single clinic today" as a fact about current data only, never
 as license to skip clinic scoping on anything new — see the `clinic_id` hard
 constraint in root `CLAUDE.md`.
 
+**DECIDED (2026-08-28)** — Extend `auth_is_staff()`'s existing clinic-wide
+grain to `clients`/`sessions` for clinician/supervisor, rather than build a
+per-clinician assignment/caseload table. Prompted by a live bug report (the
+clinician portal's caseload page showing nothing for a real clinician login)
+and confirmed via `pg_policies` that neither table had ever named
+`clinician`/`supervisor` in a policy — migration `0013` clinic-scoped both
+tables but deliberately preserved their prior access exactly (admin/scheduler
+only), so the gap predates that migration and predates this repo's migration
+history entirely. Fixed in migration `0014`: a clinic-scoped, read-only select
+policy on both tables for `auth_is_staff()` roles, matching how every other
+clinical table (`programs`, `session_records`, etc.) already grants access —
+clinic-wide, not per-assignment, because no clinician-to-client assignment
+concept exists anywhere in this schema to scope to instead. See `product.md`'s
+multi-tenant-readiness list for verification detail. If "a clinician sees only
+their assigned clients" becomes a real requirement, that is new schema work,
+not a policy tweak — left OPEN.
+
 **CONFLICTED, needs verification** — "Schema changes ship as SQL migration
 files in the PR, never made in the Supabase dashboard, because dashboard edits
 leave no diff to review." That is the stated rule. In practice migrations
