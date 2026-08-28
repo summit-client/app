@@ -14,6 +14,7 @@ import {
   explainProblem, getSession, refreshSession,
   type HubRole, type Session,
 } from "@/lib/session";
+import { initSettings, refreshSettings } from "@summit/settings";
 
 interface Ctx { session: Session | null; loading: boolean; reload: () => void }
 
@@ -25,6 +26,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const load = React.useCallback((fresh = false) => {
     setLoading(true);
+    void (fresh ? refreshSettings() : initSettings());
     (fresh ? refreshSession() : getSession())
       .then(setSession)
       .finally(() => setLoading(false));

@@ -12,7 +12,21 @@
  * Persistence seam: localStorage in preview; the same API backs onto the
  * org_settings / role_settings / user_settings tables (migration 0005) in live
  * mode — callers never branch.
+ *
+ * Live mode needs identity (which clinic, which role, which user) before it
+ * can load or write anything, so call initSettings() once near the app root
+ * once @summit/session's identity is known - see apps/data and
+ * apps/employee's SessionProvider. Every read (getSetting, resolve, term,
+ * readAudit) stays fully synchronous either way: it reads whatever is
+ * currently cached, which is {} (falling back to each setting's own default)
+ * until initSettings() resolves, then the real values, with
+ * onSettingsChange() firing so subscribed components re-render. This is the
+ * same "flash of defaults, then the real value" trade-off @summit/session
+ * itself already makes for portal role - not a new pattern.
  */
+
+import { IS_PREVIEW, getIdentity, type AppRole } from "@summit/session";
+import { createBrowserClient } from "@supabase/ssr";
 
 export type SettingScope = "org" | "role" | "user";
 export type SettingValue = string | number | boolean;
@@ -277,7 +291,16 @@ export interface SettingsAuditEntry {
 
 type Layer = Record<string, SettingValue>;
 
-function read(scope: SettingScope): Layer {
+function sb() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+  );
+}
+
+/* -- preview: unchanged localStorage behaviour -- */
+
+function readLocal(scope: SettingScope): Layer {
   if (typeof window === "undefined") return {};
   try {
     return JSON.parse(localStorage.getItem(KEYS[scope]) ?? "{}") as Layer;
@@ -286,8 +309,108 @@ function read(scope: SettingScope): Layer {
   }
 }
 
-function write(scope: SettingScope, layer: Layer): void {
+function writeLocal(scope: SettingScope, layer: Layer): void {
   localStorage.setItem(KEYS[scope], JSON.stringify(layer));
+}
+
+function readLocalAudit(): SettingsAuditEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(AUDIT_KEY) ?? "[]") as SettingsAuditEntry[];
+  } catch {
+    return [];
+  }
+}
+
+function appendLocalAudit(entry: SettingsAuditEntry): void {
+  const audit = readLocalAudit();
+  audit.unshift(entry);
+  localStorage.setItem(AUDIT_KEY, JSON.stringify(audit.slice(0, 200)));
+}
+
+/* -- live: Supabase-backed cache, populated by initSettings() -- */
+
+interface LiveCache {
+  org: Layer;
+  role: Layer;
+  user: Layer;
+  audit: SettingsAuditEntry[];
+}
+
+let live: LiveCache | null = null;
+let liveLoad: Promise<void> | null = null;
+
+function emptyLiveCache(): LiveCache {
+  return { org: {}, role: {}, user: {}, audit: [] };
+}
+
+async function loadLive(): Promise<void> {
+  const identity = await getIdentity();
+  if (identity.problem || !identity.clinicId) { live = emptyLiveCache(); return; }
+
+  const client = sb();
+  const toLayer = (rows: { key: string; value: SettingValue }[] | null): Layer =>
+    Object.fromEntries((rows ?? []).map((r) => [r.key, r.value]));
+
+  const [orgRes, roleRes, userRes, auditRes] = await Promise.all([
+    client.from("org_settings").select("key, value").eq("clinic_id", identity.clinicId),
+    identity.appRole
+      ? client.from("role_settings").select("key, value")
+          .eq("clinic_id", identity.clinicId).eq("role", identity.appRole)
+      : Promise.resolve({ data: [] }),
+    client.from("user_settings").select("key, value").eq("user_id", identity.userId),
+    client.from("settings_audit").select("actor, level, key, previous, next, at")
+      .eq("clinic_id", identity.clinicId).order("at", { ascending: false }).limit(200),
+  ]);
+
+  live = {
+    org: toLayer(orgRes.data as { key: string; value: SettingValue }[] | null),
+    role: toLayer(roleRes.data as { key: string; value: SettingValue }[] | null),
+    user: toLayer(userRes.data as { key: string; value: SettingValue }[] | null),
+    // `who` only resolves for the caller's own changes: profiles has no
+    // staff-wide read policy (self-select only), so another staff member's
+    // name can't be looked up here without a directory feature this doesn't
+    // have - same limitation already accepted for hub_audit_events (PR #46),
+    // left blank there rather than guessed.
+    audit: ((auditRes.data ?? []) as {
+      actor: string; level: SettingScope; key: string;
+      previous: SettingValue | null; next: SettingValue | null; at: string;
+    }[]).map((r) => ({
+      key: r.key,
+      label: DEFS.get(r.key)?.label ?? r.key,
+      level: r.level,
+      previous: r.previous,
+      next: r.next,
+      who: r.actor === identity.userId ? "You" : "",
+      at: r.at,
+    })),
+  };
+}
+
+/**
+ * Load settings from Supabase once and cache them. No-op in preview, which is
+ * already fully synchronous via localStorage. Call once near the app root
+ * once identity is known (see apps/data and apps/employee's SessionProvider)
+ * - this shares whatever getIdentity() request is already in flight rather
+ * than starting a second one.
+ */
+export function initSettings(): Promise<void> {
+  if (IS_PREVIEW) return Promise.resolve();
+  if (!liveLoad) liveLoad = loadLive().then(() => notify());
+  return liveLoad;
+}
+
+/** Drop the live cache and reload. Call after a sign-in, sign-out, or role
+ *  change - mirrors @summit/session's refreshIdentity(). */
+export function refreshSettings(): Promise<void> {
+  live = null;
+  liveLoad = null;
+  return initSettings();
+}
+
+function read(scope: SettingScope): Layer {
+  if (IS_PREVIEW) return readLocal(scope);
+  return live?.[scope] ?? {};
 }
 
 const listeners = new Set<() => void>();
@@ -329,33 +452,102 @@ export function getSetting(key: string): SettingValue {
   return resolve(key).effective;
 }
 
-export function setSetting(key: string, value: SettingValue | null, level: SettingScope, who = "You"): void {
+const TABLE: Record<SettingScope, string> = {
+  org: "org_settings", role: "role_settings", user: "user_settings",
+};
+
+interface WriteIdentity { clinicId: string | null; userId: string; appRole: AppRole | null }
+
+function matchColumns(level: SettingScope, key: string, identity: WriteIdentity): Record<string, string> | null {
+  if (level === "org") {
+    if (!identity.clinicId) return null;
+    return { clinic_id: identity.clinicId, key };
+  }
+  if (level === "role") {
+    if (!identity.clinicId || !identity.appRole) return null;
+    return { clinic_id: identity.clinicId, role: identity.appRole, key };
+  }
+  return { user_id: identity.userId, key };
+}
+
+/**
+ * Write a setting. Every call feels synchronous: the in-memory cache (and
+ * every onSettingsChange subscriber) updates immediately, before the network
+ * round trip even starts. In live mode the Supabase write happens in the
+ * background and rolls the optimistic update back on failure - a denied
+ * write (wrong role, RLS) reverts the control to its real value instead of
+ * silently pretending it worked. Preview mode is unchanged: fully
+ * synchronous, localStorage only, nothing async happens under the hood.
+ */
+export async function setSetting(
+  key: string, value: SettingValue | null, level: SettingScope, who = "You",
+): Promise<void> {
   const def = DEFS.get(key);
   if (!def) throw new Error(`Unknown setting ${key}`);
   if (def.locked && level !== "org") throw new Error(`${def.label} is organization controlled.`);
-  const layer = read(level);
+
+  if (IS_PREVIEW) {
+    const layer = readLocal(level);
+    const previous = layer[key] ?? null;
+    if (value == null) delete layer[key]; else layer[key] = value;
+    writeLocal(level, layer);
+    appendLocalAudit({ key, label: def.label, level, previous, next: value, who, at: new Date().toISOString() });
+    notify();
+    return;
+  }
+
+  await initSettings();
+  const identity = await getIdentity();
+  const match = matchColumns(level, key, identity);
+  if (!match || !identity.clinicId) throw new Error(`Cannot save ${def.label}: identity is not resolved.`);
+
+  if (!live) live = emptyLiveCache();
+  const layer = live[level];
   const previous = layer[key] ?? null;
-  if (value == null) delete layer[key];
-  else layer[key] = value;
-  write(level, layer);
-  const audit: SettingsAuditEntry[] = readAudit();
-  audit.unshift({ key, label: def.label, level, previous, next: value, who, at: new Date().toISOString() });
-  localStorage.setItem(AUDIT_KEY, JSON.stringify(audit.slice(0, 200)));
+  if (value == null) delete layer[key]; else layer[key] = value;
   notify();
+
+  const client = sb();
+  try {
+    if (value == null) {
+      let query = client.from(TABLE[level]).delete();
+      for (const [col, val] of Object.entries(match)) query = query.eq(col, val);
+      const { error } = await query;
+      if (error) throw error;
+    } else {
+      const payload: Record<string, unknown> = { ...match, value, updated_at: new Date().toISOString() };
+      if (level !== "user") payload.updated_by = identity.userId;
+      const { error } = await client.from(TABLE[level]).upsert(payload);
+      if (error) throw error;
+    }
+  } catch (err) {
+    if (previous == null) delete layer[key]; else layer[key] = previous;
+    notify();
+    console.error(`Failed to save ${def.label}:`, err);
+    throw err;
+  }
+
+  const auditEntry: SettingsAuditEntry = {
+    key, label: def.label, level, previous, next: value, who: "You", at: new Date().toISOString(),
+  };
+  live.audit.unshift(auditEntry);
+  notify();
+  // Best-effort: a failed audit write shouldn't undo a setting that saved
+  // successfully. RLS requires actor = auth.uid(), which this always is, so
+  // a rejection here would mean something is genuinely wrong, worth logging.
+  void client.from("settings_audit").insert({
+    clinic_id: identity.clinicId, actor: identity.userId, level, key, previous, next: value,
+  }).then(({ error }) => { if (error) console.error("Failed to record settings audit entry:", error); });
 }
 
 export function readAudit(): SettingsAuditEntry[] {
-  if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem(AUDIT_KEY) ?? "[]") as SettingsAuditEntry[];
-  } catch {
-    return [];
-  }
+  if (IS_PREVIEW) return readLocalAudit();
+  return live?.audit ?? [];
 }
 
 /** Restore the value a change replaced (change history → Restore Previous Setting). */
-export function restore(entry: SettingsAuditEntry, who = "You"): void {
-  setSetting(entry.key, entry.previous, entry.level, who);
+export function restore(entry: SettingsAuditEntry, who = "You"): Promise<void> {
+  return setSetting(entry.key, entry.previous, entry.level, who);
 }
 
 /* ---- terminology helper -------------------------------------------------------- */

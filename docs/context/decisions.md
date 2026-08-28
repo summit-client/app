@@ -89,7 +89,17 @@ as PR #47, `fix/role-vocabulary` as PR #48. `@summit/session` and a companion
 `apps/scheduler`, `apps/data`, `apps/client` and `apps/employee` (PR #49) —
 the nav bar now filters portals by the viewer's role instead of showing all
 four to everyone, and `apps/data` gained the role gate it previously lacked.
-Step 4 (settings persistence) has not been started.
+**Step 4 shipped 2026-08-28.** `@summit/settings` now backs onto `org_settings`
+/ `role_settings` / `user_settings` / `settings_audit` in live mode via
+`@summit/session`'s identity, keeping localStorage only for preview. Two
+adjacent bugs found and fixed in the same pass: `org_settings`/`role_settings`
+/`user_settings`' write policies were `for all` (this schema's own rule says
+never — it silently includes DELETE), and `settings_audit_write` never
+checked `actor = auth.uid()`, so any staff member could forge an audit row
+claiming to be someone else. Both fixed in migration `0012`, verified against
+a local Postgres replay (`supabase/tests/settings_rls.sql`). Scoped to
+`apps/data` and `apps/employee` — the only two consumers. Settings freshness
+is load-time, not real-time push, a deliberate v1 call.
 
 **OPEN** — Invitations and account provisioning. Recognition, peer feedback and
 the forum all need real accounts. The recommendation on the table is to build

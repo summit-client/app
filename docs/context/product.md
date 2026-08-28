@@ -63,15 +63,13 @@ before anything public-facing.
 The stated plan is to package and sell this per clinic. Current debt against
 that, most awkward first:
 
-1. **`packages/settings` does not persist.** It is `localStorage` only, despite
-   its own header claiming it backs onto `org_settings` / `role_settings` /
-   `user_settings` in live mode. Four live tables, zero writes. Measured: a
-   theme, accent and terminology override set in the clinician portal are
-   `null` in the employee portal, because localStorage is per-origin and the
-   portals are four subdomains. So an **org-scope** setting reaches neither the
-   same user's other portals nor any other user. Do not promise a clinic
-   terminology or branding until this is built. Still true as of 2026-08-27 —
-   this is the next substantial piece per `decisions.md`'s work sequence.
+1. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
+   onto `org_settings` / `role_settings` / `user_settings` / `settings_audit`
+   for real now in live mode (preview still uses localStorage, unchanged).
+   The org-scope-setting-doesn't-reach-other-portals problem this described
+   is closed: every portal now loads the same rows from the same clinic.
+   Freshness is load-time (each portal fetches on load/session start), not a
+   live push to a session already open elsewhere — see `decisions.md`.
 2. **Portal URLs are encoded twice.** `packages/nav/src/portals.config.ts`
    hardcodes the four production hosts with no environment override, while
    `apps/web/lib/role-redirects.ts` reads `NEXT_PUBLIC_URL_*`. Set
