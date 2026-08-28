@@ -165,8 +165,24 @@ platform is.
   mirroring `apps/data`/`apps/employee`. The per-page `getServerSideProps`
   checks were left in place too, since they also supply `user.id` for the
   actual queries, not just gating.
-- No FK from any `client_id` to `clients` on eleven tables. Deleting a client
-  silently orphans every program, note, trial event and report for that child.
+- ~~No FK from any `client_id` to `clients` on eleven tables. Deleting a
+  client silently orphans every program, note, trial event and report for
+  that child.~~ **FIXED 2026-08-28, migration `0011`.** A fresh count found
+  twelve, not eleven (`ai_requests` was missed). Added as `NOT VALID`
+  constraints (default `RESTRICT` on delete, since PHIPA's 10-year retention
+  rules out cascading the delete) so any orphans a past unchecked delete
+  already created don't block the migration itself; new ones are rejected
+  immediately. `apps/scheduler/pages/admin.tsx`'s client-delete handler
+  never checked the delete call's error, so a blocked delete would have
+  silently reported "deleted" while the row stayed put — fixed alongside
+  this so the constraint's rejection actually surfaces to the person
+  clicking delete. Verified against a local replay (three tables lacked a
+  `client_id` index too, needed to check the constraint efficiently; added
+  in the same migration): a pre-existing orphan doesn't block the migration
+  from applying, a new orphan insert is rejected, deleting a client with
+  clinical history is now blocked, and deleting one with none still works.
+  Before validating the constraint against production, check for existing
+  orphans first — the migration's own comment has the query.
 - Session cookie is non-`HttpOnly` and scoped `.summitclient.io`, so one XSS on
   any subdomain yields auth for every portal. Probably intentional for SSO;
   make it a decision rather than an accident. No CSP anywhere.

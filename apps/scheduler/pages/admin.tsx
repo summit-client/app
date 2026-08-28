@@ -178,12 +178,20 @@ async function fetchAll() {
   }
   async function handleDelete(type: 'staff' | 'clients', id: number, name: string) {
   if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
+  let deleteErr;
   if (type === 'staff') {
     await supabase.from('staff_availability').delete().eq('staff_id', id);
-    await supabase.from('staff').delete().eq('id', id);
+    ({ error: deleteErr } = await supabase.from('staff').delete().eq('id', id));
   } else {
     await supabase.from('client_availability').delete().eq('client_id', id);
-    await supabase.from('clients').delete().eq('id', id);
+    // Clinical tables now carry a foreign key on client_id (migration 0011),
+    // so this fails instead of silently orphaning records once the client
+    // has any clinical history - that's a database error here, not a bug.
+    ({ error: deleteErr } = await supabase.from('clients').delete().eq('id', id));
+  }
+  if (deleteErr) {
+    setError(`Could not delete ${name}: this record still has clinical history attached.`);
+    return;
   }
   showToast(`${name} deleted`);
   await fetchAll();
