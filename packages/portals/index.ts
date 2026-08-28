@@ -138,6 +138,29 @@ export function admits(key: PortalKey, role: AppRole | null | undefined): boolea
   return role != null && ACCESS[key].includes(role);
 }
 
+/**
+ * Whether a URL's origin is one of our own portals, resolved for the current
+ * environment (dev localhost ports or prod hosts, same as PORTALS above).
+ * For validating a redirect target supplied by the caller (e.g. a
+ * `return_to` query param) before ever redirecting to it - an endpoint that
+ * redirects to caller-supplied input unchecked is an open redirect.
+ */
+export function isKnownOrigin(url: string): boolean {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return false;
+  }
+  return PORTALS.some((p) => {
+    try {
+      return new URL(p.url).origin === origin;
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** The portals a role may use, in display order. Drives the portal bar. */
 export function portalsFor(role: AppRole | null | undefined): readonly Portal[] {
   return PORTALS.filter((p) => admits(p.key, role));

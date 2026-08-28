@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { sessionFreshness } from "@summit/proxy-auth";
 
 /**
  * Auth gate for the clinician portal (apps/data, port 3002) — Next 16: file `proxy.ts`, export `proxy`.
@@ -16,8 +17,27 @@ import { createServerClient } from "@supabase/ssr";
 const PREVIEW_BYPASS =
   process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
 
+const IS_PROD = process.env.NODE_ENV === "production";
+const LOGIN_URL = IS_PROD ? "https://summitclient.io/login" : "http://localhost:3001/login";
+const REFRESH_URL = IS_PROD ? "https://summitclient.io/api/auth/refresh" : "http://localhost:3001/api/auth/refresh";
+
 export async function proxy(request: NextRequest) {
   if (PREVIEW_BYPASS) return NextResponse.next();
+
+  // All four portals share one .summitclient.io session cookie. If this
+  // session is within 90s of expiry, getUser() below would attempt to
+  // redeem the refresh token itself - the exact race that sends another
+  // portal's concurrent request a hard "already used" error and bounces a
+  // perfectly valid session to login. See @summit/proxy-auth's file header.
+  const freshness = await sessionFreshness(request.cookies.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (freshness === "missing") {
+    return NextResponse.redirect(new URL(LOGIN_URL));
+  }
+  if (freshness === "stale") {
+    const refresh = new URL(REFRESH_URL);
+    refresh.searchParams.set("return_to", request.url);
+    return NextResponse.redirect(refresh);
+  }
 
   const response = NextResponse.next();
   const supabase = createServerClient(
@@ -38,12 +58,12 @@ export async function proxy(request: NextRequest) {
     },
   );
 
+  // freshness === "fresh" guarantees this call cannot itself trigger a
+  // refresh (auth-js's own local expiry check uses the same 90s margin), so
+  // this is exactly as safe as it was before.
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    const login = process.env.NODE_ENV === "production"
-      ? "https://summitclient.io/login"
-      : "http://localhost:3000/login";
-    return NextResponse.redirect(new URL(login));
+    return NextResponse.redirect(new URL(LOGIN_URL));
   }
   return response;
 }

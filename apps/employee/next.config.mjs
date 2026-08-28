@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@summit/design", "@summit/settings", "@summit/nav", "@summit/session", "@summit/portals"],
+  transpilePackages: ["@summit/design", "@summit/settings", "@summit/nav", "@summit/session", "@summit/portals", "@summit/proxy-auth"],
 };
 export default nextConfig;

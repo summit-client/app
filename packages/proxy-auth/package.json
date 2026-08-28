@@ -1,0 +1,10 @@
+{
+  "name": "@summit/proxy-auth",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts",
+  "dependencies": {
+    "@supabase/ssr": "^0.10.3"
+  }
+}
