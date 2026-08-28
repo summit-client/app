@@ -130,12 +130,16 @@ platform is.
 
 ## Open compliance questions
 
-- The `profiles` INSERT policy's `with_check`. If it is `true` rather than
+- ~~The `profiles` INSERT policy's `with_check`. If it is `true` rather than
   `auth.uid() = id`, a user in `auth.users` with no `profiles` row can insert
-  their own as admin of any clinic. Reproduced in a rebuild. Public signup is
-  disabled and an existing user is stopped by the primary key, so the window is
-  narrow, but it is a one-line fix if real:
-  `select policyname, cmd, qual, with_check from pg_policies where tablename='profiles';`
+  their own as admin of any clinic.~~ **CHECKED 2026-08-27, not a problem.**
+  The live policy ("Users can insert own profile") reads
+  `(id = auth.uid()) AND (role = 'client'::user_role) AND (clinic_id IS NULL)`
+  — stricter than the safe baseline, not looser than it. It only permits
+  self-inserting as `client` with no clinic attached, so there's no path to
+  self-escalate to `admin` (or any staff role) through this policy. No fix
+  needed. (Side note: `profiles.role` is a Postgres enum `user_role`, not
+  plain `text`.)
 - No UPDATE policy on `profiles` — this is what closes the self-escalation
   route today. Do not add one casually.
 - `goal_bank_relations` policies are gated on `auth_is_staff()` with no clinic
