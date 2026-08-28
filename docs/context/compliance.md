@@ -142,9 +142,17 @@ platform is.
   plain `text`.)
 - No UPDATE policy on `profiles` — this is what closes the self-escalation
   route today. Do not add one casually.
-- `goal_bank_relations` policies are gated on `auth_is_staff()` with no clinic
-  scoping, on read and write, unlike `goal_bank_entries` beside it. Ask whether
-  that is deliberate for a shared library.
+- ~~`goal_bank_relations` policies are gated on `auth_is_staff()` with no
+  clinic scoping, on read and write, unlike `goal_bank_entries` beside it. Ask
+  whether that is deliberate for a shared library.~~ **FIXED 2026-08-28,
+  migration `0010`.** Not deliberate — reproduced against a local replay
+  (`supabase/tests/goal_bank_relations_rls.sql`) that a second clinic's
+  account could insert, then read back, a relation touching a private entry
+  it has no other access to, leaking that entry's UUID and note. Fixed by
+  requiring both endpoints of a relation to be entries the caller can already
+  see under `goal_bank_entries`' own read policy (own clinic or shared);
+  legitimate shared-library use (linking your own clinic's entry to a shared
+  one) still works, confirmed in the same test file.
 - Six of seven accounts are `admin`. No least-privilege separation. Fine while
   it is one operator and an empty schema; not fine with real client data in the
   28 clinical tables.
