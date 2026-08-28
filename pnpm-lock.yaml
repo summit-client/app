@@ -29,6 +29,9 @@ importers:
       '@summit/portals':
         specifier: workspace:*
         version: link:../../packages/portals
+      '@summit/proxy-auth':
+        specifier: workspace:*
+        version: link:../../packages/proxy-auth
       '@summit/session':
         specifier: workspace:*
         version: link:../../packages/session
@@ -72,6 +75,9 @@ importers:
       '@summit/portals':
         specifier: workspace:*
         version: link:../../packages/portals
+      '@summit/proxy-auth':
+        specifier: workspace:*
+        version: link:../../packages/proxy-auth
       '@summit/session':
         specifier: workspace:*
         version: link:../../packages/session
@@ -115,6 +121,9 @@ importers:
       '@summit/nav':
         specifier: workspace:*
         version: link:../../packages/nav
+      '@summit/proxy-auth':
+        specifier: workspace:*
+        version: link:../../packages/proxy-auth
       '@summit/session':
         specifier: workspace:*
         version: link:../../packages/session
@@ -161,6 +170,9 @@ importers:
       '@summit/portals':
         specifier: workspace:*
         version: link:../../packages/portals
+      '@summit/proxy-auth':
+        specifier: workspace:*
+        version: link:../../packages/proxy-auth
       '@supabase/auth-helpers-nextjs':
         specifier: ^0.15.0
         version: 0.15.0(@supabase/supabase-js@2.106.1)
@@ -293,6 +305,12 @@ importers:
       typescript:
         specifier: 6.0.2
         version: 6.0.2
+
+  packages/proxy-auth:
+    dependencies:
+      '@supabase/ssr':
+        specifier: ^0.10.3
+        version: 0.10.3(@supabase/supabase-js@2.106.1)
 
   packages/session:
     dependencies:

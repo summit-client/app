@@ -64,8 +64,10 @@ These are never violated regardless of what a task seems to ask for:
   **and** `NODE_ENV !== "production"` (see `NEXT_PUBLIC_DEV_PREVIEW` below).
 - Every PHI table carries `clinic_id` and RLS policies. No exceptions.
 - Auth gates use `getUser()`, never `getSession()`. `getUser()` verifies the
-  JWT against the auth server; `getSession()` trusts the cookie. (`apps/scheduler/proxy.ts`
-  still uses `getSession()` — known debt, not a pattern to copy.)
+  JWT against the auth server; `getSession()` trusts the cookie. All four
+  portals' `proxy.ts` do this correctly as of PR #52 — but see the
+  cross-portal refresh-token race below before calling `getUser()` a safe,
+  no-side-effects check.
 - `security definer` functions must schema-qualify every reference and name
   `pg_temp` last. `set search_path = public` alone does **not** exclude
   `pg_temp` — this was exploited on this schema (temp-table shadowing let any
@@ -142,6 +144,27 @@ Known gap: an org setting change doesn't push live to someone already using
 the app elsewhere — it's fresh on next load, not real-time push (a deliberate
 v1 scope call, not an oversight).
 
+**Calling `getUser()` can silently sign a valid user out — cross-portal.**
+All four portals share one `.summitclient.io` session cookie. `@supabase/auth-js`
+redeems the refresh token on *any* `getUser()`/`getSession()` call once the
+session is within 90 seconds of expiry, regardless of `autoRefreshToken`
+(that option only controls the proactive background timer, not this
+on-demand path). With four independently deployed processes reading the same
+cookie, whichever portal's `proxy.ts` runs first in that window wins the
+refresh; Supabase invalidates the old refresh token immediately, so a second
+portal racing with the same stale token gets a hard, unrecoverable
+`refresh_token_already_used` `AuthApiError` — which used to be treated
+identically to "not signed in" and bounced a perfectly valid session to
+login. This is exactly what "click employee in the nav bar, land back on the
+web landing page" looks like from the outside. Fixed by `@summit/proxy-auth`'s
+`sessionFreshness()`: every spoke portal's `proxy.ts` checks freshness by
+reading the cookie directly (no auth call, so it cannot itself race) before
+ever calling `getUser()`, and redirects to `apps/web`'s
+`/api/auth/refresh` — the only place a refresh token is ever redeemed —
+whenever the session is stale. Do not add a second place that calls
+`getUser()`/`getSession()` on a possibly-stale session; route it through the
+central refresh endpoint instead.
+
 **`NEXT_PUBLIC_DEV_PREVIEW=1` is double-gated.** The flag must be `1` *and* the
 build must not be production. Preview mode therefore needs `next dev`, not
 `next start`. Never set it on the server.
@@ -202,20 +225,16 @@ the `summitclient-deploy-ssh.md` doc in the Claude project.
 ## Known open work
 
 Fixed since the last pass, so don't re-fix: `apps/client` now has a `proxy.ts`
-edge guard (PR #50), and `design-b.tsx`'s status pill now reflects the
-session's real status instead of hardcoding "confirmed" (PR #50).
+edge guard (PR #50); `design-b.tsx`'s status pill now reflects the session's
+real status instead of hardcoding "confirmed" (PR #50); `packages/settings`
+persists for real via Supabase (PR #57, see "Traps that have already bitten"
+above); `apps/scheduler/proxy.ts` uses `getUser()` (PR #52); the BrightHR
+tenant ID moved server-side (PR #54); `.gitattributes` now normalizes line
+endings (PR #56); and the cross-portal refresh-token race that could bounce a
+valid session to login is fixed via `@summit/proxy-auth` (see "Traps that
+have already bitten" above) — application code only, no manual migration.
 
-- `packages/settings` persistence — the next substantial piece. It's
-  `localStorage` only despite `org_settings`/`role_settings`/`user_settings`/
-  `settings_audit` existing in production with zero writes. Ordering matters:
-  this was deliberately sequenced *after* `@summit/session` existed (now
-  shipped), not before — see `docs/context/decisions.md`.
-- `apps/scheduler/proxy.ts` uses `getSession()` (reads the cookie) where the
-  others use `getUser()` (verifies the JWT), and sets the cookie domain
-  unconditionally including in dev
-- ~4.8 MB of clinic-specific assets in `apps/employee/public`, and a BrightHR
-  tenant token in `lib/content.ts`
-- `.gitattributes` for the CRLF problem
+- ~4.8 MB of clinic-specific assets in `apps/employee/public`
 
 The full list — compliance gaps, product debt, ops debt, and unresolved
 conflicts between past sessions — lives in `docs/context/`. Read the relevant
