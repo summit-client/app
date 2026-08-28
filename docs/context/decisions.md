@@ -205,6 +205,24 @@ rather than walking a developer through every step.
 **DECIDED** — Task status lives in a local HTM tracker that Yanko updates
 himself. Do not mark an item complete because a branch merged.
 
+**DECIDED (2026-08-28)** — Multi-tenant, RLS-enforced clinic isolation on
+*every* record is the actual objective, not a phase-2 someday: "the current
+scope of 'mount etna only' is not the objective with this app: it's
+commercialization with multi tenant usage." Prompted by discovering, live via
+`pg_policies`, that eight core tables (`clients`, `staff`, `sessions`,
+`calendars`, `locations`, `session_types`, `client_availability`,
+`staff_availability` — the original scheduler schema, predating this repo's
+migration history) had no `clinic_id` column and no clinic check in RLS at
+all: any admin or scheduler account had unconditional, clinic-wide access.
+Fixed in migration `0013` — see `product.md`'s multi-tenant-readiness list
+for the technical detail and what it does not yet cover (two tables found in
+the same audit with `clinic_id` but zero RLS policies at all, a different,
+unrelated gap; and no cross-table clinic_id consistency check across
+client_id/employee_id/calendar_id references, left as a residual hardening
+item). Treat "single clinic today" as a fact about current data only, never
+as license to skip clinic scoping on anything new — see the `clinic_id` hard
+constraint in root `CLAUDE.md`.
+
 **CONFLICTED, needs verification** — "Schema changes ship as SQL migration
 files in the PR, never made in the Supabase dashboard, because dashboard edits
 leave no diff to review." That is the stated rule. In practice migrations

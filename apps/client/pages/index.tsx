@@ -8,7 +8,7 @@ import DesignB, {
   type DashboardSession,
 } from "../components/design-b";
 import { createClient } from "../lib/supabase-server";
-import { resolveViewedClient, listSelectableClients, type SelectableClient } from "../lib/admin-view-as";
+import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { SelectClient } from "../components/select-client";
 import { homeUrlFor } from "@summit/portals";
@@ -73,7 +73,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   if (resolved.kind === "needs-selection") {
     // The admin picker lives right here on the landing page, not a separate
     // route - the first thing an admin sees after following the nav link.
-    const clients = await listSelectableClients(supabase);
+    const clients = await listClinicClients(supabase, resolved.clinicId);
     return { props: { mode: "select", clients } };
   }
   if (resolved.kind === "not-permitted") {

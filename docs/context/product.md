@@ -63,6 +63,26 @@ before anything public-facing.
 The stated plan is to package and sell this per clinic. Current debt against
 that, most awkward first:
 
+0. ~~**Eight core tables had no clinic boundary at the database level at
+   all.**~~ **FIXED 2026-08-28, migration 0013.** `clients`, `staff`,
+   `sessions`, `calendars`, `locations`, `session_types`,
+   `client_availability` and `staff_availability` predate this repo's
+   migration history - unlike every table added since (which all carry
+   `clinic_id` + a `clinic_id = auth_clinic_id()`-shaped policy from day
+   one), these eight had neither. Any admin or scheduler account had
+   unconditional, clinic-wide RLS access to all of them - confirmed live via
+   `pg_policies`, not assumed. This was the actual cause of a separate bug
+   (the admin "view as client" picker showing an empty list with real
+   clients populated - `clients.clinic_id` didn't exist yet, so the query
+   failed outright). Every one of these tables now has `clinic_id`,
+   backfilled to Mount Etna (the only clinic that existed), and its RLS
+   rewritten per-command with the boundary actually checked. Verified
+   against a local two-clinic fixture: same-clinic access preserved exactly
+   as before, cross-clinic reads AND writes both correctly blocked. Two
+   unrelated things the same audit surfaced but this migration didn't touch:
+   `scorecard_metrics` and `hub_certificate_registry` both have `clinic_id`
+   but zero RLS policies at all (default-deny for everyone, a functional gap
+   rather than a tenant-isolation one).
 1. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
    onto `org_settings` / `role_settings` / `user_settings` / `settings_audit`
    for real now in live mode (preview still uses localStorage, unchanged).

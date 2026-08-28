@@ -139,6 +139,7 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
   const [selected, setSelected] = useState(() => availToSlots(existingAvailability));
   const [saving, setSaving] = useState(false);
   const dragRef = useRef({ active: false, mode: null });
+  const appUser = useContext(UserContext);
 
   const tableName = entityType === "staff" ? "staff_availability" : "client_availability";
   const idField = entityType === "staff" ? "staff_id" : "client_id";
@@ -156,7 +157,7 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
 
   async function handleSave() {
     setSaving(true);
-    const ranges = slotsToRanges(selected, entityId, entityType);
+    const ranges = slotsToRanges(selected, entityId, entityType).map(r => ({ ...r, clinic_id: appUser.clinic_id }));
     await supabase.from(tableName).delete().eq(idField, entityId);
     if (ranges.length) await supabase.from(tableName).insert(ranges);
     setSaving(false);
@@ -1452,6 +1453,7 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
 // ─── Create view ──────────────────────────────────────────────────────────────
 
 function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays }) {
+  const appUser = useContext(UserContext);
   const [step, setStep] = useState("calendar");
   const [trail, setTrail] = useState([]);
 
@@ -1516,7 +1518,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     const farFuture = `${new Date().getFullYear() + 3}-12-31`;
     const { data } = await supabase
       .from("calendars")
-      .insert({ name: newCalName, date_start: today, date_end: farFuture, status: "draft" })
+      .insert({ name: newCalName, date_start: today, date_end: farFuture, status: "draft", clinic_id: appUser.clinic_id })
       .select().single();
     if (data) { setCalendars(prev => [...prev, data]); setSelectedCalendar(data); setShowNewCal(false); showToast("Calendar created"); setNewCalName(""); }
     setCalCreating(false);
@@ -1617,6 +1619,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
               type: ps.sessionType,
               calendar_id: selectedCalendar.id,
               status: "scheduled",
+              clinic_id: appUser.clinic_id,
             });
           }
         });

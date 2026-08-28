@@ -105,6 +105,7 @@ async function fetchAll() {
         capacity: staffForm.capacity,
         booked: 0,
         availability: [],
+        clinic_id: appUser.clinic_id,
       }])
       .select()
       .single();
@@ -121,6 +122,7 @@ async function fetchAll() {
       day,
       start_time: null,
       end_time: null,
+      clinic_id: appUser.clinic_id,
     }));
     await supabase.from('staff_availability').insert(availRows);
 
@@ -144,6 +146,7 @@ async function fetchAll() {
         status: clientForm.status,
         sessions: 0,
         availability: [],
+        clinic_id: appUser.clinic_id,
       }])
       .select()
       .single();
@@ -160,6 +163,7 @@ async function fetchAll() {
       day,
       start_time: null,
       end_time: null,
+      clinic_id: appUser.clinic_id,
     }));
     await supabase.from('client_availability').insert(availRows);
 

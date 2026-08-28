@@ -22,6 +22,15 @@ export interface AppUser {
   email: string;
   role: UserRole;
   full_name?: string;
+  /**
+   * Already present on every row this hook fetches (`select("*")` on
+   * profiles) - just not typed until now. Every insert into clients, staff,
+   * sessions, calendars, locations, session_types, client_availability or
+   * staff_availability must set this (migration 0013 made it not-null and
+   * RLS-checked), since none of those tables' schemas predate multi-tenant
+   * scoping the way this column does.
+   */
+  clinic_id: string;
 }
 
 /** Reject rather than hang forever if a call never settles. */

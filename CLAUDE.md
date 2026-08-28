@@ -6,10 +6,13 @@ real time.
 
 ## What this is
 
-A pnpm + Turborepo monorepo, Next.js 16.2.x with Turbopack. Phase 1 is a
-tailored solution for one ABA clinic ("Mount Etna"); phase 2 packages the same
-product for other clinics on a subscription. **Treat clinic-specific values as
-temporary and say so when you add one.**
+A pnpm + Turborepo monorepo, Next.js 16.2.x with Turbopack. Mount Etna is the
+anchor client, not the ceiling: the objective is commercialization across
+multiple clinics on a subscription, and "only one clinic exists today" is a
+fact about current data, never a reason to skip clinic scoping on anything
+new. **Treat clinic-specific values as temporary and say so when you add
+one.** (2026-08-28: this correction followed directly from a real gap — see
+the `clinic_id` note under Hard constraints below.)
 
 This handles PHI. **PHIPA (Ontario) and PIPEDA (federal Canada) are the
 binding regimes** — the anchor client, Mount Etna Child & Family Services
@@ -62,7 +65,16 @@ These are never violated regardless of what a task seems to ask for:
 - Anything named `NEXT_PUBLIC_*` is readable by the browser. Never gate auth
   or security behavior on one. A preview/bypass flag must be gated on the flag
   **and** `NODE_ENV !== "production"` (see `NEXT_PUBLIC_DEV_PREVIEW` below).
-- Every PHI table carries `clinic_id` and RLS policies. No exceptions.
+- Every PHI table carries `clinic_id` and RLS policies. No exceptions. This
+  is now actually true schema-wide (migration 0013) — `clients`, `staff`,
+  `sessions`, `calendars`, `locations`, `session_types`,
+  `client_availability` and `staff_availability` are the original scheduler
+  tables that predate this repo's migration history and, until 0013, had
+  neither: any admin or scheduler account had unconditional, clinic-wide
+  access to all of them. If you add a table, it needs `clinic_id` and a
+  `clinic_id = auth_clinic_id()`-shaped policy from the start — the
+  8-table retrofit is exactly the kind of gap that's expensive to notice
+  later and cheap to avoid at creation.
 - Auth gates use `getUser()`, never `getSession()`. `getUser()` verifies the
   JWT against the auth server; `getSession()` trusts the cookie. All four
   portals' `proxy.ts` do this correctly as of PR #52 — but see the
