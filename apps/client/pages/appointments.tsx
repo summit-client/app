@@ -7,6 +7,9 @@ import type {
 import { useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { createClient } from "../lib/supabase-server";
+import { resolveViewedClient } from "../lib/admin-view-as";
+import { AdminViewBanner } from "../components/admin-view-banner";
+import { homeUrlFor } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
 
 type SessionStatus = "scheduled" | "completed" | "cancelled";
@@ -25,12 +28,16 @@ type Session = {
 
 type PageProps = {
   sessions: Session[];
+  clientName: string;
+  isAdminViewingAs: boolean;
 };
 
 type Filter = "All" | "Scheduled" | "Completed" | "Cancelled";
 
 export default function Appointments({
   sessions,
+  clientName,
+  isAdminViewingAs,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const [filter, setFilter] = useState<Filter>("All");
 
@@ -42,6 +49,8 @@ export default function Appointments({
         );
 
   return (
+    <>
+    {isAdminViewingAs ? <AdminViewBanner clientName={clientName} /> : null}
     <div className={styles.page}>
       <Sidebar />
 
@@ -207,6 +216,7 @@ export default function Appointments({
         </section>
       </main>
     </div>
+    </>
   );
 }
 
@@ -235,6 +245,22 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     };
   }
 
+  const resolved = await resolveViewedClient(supabase, req as NextApiRequest, user.id);
+
+  if (resolved.kind === "needs-selection") {
+    return { redirect: { destination: "/admin/select-client", permanent: false } };
+  }
+  if (resolved.kind === "not-permitted") {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    return { redirect: { destination: homeUrlFor(profile?.role), permanent: false } };
+  }
+
+  const { viewed } = resolved;
+
   const { data: sessions, error: sessionsError } = await supabase
     .from("sessions")
     .select(`
@@ -248,6 +274,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
         name
       )
     `)
+    .eq("client_id", viewed.clientId)
     .order("session_date", { ascending: true })
     .order("hour", { ascending: true })
     .order("minute", { ascending: true });
@@ -258,6 +285,8 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     return {
       props: {
         sessions: [],
+        clientName: viewed.clientName,
+        isAdminViewingAs: viewed.isAdminViewingAs,
       },
     };
   }
@@ -265,6 +294,8 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   return {
     props: {
       sessions: (sessions ?? []) as Session[],
+      clientName: viewed.clientName,
+      isAdminViewingAs: viewed.isAdminViewingAs,
     },
   };
 };
