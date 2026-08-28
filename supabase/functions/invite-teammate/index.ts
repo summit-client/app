@@ -111,17 +111,25 @@ Deno.serve(async (req) => {
   const newUserId = invited.user.id;
 
   if (role === "client" && linkedClientId != null) {
+    // A database trigger already created a default profiles row (role
+    // 'client', clinic_id null) the instant inviteUserByEmail ran - which
+    // happens to be exactly the shape a self-signed-up client's profile
+    // already has, so nothing further to write here. Only linking the
+    // clients record is this branch's job.
     const { error: linkErr } = await admin.from("clients").update({ user_id: newUserId }).eq("id", linkedClientId);
     if (linkErr) return json(500, { error: "Invite sent, but linking the client record failed: " + linkErr.message });
   } else {
-    const { error: profileErr } = await admin.from("profiles").insert({
+    // upsert, not insert: that same trigger-created default row means a
+    // plain insert always loses the race and hits profiles_pkey (confirmed
+    // live). This overwrites it with the real role/clinic/supervisor.
+    const { error: profileErr } = await admin.from("profiles").upsert({
       id: newUserId,
       email: invited.user.email,
       full_name: body.full_name?.trim() || null,
       role,
       clinic_id: caller.clinic_id,
       supervisor_id: supervisorId,
-    });
+    }, { onConflict: "id" });
     if (profileErr) return json(500, { error: "Invite sent, but creating the profile failed: " + profileErr.message });
   }
 

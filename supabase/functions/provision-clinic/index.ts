@@ -72,13 +72,19 @@ Deno.serve(async (req) => {
     return json(500, { error: `Clinic created (id ${clinic.id}) but the admin invite failed: ${inviteErr?.message ?? "unknown error"}` });
   }
 
-  const { error: profileErr } = await admin.from("profiles").insert({
+  // upsert, not insert: a database trigger creates a default profiles row
+  // (role='client', clinic_id=null) the instant inviteUserByEmail's
+  // auth.users insert happens - confirmed live, not documented anywhere -
+  // so a plain insert always loses that race and hits profiles_pkey. This
+  // overwrites that default row with the real role/clinic_id instead of
+  // colliding with it.
+  const { error: profileErr } = await admin.from("profiles").upsert({
     id: invited.user.id,
     email: invited.user.email,
     full_name: body.admin_full_name?.trim() || null,
     role: "admin",
     clinic_id: clinic.id,
-  });
+  }, { onConflict: "id" });
   if (profileErr) {
     return json(500, {
       error: `Clinic created (id ${clinic.id}) and invite sent to user id ${invited.user.id} (email on the invited auth user: ${invited.user.email}), but creating the admin profile failed: ${profileErr.message}`,
