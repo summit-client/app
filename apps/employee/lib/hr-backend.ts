@@ -96,6 +96,68 @@ export function thisCycle(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
+/* ---- account provisioning ---------------------------------------------------
+ * profiles has no UPDATE policy at all and its INSERT policy only lets a
+ * signed-in user create their own row as role='client' - there is no RLS
+ * path for creating a staff account or changing someone's role/clinic/
+ * supervisor. These call the invite-teammate / edit-teammate Supabase Edge
+ * Functions (supabase/functions/), which do the privileged write with the
+ * service-role key - a key that (per CLAUDE.md) must never sit in this or
+ * any app's env, which is why this isn't a Next.js API route.
+ * supabase.functions.invoke() forwards the caller's own session token
+ * automatically; the function re-verifies it and enforces who may do what
+ * server-side - nothing here is a substitute for that, only a way to reach it.
+ */
+export interface InviteTeammateInput {
+  email: string;
+  role: "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+  supervisorId?: string;
+  clientId?: number;
+}
+export interface EditTeammateInput {
+  targetUserId: string;
+  role?: "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+  supervisorId?: string | null;
+  fullName?: string;
+}
+
+export class ProvisioningError extends Error {
+  constructor(readonly operation: string, message: string) {
+    super(message);
+    this.name = "ProvisioningError";
+  }
+}
+
+async function invoke(fn: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const { data, error } = await sb().functions.invoke(fn, { body });
+  if (error) throw new ProvisioningError(fn, describe(error));
+  const result = (data ?? {}) as Record<string, unknown>;
+  if (result.error) throw new ProvisioningError(fn, String(result.error));
+  return result;
+}
+
+export async function inviteTeammate(input: InviteTeammateInput): Promise<void> {
+  await invoke("invite-teammate", {
+    email: input.email,
+    role: input.role,
+    supervisor_id: input.supervisorId,
+    client_id: input.clientId,
+  });
+}
+
+export async function editTeammate(input: EditTeammateInput): Promise<void> {
+  await invoke("edit-teammate", {
+    target_user_id: input.targetUserId,
+    role: input.role,
+    supervisor_id: input.supervisorId,
+    full_name: input.fullName,
+  });
+}
+
+export async function deactivateTeammate(targetUserId: string): Promise<{ warning?: string }> {
+  return invoke("edit-teammate", { target_user_id: targetUserId, deactivate: true }) as Promise<{ warning?: string }>;
+}
+
 /* ---- preview backend -------------------------------------------------------- */
 
 const KEY = "summit-hr-store";

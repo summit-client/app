@@ -11,6 +11,7 @@ import {
   issueOnboardingCertificate, onboardingProgress, pendingOnboardingCertificates,
   signOffTask, verifyPd,
 } from "@/lib/hub";
+import { deactivateTeammate, editTeammate, inviteTeammate, ProvisioningError } from "@/lib/hr-backend";
 import { SessionGate, useIdentity } from "@/components/session-provider";
 
 /**
@@ -46,7 +47,7 @@ function AdminConsole() {
     return (
       <div>
         <AdminTabs tab={tab} setTab={setTab} role={profile.role} />
-        {tab === "staff" ? <StaffTab /> : <BackendSettingsTab />}
+        {tab === "staff" ? <StaffTab isAdmin={profile.role === "ADMIN"} isPreview={identity.isPreview} /> : <BackendSettingsTab />}
       </div>
     );
   }
@@ -206,51 +207,220 @@ const ACCESS_LEVELS = ["EMPLOYEE", "SUPERVISOR", "ADMIN"] as const;
  *
  * Recognition, peer review and the scoreboard all need a real auth user
  * (recognitions.to_user and scorecard_responses.rater are uuid references), so
- * the directory now shows who actually has an account, and says plainly what is
- * needed to add someone. Provisioning belongs beside auth as a platform
- * capability, not in this tab.
+ * the directory now shows who actually has an account. Provisioning (2026-08-28)
+ * is a platform capability beside auth - the invite-teammate / edit-teammate
+ * Supabase Edge Functions in supabase/functions/ - not this tab's own code;
+ * this only calls them (lib/hr-backend.ts's inviteTeammate/editTeammate/
+ * deactivateTeammate).
+ *
+ * Only admin/supervisor/clinician roles are offered here: this directory's
+ * ACCESS map (hr-backend.ts) only knows how to label those three correctly -
+ * a scheduler or client account would show up mislabeled "employee". Admin
+ * can invite a scheduler, or a client onto an existing intake record, from
+ * apps/scheduler's admin page instead, next to where that data actually lives.
  */
-function StaffTab() {
+function StaffTab({ isAdmin, isPreview }: { isAdmin: boolean; isPreview: boolean }) {
   const people = directory();
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [deactivated, setDeactivated] = React.useState<Set<string>>(new Set());
+  const visiblePeople = people.filter((p) => !deactivated.has(p.id));
 
   return (
     <div style={{ marginTop: 16 }}>
       <h2 className="section-title" style={{ marginTop: 0 }}>Clinic directory</h2>
       <div className="card table-wrap">
         <table className="data">
-          <thead><tr><th>Name</th><th>Access</th><th>Supervisor</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Name</th><th>Access</th><th>Supervisor</th>
+              {isAdmin ? <th></th> : null}
+            </tr>
+          </thead>
           <tbody>
-            {people.map((m) => (
+            {visiblePeople.map((m) => (
               <tr key={m.id}>
                 <td><b>{m.name}</b></td>
                 <td><span className="pill">{m.accessLevel.toLowerCase()}</span></td>
-                <td>{people.find((x) => x.id === m.supervisorId)?.name ?? "\u2014"}</td>
+                <td>{visiblePeople.find((x) => x.id === m.supervisorId)?.name ?? "\u2014"}</td>
+                {isAdmin ? (
+                  <td>
+                    <TeammateActions
+                      person={m}
+                      people={visiblePeople}
+                      busy={busyId === m.id}
+                      onBusy={(b) => setBusyId(b ? m.id : null)}
+                      onDone={(text) => setNotice({ kind: "ok", text })}
+                      onError={(text) => setNotice({ kind: "err", text })}
+                      onDeactivated={() => setDeactivated((s) => new Set(s).add(m.id))}
+                    />
+                  </td>
+                ) : null}
               </tr>
             ))}
-            {!people.length ? (
-              <tr><td colSpan={3} style={{ color: "var(--muted)" }}>
+            {!visiblePeople.length ? (
+              <tr><td colSpan={isAdmin ? 4 : 3} style={{ color: "var(--muted)" }}>
                 No accounts found for this clinic.
               </td></tr>
             ) : null}
           </tbody>
         </table>
       </div>
-      <div className="card card-pad" style={{ marginTop: 12 }}>
-        <b style={{ fontSize: "var(--text-sm)" }}>Adding someone</b>
-        <p className="sub" style={{ marginTop: 6 }}>
-          Everyone here has a Summit account. Recognition, peer review and scorecards all record who did what
-          against that account, so a person has to exist before they can appear in them.
+
+      {notice ? (
+        <p className="sub" style={{ marginTop: 10, color: notice.kind === "err" ? "var(--danger, #b3261e)" : "var(--muted)" }}>
+          {notice.text}
         </p>
-        <p className="sub" style={{ marginTop: 6 }}>
-          Accounts are created centrally for the whole platform, not from this tab \u2014 the same account signs
-          into the scheduler and the clinician portal. Until self-serve invitations exist, an administrator
-          creates the account and sets <code>profiles.clinic_id</code>, <code>role</code> and{" "}
-          <code>supervisor_id</code>; the person then appears here automatically.
-        </p>
-      </div>
+      ) : null}
+
+      {isAdmin && !isPreview ? (
+        <InviteForm people={people} onDone={(text) => setNotice({ kind: "ok", text })} onError={(text) => setNotice({ kind: "err", text })} />
+      ) : (
+        <div className="card card-pad" style={{ marginTop: 12 }}>
+          <b style={{ fontSize: "var(--text-sm)" }}>Adding someone</b>
+          <p className="sub" style={{ marginTop: 6 }}>
+            Everyone here has a Summit account. Recognition, peer review and scorecards all record who did what
+            against that account, so a person has to exist before they can appear in them.
+          </p>
+          <p className="sub" style={{ marginTop: 6 }}>
+            {isPreview
+              ? "Invites are disabled in preview - there is no real account to send one to."
+              : "Only an admin can invite someone from here. A scheduler can invite a client or clinician from the scheduler's admin page."}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
+
+const INVITE_ROLES = ["admin", "supervisor", "clinician"] as const;
+
+function InviteForm({
+  people, onDone, onError,
+}: { people: ReturnType<typeof directory>; onDone: (text: string) => void; onError: (text: string) => void }) {
+  const [email, setEmail] = React.useState("");
+  const [role, setRole] = React.useState<(typeof INVITE_ROLES)[number]>("clinician");
+  const [supervisorId, setSupervisorId] = React.useState("");
+  const [sending, setSending] = React.useState(false);
+
+  async function send() {
+    if (!email.trim()) return;
+    setSending(true);
+    try {
+      await inviteTeammate({ email: email.trim(), role, supervisorId: role === "clinician" && supervisorId ? supervisorId : undefined });
+      onDone(`Invite sent to ${email.trim()}.`);
+      setEmail("");
+      setSupervisorId("");
+    } catch (e) {
+      onError(e instanceof ProvisioningError ? e.message : "Could not send the invite.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="card card-pad" style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, maxWidth: 420 }}>
+      <b style={{ fontSize: "var(--text-sm)" }}>Invite a teammate</b>
+      <input
+        type="email" placeholder="Email address" value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ccc)" }}
+      />
+      <select value={role} onChange={(e) => setRole(e.target.value as (typeof INVITE_ROLES)[number])}
+        style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ccc)" }}>
+        {INVITE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+      </select>
+      {role === "clinician" ? (
+        <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)}
+          style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ccc)" }}>
+          <option value="">No supervisor yet</option>
+          {people.filter((p) => p.accessLevel === "SUPERVISOR" || p.accessLevel === "ADMIN").map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      ) : null}
+      <button onClick={send} disabled={sending || !email.trim()} className="btn" style={{ alignSelf: "flex-start" }}>
+        {sending ? "Sending\u2026" : "Send invite"}
+      </button>
+    </div>
+  );
+}
+
+function TeammateActions({
+  person, people, busy, onBusy, onDone, onError, onDeactivated,
+}: {
+  person: ReturnType<typeof directory>[number];
+  people: ReturnType<typeof directory>;
+  busy: boolean;
+  onBusy: (b: boolean) => void;
+  onDone: (text: string) => void;
+  onError: (text: string) => void;
+  onDeactivated: () => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [role, setRole] = React.useState(person.accessLevel.toLowerCase());
+  const [supervisorId, setSupervisorId] = React.useState(person.supervisorId ?? "");
+
+  async function saveEdit() {
+    onBusy(true);
+    try {
+      await editTeammate({
+        targetUserId: person.id,
+        role: role as EditTeammateRole,
+        supervisorId: supervisorId || null,
+      });
+      onDone(`Updated ${person.name}.`);
+      setEditing(false);
+    } catch (e) {
+      onError(e instanceof ProvisioningError ? e.message : "Could not save the change.");
+    } finally {
+      onBusy(false);
+    }
+  }
+
+  async function deactivate() {
+    if (!confirm(`Deactivate ${person.name}? They will no longer be able to sign in.`)) return;
+    onBusy(true);
+    try {
+      const res = await deactivateTeammate(person.id);
+      onDone(res.warning ? `${person.name} deactivated. ${res.warning}.` : `${person.name} deactivated.`);
+      onDeactivated();
+    } catch (e) {
+      onError(e instanceof ProvisioningError ? e.message : "Could not deactivate.");
+    } finally {
+      onBusy(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={() => setEditing(true)} disabled={busy} className="btn secondary">Edit</button>
+        <button onClick={deactivate} disabled={busy} className="btn secondary">Deactivate</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <select value={role} onChange={(e) => setRole(e.target.value)}>
+        {INVITE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+      </select>
+      {role === "clinician" ? (
+        <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)}>
+          <option value="">No supervisor</option>
+          {people.filter((p) => p.id !== person.id && (p.accessLevel === "SUPERVISOR" || p.accessLevel === "ADMIN")).map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      ) : null}
+      <button onClick={saveEdit} disabled={busy} className="btn">Save</button>
+      <button onClick={() => setEditing(false)} disabled={busy} className="btn secondary">Cancel</button>
+    </div>
+  );
+}
+
+type EditTeammateRole = "admin" | "supervisor" | "clinician" | "scheduler" | "client";
 
 /**
  * Backend settings: the Ecosystem Tracker configuration, edited on the same

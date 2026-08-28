@@ -151,6 +151,33 @@ that, most awkward first:
    that fails closed too, correctly). Verified against a local two-clinic
    fixture: all four cross-clinic reference attempts blocked, legitimate
    same-clinic writes unaffected.
+4. ~~**No way to create a staff/admin account or a new clinic without manual
+   dashboard + SQL.**~~ **FIXED 2026-08-28** - three Supabase Edge Functions
+   (`supabase/functions/`, the first in this repo, and the first use of the
+   service-role key anywhere): `invite-teammate` (admin invites any role,
+   scheduler invites `client`/`clinician`, into their own clinic only, no
+   invite rights for supervisor), `edit-teammate` (role/supervisor change,
+   deactivate via the auth admin API - banning, not a new `profiles.active`
+   column, so every existing `auth_role()`/`auth_is_staff()` call site stays
+   correct with zero changes elsewhere), and `provision-clinic` (a brand-new
+   clinic + its first admin, gated on a new `platform_operators` table since
+   no `profiles.role` value has, or should have, cross-clinic authority - no
+   UI, a runbook step, see `environments.md`). `profiles`' RLS is untouched -
+   still no UPDATE policy, still self-insert-as-client-only on INSERT; every
+   privileged write goes through a service-role client instead, exactly
+   matching `hub_certificate_registry`'s established "no policy, reached only
+   through the service-role/security-definer path" shape. Whoever's invited
+   completes their account through `apps/web`'s existing `/auth/callback`
+   `type === 'invite'` handling, untouched - that path already worked, only
+   the send side was missing. Verified: local RLS test
+   (`supabase/tests/provisioning_rls.sql`) confirms the two new tables grant
+   nothing via RLS; `apps/employee`/`apps/scheduler` typecheck and build
+   clean with the new UI wired in. **Not verified**: the Edge Functions
+   themselves were reviewed by hand but never executed - no Deno runtime was
+   reachable in this sandbox (network egress to deno.land is blocked).
+   `supabase functions serve` plus a real end-to-end invite is the first
+   real test, same shape as the second-clinic smoke test still pending from
+   earlier this session.
 5. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
    onto `org_settings` / `role_settings` / `user_settings` / `settings_audit`
    for real now in live mode (preview still uses localStorage, unchanged).

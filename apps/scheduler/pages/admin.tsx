@@ -32,6 +32,7 @@ interface Client {
   status: string;
   sessions: number;
   location_id: number | null;
+  user_id: string | null;
 }
 
 const defaultStaffForm = { name: '', role: 'RBT', specialties: [] as string[], capacity: 20 };
@@ -464,6 +465,10 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
         </button>
       </div>
 
+      {appUser && (appUser.role === 'admin' || appUser.role === 'scheduler') ? (
+        <InvitePanel role={appUser.role} clients={clientList} onDone={showToast} />
+      ) : null}
+
       {loading ? (
         <p style={s.empty}>Loading...</p>
       ) : tab === 'staff' ? (
@@ -634,5 +639,101 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
     </main>
     </div>
     </>
+  );
+}
+
+/**
+ * Portal access, not a scheduler record. `handleCreateStaff`/`handleCreateClient`
+ * above create rows in this app's own `staff`/`clients` tables (the scheduling
+ * data) - they create no login, exactly what "adding someone" used to
+ * (falsely) claim in apps/employee's admin tab before 2026-08-28. This calls
+ * the invite-teammate Supabase Edge Function (supabase/functions/), which
+ * does the actual account creation with the service-role key - a key that,
+ * per CLAUDE.md, must never sit in any app's env, which is why this can't be
+ * a Next.js API route here either.
+ *
+ * Scheduler's own reach is this app only (@summit/portals' ACCESS map admits
+ * scheduler here, not to apps/employee), so an admin/scheduler-role invite of
+ * a client or clinician happens from here; a scheduler-role invite of
+ * anything else, or setting a new clinician's supervisor, is admin's to do
+ * from apps/employee's Staff & Teams tab instead.
+ */
+function InvitePanel({
+  role, clients, onDone,
+}: { role: 'admin' | 'scheduler'; clients: Client[]; onDone: (msg: string) => void }) {
+  const roleOptions = role === 'admin'
+    ? (['admin', 'supervisor', 'clinician', 'scheduler', 'client'] as const)
+    : (['client', 'clinician'] as const);
+  const unlinkedClients = clients.filter((c) => !c.user_id);
+
+  const [email, setEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<string>(roleOptions[roleOptions.length - 1]);
+  const [clientId, setClientId] = useState<number | ''>('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send() {
+    if (!email.trim()) return;
+    if (inviteRole === 'client' && clientId === '') {
+      setError('Pick an existing client record to link.');
+      return;
+    }
+    setSending(true);
+    setError(null);
+    const { data, error: fnErr } = await supabase.functions.invoke('invite-teammate', {
+      body: {
+        email: email.trim(),
+        role: inviteRole,
+        client_id: inviteRole === 'client' ? clientId : undefined,
+      },
+    });
+    setSending(false);
+    if (fnErr || (data as { error?: string } | null)?.error) {
+      setError((data as { error?: string } | null)?.error ?? fnErr?.message ?? 'Could not send the invite.');
+      return;
+    }
+    setEmail('');
+    setClientId('');
+    onDone(`Invite sent to ${email.trim()}.`);
+  }
+
+  return (
+    <div style={{ background: 'white', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid #E5E7EB' }}>
+      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Invite portal access</div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          type="email" placeholder="Email address" value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #E5E7EB', minWidth: 220 }}
+        />
+        <select
+          value={inviteRole} onChange={(e) => { setInviteRole(e.target.value); setClientId(''); }}
+          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #E5E7EB' }}
+        >
+          {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        {inviteRole === 'client' ? (
+          <select
+            value={clientId} onChange={(e) => setClientId(e.target.value ? Number(e.target.value) : '')}
+            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #E5E7EB', minWidth: 200 }}
+          >
+            <option value="">Which client record?</option>
+            {unlinkedClients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        ) : null}
+        <button
+          onClick={send} disabled={sending || !email.trim()}
+          style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1A3F5C', color: 'white', cursor: 'pointer', opacity: sending ? 0.7 : 1 }}
+        >
+          {sending ? 'Sending…' : 'Send invite'}
+        </button>
+      </div>
+      {inviteRole === 'client' && !unlinkedClients.length ? (
+        <p style={{ fontSize: 12, color: '#6B7280', marginTop: 8 }}>
+          No unlinked client records in this clinic - add one under the Clients tab first.
+        </p>
+      ) : null}
+      {error ? <p style={{ fontSize: 12, color: '#DC2626', marginTop: 8 }}>{error}</p> : null}
+    </div>
   );
 }
