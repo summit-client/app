@@ -193,10 +193,21 @@ that, most awkward first:
      and was always the real check; `verify_jwt = true` was only ever a
      redundant gateway-level one, and it happened to be the one incompatible
      with this project's JWT mode.
-   Not yet re-confirmed end-to-end after this fix - a real clinic and a real
-   invite email were both produced by the pre-fix calls, but the profile
-   insert (and therefore a working sign-up) never completed on any attempt
-   so far.
+   Continued live testing after that fix surfaced one more real, previously
+   undocumented finding: a database trigger creates a default `profiles`
+   row (`role='client', clinic_id=null`) the instant a new `auth.users` row
+   is created - including via the Admin API (`inviteUserByEmail`), not just
+   self-service signup. Confirmed by timestamp: the colliding row's
+   `created_at` matched the failing request to the second. Neither function
+   knew this trigger existed (it isn't in any migration - like `profiles`
+   itself, it predates this repo's migration history), so their plain
+   `insert` into `profiles` always lost that race and hit `profiles_pkey`.
+   Both now `upsert` on `id` instead, overwriting the trigger's default row
+   with the real role/clinic/supervisor. `invite-teammate`'s `client` branch
+   needed no such fix - the trigger's default shape (`role='client',
+   clinic_id=null`) already matches a self-signed-up client's profile
+   exactly, so nothing further was ever needed there beyond linking the
+   `clients` record.
 5. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
    onto `org_settings` / `role_settings` / `user_settings` / `settings_audit`
    for real now in live mode (preview still uses localStorage, unchanged).
