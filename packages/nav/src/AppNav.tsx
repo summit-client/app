@@ -40,6 +40,16 @@ export function AppNav({ activeKey, settingsHref, role }: AppNavProps) {
   return (
     <nav
       aria-label="Summit portals"
+      // .app-nav-scroll (components.css) hides the scrollbar cross-browser;
+      // the scroll behavior itself is inline since everything else here is.
+      // Overflow-x, not wrap: --portalnav-h is a fixed token that dozens of
+      // calc(100vh - var(--portalnav-h)) / position:sticky rules across every
+      // app depend on, so the bar's height can never grow on a narrow screen.
+      // whiteSpace: nowrap on each pill below gives every item a min-content
+      // width equal to its full label, so flex only overflows, never
+      // squashes text - that's what makes the scroll (not a wrap or a
+      // squeeze) the thing that happens on a phone.
+      className="app-nav-scroll"
       style={{
         position: 'sticky',
         top: 0,
@@ -47,13 +57,13 @@ export function AppNav({ activeKey, settingsHref, role }: AppNavProps) {
         display: 'flex',
         alignItems: 'center',
         gap: 'var(--space-1, 4px)',
-        // The bar declares its own height from the same token the shell below
-        // it subtracts, border included, so the two cannot disagree.
         height: 'var(--portalnav-h, 51px)',
         boxSizing: 'border-box',
         padding: '0 var(--space-5, 20px)',
         background: 'var(--brand-800, #1A3F5C)',
         borderBottom: '1px solid var(--brand-600, #28B4A6)',
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
       }}
     >
       {visible.map((p) => {
@@ -74,6 +84,7 @@ export function AppNav({ activeKey, settingsHref, role }: AppNavProps) {
               background: isActive ? 'oklch(100% 0 0 / 0.10)' : 'transparent',
               transition: 'all var(--duration-fast, 110ms) var(--ease-out-quart, ease)',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             {p.label}
@@ -92,6 +103,7 @@ export function AppNav({ activeKey, settingsHref, role }: AppNavProps) {
             justifyContent: 'center',
             width: 30,
             height: 30,
+            flexShrink: 0,
             borderRadius: 'var(--radius-full, 999px)',
             color: 'oklch(100% 0 0 / 0.66)',
             fontSize: 15,

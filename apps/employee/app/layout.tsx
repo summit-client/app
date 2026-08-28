@@ -43,6 +43,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <PortalBar activeKey="employee" />
+        {/* Mobile sidebar drawer: a plain checkbox, so the toggle needs no
+            "use client" in this Server Component. See the comment on
+            .nav-toggle-input in @summit/design/components.css. */}
+        <input type="checkbox" id="nav-toggle" className="nav-toggle-input" />
+        <div className="mobile-topbar">
+          <label htmlFor="nav-toggle" className="nav-toggle-btn" aria-label="Open menu">
+            <span /><span /><span />
+          </label>
+          <span className="mobile-topbar-title">MySummitHR</span>
+        </div>
+        <label htmlFor="nav-toggle" className="nav-toggle-backdrop" aria-hidden="true" />
         <SessionProvider>
         <div className="shell">
           <aside className="sidebar">

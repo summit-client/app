@@ -192,6 +192,34 @@ Apps must not redefine what `components.css` already defines. Each app imports
 its own `app.css` *after* the shared file, so a duplicate silently wins and the
 shared rule renders nowhere.
 
+**Mobile nav pattern (added 2026-08-28).** Below 820px, an app's in-app
+`.sidebar` becomes an off-canvas drawer instead of vanishing — a plain
+`<input type="checkbox" id="nav-toggle" className="nav-toggle-input">` plus a
+`<label htmlFor="nav-toggle">` hamburger and backdrop, all in
+`components.css`, zero JavaScript so it works inside a Server Component
+layout. See `apps/data/app/layout.tsx` for the reference wiring (checkbox +
+`.mobile-topbar` + backdrop label, rendered as siblings immediately before
+`.shell`). `apps/scheduler` duplicates this same pattern in its own
+`styles/globals.css` (`.scheduler-sidebar`/`.scheduler-shell` instead of
+`.sidebar`/`.shell`) rather than depending on `@summit/design`, since it
+keeps its own copy of the tokens instead of importing that package — if you
+change the shared version, check whether the duplicate needs the same fix.
+The cross-portal `AppNav` bar (`packages/nav`) scrolls horizontally instead
+of wrapping when its pills don't fit a phone width — `--portalnav-h` is a
+fixed token too many `calc(100vh - var(--portalnav-h))` / `position:sticky`
+rules depend on for the bar's height never to change.
+
+**`apps/web`'s `styles/globals.css` was never imported anywhere until
+2026-08-28** — `pages/_app.tsx` had no `import '../styles/globals.css'` line,
+so nothing in that file ever took effect in production, on any screen size,
+for as long as the file existed. That included the base `overflow-x:hidden`
+safety net, the gradient-clipped hero headline (`.grad-text` — it rendered as
+plain text), the logo marquee's scroll animation, and every hover state. Most
+of the page still looked right only because it's built almost entirely from
+inline styles. If a `className` in `apps/web` doesn't seem to do anything,
+confirm the stylesheet it's meant to come from is actually imported before
+assuming the class name or selector is wrong.
+
 ## Verification expected before you say something works
 
 - `pnpm -r --if-present run typecheck`

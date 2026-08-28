@@ -2405,7 +2405,18 @@ export default function Scheduler() {
   const ViewComp = views[view];
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bgT, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", fontSize: 16 }}>
+    <>
+      {/* Mobile sidebar drawer toggle - see the comment on .scheduler-sidebar
+          in styles/globals.css. */}
+      <input type="checkbox" id="nav-toggle" className="nav-toggle-input" />
+      <div className="mobile-topbar">
+        <label htmlFor="nav-toggle" className="nav-toggle-btn" aria-label="Open menu">
+          <span /><span /><span />
+        </label>
+        <span className="mobile-topbar-title">Summit Scheduler</span>
+      </div>
+      <label htmlFor="nav-toggle" className="nav-toggle-backdrop" aria-hidden="true" />
+      <div className="scheduler-shell" style={{ display: "flex", minHeight: "100vh", background: COLORS.bgT, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", fontSize: 16 }}>
       <style>{`
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -2445,5 +2456,6 @@ export default function Scheduler() {
       </main>
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
+    </>
   );
 }

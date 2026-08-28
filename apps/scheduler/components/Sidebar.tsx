@@ -42,7 +42,12 @@ function handleNav(id: string) {
   const activeCalendar = calendars.find(c => c.status === "active");
 
   return (
-    <aside style={{
+    // "scheduler-sidebar" - the mobile drawer treatment for this fixed
+    // 228px-wide column lives in globals.css (@media max-width:820px). Below
+    // that breakpoint it was previously just a permanent 228px-wide column
+    // eating well over half of a phone screen, with nothing making it
+    // collapse or open on demand.
+    <aside className="scheduler-sidebar" style={{
       width: 228,
       flexShrink: 0,
       display: "flex",

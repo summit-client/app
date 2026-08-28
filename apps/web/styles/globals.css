@@ -81,6 +81,29 @@ html { scroll-behavior: smooth; }
 
 /* Hover states */
 .nav-link-item:hover  { color: #1A3F5C !important; }
+
+/* PublicNav: .desktop-nav (Features / How it works / Reviews) was already
+   named and marked out for a mobile treatment that was never written - with
+   no rule for it anywhere, all three links plus both CTAs and the logo were
+   cramming onto one row on a phone, wrapping mid-word ("How / it / works"). */
+@media (max-width: 640px) {
+  /* !important: PublicNav sets display:'flex' inline on this element, which
+     otherwise always wins over an external stylesheet rule regardless of
+     this media query - only !important beats an inline style. */
+  .desktop-nav { display: none !important; }
+  .pubnav-inner { padding: 0 16px !important; }
+}
+
+/* Features / How-it-works: both sections use this for their 3-up card grid,
+   plain inline gridTemplateColumns fixed at repeat(3,1fr) with nothing to
+   override it on a phone - each card had well under 120px to work with. */
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) {
+  .grid-3 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .grid-3 { grid-template-columns: 1fr; }
+}
 .feature-card         { transition: transform .2s, box-shadow .2s; }
 .feature-card:hover   { transform: translateY(-5px); box-shadow: 0 16px 44px rgba(26,63,92,.1) !important; }
 
