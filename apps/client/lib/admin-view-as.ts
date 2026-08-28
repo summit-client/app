@@ -34,25 +34,30 @@ export interface SelectableClient {
 
 export type ResolveResult =
   | { kind: "viewing"; viewed: ViewedClient }
-  | { kind: "needs-selection"; clinicId: string }
+  | { kind: "needs-selection" }
   | { kind: "not-permitted" };
 
 /**
- * Figures out whose dashboard to render for the signed-in user:
+ * `clients` has no clinic_id column at all - confirmed live (querying it
+ * throws `column "clinic_id" does not exist`), not merely absent from this
+ * repo's tracked migrations the way its RLS policies are (see below). Its
+ * one live RLS policy that matters here, "Admins and schedulers have full
+ * access to clients", is unconditional: `profiles.role in ('admin',
+ * 'scheduler')`, no clinic check anywhere. So on this table specifically,
+ * an admin's own clinic_id is not the boundary - there isn't one. Every
+ * .eq("clinic_id", ...) in this file's first version was filtering on a
+ * column that doesn't exist, which silently produced an empty result every
+ * time (a Postgrest error, not an RLS-filtered empty set, but the effect
+ * looked identical from the picker: "no clients in your clinic yet" with
+ * clients that plainly existed). Fixed by dropping the clinic filter
+ * entirely and relying on the real policy: any admin sees every client.
  *
- *   - role "client"  -> their own linked `clients` row (unchanged behaviour).
- *   - role "admin"   -> the client named in VIEW_AS_COOKIE, re-validated on
- *                       every request to still belong to the admin's own
- *                       clinic (the cookie's value is never trusted alone -
- *                       it's just "which id to re-check", not a grant).
- *                       No cookie, or a cookie that no longer validates ->
- *                       "needs-selection", so the page can send them to the
- *                       picker instead of rendering anyone's PHI.
- *   - any other role -> "not-permitted". apps/client's proxy.ts only checks
- *       that *some* session exists, not which role - previously any signed-in
- *       staff account (scheduler, clinician, ...) that guessed this URL fell
- *       through to the same clinic-wide, unscoped `sessions` query as an
- *       admin now deliberately gets. Closing that off here.
+ * That policy is itself worth flagging, not routing around: it means this
+ * table has no per-clinic isolation for staff at all, unlike the PHI tables
+ * added since (clinic_id + auth_clinic_id()-scoped policies, per CLAUDE.md's
+ * "every PHI table carries clinic_id" rule). Harmless today - Mount Etna is
+ * the only clinic - but it's exactly the kind of thing that needs fixing
+ * before a second clinic's admin could reach this table.
  */
 export async function resolveViewedClient(
   supabase: SupabaseClient,
@@ -61,7 +66,7 @@ export async function resolveViewedClient(
 ): Promise<ResolveResult> {
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, clinic_id")
+    .select("role")
     .eq("id", userId)
     .maybeSingle();
 
@@ -78,20 +83,21 @@ export async function resolveViewedClient(
     };
   }
 
-  if (profile?.role === "admin" && profile.clinic_id) {
+  if (profile?.role === "admin") {
     const cookieClientId = req.cookies[VIEW_AS_COOKIE];
-    if (!cookieClientId) return { kind: "needs-selection", clinicId: profile.clinic_id };
+    if (!cookieClientId) return { kind: "needs-selection" };
 
-    // Re-validated against the admin's own clinic on every request - the
-    // cookie only says which id to check, never grants access on its own.
+    // Re-validated on every request rather than trusting the cookie alone -
+    // it only says which id to re-check. There's no clinic to check it
+    // against (see the file header), so this just confirms the id still
+    // names a real client at all.
     const { data: client } = await supabase
       .from("clients")
       .select("id, name")
       .eq("id", cookieClientId)
-      .eq("clinic_id", profile.clinic_id)
       .maybeSingle();
 
-    if (!client) return { kind: "needs-selection", clinicId: profile.clinic_id };
+    if (!client) return { kind: "needs-selection" };
 
     return {
       kind: "viewing",
@@ -103,21 +109,20 @@ export async function resolveViewedClient(
 }
 
 /** The clients an admin can choose to view as, for the landing page's
- *  inline selector - always scoped to their own clinic. */
-export async function listClinicClients(
+ *  inline selector. Every client, not scoped to a clinic - see the file
+ *  header on resolveViewedClient for why there's nothing to scope by. */
+export async function listSelectableClients(
   supabase: SupabaseClient,
-  clinicId: string,
 ): Promise<SelectableClient[]> {
   const { data, error } = await supabase
     .from("clients")
     .select("id, name")
-    .eq("clinic_id", clinicId)
     .order("name", { ascending: true });
   // An RLS-filtered read returns [] with no error - this only catches the
   // other kind of empty result (wrong column, permission actually denied,
-  // etc.), but that distinction matters when "no clients" turns out to be
-  // wrong, so log it rather than silently treating both the same as before.
-  if (error) console.error("listClinicClients failed:", error.message);
+  // etc.), but that distinction is exactly what a bad .eq("clinic_id", ...)
+  // hid before, so log it rather than silently treating both the same.
+  if (error) console.error("listSelectableClients failed:", error.message);
   return data ?? [];
 }
 

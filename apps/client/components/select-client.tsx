@@ -16,7 +16,7 @@ export function SelectClient({ clients }: { clients: SelectableClient[] }) {
         Read-only; nothing you do here is saved as them.
       </p>
       {clients.length === 0 ? (
-        <p style={{ color: "#6B7280" }}>No clients in your clinic yet.</p>
+        <p style={{ color: "#6B7280" }}>No clients yet.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {clients.map((c) => (
