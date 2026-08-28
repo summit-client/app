@@ -100,7 +100,16 @@ const ACCESS: Record<PortalKey, readonly AppRole[]> = {
   scheduler: ["admin", "scheduler"],
   clinician: ["admin", "supervisor", "clinician"],
   employee: ["admin", "supervisor", "clinician"],
-  client: ["client"],
+  // "admin" added 2026-08-28 so admins can reach the family portal from the
+  // nav bar for QA. Note this only makes the link visible - apps/client's
+  // own data fetch (pages/index.tsx) looks up `clients` by `user_id =
+  // auth.uid()`, which no admin account has a row for, so an admin visiting
+  // sees "Family"/"Client" placeholders and, per the sessions table's
+  // staff-read RLS policy (clinic_id = auth_clinic_id() and
+  // auth_is_staff()), every session in the clinic rather than one family's -
+  // not a security issue (admins already have clinic-wide read access), but
+  // it is not a preview of what a real family account sees.
+  client: ["client", "admin"],
 };
 
 export interface Portal {
