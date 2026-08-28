@@ -208,6 +208,14 @@ that, most awkward first:
    clinic_id=null`) already matches a self-signed-up client's profile
    exactly, so nothing further was ever needed there beyond linking the
    `clients` record.
+   **Confirmed working end-to-end 2026-08-28**, by a human, not just a `200`
+   response: `provision-clinic` created a real clinic and admin profile, the
+   invite email arrived, `/auth/callback`'s `type === 'invite'` handling and
+   `/update-password` worked unmodified, and the new admin landed in the
+   scheduler with correct role-based access to all four portals (including
+   the client-selector view apps/client shows an admin). This is the one
+   piece of the whole provisioning feature that genuinely could not be
+   verified any other way than a live run.
 5. ~~**`packages/settings` does not persist.**~~ **FIXED 2026-08-28.** It backs
    onto `org_settings` / `role_settings` / `user_settings` / `settings_audit`
    for real now in live mode (preview still uses localStorage, unchanged).
