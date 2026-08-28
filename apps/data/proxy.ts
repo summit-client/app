@@ -20,6 +20,16 @@ const PREVIEW_BYPASS =
 const IS_PROD = process.env.NODE_ENV === "production";
 const LOGIN_URL = IS_PROD ? "https://summitclient.io/login" : "http://localhost:3001/login";
 const REFRESH_URL = IS_PROD ? "https://summitclient.io/api/auth/refresh" : "http://localhost:3001/api/auth/refresh";
+// Behind nginx, request.url reflects the address the Next.js process itself
+// is bound to (http://localhost:3002) rather than the public hostname the
+// browser actually used - confirmed live: a stale session sent
+// return_to=http://localhost:3004/ to apps/web, which correctly rejected it
+// as an unknown origin (isKnownOrigin) but left the user stuck on an error
+// page instead of coming back here. request.nextUrl.pathname/search are
+// still correct either way (they come off the request line, not the Host
+// header), so build the redirect target from a known public origin instead
+// of trusting request.url's.
+const PUBLIC_ORIGIN = IS_PROD ? "https://data.summitclient.io" : "http://localhost:3002";
 
 export async function proxy(request: NextRequest) {
   if (PREVIEW_BYPASS) return NextResponse.next();
@@ -35,7 +45,7 @@ export async function proxy(request: NextRequest) {
   }
   if (freshness === "stale") {
     const refresh = new URL(REFRESH_URL);
-    refresh.searchParams.set("return_to", request.url);
+    refresh.searchParams.set("return_to", PUBLIC_ORIGIN + request.nextUrl.pathname + request.nextUrl.search);
     return NextResponse.redirect(refresh);
   }
 
