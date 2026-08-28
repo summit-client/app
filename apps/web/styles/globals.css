@@ -1,13 +1,19 @@
+/* This app has no dark theme - unlike data/employee/client (which get one
+   for free from @summit/design's data-theme system), the marketing page,
+   login and signup were all designed as a single fixed light look, and the
+   landing page hardcodes light colors throughout its inline styles so it
+   never showed the problem. This file is Next.js's default create-next-app
+   boilerplate, which auto-switches to dark on prefers-color-scheme - inert
+   the whole time this stylesheet went unimported (see the CLAUDE.md note on
+   that), so nobody had reason to notice. The moment the import was added
+   (fixing that separate bug), login/signup - which set no background of
+   their own and rely on body's - started rendering dark on any device set
+   to dark mode, while the landing page's fully opaque, hardcoded-light
+   sections hid the same change. Forced light, matching the rest of the
+   site, rather than reintroducing the toggle no page here actually uses. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 html,
@@ -33,12 +39,6 @@ body {
 a {
   color: inherit;
   text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
 }
 
 /* ── Landing page additions ── */

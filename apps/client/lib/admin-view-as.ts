@@ -108,11 +108,16 @@ export async function listClinicClients(
   supabase: SupabaseClient,
   clinicId: string,
 ): Promise<SelectableClient[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("clients")
     .select("id, name")
     .eq("clinic_id", clinicId)
     .order("name", { ascending: true });
+  // An RLS-filtered read returns [] with no error - this only catches the
+  // other kind of empty result (wrong column, permission actually denied,
+  // etc.), but that distinction matters when "no clients" turns out to be
+  // wrong, so log it rather than silently treating both the same as before.
+  if (error) console.error("listClinicClients failed:", error.message);
   return data ?? [];
 }
 
