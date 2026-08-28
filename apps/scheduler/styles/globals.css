@@ -322,6 +322,61 @@ a:hover { color: var(--brand-700); }
   border: none;
 }
 
+/* ── Mobile sidebar drawer ─────────────────────────────────
+   Zero-JS checkbox toggle for the fixed-width Sidebar component - the same
+   pattern (and 820px breakpoint) as @summit/design/components.css's
+   .nav-toggle-* for apps/data and apps/employee, duplicated here rather than
+   shared because this app keeps its own copy of the design tokens instead of
+   depending on that package (see the "Scheduler vocabulary" note in
+   packages/design/tokens.css). Every page that renders <Sidebar> also
+   renders, as siblings immediately before its flex row: a
+   <input type="checkbox" id="nav-toggle" className="nav-toggle-input">, a
+   <div className="mobile-topbar"> holding the hamburger <label>, and a
+   <label htmlFor="nav-toggle" className="nav-toggle-backdrop"> for
+   tap-outside-to-close. */
+.nav-toggle-input { position: absolute; opacity: 0; pointer-events: none; }
+.nav-toggle-btn, .nav-toggle-backdrop, .mobile-topbar { display: none; }
+
+@media (max-width: 820px) {
+  .nav-toggle-btn {
+    display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
+    width: 34px; height: 34px; flex: none; padding: 0;
+    border-radius: 6px; border: 1px solid var(--color-border-tertiary);
+    background: var(--color-background-primary); cursor: pointer;
+  }
+  .nav-toggle-btn span { display: block; height: 2px; margin: 0 7px; background: var(--color-text-primary); border-radius: 1px; }
+
+  .mobile-topbar {
+    display: flex; align-items: center; gap: 12px;
+    position: sticky; top: var(--portalnav-h, 51px); z-index: 30;
+    height: 52px; padding: 0 16px;
+    background: var(--color-background-primary); border-bottom: 1px solid var(--color-border-tertiary);
+  }
+  .mobile-topbar-title { font-family: var(--font-display); font-weight: 600; color: var(--color-text-primary); }
+
+  /* !important: the <aside> also sets width:228 inline, which otherwise
+     always wins over this rule regardless of the media query. */
+  .scheduler-sidebar {
+    width: min(260px, 82vw) !important;
+    position: fixed !important;
+    z-index: 45;
+    top: var(--portalnav-h, 51px); bottom: 0; left: 0;
+    transform: translateX(-100%);
+    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+    overflow-y: auto;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .16);
+  }
+  .nav-toggle-backdrop {
+    position: fixed; z-index: 40;
+    top: var(--portalnav-h, 51px); right: 0; bottom: 0; left: 0;
+    background: rgba(0, 0, 0, .45);
+  }
+  .nav-toggle-input:checked ~ .nav-toggle-backdrop { display: block; }
+  /* .scheduler-sidebar is a child of .scheduler-shell (the flex row), not a
+     direct sibling of the checkbox - the descendant selector reaches it. */
+  .nav-toggle-input:checked ~ .scheduler-shell .scheduler-sidebar { transform: translateX(0); }
+}
+
 /* ── Reduced motion ──────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

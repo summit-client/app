@@ -294,6 +294,8 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 10,
       marginBottom: 10,
     } as React.CSSProperties,
 
@@ -410,9 +412,20 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-background-tertiary)', fontFamily: 'Inter, sans-serif', fontSize: 16 }}>
-      <Sidebar view="admin" onNavigate={() => {}} appUser={appUser} bookings={bookings} calendars={calendars} />
-      <main style={{ flex: 1, padding: '32px 36px', overflowY: 'auto' }}>
+    <>
+      {/* Mobile sidebar drawer toggle - see the comment on .scheduler-sidebar
+          in styles/globals.css. */}
+      <input type="checkbox" id="nav-toggle" className="nav-toggle-input" />
+      <div className="mobile-topbar">
+        <label htmlFor="nav-toggle" className="nav-toggle-btn" aria-label="Open menu">
+          <span /><span /><span />
+        </label>
+        <span className="mobile-topbar-title">Summit Scheduler</span>
+      </div>
+      <label htmlFor="nav-toggle" className="nav-toggle-backdrop" aria-hidden="true" />
+      <div className="scheduler-shell" style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-background-tertiary)', fontFamily: 'Inter, sans-serif', fontSize: 16 }}>
+        <Sidebar view="admin" onNavigate={() => {}} appUser={appUser} bookings={bookings} calendars={calendars} />
+        <main style={{ flex: 1, padding: '32px 36px', overflowY: 'auto' }}>
       <div style={s.page}>   {/* keep but remove padding/maxWidth since main handles it */}
       {/* Toast */}
       {toast && (
@@ -616,5 +629,6 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
     </div>
     </main>
     </div>
+    </>
   );
 }

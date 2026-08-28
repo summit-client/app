@@ -26,7 +26,7 @@ export default function PublicNav() {
       transition: 'box-shadow .25s ease, background .25s ease',
       fontFamily: "'Hanken Grotesk',sans-serif"
     }}>
-      <div style={{
+      <div className="pubnav-inner" style={{
         maxWidth: 1200, margin: '0 auto',
         padding: '0 24px', height: 64,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between'
@@ -34,7 +34,7 @@ export default function PublicNav() {
 
         {/* Logo */}
         <a href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 20, fontWeight: 800, color: '#1A3F5C', letterSpacing: '-0.5px' }}>
+          <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 20, fontWeight: 800, color: '#1A3F5C', letterSpacing: '-0.5px', whiteSpace: 'nowrap' }}>
             Summit Client
           </span>
         </a>
@@ -56,7 +56,7 @@ export default function PublicNav() {
           <a href="/login" style={{
             fontFamily: "'Bricolage Grotesque',sans-serif",
             fontSize: 15, fontWeight: 500, color: '#1A3F5C',
-            textDecoration: 'none', padding: '8px 16px'
+            textDecoration: 'none', padding: '8px 16px', whiteSpace: 'nowrap'
           }}>
             Log in
           </a>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, ReactNode } from 'react'
-import { motion, useScroll, useSpring, useTransform, MotionValue } from 'motion/react'
+import { motion, useScroll, useSpring, useTransform, useMotionValue, MotionValue } from 'motion/react'
 
 type Cell = { type: string; lines: string[] } | null
 
@@ -97,8 +97,32 @@ export default function Home() {
   const display = "'Bricolage Grotesque',sans-serif"
   const body    = "'Hanken Grotesk',sans-serif"
 
+  // This hero is a pinned-scroll ("scrollytelling") sequence: a 320vh-tall
+  // container holds the viewport via position:sticky while scrollYProgress
+  // drives pills flying in, a calendar 3D-rotating, and cells sweeping a
+  // highlight in choreographed order - all tuned around that long, slow
+  // scroll distance. Compressing that same choreography onto a phone's
+  // natural (short, unpinned) scroll would either flash by unreadably or,
+  // if left pinned, clip a stacked single-column layout inside the fixed
+  // `calc(100vh - 64px)` sticky viewport. Neither is fixable by changing a
+  // few values - so below the breakpoint this renders a plain, static,
+  // unpinned stack instead, same pattern used for this kind of effect
+  // everywhere else (Apple/Stripe-style pages do the same on mobile).
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 780px)')
+    setIsMobile(mq.matches)
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  // A settled (never-animating) progress value for SessionCell/pills math
+  // when isMobile - clamped past every threshold, so it reads as "finished".
+  const staticProgress = useMotionValue(1)
+
   const heroRef = useRef<HTMLDivElement>(null)
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end end'] })
+  const cellProgress = isMobile ? staticProgress : scrollYProgress
 
   // Springed copy drives the heavy calendar rotation so it carries weight
   // and smooths trackpad jitter. Pills stay on the raw value to feel snappy.
@@ -121,22 +145,23 @@ export default function Home() {
 
 {/* ── HERO / SCROLL SCENE ── */}
       <div ref={heroRef} style={{
-        position: 'relative', height: '320vh',
+        position: 'relative', height: isMobile ? 'auto' : '320vh',
         background: 'linear-gradient(180deg,#EDF6F9 0%,#fff 100%)',
       }}>
         <motion.div style={{
-          opacity: sceneOpacity,
-          position: 'sticky', top: 64,
-          height: 'calc(100vh - 64px)',
+          opacity: isMobile ? 1 : sceneOpacity,
+          position: isMobile ? 'static' : 'sticky', top: 64,
+          height: isMobile ? 'auto' : 'calc(100vh - 64px)',
           display: 'flex', alignItems: 'center',
-          overflow: 'hidden', padding: '0 2rem',
+          overflow: isMobile ? 'visible' : 'hidden',
+          padding: isMobile ? '96px 1.25rem 2.5rem' : '0 2rem',
           fontFamily: body,
         }}>
           <div style={{
             maxWidth: 1200, margin: '0 auto', width: '100%',
-            display: 'grid', gridTemplateColumns: '1fr 1fr',
-            gap: '4rem', alignItems: 'center',
-            perspective: 1500,
+            display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: isMobile ? '2.5rem' : '4rem', alignItems: 'center',
+            perspective: isMobile ? undefined : 1500,
           }}>
 
             {/* Left: copy fades out, pills fly in.
@@ -146,7 +171,7 @@ export default function Home() {
             <div style={{ position: 'relative' }}>
 
               <div style={{ position: 'relative' }}>
-                <FadeOut progress={scrollYProgress} start={0.10}>
+                <FadeOut progress={scrollYProgress} start={0.10} active={!isMobile}>
                   <div className="an1" style={{
                     display: 'inline-flex', alignItems: 'center', gap: '.4rem',
                     background: 'rgba(40,180,166,.12)', color: teal,
@@ -159,7 +184,7 @@ export default function Home() {
                   </div>
                 </FadeOut>
 
-                <FadeOut progress={scrollYProgress} start={0.13}>
+                <FadeOut progress={scrollYProgress} start={0.13} active={!isMobile}>
                   <h1 className="an2" style={{
                     fontFamily: display,
                     fontSize: 'clamp(2.1rem,3.8vw,3.1rem)',
@@ -172,7 +197,7 @@ export default function Home() {
                   </h1>
                 </FadeOut>
 
-                <FadeOut progress={scrollYProgress} start={0.16}>
+                <FadeOut progress={scrollYProgress} start={0.16} active={!isMobile}>
                   <p className="an3" style={{
                     fontSize: '1.05rem', color: g700,
                     marginBottom: '2rem', maxWidth: 460, lineHeight: 1.75,
@@ -181,18 +206,25 @@ export default function Home() {
                   </p>
                 </FadeOut>
 
-                {/* Pills — top-anchored to the band, height is intrinsic */}
-                <div style={{
-                  position: 'absolute', left: 0, right: 0, top: 0,
-                  display: 'flex', flexDirection: 'column',
-                  gap: '1.1rem',
-                  pointerEvents: 'none', zIndex: 2,
-                  perspective: 1200, transformStyle: 'preserve-3d',
-                }}>
-                  {PILLS.map((p, i) => (
-                    <FeaturePill key={p.title} progress={scrollYProgress} index={i} {...p} />
-                  ))}
-                </div>
+                {/* Pills — top-anchored to the band, height is intrinsic.
+                    They fly in on top of the copy above as it fades out, so
+                    on mobile (copy never fades - see FadeOut active={false}
+                    above) they'd just sit permanently on top of it. Skipped
+                    entirely there; Features further down the page covers the
+                    same three claims as plain, static content. */}
+                {!isMobile ? (
+                  <div style={{
+                    position: 'absolute', left: 0, right: 0, top: 0,
+                    display: 'flex', flexDirection: 'column',
+                    gap: '1.1rem',
+                    pointerEvents: 'none', zIndex: 2,
+                    perspective: 1200, transformStyle: 'preserve-3d',
+                  }}>
+                    {PILLS.map((p, i) => (
+                      <FeaturePill key={p.title} progress={scrollYProgress} index={i} {...p} />
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <div className="an4" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '2.5rem' }}>
@@ -205,7 +237,7 @@ export default function Home() {
                 }}>
                   Start Free Trial
                 </a>
-                <FadeOut progress={scrollYProgress} start={0.19}>
+                <FadeOut progress={scrollYProgress} start={0.19} active={!isMobile}>
                   <a href="#how" style={{
                     color: navy,
                     fontFamily: display, fontSize: '1rem', fontWeight: 600,
@@ -216,8 +248,8 @@ export default function Home() {
                 </FadeOut>
               </div>
 
-              <FadeOut progress={scrollYProgress} start={0.22}>
-                <div className="an5" style={{ display: 'flex', gap: '2.5rem' }}>
+              <FadeOut progress={scrollYProgress} start={0.22} active={!isMobile}>
+                <div className="an5" style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
                   {[['×','faster scheduling'],['0','double bookings'],['AI','powered matching']].map(([v,l], i) => (
                     <div key={l}>
                       <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 800, color: navy }}>
@@ -230,10 +262,13 @@ export default function Home() {
               </FadeOut>
             </div>
 
-            {/* Right: calendar rotates in place */}
+            {/* Right: calendar rotates in place (desktop only - flat and
+                static on mobile, see the isMobile note above heroRef) */}
             <motion.div style={{
-              rotateX, rotateY, scale: calScale,
-              position: 'relative', transformStyle: 'preserve-3d',
+              rotateX: isMobile ? 0 : rotateX,
+              rotateY: isMobile ? 0 : rotateY,
+              scale: isMobile ? 1 : calScale,
+              position: 'relative', transformStyle: isMobile ? undefined : 'preserve-3d',
               willChange: 'transform',
             }}>
               <div style={{
@@ -271,7 +306,7 @@ export default function Home() {
                         {row.cells.map((cell, ci) => cell ? (
                           <SessionCell
                             key={ci}
-                            progress={scrollYProgress}
+                            progress={cellProgress}
                             seq={cell.seq}
                             type={cell.type}
                             lines={cell.lines}
@@ -286,7 +321,7 @@ export default function Home() {
               </div>
 
               <motion.div style={{
-                opacity: badgeOpacity,
+                opacity: isMobile ? 1 : badgeOpacity,
                 position: 'absolute', bottom: -18, right: 20,
                 background: '#fff', borderRadius: 12, padding: '11px 15px',
                 boxShadow: '0 8px 32px rgba(26,63,92,.14)',
@@ -358,7 +393,7 @@ export default function Home() {
           <p style={{ fontSize: '1rem', color: g700, maxWidth: 540, marginBottom: '2.8rem' }}>
             From intake to recurring sessions, Summit handles the complexity so your team stays focused on clients.
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1.25rem' }}>
+          <div className="grid-3" style={{ display: 'grid', gap: '1.25rem' }}>
             {[
               { icon: '🤖', title: 'AI-Powered Staff Matching',       desc: 'Automatically matches each client to the best-qualified, available staff — factoring session type, availability, and location in seconds.' },
               { icon: '📅', title: 'Smart Recurring Schedules',        desc: 'Set it once and Summit builds the full recurring calendar — weekly, biweekly, or custom — with zero manual entry required.' },
@@ -402,7 +437,7 @@ export default function Home() {
           <p style={{ fontSize: '1rem', color: g700, maxWidth: 540, marginBottom: '2.8rem' }}>
             No training required. Summit guides your admin through each step with a simple, guided flow.
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '2rem' }}>
+          <div className="grid-3" style={{ display: 'grid', gap: '2rem' }}>
             {[
               { n: '1', title: 'Add your clients & staff',  desc: 'Enter client profiles and staff availability. Summit learns who can see who, and when — automatically.' },
               { n: '2', title: 'Run AI matching',            desc: 'Tell Summit the session type and parameters. It surfaces the best matches instantly, colour-coded by availability.' },
@@ -516,11 +551,14 @@ export default function Home() {
   )
 }
 
-function FadeOut({ progress, start, children }: {
-  progress: MotionValue<number>; start: number; children: ReactNode
+function FadeOut({ progress, start, active = true, children }: {
+  progress: MotionValue<number>; start: number; active?: boolean; children: ReactNode
 }) {
+  // Hooks run unconditionally either way; only the branch below differs, so
+  // this stays legal regardless of what `active` is on a given render.
   const opacity = useTransform(progress, [start, start + 0.10], [1, 0])
   const y = useTransform(progress, [start, start + 0.10], [0, -36])
+  if (!active) return <>{children}</>
   return <motion.div style={{ opacity, y, willChange: 'transform, opacity' }}>{children}</motion.div>
 }
 

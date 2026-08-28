@@ -211,8 +211,70 @@ table.data tbody tr:hover { background: var(--accent-tint); }
 /* ── Divider ──────────────────────────────────────────────────────────────── */
 .divider { height: 1px; background: var(--line); border: none; margin: var(--space-5) 0; }
 
-/* ── Responsive ───────────────────────────────────────────────────────────── */
-@media (max-width: 900px) {
-  .sidebar { display: none; }
+/* ── Cross-portal bar (AppNav) ────────────────────────────────────────────── */
+/* AppNav (packages/nav) scrolls horizontally instead of wrapping when its
+   portal pills don't fit - see the comment in AppNav.tsx for why the bar's
+   height can never grow. This just hides the scrollbar cross-browser; the
+   scroll behavior itself is inline in AppNav.tsx. */
+.app-nav-scroll { scrollbar-width: none; }
+.app-nav-scroll::-webkit-scrollbar { display: none; }
+
+/* ── Responsive: mobile sidebar drawer ───────────────────────────────────────
+   Below the breakpoint, an app's `.sidebar` (its in-app nav - not the
+   cross-portal bar above) becomes an off-canvas drawer instead of vanishing.
+   Toggled by a plain checkbox, `.nav-toggle-input`, so it works with zero
+   JavaScript inside a Server Component layout - apps/data and apps/employee's
+   layout.tsx never need "use client" for this. Each consuming layout renders,
+   as siblings in this order: `<input type="checkbox" id="nav-toggle"
+   className="nav-toggle-input">`, a `<label htmlFor="nav-toggle"
+   className="nav-toggle-btn">` (the hamburger), a `<label htmlFor="nav-toggle"
+   className="nav-toggle-backdrop">` (tap-outside-to-close), then `.shell`
+   containing `.sidebar`. One breakpoint, 820px, for both this and the bar
+   above - previously apps/data and apps/employee's own app.css each
+   duplicated a `display: none` version of this at 820px while this file had
+   a second, inconsistent copy at 900px; both are gone from app.css now, this
+   is the only copy. The default (desktop) declarations below MUST come
+   before the @media block: both are the same specificity, so if they came
+   after, they'd win over the media query's rules even on a narrow viewport
+   and the toggle/drawer would never show. */
+.nav-toggle-input { position: absolute; opacity: 0; pointer-events: none; }
+.nav-toggle-btn, .nav-toggle-backdrop, .mobile-topbar { display: none; }
+
+@media (max-width: 820px) {
+  .nav-toggle-btn {
+    display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
+    width: 34px; height: 34px; flex: none; padding: 0;
+    border-radius: var(--radius-sm); border: 1px solid var(--line);
+    background: var(--surface); cursor: pointer;
+  }
+  .nav-toggle-btn span { display: block; height: 2px; margin: 0 7px; background: var(--ink); border-radius: 1px; }
+
+  .mobile-topbar {
+    display: flex; align-items: center; gap: var(--space-3);
+    position: sticky; top: var(--portalnav-h, 51px); z-index: 30;
+    height: 52px; padding: 0 var(--space-4);
+    background: var(--surface); border-bottom: 1px solid var(--line);
+  }
+  .mobile-topbar-title { font-family: var(--font-display); font-weight: 600; color: var(--ink); }
+
+  .sidebar {
+    position: fixed; z-index: 45;
+    top: var(--portalnav-h, 51px); bottom: 0; left: 0;
+    width: min(280px, 82vw);
+    transform: translateX(-100%);
+    transition: transform var(--dur-entrance) var(--ease-editorial);
+    overflow-y: auto;
+    box-shadow: var(--shadow-xl);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .nav-toggle-backdrop {
+    display: none;
+    position: fixed; z-index: 40;
+    top: var(--portalnav-h, 51px); right: 0; bottom: 0; left: 0;
+    background: var(--scrim);
+  }
+  .nav-toggle-input:checked ~ .nav-toggle-backdrop { display: block; }
+  .nav-toggle-input:checked ~ .shell .sidebar { transform: translateX(0); }
+
   .content { padding: var(--space-5) var(--space-4); }
 }
