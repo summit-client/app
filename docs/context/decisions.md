@@ -101,13 +101,37 @@ a local Postgres replay (`supabase/tests/settings_rls.sql`). Scoped to
 `apps/data` and `apps/employee` — the only two consumers. Settings freshness
 is load-time, not real-time push, a deliberate v1 call.
 
-**OPEN** — Invitations and account provisioning. Recognition, peer feedback and
-the forum all need real accounts. The recommendation on the table is to build
-it as a platform capability beside auth rather than in the employee portal's
-admin tab, because it needs a server route (the service role key cannot sit in
-an app env), the same account signs into every portal, and it wants its own
-security review. Recorded as "Yanko was leaning toward building it properly;
-not yet settled."
+~~**OPEN** — Invitations and account provisioning.~~ **DECIDED and BUILT
+2026-08-28.** Settled exactly as the recommendation on the table proposed: a
+platform capability beside auth, not the employee portal's admin tab. Three
+Supabase Edge Functions (`supabase/functions/invite-teammate`,
+`edit-teammate`, `provision-clinic` - the first Edge Functions in this repo,
+and the first use of the service-role key anywhere) do every privileged
+write; `profiles` still has no UPDATE policy and its INSERT policy still
+only permits a self-inserted `role='client'` row, unchanged.
+
+Two capabilities, plus a third decided alongside them:
+- **In-clinic invites** — admin invites anyone into their own clinic;
+  scheduler invites a client or clinician into their own clinic (matches
+  their existing day-to-day: they already create `clients` records for
+  scheduling). Supervisor gets zero invite rights in v1.
+- **New-clinic onboarding** — a brand-new `platform_operators` table (no
+  policy, service-role only) is the only place cross-clinic authority
+  exists; deliberately not a `profiles.role` value, since no existing role
+  should have it. No UI - it's rare and the highest-consequence action in
+  the feature, so it's a runbook step (`docs/context/environments.md`) until
+  there's a second real paying clinic to justify building one.
+- **Edit/deactivate** an existing teammate (role, supervisor reassignment,
+  ban via the auth admin API rather than a new `profiles.active` column -
+  see `product.md` for why) - added so a wrong invite or an offboarding
+  doesn't fall back to manual SQL either, the same gap this whole feature
+  closes.
+
+Nothing new needed at `apps/web/pages/auth/callback.jsx` - it already
+handled Supabase's native `type === 'invite'` redirect end to end before
+this work started. See `product.md`'s multi-tenant-readiness list for the
+authorization-matrix detail and what was verified versus what a live
+Deno-less sandbox couldn't execute.
 
 **OPEN (since 2026-05-16)** — `session_data` JSONB schema for the 8 ABA data
 collection methods (DTT, NET, Frequency, Duration, Interval, ABC, Task

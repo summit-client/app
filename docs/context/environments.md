@@ -66,6 +66,66 @@ and `npm install` rewrites the wrong lockfile. Always `--filter`; a bare
 `turbo build` builds all packages and a failure in any one aborts the run and
 leaves apps mid-compile.
 
+## Supabase Edge Functions (2026-08-28)
+
+Account provisioning (`invite-teammate`, `edit-teammate`, `provision-clinic`
+under `supabase/functions/`) is the first use of Supabase Edge Functions in
+this repo, and the first place the service-role key is used anywhere -
+`profiles` has no UPDATE policy and its INSERT policy only lets someone
+create their own `role='client'` row, so creating a staff account or
+changing someone's role/clinic/supervisor has no RLS path at all. This can't
+be a Next.js API route: the service-role key must never sit in any app's
+`.env.local` (see the Env files section below), so it lives as a Supabase
+project secret instead - literally "beside auth," not inside any of the
+five apps.
+
+**Deploy is manual, separate from `deploy.yml`:** that workflow only builds
+and restarts the five Next.js apps; it has no reason to also own Supabase
+deploys. Push a function with the Supabase CLI directly:
+
+```bash
+npx supabase login                       # once, interactively
+npx supabase link --project-ref <ref>    # once, links this checkout to the real project
+npx supabase functions deploy invite-teammate
+npx supabase functions deploy edit-teammate
+npx supabase functions deploy provision-clinic
+```
+
+**Prerequisite outside this repo's control:** Supabase Auth needs an SMTP
+provider configured (Dashboard → Authentication → Emails) for
+`inviteUserByEmail` to actually deliver mail. Confirm this before relying on
+either function - the functions succeed either way (the row gets written)
+even if the email silently doesn't arrive.
+
+**`provision-clinic` has no UI** (deliberate - see `docs/context/decisions.md`
+and `product.md`): it creates a brand-new clinic and its first admin, gated
+on membership in the `platform_operators` table (add/remove rows by hand,
+same as any other one-off admin task on this schema). Invoke it directly,
+signed in as an operator:
+
+```bash
+curl -i --location --request POST 'https://<project-ref>.supabase.co/functions/v1/provision-clinic' \
+  --header "Authorization: Bearer <your own access token>" \
+  --header 'Content-Type: application/json' \
+  --data '{"clinic_name":"Some Clinic","clinic_slug":"some-clinic","admin_email":"admin@example.com"}'
+```
+
+(Get `<your own access token>` from the browser's session while signed in as
+an operator - e.g. `localStorage`'s `sb-<ref>-auth-token` entry, or
+`supabase.auth.getSession()` in the console on any portal.)
+
+**Local dev:** `npx supabase functions serve` against a linked project (no
+Docker-based fully-local stack was set up or verified in this repo - if
+`supabase start` doesn't work in your environment, develop against a linked
+*dev* Supabase project, never the production one).
+
+**Not verified in this sandbox:** no Deno runtime was reachable here (network
+egress to deno.land is blocked), so the three functions were reviewed by hand
+but never actually executed - `supabase functions serve` plus a real
+end-to-end invite (through `apps/web`'s existing `/auth/callback` →
+`/update-password` flow) is the first real test, same as the smoke test this
+session already did for the second-clinic seed.
+
 ## Env files
 
 Per-app `apps/<app>/.env.local`, git-ignored, must exist before that app can
