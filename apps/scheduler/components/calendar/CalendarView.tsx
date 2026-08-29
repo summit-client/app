@@ -28,7 +28,7 @@ import { suggestSameClinicianOtherTime } from "./suggestions";
 import type { AvailabilityRow, ExistingSession, Suggestion } from "./suggestions";
 import { TimeGrid } from "./TimeGrid";
 import { MonthGrid } from "./MonthGrid";
-import { FilterPanel, CalendarFilters, emptyFilters, activeFilterCount, matchesFilters } from "./FilterPanel";
+import { FilterPanel, CalendarPicker, CalendarFilters, emptyFilters, activeFilterCount, matchesFilters } from "./FilterPanel";
 import { RecurringIcon } from "./icons";
 import { RescheduleModal } from "./RescheduleModal";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
@@ -162,7 +162,15 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     () => new Set(sessions.filter((s) => s.calendar_id != null && draftCalendarIds.has(s.calendar_id)).map((s) => s.id)),
     [sessions, draftCalendarIds],
   );
-  const displaySessions = showDrafts ? sessions : liveSessions;
+  // Reintroduced per-calendar filtering (dropped when this view was
+  // rebuilt) as an explicit, single-select choice - "All calendars" (null)
+  // keeps today's showDrafts-gated behavior; picking one specific calendar
+  // shows its sessions regardless of showDrafts, since choosing it by name
+  // is itself the explicit ask to see it, draft or not.
+  const [selectedCalendarId, setSelectedCalendarId] = React.useState<number | null>(null);
+  const displaySessions = selectedCalendarId != null
+    ? sessions.filter((s) => s.calendar_id === selectedCalendarId)
+    : (showDrafts ? sessions : liveSessions);
 
   // Confirming a draft calendar was previously only reachable from the
   // Create wizard's very first step (hover a calendar pill there to reveal
@@ -172,6 +180,13 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   // meant every session ever booked into it stayed invisible here until
   // someone found that button, which read as "the calendar doesn't show
   // sessions" rather than "this one calendar needs to be confirmed."
+  //
+  // Only surfaced once there's no active calendar at all: once at least one
+  // exists, sessions are showing somewhere by default and a leftover draft
+  // (someone deliberately staging a batch, say) isn't something to keep
+  // nagging about - the CalendarPicker dropdown lets anyone jump to it
+  // directly whenever they want, warning or not.
+  const hasActiveCalendar = React.useMemo(() => calendars.some((c) => c.status === "active"), [calendars]);
   const draftCalendars = React.useMemo(
     () => calendars.filter((c) => c.status === "draft"),
     [calendars],
@@ -359,6 +374,10 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           />
         </div>
 
+        <div style={{ marginLeft: 8 }}>
+          <CalendarPicker calendars={calendars} selectedId={selectedCalendarId} onChange={setSelectedCalendarId} />
+        </div>
+
         {draftCalendarIds.size > 0 && (
           <button
             onClick={() => setShowDrafts((v) => !v)}
@@ -377,7 +396,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
         </div>
       </div>
 
-      {draftCalendars.length > 0 && (
+      {draftCalendars.length > 0 && !hasActiveCalendar && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", borderRadius: 8, background: "#EF9F2712", border: "0.5px solid #EF9F2755", marginBottom: 12, fontSize: 13 }}>
           <div style={{ color: "#8A5E10" }}>
             {draftCalendars.length === 1

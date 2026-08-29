@@ -1747,7 +1747,11 @@ finally { setLoading(false); }
     const ready = quickClient && quickType && quickStaff && recurring && (recurring === "no" || (endType && (endType === "date" ? endDate : endCount)));
 
     return (
-      <div>{PH}<Trail steps={trail} onBack={goBack} />
+      // No PH here (unlike every other step) - this always renders inside
+      // the popup added in the root Scheduler component now, and "Create /
+      // Build and manage your scheduling calendars" is a full-page header
+      // that has no business taking up space in a compact one-session popup.
+      <div><Trail steps={trail} onBack={goBack} />
         <StepCard question="New session" sub={`${dayFromDate(prefill.dateStr)} ${prefill.dateStr} at ${fmtHour(prefill.hour)}`}>
           {!selectedCalendar ? (
             <>
@@ -1833,7 +1837,10 @@ finally { setLoading(false); }
         )}
 
         {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "#FCEBEB", border: "0.5px solid #F7C1C1", color: "#A32D2D", fontSize: 14, marginBottom: 16 }}>{error}</div>}
-        {ready && <button onClick={bookQuickSlot} disabled={booking} style={{ padding: "10px 28px", borderRadius: 10, background: "#5DCAA5", color: "#fff", border: "none", cursor: booking ? "not-allowed" : "pointer", fontSize: 15, fontWeight: 500, opacity: booking ? 0.7 : 1 }}>{booking ? "Booking…" : "Book session"}</button>}
+        <div style={{ display: "flex", gap: 8 }}>
+          {ready && <button onClick={bookQuickSlot} disabled={booking} style={{ padding: "10px 28px", borderRadius: 10, background: "#5DCAA5", color: "#fff", border: "none", cursor: booking ? "not-allowed" : "pointer", fontSize: 15, fontWeight: 500, opacity: booking ? 0.7 : 1 }}>{booking ? "Booking…" : "Book session"}</button>}
+          <button onClick={() => onConsumedPrefill?.()} disabled={booking} style={{ padding: "10px 20px", borderRadius: 10, background: COLORS.bgS, color: COLORS.textS, border: `0.5px solid ${COLORS.border}`, cursor: booking ? "not-allowed" : "pointer", fontSize: 15 }}>Cancel</button>
+        </div>
 
         {pendingConflict && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -2563,10 +2570,17 @@ export default function Scheduler() {
   // Click-to-create on the real calendar hands off to the actual Create
   // wizard (its "quickSlot" step) instead of a separate bolt-on form, so
   // recurrence/calendar-term rules stay in one place. See CreateView.
+  //
+  // Renders as a popup overlay (below), not a page navigation - this used
+  // to call setView("create") here, and since nothing ever set `view` back
+  // to "calendar" afterward (onConsumedPrefill only cleared the prefill),
+  // finishing or cancelling left you stranded on the Create page instead of
+  // back on the calendar. Leaving `view` untouched means whatever you were
+  // looking at (the calendar) never actually goes anywhere - it's just
+  // covered by the popup until this closes.
   const [calendarPrefill, setCalendarPrefill] = useState(null);
   function requestCreateAt(dateStr, hour, minute) {
     setCalendarPrefill({ dateStr, hour, minute });
-    setView("create");
   }
 
   const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
@@ -2625,6 +2639,53 @@ export default function Scheduler() {
           onConsumedPrefill={() => setCalendarPrefill(null)}
         />
       </main>
+      {calendarPrefill && (
+        <div
+          onClick={() => setCalendarPrefill(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 200,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: "min(560px, 96vw)", maxHeight: "92vh", overflowY: "auto",
+              background: COLORS.bg, borderRadius: 14, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+              position: "relative", padding: "22px 20px 20px",
+            }}
+          >
+            <button
+              onClick={() => setCalendarPrefill(null)}
+              aria-label="Close"
+              style={{
+                position: "absolute", top: 12, right: 12, width: 30, height: 30, borderRadius: "50%",
+                border: `0.5px solid ${COLORS.border}`, background: COLORS.bgS, color: COLORS.textS,
+                fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              ✕
+            </button>
+            <CreateView
+              clients={clients} setClients={setClients}
+              employees={employees} setEmployees={setEmployees}
+              sessionTypes={sessionTypes} setSessionTypes={setSessionTypes}
+              bookings={bookings}
+              locations={locations}
+              calendars={calendars} setCalendars={setCalendars}
+              staffAvailability={staffAvailability} setStaffAvailability={setStaffAvailability}
+              clientAvailability={clientAvailability} setClientAvailability={setClientAvailability}
+              refreshBookings={refreshBookings}
+              typeColors={typeColors}
+              workDays={workDays}
+              showToast={showToast}
+              prefill={calendarPrefill}
+              onConsumedPrefill={() => setCalendarPrefill(null)}
+            />
+          </div>
+        </div>
+      )}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
     </>
