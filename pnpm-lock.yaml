@@ -176,6 +176,12 @@ importers:
       '@summit/proxy-auth':
         specifier: workspace:*
         version: link:../../packages/proxy-auth
+      '@summit/session':
+        specifier: workspace:*
+        version: link:../../packages/session
+      '@summit/settings':
+        specifier: workspace:*
+        version: link:../../packages/settings
       '@supabase/auth-helpers-nextjs':
         specifier: ^0.15.0
         version: 0.15.0(@supabase/supabase-js@2.106.1)

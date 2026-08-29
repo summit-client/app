@@ -210,6 +210,9 @@ export const SETTINGS: SettingDef[] = [
   { key: "calendar.showWeekends", label: "Show weekends", section: "calendar", scope: "user", type: "toggle", default: false },
   { key: "calendar.buffer", label: "Appointment buffer (minutes)", section: "calendar", scope: "org", userOverridable: true, type: "select", options: sel("0", "10", "15", "30"), default: "15" },
   { key: "calendar.onlineBooking", label: "Online booking", section: "calendar", scope: "org", type: "toggle", default: false, keywords: ["booking"] },
+  { key: "calendar.workStart", label: "Working hours start", section: "calendar", scope: "org", type: "time", default: "08:00", keywords: ["hours", "open"] },
+  { key: "calendar.workEnd", label: "Working hours end", section: "calendar", scope: "org", type: "time", default: "17:00", keywords: ["hours", "close"] },
+  { key: "calendar.workDays", label: "Working days", description: "Comma-separated three-letter days, e.g. Mon,Tue,Wed,Thu,Fri.", section: "calendar", scope: "org", type: "text", default: "Mon,Tue,Wed,Thu,Fri", keywords: ["work days", "schedule"] },
 
   /* Client Portal */
   { key: "portal.sessionSummaries", label: "Families can view session summaries", section: "client-portal", scope: "org", type: "toggle", default: true, keywords: ["family", "portal"] },
