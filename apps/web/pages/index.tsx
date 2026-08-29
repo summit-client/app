@@ -144,7 +144,7 @@ export default function Home() {
     <>
 
 {/* ── HERO / SCROLL SCENE ── */}
-      <div ref={heroRef} style={{
+      <div ref={heroRef} className="hero-bg" style={{
         position: 'relative', height: isMobile ? 'auto' : '320vh',
         background: 'linear-gradient(180deg,#EDF6F9 0%,#fff 100%)',
       }}>
@@ -320,7 +320,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <motion.div style={{
+              <motion.div className="float-badge" style={{
                 opacity: isMobile ? 1 : badgeOpacity,
                 position: 'absolute', bottom: -18, right: 20,
                 background: '#fff', borderRadius: 12, padding: '11px 15px',
