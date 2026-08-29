@@ -6,6 +6,8 @@ import type {
 } from "next";
 import DesignB, {
   type DashboardSession,
+  type DashboardProgram,
+  type DashboardSoapNote,
 } from "../components/design-b";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
@@ -20,6 +22,8 @@ type DashboardProps = {
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
+  programs: DashboardProgram[];
+  soapNotes: DashboardSoapNote[];
   isAdminViewingAs: boolean;
 };
 
@@ -132,6 +136,36 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     );
   }
 
+  // Goals: migration 0020 scopes this to the signed-in family's own child
+  // via RLS (programs_client_read) - the client_id filter here is
+  // defense-in-depth, matching the same pattern sessions already uses,
+  // not the only thing standing between one family and another's data.
+  const { data: programs, error: programsError } = await supabase
+    .from("programs")
+    .select("id, name, domain, status")
+    .eq("client_id", viewed.clientId)
+    .order("status", { ascending: true })
+    .order("name", { ascending: true });
+
+  if (programsError) {
+    console.error("Failed to load dashboard programs:", programsError.message);
+  }
+
+  // SOAP notes: RLS (session_notes_client_read) also enforces status in
+  // ('signed','countersigned') server-side - a draft is never selectable
+  // here even if this query's own filter were ever removed by mistake.
+  const { data: soapNotes, error: soapNotesError } = await supabase
+    .from("session_notes")
+    .select("id, status, signed_at, countersigned_at, body")
+    .eq("client_id", viewed.clientId)
+    .in("status", ["signed", "countersigned"])
+    .order("signed_at", { ascending: false })
+    .limit(5);
+
+  if (soapNotesError) {
+    console.error("Failed to load dashboard SOAP notes:", soapNotesError.message);
+  }
+
   const clientLastName = viewed.clientName
     ? viewed.clientName.trim().split(/\s+/).pop()
     : null;
@@ -146,6 +180,8 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       familyName,
       clientName: viewed.clientName || "Client",
       sessions: (sessions ?? []) as DashboardSession[],
+      programs: (programs ?? []) as DashboardProgram[],
+      soapNotes: (soapNotes ?? []) as DashboardSoapNote[],
       isAdminViewingAs: viewed.isAdminViewingAs,
     },
   };

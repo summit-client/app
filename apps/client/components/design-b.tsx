@@ -33,10 +33,31 @@ export type DashboardSession = {
   status: string | null;
 };
 
+export type DashboardProgram = {
+  id: string;
+  name: string;
+  domain: string | null;
+  status: string;
+};
+
+/** `body` mirrors session_notes.body's shape (migration 0001) - only
+ *  familyUpdate is ever shown here. perProgram/abcNarrative/planNext are
+ *  clinician-facing detail, not something a family-facing SOAP note card
+ *  surfaces. */
+export type DashboardSoapNote = {
+  id: string;
+  status: string;
+  signed_at: string | null;
+  countersigned_at: string | null;
+  body: { familyUpdate?: string | null } | null;
+};
+
 type DesignBProps = {
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
+  programs: DashboardProgram[];
+  soapNotes: DashboardSoapNote[];
 };
 
 function Icon({
@@ -161,7 +182,12 @@ export default function DesignB({
   familyName,
   clientName,
   sessions,
+  programs,
+  soapNotes,
 }: DesignBProps) {
+  const masteredCount = programs.filter((p) => p.status === "mastered").length;
+  const activeGoalsCount = programs.filter((p) => p.status !== "mastered" && p.status !== "archived").length;
+
   return (
     <>
       <Head>
@@ -220,15 +246,45 @@ export default function DesignB({
               </span>
             </article>
 
-            <ComingSoonMetric
-              label="Skills"
-              icon="star"
-            />
+            <article className={styles.metricCard}>
+              <div className={styles.metricIcon}>
+                <Icon name="star" />
+              </div>
 
-            <ComingSoonMetric
-              label="Goals"
-              icon="target"
-            />
+              <div>
+                <div className={styles.metricValue}>
+                  {masteredCount}
+                </div>
+
+                <div className={styles.metricLabel}>
+                  Skills
+                </div>
+              </div>
+
+              <span className={styles.metricDetail}>
+                Mastered
+              </span>
+            </article>
+
+            <article className={styles.metricCard}>
+              <div className={styles.metricIcon}>
+                <Icon name="target" />
+              </div>
+
+              <div>
+                <div className={styles.metricValue}>
+                  {activeGoalsCount}
+                </div>
+
+                <div className={styles.metricLabel}>
+                  Goals
+                </div>
+              </div>
+
+              <span className={styles.metricDetail}>
+                In progress
+              </span>
+            </article>
 
             <ComingSoonMetric
               label="Messages"
@@ -335,14 +391,65 @@ export default function DesignB({
               <div className={styles.cardHeader}>
                 <div>
                   <h2>Progress Snapshot</h2>
-                  <p>Progress information</p>
+                  <p>{clientName}&apos;s current goals</p>
                 </div>
               </div>
 
-              <EmptyState
-                title="Progress coming soon"
-                message="Progress information is not available in the client portal yet."
-              />
+              {programs.length === 0 ? (
+                <EmptyState
+                  title="No goals yet"
+                  message="Goals will appear here once your clinical team adds them."
+                />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {programs.map((program) => (
+                    <div
+                      key={program.id}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        gap: 12, padding: "10px 0", borderBottom: "1px solid #EEF2F5",
+                      }}
+                    >
+                      <div>
+                        <strong>{program.name}</strong>
+                        {program.domain ? (
+                          <div style={{ fontSize: 13, color: "#607987" }}>{program.domain}</div>
+                        ) : null}
+                      </div>
+                      <ProgramStatusBadge status={program.status} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+
+            <article className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <h2>Recent Updates</h2>
+                  <p>Notes from your clinical team</p>
+                </div>
+              </div>
+
+              {soapNotes.length === 0 ? (
+                <EmptyState
+                  title="No updates yet"
+                  message="Session updates will appear here once your clinical team shares one."
+                />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {soapNotes.map((note) => (
+                    <div key={note.id} style={{ paddingBottom: 12, borderBottom: "1px solid #EEF2F5" }}>
+                      <div style={{ fontSize: 12.5, color: "#607987", marginBottom: 4 }}>
+                        {formatUpdateDate(note.signed_at ?? note.countersigned_at)}
+                      </div>
+                      <p style={{ margin: 0 }}>
+                        {note.body?.familyUpdate || "No summary available for this update."}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </article>
 
             <article className={styles.card}>
@@ -496,4 +603,45 @@ function formatStatus(status: string | null) {
     .replace(/\b\w/g, (character) =>
       character.toUpperCase()
     );
+}
+
+function ProgramStatusBadge({ status }: { status: string }) {
+  const colors: Record<string, { bg: string; text: string }> = {
+    mastered: { bg: "#E6F6EF", text: "#1A7F4B" },
+    active: { bg: "#EAF2FE", text: "#1D5FAE" },
+    maintenance: { bg: "#EAF2FE", text: "#1D5FAE" },
+    on_hold: { bg: "#FEF3E6", text: "#B4690E" },
+    draft: { bg: "#F1F2F4", text: "#607987" },
+    pending_signoff: { bg: "#F1F2F4", text: "#607987" },
+    archived: { bg: "#F1F2F4", text: "#607987" },
+  };
+  const color = colors[status] ?? colors.draft;
+
+  return (
+    <span
+      style={{
+        padding: "3px 10px",
+        borderRadius: 999,
+        fontSize: 12.5,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+        background: color.bg,
+        color: color.text,
+      }}
+    >
+      {formatStatus(status)}
+    </span>
+  );
+}
+
+function formatUpdateDate(iso: string | null) {
+  if (!iso) {
+    return "Recently";
+  }
+
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
