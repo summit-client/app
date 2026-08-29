@@ -332,8 +332,15 @@ function DayColumn({
     return { hour: Math.floor(totalMin / 60), minute: totalMin % 60 };
   }
 
+  // No target-vs-currentTarget guard: every session block and stacked-pill
+  // click handler already calls stopPropagation, so a click only ever
+  // reaches here when it landed on genuinely empty space - including inside
+  // the per-employee sub-column wrapper div in split mode, which fully
+  // covers this column and would otherwise make e.target that wrapper, not
+  // this element, and silently swallow every empty-slot click. (Confirmed:
+  // that guard meant onSlotClick never fired at all - click-to-create was
+  // dead on arrival until this fix.)
   function handleColClick(e: React.MouseEvent) {
-    if (e.target !== e.currentTarget) return;
     const { hour, minute } = timeFromY(e.clientY);
     onSlotClick(dateStr, hour, minute);
   }
