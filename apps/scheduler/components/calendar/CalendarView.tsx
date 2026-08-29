@@ -280,6 +280,30 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     }
   }
 
+  // Blank-calendar traps, called out in CLAUDE.md: a signed-in user whose
+  // profiles row has no clinic_id (auth_clinic_id() returns null, every RLS
+  // policy evaluates false) or has no profiles row at all sees a fully
+  // rendered, silently empty calendar - no error, no matter what filters or
+  // date range they try - which reads as "the calendar is broken" rather
+  // than "this account needs attention." By the time this component is
+  // reachable at all, _app.tsx's `loading` gate has already resolved
+  // useUser()'s fetch, so a missing appUser or clinic_id here is settled
+  // state, not a brief loading flicker.
+  if (!appUser) {
+    return (
+      <div style={{ padding: "48px 20px", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 14 }}>
+        Your account profile couldn&apos;t be loaded, so no sessions can be shown. Try refreshing, or contact your administrator if this continues.
+      </div>
+    );
+  }
+  if (!clinicId) {
+    return (
+      <div style={{ padding: "48px 20px", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 14 }}>
+        Your account isn&apos;t assigned to a clinic yet, so no sessions can be shown. Contact your administrator to have your account linked to a clinic.
+      </div>
+    );
+  }
+
   return (
     <div style={{ position: "relative" }}>
       <div style={{ marginBottom: 16 }}>
@@ -330,10 +354,22 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
       {visibleSessions.length === 0 && activeFilterCount(filters) > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", marginBottom: 12, fontSize: 13, color: "var(--color-text-secondary)" }}>
-          No sessions match your filters for this range.
+          No sessions match your filters for {range.label}.
           <button onClick={() => setFilters(emptyFilters())} style={{ fontSize: 13, color: "#3f9c78", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>
             Clear filters
           </button>
+        </div>
+      )}
+
+      {/* Every session fetch (loadRange) is scoped to the visible date range,
+          not just active filters - the query itself is `.gte/.lte
+          session_date` (migration 0018's sessions_clinic_date_idx). With no
+          filters active, a blank grid here means "nothing in this range,"
+          but nothing on screen says that, so it reads identically to a
+          broken fetch. */}
+      {visibleSessions.length === 0 && activeFilterCount(filters) === 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", marginBottom: 12, fontSize: 13, color: "var(--color-text-secondary)" }}>
+          No sessions found for {range.label}. If you expected to see one, check that it falls in this range - try Prev/Next, Today, or Month view to widen it.
         </div>
       )}
 
