@@ -1216,6 +1216,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [showNewCal, setShowNewCal] = useState(false);
   const [newCalName, setNewCalName] = useState("");
   const [calCreating, setCalCreating] = useState(false);
+  const [createAsDraft, setCreateAsDraft] = useState(false);
 
   const [matchCount, setMatchCount] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState(null);
@@ -1306,16 +1307,30 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     setError(null);
   }
 
-  async function createCalendar() {
+  // Used to default to "draft" unconditionally - every calendar anyone ever
+  // created stayed invisible on the live Calendar tab (see CalendarView's
+  // draftCalendarIds) until someone found the Confirm button below, which
+  // nothing on the Calendar tab pointed to. Draft still exists as a real,
+  // opt-in choice (see the checkbox in the "calendar" step below) for a
+  // scheduler who genuinely wants to stage a batch before it goes live -
+  // it's just no longer what you get by not noticing there was a choice.
+  async function createCalendar(asDraft = false) {
     if (!newCalName) return;
     setCalCreating(true);
     const today = new Date().toISOString().split("T")[0];
     const farFuture = `${new Date().getFullYear() + 3}-12-31`;
     const { data } = await supabase
       .from("calendars")
-      .insert({ name: newCalName, date_start: today, date_end: farFuture, status: "draft", clinic_id: appUser.clinic_id })
+      .insert({ name: newCalName, date_start: today, date_end: farFuture, status: asDraft ? "draft" : "active", clinic_id: appUser.clinic_id })
       .select().single();
-    if (data) { setCalendars(prev => [...prev, data]); setSelectedCalendar(data); setShowNewCal(false); showToast("Calendar created"); setNewCalName(""); }
+    if (data) {
+      setCalendars(prev => [...prev, data]);
+      setSelectedCalendar(data);
+      setShowNewCal(false);
+      showToast(asDraft ? "Draft calendar created — confirm it from the Calendar tab when you're ready to go live" : "Calendar created");
+      setNewCalName("");
+      setCreateAsDraft(false);
+    }
     setCalCreating(false);
   }
 
@@ -1749,7 +1764,7 @@ finally { setLoading(false); }
                     <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>Name</div>
                     <input type="text" value={newCalName} onChange={e => setNewCalName(e.target.value)} placeholder={getNextQuarterPlaceholder()} style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 180 }} />
                   </div>
-                  <button onClick={createCalendar} disabled={calCreating || !newCalName} style={{ padding: "7px 20px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>{calCreating ? "Creating…" : "Create"}</button>
+                  <button onClick={() => createCalendar()} disabled={calCreating || !newCalName} style={{ padding: "7px 20px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>{calCreating ? "Creating…" : "Create"}</button>
                 </div>
               )}
             </>
@@ -1910,12 +1925,18 @@ finally { setLoading(false); }
           <OptionButton label="+ New calendar" selected={showNewCal} color="#EF9F27" onClick={() => setShowNewCal(v => !v)} />
         </div>
         {showNewCal && (
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14, padding: 16, borderRadius: 10, background: COLORS.bg, border: `0.5px solid ${COLORS.border}` }}>
-            <div>
-              <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>Name</div>
-              <input type="text" value={newCalName} onChange={e => setNewCalName(e.target.value)} placeholder={getNextQuarterPlaceholder()} style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 180 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, padding: 16, borderRadius: 10, background: COLORS.bg, border: `0.5px solid ${COLORS.border}` }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>Name</div>
+                <input type="text" value={newCalName} onChange={e => setNewCalName(e.target.value)} placeholder={getNextQuarterPlaceholder()} style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 180 }} />
+              </div>
+              <button onClick={() => createCalendar(createAsDraft)} disabled={calCreating || !newCalName} style={{ padding: "7px 20px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>{calCreating ? "Creating…" : "Create"}</button>
             </div>
-            <button onClick={createCalendar} disabled={calCreating || !newCalName} style={{ padding: "7px 20px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>{calCreating ? "Creating…" : "Create"}</button>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: COLORS.textS, cursor: "pointer" }}>
+              <input type="checkbox" checked={createAsDraft} onChange={e => setCreateAsDraft(e.target.checked)} style={{ accentColor: "#5DCAA5" }} />
+              Create as draft - stage sessions here first, without them going live on the calendar, until you confirm it
+            </label>
           </div>
         )}
         {selectedCalendar && !showNewCal && <button onClick={() => advance("matchCount", selectedCalendar.name)} style={{ padding: "8px 22px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Continue →</button>}
