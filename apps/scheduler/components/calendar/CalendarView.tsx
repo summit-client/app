@@ -364,6 +364,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       {selected && (
         <SessionDetail
           session={selected} clients={clients} employees={employees} locations={locations} typeColors={typeColors}
+          isDraft={draftSessionIds.has(selected.id)}
           onClose={() => setSelected(null)}
           onReschedule={() => { setRescheduling(selected); setSelected(null); }}
           onCancelled={() => { setSelected(null); void loadRange(); showToast("Session cancelled"); }}
@@ -395,7 +396,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           clinicId={clinicId}
           workStartHour={workStartHour} workEndHour={workEndHour} orgIncrementMinutes={orgIncrementMinutes}
           onClose={() => setRescheduling(null)}
-          onSaved={() => { setRescheduling(null); void loadRange(); showToast("Session updated"); }}
+          onSaved={(message) => { setRescheduling(null); void loadRange(); showToast(message); }}
         />
       )}
     </div>
@@ -493,10 +494,10 @@ const modalStyle: React.CSSProperties = {
 };
 
 function SessionDetail({
-  session, clients, employees, locations, typeColors, onClose, onCancelled, onReschedule,
+  session, clients, employees, locations, typeColors, isDraft, onClose, onCancelled, onReschedule,
 }: {
   session: CalSession; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
-  typeColors: Record<string, string>; onClose: () => void; onCancelled: () => void; onReschedule: () => void;
+  typeColors: Record<string, string>; isDraft: boolean; onClose: () => void; onCancelled: () => void; onReschedule: () => void;
 }) {
   useEscapeToClose(onClose);
   const [cancelling, setCancelling] = React.useState(false);
@@ -516,6 +517,11 @@ function SessionDetail({
   return (
     <div style={overlayStyle} onClick={onClose}>
       <div style={{ ...modalStyle, borderLeft: `4px solid ${color}` }} onClick={(e) => e.stopPropagation()}>
+        {isDraft && (
+          <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: "#8A5E10", background: "#EF9F2722", borderRadius: 5, padding: "2px 8px", marginBottom: 8 }}>
+            DRAFT — not yet on the confirmed calendar
+          </div>
+        )}
         <div style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>{client?.name || "Unknown client"}</div>
         <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14 }}>{emp?.name || "Unassigned"}</div>
         <DetailRow label="Date" value={session.session_date} />

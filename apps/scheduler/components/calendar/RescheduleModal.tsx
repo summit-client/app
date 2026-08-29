@@ -38,7 +38,7 @@ interface Props {
   workEndHour: number;
   orgIncrementMinutes: number;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (message: string) => void;
 }
 
 type SlotState = "open" | "clinician-only" | "client-only" | "neither" | "booked";
@@ -159,28 +159,31 @@ export function RescheduleModal({
       // week after the date just saved above - this session's own row is
       // never touched again here.
       const futureDates = generateWeeklyDatesFrom(selectedDate, endType, endDate, endCount).slice(1);
-      const inserts = futureDates
-        .filter((d) => !existing.some((b) => b.employee_id === employeeId && b.session_date === d && b.hour === selectedSlot.hour && b.minute === selectedSlot.minute))
-        .map((d) => ({
-          recurrence_id: recurrenceId,
-          client_id: session.client_id,
-          employee_id: employeeId,
-          hour: selectedSlot.hour,
-          minute: selectedSlot.minute,
-          session_date: d,
-          type: typeName,
-          calendar_id: session.calendar_id,
-          status: "scheduled",
-          clinic_id: clinicId,
-          location_id: isHome ? null : locationId,
-          is_home_visit: isHome,
-          home_address: isHome ? (homeAddress || null) : null,
-        }));
+      const conflictFree = futureDates.filter((d) => !existing.some((b) => b.employee_id === employeeId && b.session_date === d && b.hour === selectedSlot.hour && b.minute === selectedSlot.minute));
+      const skipped = futureDates.length - conflictFree.length;
+      const inserts = conflictFree.map((d) => ({
+        recurrence_id: recurrenceId,
+        client_id: session.client_id,
+        employee_id: employeeId,
+        hour: selectedSlot.hour,
+        minute: selectedSlot.minute,
+        session_date: d,
+        type: typeName,
+        calendar_id: session.calendar_id,
+        status: "scheduled",
+        clinic_id: clinicId,
+        location_id: isHome ? null : locationId,
+        is_home_visit: isHome,
+        home_address: isHome ? (homeAddress || null) : null,
+      }));
       if (inserts.length) await supabase.from("sessions").insert(inserts);
+      setSaving(false);
+      onSaved(skipped > 0 ? `Session updated · ${inserts.length} future session${inserts.length !== 1 ? "s" : ""} added, ${skipped} skipped (conflicts)` : `Session updated · ${inserts.length} future session${inserts.length !== 1 ? "s" : ""} added`);
+      return;
     }
 
     setSaving(false);
-    onSaved();
+    onSaved("Session updated");
   }
 
   return (
