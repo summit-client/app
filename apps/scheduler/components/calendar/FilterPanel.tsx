@@ -98,6 +98,28 @@ function useMenu() {
   return { open, setOpen, ref };
 }
 
+/** Hover-intent for the pill menus below: a plain onMouseLeave={() =>
+ *  setOpen(false)} closed the instant the cursor left the trigger button,
+ *  which is well before it could reach the panel sitting 4px below it (see
+ *  panelStyle's `top: calc(100% + 4px)`) - that gap (and the panel being
+ *  wider than the trigger, so a diagonal path toward a pill drifts outside
+ *  the trigger's own box) is empty space the pointer crosses on the way
+ *  down, which fires a real mouseleave before ever reaching the panel.
+ *  Closing on a short delay, cancelled by re-entering either the trigger or
+ *  the panel (both share one wrapper, so one onMouseEnter covers both),
+ *  gives the cursor time to actually arrive. */
+function useHoverIntent(setOpen: (v: boolean) => void, closeDelayMs = 350) {
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancel = React.useCallback(() => {
+    if (timer.current != null) { clearTimeout(timer.current); timer.current = null; }
+  }, []);
+  React.useEffect(() => cancel, [cancel]);
+  return {
+    onMouseEnter: () => { cancel(); setOpen(true); },
+    onMouseLeave: () => { cancel(); timer.current = setTimeout(() => setOpen(false), closeDelayMs); },
+  };
+}
+
 function PillFilterMenu<T extends string | number>({
   label, items, selected, onToggle, onClearAll,
 }: {
@@ -108,12 +130,13 @@ function PillFilterMenu<T extends string | number>({
   onClearAll: () => void;
 }) {
   const { open, setOpen, ref } = useMenu();
+  const hover = useHoverIntent(setOpen);
   return (
     <div
       ref={ref}
       style={{ position: "relative" }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseEnter={hover.onMouseEnter}
+      onMouseLeave={hover.onMouseLeave}
     >
       <button onClick={() => setOpen((v) => !v)} style={triggerStyle(selected.size > 0)}>
         {label} {selected.size > 0 && <span style={countBadge}>{selected.size}</span>}

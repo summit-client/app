@@ -195,11 +195,11 @@ export function RescheduleModal({
 
   return (
     <div style={overlayStyle} onClick={onClose}>
-      <div style={{ ...modalStyle, width: 480 }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ ...modalStyle, width: "min(480px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Reschedule</div>
-        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14 }}>{client?.name || "Unknown client"}</div>
+        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 12 }}>{client?.name || "Unknown client"}</div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 8 }}>
           <Field label="Clinician">
             <select value={employeeId} onChange={(e) => setEmployeeId(Number(e.target.value))} style={selectStyle}>
               {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -227,12 +227,12 @@ export function RescheduleModal({
           )}
         </Field>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "14px 0 8px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "10px 0 6px" }}>
           <button onClick={() => setWeekStart((w) => addDays(w, -7))} style={navBtnSmall}>‹</button>
           <button onClick={() => { const t = parseDateStr(todayDateStr()); const day = t.getDay(); setWeekStart(addDays(t, day === 0 ? -6 : 1 - day)); }} style={navBtnSmall}>This week</button>
           <button onClick={() => setWeekStart((w) => addDays(w, 7))} style={navBtnSmall}>›</button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
           {weekDays.map((d) => {
             const dateStr = toDateStr(d);
             const isSel = dateStr === selectedDate;
@@ -255,7 +255,7 @@ export function RescheduleModal({
           })}
         </div>
 
-        <div style={{ display: "flex", gap: 10, fontSize: 10.5, color: "var(--color-text-tertiary)", marginBottom: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6, flexWrap: "wrap" }}>
           {(Object.keys(slotColors) as SlotState[]).map((k) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: slotColors[k].bg, border: "0.5px solid var(--color-border-tertiary)" }} />
@@ -263,7 +263,13 @@ export function RescheduleModal({
             </span>
           ))}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, maxHeight: 160, overflowY: "auto", marginBottom: 14 }}>
+        {/* Wraps instead of a fixed-height grid with its own scrollbar - a
+            reschedule popup that needs a scroll just to see its own time
+            slots defeats the point of it being a compact popup. This grows
+            the modal's own height instead (bounded by modalStyle's
+            maxHeight/overflowY safety net below) rather than hiding slots
+            behind a second, nested scroll region. */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
           {slots.map((s, i) => {
             const isSel = selectedSlot?.hour === s.hour && selectedSlot?.minute === s.minute;
             const c = slotColors[s.state];
@@ -272,7 +278,7 @@ export function RescheduleModal({
                 key={i}
                 onClick={() => setSelectedSlot({ hour: s.hour, minute: s.minute })}
                 style={{
-                  padding: "6px 4px", borderRadius: 6, fontSize: 11.5, cursor: "pointer",
+                  flex: "1 1 58px", minWidth: 58, padding: "6px 4px", borderRadius: 6, fontSize: 11.5, cursor: "pointer",
                   border: `1.5px solid ${isSel ? "#5DCAA5" : "transparent"}`,
                   background: c.bg, color: c.text, fontWeight: isSel ? 600 : 400,
                 }}
@@ -334,9 +340,21 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const overlayStyle: React.CSSProperties = {
   position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center",
+  // A light blur (not the calendar's other modals - just this one, on
+  // request) on whatever's behind the popup, to pull focus onto the
+  // reschedule flow itself rather than the grid still visible around it.
+  backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
 };
 const modalStyle: React.CSSProperties = {
   background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+  // Safety net, not the design target: the layout above (single selected
+  // day's slots, wrapping instead of a nested scroll grid, trimmed spacing)
+  // is meant to fit typical working-hours/increment settings on one screen
+  // with nothing to scroll. This only engages for a genuinely extreme
+  // combination (very long hours, very fine increment) or a very short
+  // viewport, so the whole popup scrolls as one piece instead of clipping
+  // silently off the bottom of the screen.
+  maxHeight: "94vh", overflowY: "auto",
 };
 const navBtnSmall: React.CSSProperties = {
   padding: "5px 10px", borderRadius: 7, fontSize: 12, border: "0.5px solid var(--color-border-tertiary)",
