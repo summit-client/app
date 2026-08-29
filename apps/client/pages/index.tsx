@@ -11,6 +11,8 @@ import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { SelectClient } from "../components/select-client";
+import { AccountProblemNotice } from "../components/account-problem-notice";
+import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
 
 type DashboardProps = {
@@ -26,13 +28,22 @@ type SelectProps = {
   clients: SelectableClient[];
 };
 
-type PageProps = DashboardProps | SelectProps;
+type ProblemProps = {
+  mode: "problem";
+  problem: AccountProblem;
+};
+
+type PageProps = DashboardProps | SelectProps | ProblemProps;
 
 export default function ClientDashboard(
   props: InferGetServerSidePropsType<typeof getServerSideProps>
 ) {
   if (props.mode === "select") {
     return <SelectClient clients={props.clients} />;
+  }
+
+  if (props.mode === "problem") {
+    return <AccountProblemNotice problem={props.problem} />;
   }
 
   return (
@@ -75,6 +86,9 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     // route - the first thing an admin sees after following the nav link.
     const clients = await listClinicClients(supabase, resolved.clinicId);
     return { props: { mode: "select", clients } };
+  }
+  if (resolved.kind === "account-problem") {
+    return { props: { mode: "problem", problem: resolved.problem } };
   }
   if (resolved.kind === "not-permitted") {
     // Some other staff role (scheduler, clinician, ...) reached this app -

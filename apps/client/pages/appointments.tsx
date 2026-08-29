@@ -9,6 +9,8 @@ import Sidebar from "../components/Sidebar";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient } from "../lib/admin-view-as";
 import { AdminViewBanner } from "../components/admin-view-banner";
+import { AccountProblemNotice } from "../components/account-problem-notice";
+import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
 
@@ -26,20 +28,27 @@ type Session = {
   }[];
 };
 
-type PageProps = {
-  sessions: Session[];
-  clientName: string;
-  isAdminViewingAs: boolean;
-};
+type PageProps =
+  | {
+      mode: "appointments";
+      sessions: Session[];
+      clientName: string;
+      isAdminViewingAs: boolean;
+    }
+  | { mode: "problem"; problem: AccountProblem };
 
 type Filter = "All" | "Scheduled" | "Completed" | "Cancelled";
 
-export default function Appointments({
-  sessions,
-  clientName,
-  isAdminViewingAs,
-}: InferGetServerSidePropsType<typeof getServerSideProps>) {
+export default function Appointments(
+  props: InferGetServerSidePropsType<typeof getServerSideProps>
+) {
   const [filter, setFilter] = useState<Filter>("All");
+
+  if (props.mode === "problem") {
+    return <AccountProblemNotice problem={props.problem} />;
+  }
+
+  const { sessions, clientName, isAdminViewingAs } = props;
 
   const filteredSessions =
     filter === "All"
@@ -251,6 +260,9 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     // The picker lives on the landing page, not here.
     return { redirect: { destination: "/", permanent: false } };
   }
+  if (resolved.kind === "account-problem") {
+    return { props: { mode: "problem", problem: resolved.problem } };
+  }
   if (resolved.kind === "not-permitted") {
     const { data: profile } = await supabase
       .from("profiles")
@@ -285,6 +297,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
     return {
       props: {
+        mode: "appointments",
         sessions: [],
         clientName: viewed.clientName,
         isAdminViewingAs: viewed.isAdminViewingAs,
@@ -294,6 +307,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   return {
     props: {
+      mode: "appointments",
       sessions: (sessions ?? []) as Session[],
       clientName: viewed.clientName,
       isAdminViewingAs: viewed.isAdminViewingAs,
