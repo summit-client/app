@@ -47,7 +47,7 @@ function useEscapeToClose(onClose: () => void) {
   }, [onClose]);
 }
 
-interface CalCalendar { id: number; status: string; }
+interface CalCalendar { id: number; name: string; status: string; }
 interface CalClientAvailability { client_id: number; day: string; start_time: string; end_time: string; }
 
 interface Props {
@@ -57,13 +57,14 @@ interface Props {
   sessionTypes: CalSessionType[];
   typeColors: Record<string, string>;
   calendars: CalCalendar[];
+  setCalendars: React.Dispatch<React.SetStateAction<CalCalendar[]>>;
   staffAvailability: AvailabilityRow[];
   clientAvailability: CalClientAvailability[];
   showToast: (msg?: string) => void;
   onRequestCreate: (dateStr: string, hour: number, minute: number) => void;
 }
 
-export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, staffAvailability, clientAvailability, showToast, onRequestCreate }: Props) {
+export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, setCalendars, staffAvailability, clientAvailability, showToast, onRequestCreate }: Props) {
   const appUser = useAppUser();
   const clinicId = appUser?.clinic_id || "";
   const [mode, setMode] = React.useState<ViewMode>("week");
@@ -162,6 +163,30 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     [sessions, draftCalendarIds],
   );
   const displaySessions = showDrafts ? sessions : liveSessions;
+
+  // Confirming a draft calendar was previously only reachable from the
+  // Create wizard's very first step (hover a calendar pill there to reveal
+  // a "Confirm" button) - completely disconnected from this tab, where
+  // "Show drafts" already tells you drafts exist but gives no way to act on
+  // it. A new calendar defaulting to "draft" (see CreateView.createCalendar)
+  // meant every session ever booked into it stayed invisible here until
+  // someone found that button, which read as "the calendar doesn't show
+  // sessions" rather than "this one calendar needs to be confirmed."
+  const draftCalendars = React.useMemo(
+    () => calendars.filter((c) => c.status === "draft"),
+    [calendars],
+  );
+  const [confirmingCalendarId, setConfirmingCalendarId] = React.useState<number | null>(null);
+  async function confirmDraftCalendar(cal: CalCalendar) {
+    if (!confirm(`Confirm "${cal.name}"? Its sessions become visible on the live calendar immediately.`)) return;
+    setConfirmingCalendarId(cal.id);
+    const { data } = await supabase.from("calendars").update({ status: "active" }).eq("id", cal.id).select().single();
+    setConfirmingCalendarId(null);
+    if (data) {
+      setCalendars((prev) => prev.map((c) => (c.id === cal.id ? data : c)));
+      showToast(`${data.name} confirmed — now live on the calendar`);
+    }
+  }
   const visibleSessions = React.useMemo(
     () => displaySessions.filter((s) => matchesFilters(s as any, filters)),
     [displaySessions, filters],
@@ -351,6 +376,33 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           />
         </div>
       </div>
+
+      {draftCalendars.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", borderRadius: 8, background: "#EF9F2712", border: "0.5px solid #EF9F2755", marginBottom: 12, fontSize: 13 }}>
+          <div style={{ color: "#8A5E10" }}>
+            {draftCalendars.length === 1
+              ? `"${draftCalendars[0].name}" is still a draft calendar - none of its sessions show here until it's confirmed.`
+              : `${draftCalendars.length} calendars are still drafts - none of their sessions show here until confirmed.`}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {draftCalendars.map((cal) => (
+              <button
+                key={cal.id}
+                onClick={() => void confirmDraftCalendar(cal)}
+                disabled={confirmingCalendarId === cal.id}
+                style={{
+                  padding: "5px 12px", borderRadius: 7, fontSize: 12.5, fontWeight: 500,
+                  border: "0.5px solid #5DCAA5", background: "#5DCAA5", color: "#fff",
+                  cursor: confirmingCalendarId === cal.id ? "not-allowed" : "pointer",
+                  opacity: confirmingCalendarId === cal.id ? 0.6 : 1,
+                }}
+              >
+                {confirmingCalendarId === cal.id ? "Confirming…" : `Confirm "${cal.name}"`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {visibleSessions.length === 0 && activeFilterCount(filters) > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", marginBottom: 12, fontSize: 13, color: "var(--color-text-secondary)" }}>
