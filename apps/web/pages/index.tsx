@@ -89,9 +89,13 @@ export default function Home() {
   // Brand colours — Summit palette
   const grad  = 'linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%)'
   const navy  = '#1A3F5C'
-  const teal  = '#28B4A6'
+  // Darkened from the brand's #28B4A6/#7A9AAD for text use only - both failed
+  // WCAG AA (2.57:1 and 2.98:1 on white) at the small sizes they're set in
+  // here. Decorative uses of the brand teal (icon fills, gradients, the
+  // SessionCell mockup) stay on the literal hex elsewhere in this file.
+  const teal  = '#1C7A70'
   const g100  = '#EEF3F6'
-  const g500  = '#7A9AAD'
+  const g500  = '#57748A'
   const g700  = '#3D5A6A'
   const off   = '#F7FAFB'
   const display = "'Bricolage Grotesque',sans-serif"
@@ -144,7 +148,7 @@ export default function Home() {
     <>
 
 {/* ── HERO / SCROLL SCENE ── */}
-      <div ref={heroRef} style={{
+      <div ref={heroRef} className="hero-bg" style={{
         position: 'relative', height: isMobile ? 'auto' : '320vh',
         background: 'linear-gradient(180deg,#EDF6F9 0%,#fff 100%)',
       }}>
@@ -280,7 +284,7 @@ export default function Home() {
                   {['#ff5f57','#ffbd2e','#28c840'].map(c => (
                     <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
                   ))}
-                  <div style={{ margin: '0 auto', color: 'rgba(255,255,255,.45)', fontSize: '.72rem', fontFamily: display }}>
+                  <div style={{ margin: '0 auto', color: 'rgba(255,255,255,.6)', fontSize: '.72rem', fontFamily: display }}>
                     Summit Scheduler — Week of May 26
                   </div>
                 </div>
@@ -320,7 +324,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <motion.div style={{
+              <motion.div className="float-badge" style={{
                 opacity: isMobile ? 1 : badgeOpacity,
                 position: 'absolute', bottom: -18, right: 20,
                 background: '#fff', borderRadius: 12, padding: '11px 15px',
@@ -482,7 +486,7 @@ export default function Home() {
             }}>SC</div>
             <div style={{ textAlign: 'left' }}>
               <div style={{ fontFamily: display, fontWeight: 700, color: '#fff', fontSize: '.9rem' }}>Sarah Chen, BCBA-D</div>
-              <div style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.45)' }}>Clinical Director, Clarity ABA Clinic</div>
+              <div style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.6)' }}>Clinical Director, Clarity ABA Clinic</div>
             </div>
           </div>
         </div>
@@ -530,7 +534,7 @@ export default function Home() {
         }}>
           <span style={{
             fontFamily: display, fontWeight: 800,
-            color: 'rgba(255,255,255,.45)', fontSize: '1rem', letterSpacing: '-.01em',
+            color: 'rgba(255,255,255,.6)', fontSize: '1rem', letterSpacing: '-.01em',
           }}>SUMMIT</span>
           <div style={{ display: 'flex', gap: '2rem' }}>
             {([
@@ -541,10 +545,10 @@ export default function Home() {
               ['Privacy','/privacy'],
               ['Terms','/terms'],
             ] as [string,string][]).map(([label,href]) => (
-              <a key={href} href={href} style={{ color: 'rgba(255,255,255,.4)', fontSize: '.82rem' }}>{label}</a>
+              <a key={href} href={href} style={{ color: 'rgba(255,255,255,.55)', fontSize: '.82rem' }}>{label}</a>
             ))}
           </div>
-          <span style={{ color: 'rgba(255,255,255,.28)', fontSize: '.78rem' }}>© 2026 Summit Client Inc.</span>
+          <span style={{ color: 'rgba(255,255,255,.52)', fontSize: '.78rem' }}>© 2026 Summit Client Inc.</span>
         </div>
       </footer>
     </>

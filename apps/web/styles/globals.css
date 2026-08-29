@@ -85,8 +85,15 @@ html { scroll-behavior: smooth; }
 /* PublicNav: .desktop-nav (Features / How it works / Reviews) was already
    named and marked out for a mobile treatment that was never written - with
    no rule for it anywhere, all three links plus both CTAs and the logo were
-   cramming onto one row on a phone, wrapping mid-word ("How / it / works"). */
-@media (max-width: 640px) {
+   cramming onto one row on a phone, wrapping mid-word ("How / it / works").
+   640px undershot the actual crowding point - rendered and measured in a
+   real browser (2026-08-29), the logo/links/CTAs start touching with zero
+   gap by ~645px and are still tight at 680px. Raised to 780px to land on
+   the same cutover pages/index.tsx's hero already uses for its own
+   desktop/mobile split (`matchMedia('(max-width: 780px)')`, isMobile) -
+   confirmed clean at 780px too, and this way the nav and the hero switch
+   layouts at the same width instead of two nearby-but-different ones. */
+@media (max-width: 780px) {
   /* !important: PublicNav sets display:'flex' inline on this element, which
      otherwise always wins over an external stylesheet rule regardless of
      this media query - only !important beats an inline style. */

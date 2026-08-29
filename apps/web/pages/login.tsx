@@ -13,7 +13,6 @@ export default function Login() {
     setError('')
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    console.log('auth result:', { data, error })
 
     if (error) {
       setError(error.message)
@@ -22,17 +21,15 @@ export default function Login() {
     }
 
     // Fetch role from profiles table
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', data.user.id)
       .single()
-    console.log('profile result:', { profile, profileError })
 
     const role = profile?.role
     const redirect = role ? ROLE_REDIRECTS[role] : null
 
-    // Temporary hardcoded redirect until role_permissions table is built (ac1)
     if (redirect) {
       window.location.href = redirect
     } else {
