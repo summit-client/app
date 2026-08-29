@@ -1249,6 +1249,13 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [quickClient, setQuickClient] = useState(null);
   const [quickType, setQuickType] = useState(null);
   const [quickStaff, setQuickStaff] = useState(null);
+  // Location defaults to wherever the clinician and client both are
+  // (eligibleStaff below already only offers clinicians at the client's own
+  // location), with a distinct home-visit case - the same location model
+  // migration 0018 built for the Create flow generally, previously only
+  // ever wired up in the quick-create modal this step replaced.
+  const [quickIsHome, setQuickIsHome] = useState(false);
+  const [quickHomeAddress, setQuickHomeAddress] = useState("");
   // Conflict-resolution suggestions (never a hard block): set only for the
   // single, non-recurring booking - a recurring series is handled by the
   // existing per-date auto-skip below, since prompting once per occurrence
@@ -1264,6 +1271,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       ?? calendars.find(c => c.status !== "archived" && c.date_start <= prefill.dateStr && prefill.dateStr <= c.date_end);
     setSelectedCalendar(covering || null);
     setQuickClient(null); setQuickType(null); setQuickStaff(null);
+    setQuickIsHome(false); setQuickHomeAddress("");
     setRecurring(null); setEndType(null); setEndDate(""); setEndCount("");
     setPendingConflict(null);
     setTrail([]);
@@ -1477,7 +1485,9 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         calendar_id: selectedCalendar.id,
         status: "scheduled",
         clinic_id: appUser.clinic_id,
-        location_id: staff.location_id ?? null,
+        location_id: quickIsHome ? null : (staff.location_id ?? null),
+        is_home_visit: quickIsHome,
+        home_address: quickIsHome ? (quickHomeAddress || null) : null,
       });
       if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
       setBooking(false);
@@ -1520,7 +1530,9 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
               recurrence_id: recurrenceId, client_id: quickClient.id, employee_id: quickStaff.id,
               hour: prefill.hour, minute: prefill.minute, session_date: date, type: quickType.name,
               calendar_id: selectedCalendar.id, status: "scheduled", clinic_id: appUser.clinic_id,
-              location_id: quickStaff.location_id ?? null,
+              location_id: quickIsHome ? null : (quickStaff.location_id ?? null),
+              is_home_visit: quickIsHome,
+              home_address: quickIsHome ? (quickHomeAddress || null) : null,
             });
           }
         });
@@ -1761,6 +1773,19 @@ finally { setLoading(false); }
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {eligibleStaff.map(e => <OptionButton key={e.id} label={e.name} sub={`${e.role} · ${e.booked}/${e.capacity}`} color="#378ADD" selected={quickStaff?.id === e.id} onClick={() => setQuickStaff(e)} />)}
             </div>
+          </StepCard>
+        )}
+
+        {selectedCalendar && quickClient && quickType && quickStaff && (
+          <StepCard question="Location">
+            <div style={{ display: "flex", gap: 10, marginBottom: quickIsHome ? 10 : 0 }}>
+              <OptionButton label={locations.find(l => l.id === quickStaff.location_id)?.name || "Clinic"} sub="Clinician's location" selected={!quickIsHome} onClick={() => setQuickIsHome(false)} />
+              <OptionButton label="Client's home" sub="Home visit" selected={quickIsHome} onClick={() => { setQuickIsHome(true); if (!quickHomeAddress) setQuickHomeAddress(quickClient.address || ""); }} />
+            </div>
+            {quickIsHome && (
+              <input type="text" value={quickHomeAddress} onChange={e => setQuickHomeAddress(e.target.value)} placeholder="Address"
+                style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 280 }} />
+            )}
           </StepCard>
         )}
 

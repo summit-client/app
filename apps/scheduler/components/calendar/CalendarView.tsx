@@ -315,6 +315,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
             onSessionDragStart={setDraggingSessionId}
             onDragHover={setDragHoverSlot}
             onDragEnd={() => { setDraggingSessionId(null); setDragHoverSlot(null); }}
+            staffAvailability={staffAvailability} draggingEmployeeId={draggingSession?.employee_id ?? null}
           />
         </div>
       )}
@@ -350,7 +351,8 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           client={clients.find((c) => c.id === rescheduling.client_id)}
           employees={employees} locations={locations} sessionTypes={sessionTypes}
           liveSessions={liveSessions} staffAvailability={staffAvailability} clientAvailability={clientAvailability}
-          workStartHour={workStartHour} workEndHour={workEndHour} incrementMinutes={orgIncrementMinutes}
+          clinicId={clinicId}
+          workStartHour={workStartHour} workEndHour={workEndHour} orgIncrementMinutes={orgIncrementMinutes}
           onClose={() => setRescheduling(null)}
           onSaved={() => { setRescheduling(null); void loadRange(); showToast("Session updated"); }}
         />

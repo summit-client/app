@@ -56,7 +56,17 @@ interface Props {
   onSessionDragStart: (sessionId: number) => void;
   onDragHover: (slot: DragHoverSlot) => void;
   onDragEnd: () => void;
+  /** Availability shading while a drag is in progress - the dragged
+   *  session's own clinician, so the scheduler can see where dropping is
+   *  actually sensible instead of only where the drop will land (that's
+   *  dragHoverSlot above, a different thing). No shading when nothing is
+   *  being dragged, and no shading for a day with no availability data on
+   *  file rather than assuming unavailable. */
+  staffAvailability: AvailabilityRow[];
+  draggingEmployeeId: number | null;
 }
+
+interface AvailabilityRow { staff_id: number; day: string; start_time: string; end_time: string }
 
 const DRAG_MIME = "application/x-summit-session-id";
 const HEADER_ROW_H = 34;
@@ -281,7 +291,7 @@ function StackedPill({
 function DayColumn({
   date, sessions, clients, employees, locations, sessionTypes, typeColors, workStartHour, workEndHour, pxPerMin,
   snapMinutes, dragHoverSlot, splitEmployeeIds, onSlotClick, onSessionClick, onDropSession,
-  onSessionDragStart, onDragHover, onDragEnd,
+  onSessionDragStart, onDragHover, onDragEnd, staffAvailability, draggingEmployeeId,
 }: {
   date: Date; sessions: CalSession[]; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
   sessionTypes: CalSessionType[]; typeColors: Record<string, string>; workStartHour: number; workEndHour: number; pxPerMin: number;
@@ -293,6 +303,8 @@ function DayColumn({
   onSessionDragStart: (sessionId: number) => void;
   onDragHover: (slot: DragHoverSlot) => void;
   onDragEnd: () => void;
+  staffAvailability: AvailabilityRow[];
+  draggingEmployeeId: number | null;
 }) {
   const colRef = React.useRef<HTMLDivElement>(null);
   const dateStr = toDateStr(date);
@@ -335,6 +347,19 @@ function DayColumn({
     ? minutesFromGridStart(dragHoverSlot.hour, dragHoverSlot.minute, workStartHour) * pxPerMin
     : null;
 
+  const dayAbbr = WEEKDAY_ABBR[date.getDay()];
+  const availabilityBands = draggingEmployeeId != null
+    ? staffAvailability
+        .filter((a) => a.staff_id === draggingEmployeeId && a.day === dayAbbr)
+        .map((a) => {
+          const [sh, sm] = a.start_time.split(":").map(Number);
+          const [eh, em] = a.end_time.split(":").map(Number);
+          const top = minutesFromGridStart(sh, sm || 0, workStartHour) * pxPerMin;
+          const bottom = minutesFromGridStart(eh, em || 0, workStartHour) * pxPerMin;
+          return { top: Math.max(top, 0), height: Math.max(bottom - top, 0) };
+        })
+    : [];
+
   return (
     <div
       ref={colRef}
@@ -343,6 +368,9 @@ function DayColumn({
       onDrop={handleDrop}
       style={{ position: "relative", height, borderLeft: "0.5px solid var(--color-border-tertiary)", display: "flex" }}
     >
+      {availabilityBands.map((b, i) => (
+        <div key={i} style={{ position: "absolute", left: 0, right: 0, top: b.top, height: b.height, background: "#5DCAA512", borderTop: "1px dashed #5DCAA555", borderBottom: "1px dashed #5DCAA555", zIndex: 1, pointerEvents: "none" }} />
+      ))}
       {columns.map((col, i) => {
         const clusters = clusterByOverlap(col.sessions, sessionTypes, workStartHour, pxPerMin);
         return (
@@ -376,6 +404,7 @@ export function TimeGrid({
   days, sessions, clients, employees, locations, sessionTypes, typeColors,
   workStartHour, workEndHour, splitEmployeeIds, onSlotClick, onSessionClick, onDropSession, containerHeight,
   snapMinutes, gridlineMinutes, dragHoverSlot, onSessionDragStart, onDragHover, onDragEnd,
+  staffAvailability, draggingEmployeeId,
 }: Props) {
   const gridlineStepHours = gridlineMinutes / 60;
   const gridlineCount = Math.ceil((workEndHour - workStartHour) / gridlineStepHours) + 1;
@@ -431,6 +460,7 @@ export function TimeGrid({
             dragHoverSlot={dragHoverSlot} splitEmployeeIds={splitEmployeeIds}
             onSlotClick={onSlotClick} onSessionClick={onSessionClick} onDropSession={onDropSession}
             onSessionDragStart={onSessionDragStart} onDragHover={onDragHover} onDragEnd={onDragEnd}
+            staffAvailability={staffAvailability} draggingEmployeeId={draggingEmployeeId}
           />
         ))}
       </div>
