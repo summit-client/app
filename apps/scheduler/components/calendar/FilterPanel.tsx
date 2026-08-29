@@ -236,6 +236,63 @@ function SearchFilterMenu<T extends number>({
   );
 }
 
+export interface CalPickerCalendar { id: number; name: string; status: string; }
+
+/** Single-select calendar dropdown, reintroduced by request after the
+ *  rebuild dropped per-calendar filtering from this view entirely - a
+ *  scheduler with more than one calendar (a confirmed active one plus a
+ *  draft they're staging, say) has no other way to jump straight to one in
+ *  particular. "All calendars" (null) is the default/clear state and shows
+ *  everything, same as before this existed. Opens on hover like the other
+ *  pill menus, same forgiving delay. */
+export function CalendarPicker({
+  calendars, selectedId, onChange,
+}: {
+  calendars: CalPickerCalendar[];
+  selectedId: number | null;
+  onChange: (id: number | null) => void;
+}) {
+  const { open, setOpen, ref } = useMenu();
+  const hover = useHoverIntent(setOpen);
+  const visible = calendars.filter((c) => c.status !== "archived");
+  const selected = visible.find((c) => c.id === selectedId);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }} onMouseEnter={hover.onMouseEnter} onMouseLeave={hover.onMouseLeave}>
+      <button onClick={() => setOpen((v) => !v)} style={triggerStyle(selectedId != null)}>
+        {selected ? selected.name : "All calendars"}
+      </button>
+      {open && (
+        <div style={{ ...panelStyle, minWidth: 200 }}>
+          <div
+            onClick={() => { onChange(null); setOpen(false); }}
+            style={{ padding: "6px 8px", borderRadius: 6, fontSize: 13, fontWeight: selectedId == null ? 500 : 400, color: selectedId == null ? "#3f9c78" : COLORS.text, background: selectedId == null ? "#5DCAA512" : "transparent", cursor: "pointer" }}
+          >
+            All calendars
+          </div>
+          {visible.length === 0 ? (
+            <div style={{ fontSize: 12, color: COLORS.textT, padding: "4px 2px" }}>No calendars yet</div>
+          ) : (
+            visible.map((cal) => {
+              const active = selectedId === cal.id;
+              return (
+                <div
+                  key={cal.id}
+                  onClick={() => { onChange(cal.id); setOpen(false); }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 8px", borderRadius: 6, fontSize: 13, fontWeight: active ? 500 : 400, color: active ? "#3f9c78" : COLORS.text, background: active ? "#5DCAA512" : "transparent", cursor: "pointer" }}
+                >
+                  {cal.name}
+                  <span style={{ fontSize: 10.5, color: cal.status === "draft" ? "#8A5E10" : COLORS.textT }}>{cal.status}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FilterPanel({
   locations, sessionTypes, employees, clients, filters, onChange,
 }: {
