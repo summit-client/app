@@ -7,6 +7,7 @@ import {
   REVIEW_CATEGORY_LABEL,
   type CaseReview, type ClinicalDecisionTree, type ClinicalEvidencePacket, type ReviewCategory, type SupervisionBrief,
 } from "@summit/clinical-ai";
+import { getSetting } from "@summit/settings";
 
 const CAT_PILL: Record<ReviewCategory, string> = {
   possible_regression: "danger", possible_plateau: "warn", implementation_concern: "danger",
@@ -127,7 +128,7 @@ export default function SupervisionPage() {
 
                 {brief.potentialNextGoals.length ? (
                   <div className="card card-pad">
-                    <span className="pill accent">Suggested from Mount Etna Goal Bank</span>
+                    <span className="pill accent">Suggested from {getSetting("org.name")} Goal Bank</span>
                     <ul style={{ margin: "10px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
                       {brief.potentialNextGoals.map((n) => (
                         <li key={n.option} style={{ fontSize: "var(--text-sm)" }}>
