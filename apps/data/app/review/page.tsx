@@ -45,6 +45,7 @@ export default function ReviewQueuePage() {
               <button className="btn" onClick={() => act(n, "countersigned")}>Countersign</button>
               <input
                 className="input" style={{ maxWidth: 320 }} placeholder="Return note (what to fix)…"
+                aria-label="Return note (what to fix)"
                 value={returnText[n.sessionId] ?? ""}
                 onChange={(e) => setReturnText({ ...returnText, [n.sessionId]: e.target.value })}
               />

@@ -108,6 +108,7 @@ export default function Appointments(
                 key={option}
                 onClick={() => setFilter(option)}
                 type="button"
+                aria-pressed={filter === option}
                 style={{
                   padding: "9px 14px",
                   borderRadius: 10,
