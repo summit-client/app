@@ -1262,6 +1262,12 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   // in a dozens-long series isn't practical.
   const [pendingConflict, setPendingConflict] = useState(null);
   useEffect(() => {
+    if (!pendingConflict) return;
+    const onKey = e => { if (e.key === "Escape") setPendingConflict(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [pendingConflict]);
+  useEffect(() => {
     if (!prefill) return;
     // Prefer an active calendar over a draft one - a draft's sessions are
     // deliberately hidden from the live calendar view until confirmed, and

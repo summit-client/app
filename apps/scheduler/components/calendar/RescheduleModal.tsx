@@ -47,6 +47,11 @@ export function RescheduleModal({
   session, client, employees, locations, sessionTypes, liveSessions, staffAvailability, clientAvailability,
   clinicId, workStartHour, workEndHour, orgIncrementMinutes, onClose, onSaved,
 }: Props) {
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const [employeeId, setEmployeeId] = React.useState(session.employee_id);
   const [locationId, setLocationId] = React.useState(session.location_id);
   const [isHome, setIsHome] = React.useState(session.is_home_visit);
