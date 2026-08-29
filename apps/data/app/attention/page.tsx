@@ -7,6 +7,7 @@ import {
   type AttentionItem, type Bucket, type ProgramFacts,
 } from "@summit/analytics";
 import { getCaseloadFacts } from "@/lib/facts";
+import { getSetting } from "@summit/settings";
 
 const BUCKET_PILL: Record<Bucket, string> = {
   possible_regression: "danger", possible_plateau: "warn", mastered_without_next: "warn",
@@ -120,7 +121,7 @@ function AttentionCard({ item }: { item: AttentionItem }) {
           ) : null}
           {item.goalBankNextOptions.length ? (
             <p className="trend" style={{ marginTop: 6 }}>
-              <span className="pill accent">Suggested from Mount Etna Goal Bank</span>{" "}
+              <span className="pill accent">Suggested from {getSetting("org.name")} Goal Bank</span>{" "}
               {item.goalBankNextOptions.join(" · ")}
             </p>
           ) : null}

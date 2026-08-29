@@ -192,6 +192,7 @@ export default function Sidebar() {
               }`}
               href={item.href!}
               key={item.href}
+              aria-current={active ? "page" : undefined}
             >
               <SidebarIcon name={item.icon} />
               <span>{item.label}</span>

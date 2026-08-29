@@ -12,8 +12,16 @@ import { previewClients, previewPrograms, previewSessions } from "./preview-data
  * Single data seam for the portal. With NEXT_PUBLIC_DEV_PREVIEW=1 everything is
  * served from in-memory fixtures (fully interactive, no database); otherwise
  * reads/writes go to Supabase under RLS. Screens never branch on the flag.
+ *
+ * Double-gated like proxy.ts's own PREVIEW_BYPASS: NEXT_PUBLIC_DEV_PREVIEW is
+ * browser-readable, so on its own it isn't a safe switch for "skip the real
+ * backend." Without the NODE_ENV check, a stray "1" left in production's
+ * .env.local would silently route every write in this file to in-memory
+ * fixtures instead of Supabase - real clinical documentation vanishing into
+ * an unpersisted store, not just a preview-mode cosmetic issue.
  */
-export const IS_PREVIEW = process.env.NEXT_PUBLIC_DEV_PREVIEW === "1";
+export const IS_PREVIEW =
+  process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
 
 function sb() {
   return createBrowserClient(

@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { ClinicalEvidencePacket, TreatmentPlanSuggestions } from "@summit/clinical-ai";
+import { getSetting } from "@summit/settings";
 
 type Suggestion = TreatmentPlanSuggestions["suggestions"][number];
 
@@ -89,7 +90,7 @@ export default function PlanningPage() {
 
           {/* priority: Goal Bank first */}
           <div className="card card-pad">
-            <span className="pill accent">Suggested from Mount Etna Goal Bank</span>
+            <span className="pill accent">Suggested from {getSetting("org.name")} Goal Bank</span>
             {bank.length ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
                 {bank.map((s) => (

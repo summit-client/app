@@ -32,10 +32,19 @@ export interface SelectableClient {
   name: string | null;
 }
 
+/** Mirrors @summit/session's SessionProblem shape for the two ways a real
+ *  `client`-role account can have nothing to show: no clinic_id (every RLS
+ *  policy evaluates false), or a clinic_id but no linked `clients` row. Both
+ *  used to fall through to `clientId: ""` and render as an empty dashboard/
+ *  appointments list - indistinguishable from "no sessions scheduled," the
+ *  exact RLS-empty-set trap CLAUDE.md calls out. */
+export type AccountProblem = "NO_CLINIC" | "NO_CLIENT_LINK";
+
 export type ResolveResult =
   | { kind: "viewing"; viewed: ViewedClient }
   | { kind: "needs-selection"; clinicId: string }
-  | { kind: "not-permitted" };
+  | { kind: "not-permitted" }
+  | { kind: "account-problem"; problem: AccountProblem };
 
 /**
  * `clients` briefly had no clinic_id column at all (this file's first
@@ -68,15 +77,23 @@ export async function resolveViewedClient(
     .maybeSingle();
 
   if (profile?.role === "client") {
+    if (!profile.clinic_id) {
+      return { kind: "account-problem", problem: "NO_CLINIC" };
+    }
+
     const { data: client } = await supabase
       .from("clients")
       .select("id, name")
       .eq("user_id", userId)
       .maybeSingle();
 
+    if (!client) {
+      return { kind: "account-problem", problem: "NO_CLIENT_LINK" };
+    }
+
     return {
       kind: "viewing",
-      viewed: { clientId: client?.id ?? "", clientName: client?.name ?? "Client", isAdminViewingAs: false },
+      viewed: { clientId: client.id, clientName: client.name ?? "Client", isAdminViewingAs: false },
     };
   }
 

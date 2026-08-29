@@ -1,6 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import Sidebar from "./Sidebar";
+import { MobileNavChrome } from "./mobile-nav-chrome";
 import styles from "../styles/design-b.module.css";
 
 type IconName =
@@ -170,6 +171,8 @@ export default function DesignB({
           content="Summit Client Portal dashboard"
         />
       </Head>
+
+      <MobileNavChrome title="Summit" />
 
       <div className={styles.page}>
         <Sidebar />
