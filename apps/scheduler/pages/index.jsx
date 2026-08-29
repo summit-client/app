@@ -115,6 +115,25 @@ function generateRecurringDates(calStart, calEnd, dayOfWeek, endType, endDate, e
   return dates;
 }
 
+// Same weekly-stepping idea as generateRecurringDates, but anchored on an
+// exact clicked date instead of a calendar term's own start - that function
+// always returns the FIRST occurrence of dayOfWeek on/after calStart, which
+// for an ongoing term is very unlikely to be the date someone actually
+// clicked on the real calendar. Only the click-to-create quick-slot flow
+// uses this; every other booking path in this wizard is day-of-week +
+// term-relative by design, not exact-date.
+function generateDatesFrom(startDateStr, endType, endDate, endCount) {
+  const dates = [];
+  const cur = new Date(startDateStr + "T12:00:00");
+  const absEnd = endType === "date" && endDate ? new Date(endDate + "T12:00:00") : new Date("2999-12-31T12:00:00");
+  const max = endType === "count" ? Number(endCount) : 9999;
+  while (cur <= absEnd && dates.length < max) {
+    dates.push(cur.toISOString().split("T")[0]);
+    cur.setDate(cur.getDate() + 7);
+  }
+  return dates;
+}
+
 function staffAvailAt(staffId, day, timeKey, staffAvailability) {
   return (staffAvailability || [])
     .filter(a => a.staff_id === staffId && a.day === day)
@@ -1161,7 +1180,7 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
 
 // ─── Create view ──────────────────────────────────────────────────────────────
 
-function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays }) {
+function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays, prefill, onConsumedPrefill }) {
   const appUser = useContext(UserContext);
   const [step, setStep] = useState("calendar");
   const [trail, setTrail] = useState([]);
@@ -1198,6 +1217,25 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [accepted, setAccepted] = useState({});
   const [proposedSessions, setProposedSessions] = useState([]);
   const [booking, setBooking] = useState(false);
+
+  // Click-to-create on the real calendar hands us an exact date/hour/minute
+  // (not a day-of-week template like the rest of this wizard), so it gets
+  // its own step rather than forcing that click through AI-driven
+  // availability matching. Auto-selects whichever calendar term covers the
+  // clicked date and jumps straight there.
+  const [quickClient, setQuickClient] = useState(null);
+  const [quickType, setQuickType] = useState(null);
+  const [quickStaff, setQuickStaff] = useState(null);
+  useEffect(() => {
+    if (!prefill) return;
+    const covering = calendars.find(c => c.status !== "archived" && c.date_start <= prefill.dateStr && prefill.dateStr <= c.date_end);
+    setSelectedCalendar(covering || null);
+    setQuickClient(null); setQuickType(null); setQuickStaff(null);
+    setRecurring(null); setEndType(null); setEndDate(""); setEndCount("");
+    setTrail([]);
+    setStep("quickSlot");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   const ONE_ORDER = ["calendar", "matchCount", "location", "client", "sessionType", "staff", "time", "review", "booked"];
   const MULTI_ORDER = ["calendar", "matchCount", "multiClient", "time", "review", "booked"];
@@ -1372,6 +1410,67 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
 }
 }
 
+  // The click-to-create quick-slot path: a firm client/staff/time decision
+  // already made by clicking the real calendar, so this skips AI matching
+  // and proposedSessions entirely and inserts directly - anchored on the
+  // clicked date itself via generateDatesFrom, not the calendar term's own
+  // start date the way every other booking path in this wizard is.
+  async function bookQuickSlot() {
+    if (!selectedCalendar || !quickClient || !quickStaff || !quickType || !prefill) return;
+    setBooking(true);
+    setError(null);
+    try {
+      const recurrenceId = recurring === "yes" ? crypto.randomUUID() : null;
+      const dates = recurring === "yes"
+        ? generateDatesFrom(prefill.dateStr, endType, endDate, endCount)
+        : [prefill.dateStr];
+
+      const inserts = [];
+      const skipped = [];
+      dates.forEach(date => {
+        const conflict = bookings.some(b =>
+          b.employee_id === quickStaff.id && b.session_date === date && b.hour === prefill.hour && b.status !== "cancelled"
+        );
+        if (conflict) {
+          skipped.push(date);
+        } else {
+          inserts.push({
+            recurrence_id: recurrenceId,
+            client_id: quickClient.id,
+            employee_id: quickStaff.id,
+            hour: prefill.hour,
+            minute: prefill.minute,
+            session_date: date,
+            type: quickType.name,
+            calendar_id: selectedCalendar.id,
+            status: "scheduled",
+            clinic_id: appUser.clinic_id,
+            location_id: quickStaff.location_id ?? null,
+          });
+        }
+      });
+
+      if (inserts.length === 0) {
+        setError(`Nothing to book — conflicts with existing sessions on all ${skipped.length} date(s).`);
+        setBooking(false);
+        return;
+      }
+
+      const { error: err } = await supabase.from("sessions").insert(inserts);
+      if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
+
+      setBooking(false);
+      refreshBookings();
+      showToast(skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Session booked");
+      onConsumedPrefill?.();
+      advance("booked", "Booked");
+    } catch {
+      setBooking(false);
+      showToast("Booking failed. Error code: BOOKING_FAILED");
+      setError("Booking failed. Please try again.");
+    }
+  }
+
   async function runMatch(type) {
     setLoading(true); setError(null);
     let prompt, maxTokens;
@@ -1456,6 +1555,93 @@ finally { setLoading(false); }
       <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Build and manage your scheduling calendars</p>
     </div>
   );
+
+  if (step === "quickSlot" && prefill) {
+    const fmtHour = h => { const ap = h >= 12 ? "PM" : "AM"; const h12 = ((h + 11) % 12) + 1; return `${h12}:${String(prefill.minute).padStart(2, "0")} ${ap}`; };
+    const eligibleClients = clients.filter(c => c.status === "active");
+    const eligibleStaff = quickType && quickClient
+      ? employees.filter(e => e.specialties?.includes(quickType.name) && e.location_id === quickClient.location_id)
+      : [];
+    const ready = quickClient && quickType && quickStaff && recurring && (recurring === "no" || (endType && (endType === "date" ? endDate : endCount)));
+
+    return (
+      <div>{PH}<Trail steps={trail} onBack={goBack} />
+        <StepCard question="New session" sub={`${dayFromDate(prefill.dateStr)} ${prefill.dateStr} at ${fmtHour(prefill.hour)}`}>
+          {!selectedCalendar ? (
+            <>
+              <div style={{ fontSize: 13, color: COLORS.textS, marginBottom: 10 }}>This date isn't covered by an existing calendar — pick one or create one.</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+                {calendars.filter(c => c.status !== "archived").map(cal => (
+                  <OptionButton key={cal.id} label={cal.name} sub={cal.status} selected={selectedCalendar?.id === cal.id} onClick={() => setSelectedCalendar(cal)} />
+                ))}
+                <OptionButton label="+ New calendar" selected={showNewCal} color="#EF9F27" onClick={() => setShowNewCal(v => !v)} />
+              </div>
+              {showNewCal && (
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14, padding: 16, borderRadius: 10, background: COLORS.bg, border: `0.5px solid ${COLORS.border}` }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>Name</div>
+                    <input type="text" value={newCalName} onChange={e => setNewCalName(e.target.value)} placeholder={getNextQuarterPlaceholder()} style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 180 }} />
+                  </div>
+                  <button onClick={createCalendar} disabled={calCreating || !newCalName} style={{ padding: "7px 20px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>{calCreating ? "Creating…" : "Create"}</button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 14 }}>Calendar: <b style={{ color: COLORS.text }}>{selectedCalendar.name}</b></div>
+          )}
+        </StepCard>
+
+        {selectedCalendar && (
+          <StepCard question="Client">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {eligibleClients.map(c => <OptionButton key={c.id} label={c.name} selected={quickClient?.id === c.id} onClick={() => { setQuickClient(c); setQuickStaff(null); }} />)}
+            </div>
+          </StepCard>
+        )}
+
+        {selectedCalendar && quickClient && (
+          <StepCard question="Session type">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {sessionTypes.map(t => <OptionButton key={t.id} label={t.name} color={t.color} selected={quickType?.id === t.id} onClick={() => { setQuickType(t); setQuickStaff(null); }} />)}
+            </div>
+          </StepCard>
+        )}
+
+        {selectedCalendar && quickClient && quickType && (
+          <StepCard question="Clinician" sub={!eligibleStaff.length ? "No clinician at this client's location is qualified for this session type." : undefined}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {eligibleStaff.map(e => <OptionButton key={e.id} label={e.name} sub={`${e.role} · ${e.booked}/${e.capacity}`} color="#378ADD" selected={quickStaff?.id === e.id} onClick={() => setQuickStaff(e)} />)}
+            </div>
+          </StepCard>
+        )}
+
+        {selectedCalendar && quickClient && quickType && quickStaff && (
+          <StepCard question="Is this a recurring schedule?">
+            <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+              <OptionButton label="No" sub="One-time only" selected={recurring === "no"} onClick={() => { setRecurring("no"); setEndType(null); }} />
+              <OptionButton label="Yes" sub="Repeats weekly" selected={recurring === "yes"} onClick={() => { setRecurring("yes"); setEndType(null); }} />
+            </div>
+            {recurring === "yes" && (
+              <>
+                <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                  <OptionButton label="By date" selected={endType === "date"} onClick={() => setEndType("date")} />
+                  <OptionButton label="By session count" selected={endType === "count"} onClick={() => setEndType("count")} />
+                </div>
+                {endType === "date" && <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14 }} />}
+                {endType === "count" && <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input type="number" min={1} value={endCount} onChange={e => setEndCount(e.target.value)} placeholder="e.g. 12" style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 110 }} />
+                  <span style={{ fontSize: 14, color: COLORS.textS }}>sessions total</span>
+                </div>}
+              </>
+            )}
+          </StepCard>
+        )}
+
+        {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "#FCEBEB", border: "0.5px solid #F7C1C1", color: "#A32D2D", fontSize: 14, marginBottom: 16 }}>{error}</div>}
+        {ready && <button onClick={bookQuickSlot} disabled={booking} style={{ padding: "10px 28px", borderRadius: 10, background: "#5DCAA5", color: "#fff", border: "none", cursor: booking ? "not-allowed" : "pointer", fontSize: 15, fontWeight: 500, opacity: booking ? 0.7 : 1 }}>{booking ? "Booking…" : "Book session"}</button>}
+      </div>
+    );
+  }
 
   if (step === "calendar") return (
     <div>{PH}
@@ -2127,6 +2313,15 @@ export default function Scheduler() {
 
   const typeColors = Object.fromEntries(sessionTypes.map(st => [st.name, st.color]));
 
+  // Click-to-create on the real calendar hands off to the actual Create
+  // wizard (its "quickSlot" step) instead of a separate bolt-on form, so
+  // recurrence/calendar-term rules stay in one place. See CreateView.
+  const [calendarPrefill, setCalendarPrefill] = useState(null);
+  function requestCreateAt(dateStr, hour, minute) {
+    setCalendarPrefill({ dateStr, hour, minute });
+    setView("create");
+  }
+
   const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
   const ViewComp = views[view];
 
@@ -2178,6 +2373,9 @@ export default function Scheduler() {
           workStart={workStart} setWorkStart={setWorkStart}
           workEnd={workEnd} setWorkEnd={setWorkEnd}
           showToast={showToast}
+          onRequestCreate={requestCreateAt}
+          prefill={calendarPrefill}
+          onConsumedPrefill={() => setCalendarPrefill(null)}
         />
       </main>
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}

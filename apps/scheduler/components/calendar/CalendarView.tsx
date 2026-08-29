@@ -11,12 +11,10 @@
  * calendar.workStart/workEnd/workDays) instead of the tab's own
  * never-persisted useState.
  *
- * Click-to-create here is a small, self-contained quick-create form
- * rather than a pref--filled hop into the multi-step CreateView wizard
- * (calendar terms, recurrence, batch staff/client matching) - that wizard
- * has no prefill seams today and hacking one in is a separate, riskier
- * change than this pass. This still inserts directly into `sessions` with
- * the same shape CreateView's own insert uses.
+ * Click-to-create hands off to the real Create wizard's "quickSlot" step
+ * (pages/index.jsx) via onRequestCreate, rather than a separate bolt-on
+ * form - see that step for why (recurrence + calendar-term rules need to
+ * live in one place, not be reimplemented here).
  */
 import * as React from "react";
 import { supabase } from "../../lib/supabase";
@@ -40,9 +38,10 @@ interface Props {
   sessionTypes: CalSessionType[];
   typeColors: Record<string, string>;
   showToast: (msg?: string) => void;
+  onRequestCreate: (dateStr: string, hour: number, minute: number) => void;
 }
 
-export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, showToast }: Props) {
+export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, showToast, onRequestCreate }: Props) {
   const appUser = useAppUser();
   const clinicId = appUser?.clinic_id || "";
   const [mode, setMode] = React.useState<ViewMode>("week");
@@ -54,15 +53,47 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const [filterOpen, setFilterOpen] = React.useState(false);
   const [selected, setSelected] = React.useState<CalSession | null>(null);
   const [, forceTick] = React.useState(0);
+  const filterRef = React.useRef<HTMLDivElement>(null);
+
+  // Measures the actual viewport-fit container so the time grid scales its
+  // px-per-minute to the device instead of always rendering at one fixed
+  // size and leaving a second, accidental scrollbar inside the page's own -
+  // see TimeGrid's containerHeight prop. calc(100vh - ...) below approximates
+  // the chrome above the grid (portal bar + this toolbar); the exact offset
+  // will want a pass in a real browser across breakpoints.
+  const gridAreaRef = React.useRef<HTMLDivElement>(null);
+  const [gridHeight, setGridHeight] = React.useState(480);
+  React.useEffect(() => {
+    const el = gridAreaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h) setGridHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mode]);
 
   React.useEffect(() => onSettingsChange(() => forceTick((n) => n + 1)), []);
 
+  // Outside click closes the filter dropdown - it used to only close by
+  // clicking the Filter button again.
+  React.useEffect(() => {
+    if (!filterOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [filterOpen]);
+
   const workStartHour = parseTimeSetting(String(getSetting("calendar.workStart")));
   const workEndHour = parseTimeSetting(String(getSetting("calendar.workEnd")));
+  const workDays = String(getSetting("calendar.workDays")).split(",").map((s) => s.trim()).filter(Boolean);
 
   const range = React.useMemo(
-    () => computeViewRange(mode, anchor, { nDays, showWeekends: weekendsInView }),
-    [mode, anchor, nDays, weekendsInView],
+    () => computeViewRange(mode, anchor, { nDays, showWeekends: weekendsInView, workDays }),
+    [mode, anchor, nDays, weekendsInView, workDays.join(",")],
   );
 
   const loadRange = React.useCallback(async () => {
@@ -100,13 +131,6 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   function goToday() {
     setMode((m) => (m === "month" ? "month" : m));
     setAnchor(parseDateStr(todayDateStr()));
-  }
-
-  // ── Click-to-create ──────────────────────────────────────────────────
-  const [createDraft, setCreateDraft] = React.useState<{ dateStr: string; hour: number; minute: number } | null>(null);
-
-  function openCreate(dateStr: string, hour: number, minute: number) {
-    setCreateDraft({ dateStr, hour, minute });
   }
 
   // ── Drag-to-reschedule ───────────────────────────────────────────────
@@ -147,7 +171,16 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     await applyReschedule(session, dateStr, hour, minute, scope);
   }
 
-  function handleDropSession(session: CalSession, dateStr: string, hour: number, minute: number) {
+  // Takes a session id (via dataTransfer), not a session object reference -
+  // TimeGrid's drop target is a different DayColumn instance than the one
+  // the drag started in whenever a session is dragged across days, so a
+  // reference captured in the origin column's own local state/closure is
+  // never visible to a different day's drop handler. Resolving the id
+  // against this component's own `sessions` state means the lookup works no
+  // matter which day column the drop lands in.
+  function handleDropSession(sessionId: number, dateStr: string, hour: number, minute: number) {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return;
     if (session.session_date === dateStr && session.hour === hour && session.minute === minute) return;
     if (session.recurrence_id) {
       setPendingDrag({ session, dateStr, hour, minute });
@@ -171,11 +204,10 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
         </div>
 
         <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-          {(["day", "week", "month"] as ViewMode[]).map((m) => (
-            <ModeButton key={m} active={mode === m && !(m === "week" && weekendsInView)} label={m === "week" ? "Work week" : m[0].toUpperCase() + m.slice(1)}
-              onClick={() => { setMode(m); if (m === "week") setWeekendsInView(false); }} />
-          ))}
+          <ModeButton active={mode === "day"} label="Day" onClick={() => setMode("day")} />
+          <ModeButton active={mode === "week" && !weekendsInView} label="Work week" onClick={() => { setMode("week"); setWeekendsInView(false); }} />
           <ModeButton active={mode === "week" && weekendsInView} label="Full week" onClick={() => { setMode("week"); setWeekendsInView(true); }} />
+          <ModeButton active={mode === "month"} label="Month" onClick={() => setMode("month")} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8 }}>
@@ -187,7 +219,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           />
         </div>
 
-        <div style={{ position: "relative", marginLeft: "auto" }}>
+        <div ref={filterRef} style={{ position: "relative", marginLeft: "auto" }}>
           <button onClick={() => setFilterOpen((v) => !v)} style={{ ...navBtn, display: "flex", alignItems: "center", gap: 6 }}>
             Filter {activeFilterCount(filters) > 0 && <span style={badgeStyle}>{activeFilterCount(filters)}</span>}
           </button>
@@ -208,11 +240,14 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           onSessionClick={setSelected}
         />
       ) : (
-        <TimeGrid
-          days={range.days} sessions={visibleSessions} clients={clients} employees={employees} locations={locations}
-          sessionTypes={sessionTypes} typeColors={typeColors} workStartHour={workStartHour} workEndHour={workEndHour}
-          splitEmployeeIds={splitEmployeeIds} onSlotClick={openCreate} onSessionClick={setSelected} onDropSession={handleDropSession}
-        />
+        <div ref={gridAreaRef} style={{ height: "calc(100vh - var(--portalnav-h, 51px) - 230px)", minHeight: 320 }}>
+          <TimeGrid
+            days={range.days} sessions={visibleSessions} clients={clients} employees={employees} locations={locations}
+            sessionTypes={sessionTypes} typeColors={typeColors} workStartHour={workStartHour} workEndHour={workEndHour}
+            splitEmployeeIds={splitEmployeeIds} onSlotClick={onRequestCreate} onSessionClick={setSelected} onDropSession={handleDropSession}
+            containerHeight={gridHeight}
+          />
+        </div>
       )}
 
       {selected && (
@@ -220,15 +255,6 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           session={selected} clients={clients} employees={employees} locations={locations} typeColors={typeColors}
           onClose={() => setSelected(null)}
           onCancelled={() => { setSelected(null); void loadRange(); showToast("Session cancelled"); }}
-        />
-      )}
-
-      {createDraft && (
-        <QuickCreateModal
-          draft={createDraft} clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes}
-          clinicId={clinicId} sessions={sessions}
-          onClose={() => setCreateDraft(null)}
-          onCreated={() => { setCreateDraft(null); void loadRange(); showToast("Session booked"); }}
         />
       )}
 
@@ -348,125 +374,3 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function QuickCreateModal({
-  draft, clients, employees, locations, sessionTypes, clinicId, sessions, onClose, onCreated,
-}: {
-  draft: { dateStr: string; hour: number; minute: number };
-  clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[]; sessionTypes: CalSessionType[];
-  clinicId: string; sessions: CalSession[];
-  onClose: () => void; onCreated: () => void;
-}) {
-  const [clientId, setClientId] = React.useState<string>("");
-  const [employeeId, setEmployeeId] = React.useState<string>("");
-  const [type, setType] = React.useState<string>(sessionTypes[0]?.name || "");
-  const [isHome, setIsHome] = React.useState(false);
-  const [locationId, setLocationId] = React.useState<string>("");
-  const [homeAddress, setHomeAddress] = React.useState("");
-  const [saving, setSaving] = React.useState(false);
-
-  React.useEffect(() => {
-    const emp = employees.find((e) => String(e.id) === employeeId);
-    if (emp?.location_id != null) setLocationId(String(emp.location_id));
-  }, [employeeId, employees]);
-
-  React.useEffect(() => {
-    const client = clients.find((c) => String(c.id) === clientId);
-    if (isHome && client?.address) setHomeAddress(client.address);
-  }, [isHome, clientId, clients]);
-
-  async function handleSave() {
-    if (!clientId || !employeeId || !type) return;
-    const empIdNum = Number(employeeId);
-    const conflict = sessions.find(
-      (b) => b.employee_id === empIdNum && b.session_date === draft.dateStr && b.hour === draft.hour && b.minute === draft.minute && b.status !== "cancelled",
-    );
-    if (conflict) {
-      const c = clients.find((cl) => cl.id === conflict.client_id);
-      if (!confirm(`This clinician already has a session with ${c?.name || "another client"} at that time. Book anyway?`)) return;
-    }
-    setSaving(true);
-    await supabase.from("sessions").insert({
-      client_id: Number(clientId),
-      employee_id: empIdNum,
-      session_date: draft.dateStr,
-      hour: draft.hour,
-      minute: draft.minute,
-      type,
-      status: "scheduled",
-      clinic_id: clinicId,
-      location_id: isHome ? null : (locationId ? Number(locationId) : null),
-      is_home_visit: isHome,
-      home_address: isHome ? (homeAddress || null) : null,
-    });
-    setSaving(false);
-    onCreated();
-  }
-
-  return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>New session</div>
-        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14 }}>
-          {draft.dateStr} · {String(draft.hour).padStart(2, "0")}:{String(draft.minute).padStart(2, "0")}
-        </div>
-
-        <Field label="Client">
-          <select value={clientId} onChange={(e) => setClientId(e.target.value)} style={selectStyle}>
-            <option value="">Select client…</option>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Clinician">
-          <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} style={selectStyle}>
-            <option value="">Select clinician…</option>
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Session type">
-          <select value={type} onChange={(e) => setType(e.target.value)} style={selectStyle}>
-            {sessionTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Location">
-          <div style={{ display: "flex", gap: 6, marginBottom: isHome ? 6 : 0 }}>
-            <button type="button" onClick={() => setIsHome(false)} style={{ ...navBtn, flex: 1, borderColor: !isHome ? "#5DCAA5" : undefined }}>Clinic</button>
-            <button type="button" onClick={() => setIsHome(true)} style={{ ...navBtn, flex: 1, borderColor: isHome ? "#5DCAA5" : undefined }}>Client's home</button>
-          </div>
-          {isHome ? (
-            <input value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} placeholder="Address" style={selectStyle} />
-          ) : (
-            <select value={locationId} onChange={(e) => setLocationId(e.target.value)} style={selectStyle}>
-              <option value="">Select location…</option>
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          )}
-        </Field>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-          <button onClick={onClose} style={navBtn}>Cancel</button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !clientId || !employeeId}
-            style={{ padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: "#5DCAA5", color: "#fff", opacity: saving || !clientId || !employeeId ? 0.6 : 1 }}
-          >
-            {saving ? "Booking..." : "Book session"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4 }}>{label}</div>
-      {children}
-    </div>
-  );
-}
-
-const selectStyle: React.CSSProperties = {
-  width: "100%", padding: "7px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)",
-  background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontSize: 13,
-};
