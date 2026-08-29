@@ -340,6 +340,111 @@ From the capstone work, still outstanding as far as project history shows:
   `@summit/portals`' registry, so the family portal no longer advertises the
   clinician/employee portals to parents.
 
+## Scheduler calendar v2 — feedback backlog (2026-08-29)
+
+Yanko's feedback on PR #74 (the real-dates calendar rebuild), triaged into four
+buckets so it doesn't get lost or re-litigated piecemeal. Read this before
+touching the scheduler calendar tab again.
+
+**Bugs — fix outright, no design question involved:**
+
+1. View-mode pill order: "Full week" should sit before "Month".
+2. Settings: selecting Saturday as a work day doesn't make it appear in the
+   "Work week" view — that button currently hardcodes Mon–Fri instead of
+   reading `calendar.workDays`.
+3. The filter dropdown only closes by clicking the Filter button again — it
+   needs to close on any outside click.
+4. The calendar has a double vertical scrollbar (the page scrolls, and the
+   grid inside it also scrolls). It should fit the viewport with no scroll of
+   its own, scaled per breakpoint — check the breakpoint scheme already
+   established for the mobile nav drawer (see `CLAUDE.md`'s "Mobile nav
+   pattern") before inventing a new one; there were reportedly four device
+   tiers from that work, not the two (desktop/mobile) this pass assumed.
+5. Drag-to-reschedule cannot cross day columns. Root cause found: `TimeGrid`'s
+   `DayColumn` keeps the dragged session in a component-local `ref`, so a drop
+   on a *different* day column's own instance never sees it. Needs a shared
+   source of truth (the HTML5 `dataTransfer` payload, or lifting drag state up
+   to `CalendarView`) instead of a per-column ref.
+6. A cell showing 2+ stacked sessions (the density collapse) can't be dragged
+   at all today — only the single-session, unstacked case is reschedulable by
+   drag.
+7. Click-to-create shipped differently from what was agreed: the approved plan
+   called for hooking into the existing Create wizard, pre-filled. What
+   actually shipped is a separate, self-contained quick-create modal — a scope
+   substitution made silently mid-build instead of being flagged as a
+   decision point. Needs to be redone as the originally-agreed pre-filled hop
+   into `CreateView`.
+
+**Feature work — clear spec, no open design question:**
+
+8. Filter panel redesign: Locations and Session Types become hover-opening
+   pill submenus (not the current always-expanded multi-select block);
+   Clinicians and Clients become individual dropdowns with an
+   alphabetical-by-last-name list, a search field, and an "All" item at the
+   top. "Clear all" needs to stay reachable from every menu.
+9. Recurrence (repeat, plus end-by-date or end-by-occurrence-count) needs to
+   be selectable everywhere a session is created or rescheduled — the
+   calendar's quick-create, drag-to-reschedule, and the future
+   reschedule-with-mini-calendar flow — not just the original Create wizard.
+10. The drag-to-reschedule snap increment should come from a setting ("every
+    N minutes"), not the current fixed 15-minute snap — and that same setting
+    should govern how finely session blocks can be resized/positioned. (See
+    item 19 below — this may need to be per-session-type, not one global
+    number.)
+11. A visual drop indicator while dragging: highlight the hour marker and
+    activate minute ticks at the controlling increment, so the scheduler sees
+    exactly where a drop will land instead of guessing. Likely a **personal**
+    (per-user) setting rather than org-level — to be confirmed alongside item
+    19.
+12. Clicking an existing session needs a "Reschedule" action opening a
+    mini-calendar showing the client's and clinician's availability, plus
+    dropdowns to change clinician/location/session type on that booking.
+13. Both the mini-calendar and the main calendar need a visual availability
+    indicator while rescheduling/dragging, bounded by the org's working hours
+    from Settings.
+14. Session Types tab: add "gap before" / "gap after" fields per type.
+15. The gap from item 14 should produce a warning (never a hard block), and
+    only when the encroaching session shares the same clinician *or* the same
+    client as the gap's owner — concurrent sessions across different
+    clinicians/clients are fine and should never warn.
+16. Add Break, Lunch, and Meeting as session types.
+
+**Needs a design conversation before any implementation — do not build ahead
+of this:**
+
+17. **Bringing back "Calendars" as draft vs. active**, replacing the
+    term/quarter-pill concept dropped in PR #74: a draft calendar that gets
+    confirmed into an active one, rather than the old always-live quarter
+    blocks. Yanko explicitly asked to discuss this before any implementation.
+18. **Conflict-resolution suggestions, and how "fancy" they need to be.** When
+    a drag or create hits a conflict, offer: (a) another slot for the same
+    clinician later that week, (b) another slot the same day with a different
+    clinician, or (c) crediting the session against another one. Hard
+    constraints already stated: never suggest a different location (a
+    clinician doesn't move across locations mid-suggestion); if the clinician
+    has to change, the client's day cannot also change — e.g. never offer
+    "Wed with Billy" as a substitute for "Mon with Sarah," only a
+    same-day/different-clinician substitution is valid. "Credit toward
+    another session" is not a defined mechanic anywhere in this schema yet
+    and needs scoping before it can be designed against.
+19. **Time-grid granularity as a system, not one setting.** Increments (drag
+    snap, block resizing, gap enforcement, on both the main grid and the
+    future mini-calendar) may need to key off each session type's own
+    duration rather than a single global number — e.g. a 63-minute type would
+    presumably force per-minute granularity. Yanko wants this designed with
+    multi-tenancy in mind (different clinics will want different defaults —
+    15 minutes proposed as the fallback, some may want 30, 10, or per-minute)
+    before items 10/11/13 above are built against a single assumed number.
+
+**Filed for the roadmap, not for action now:**
+
+20. Each session type will eventually carry an internal invoice rate
+    alongside the existing client-facing cost, feeding a future payroll
+    module: billable vs. invoiced hours, net revenue, and an exportable file
+    for payroll processing (no fintech integration — just producing the
+    data). Flagged now so the session/session-type data model is built with
+    this in mind, not because it's being built yet.
+
 ## Known operational quirks that affect real users
 
 - **Microsoft SafeLinks consumes Supabase one-time tokens.** Institutional

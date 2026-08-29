@@ -82,7 +82,7 @@ export interface ViewRange {
 export function computeViewRange(
   mode: ViewMode,
   anchor: Date,
-  opts: { nDays: number; showWeekends: boolean },
+  opts: { nDays: number; showWeekends: boolean; workDays: string[] },
 ): ViewRange {
   if (mode === "day") {
     return {
@@ -103,8 +103,11 @@ export function computeViewRange(
   }
   if (mode === "week") {
     const start = startOfWeek(anchor);
-    const span = opts.showWeekends ? 7 : 5;
-    const days = Array.from({ length: span }, (_, i) => addDays(start, i));
+    const full = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+    // "Work week" reflects the org's actual configured work days (including
+    // Saturday when it's turned on in Settings) instead of a hardcoded
+    // Mon-Fri span - a work week with Saturday enabled should show 6 days.
+    const days = opts.showWeekends ? full : full.filter((d) => opts.workDays.includes(WEEKDAY_ABBR[d.getDay()]));
     return {
       days,
       queryStart: days[0],

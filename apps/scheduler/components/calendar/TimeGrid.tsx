@@ -34,8 +34,18 @@ interface Props {
   splitEmployeeIds: number[] | null;
   onSlotClick: (dateStr: string, hour: number, minute: number) => void;
   onSessionClick: (session: CalSession) => void;
-  onDropSession: (session: CalSession, dateStr: string, hour: number, minute: number) => void;
+  onDropSession: (sessionId: number, dateStr: string, hour: number, minute: number) => void;
+  /** Pixel budget for the whole time-axis body, measured by the caller from
+   *  the actual viewport (see CalendarView) - this is what makes the grid
+   *  scale per device instead of always rendering at one fixed px/minute
+   *  and relying on scroll to see the rest of the work day. Omit to fall
+   *  back to the fixed default (used by nothing today, kept for safety). */
+  containerHeight?: number;
 }
+
+const DRAG_MIME = "application/x-summit-session-id";
+const HEADER_ROW_H = 34;
+const MIN_PX_PER_MIN = 0.55;
 
 interface Cluster {
   sessions: CalSession[];
@@ -47,7 +57,7 @@ function minutesFromGridStart(hour: number, minute: number, workStartHour: numbe
   return (hour + minute / 60 - workStartHour) * 60;
 }
 
-function clusterByOverlap(sessions: CalSession[], sessionTypes: CalSessionType[], workStartHour: number): Cluster[] {
+function clusterByOverlap(sessions: CalSession[], sessionTypes: CalSessionType[], workStartHour: number, pxPerMin: number): Cluster[] {
   const withRange = sessions
     .map((s) => {
       const start = minutesFromGridStart(s.hour, s.minute, workStartHour);
@@ -68,8 +78,8 @@ function clusterByOverlap(sessions: CalSession[], sessionTypes: CalSessionType[]
   }
   return clusters.map((c) => ({
     sessions: c.items.map((i) => i.s),
-    top: c.start * PX_PER_MIN,
-    height: Math.max((c.end - c.start) * PX_PER_MIN, 20),
+    top: c.start * pxPerMin,
+    height: Math.max((c.end - c.start) * pxPerMin, 20),
   }));
 }
 
@@ -126,15 +136,22 @@ function Row({ icon, text, title }: { icon: React.ReactNode; text: string; title
   );
 }
 
+/** Only ever puts a bare session id on the wire - the drop target (a
+ *  different DayColumn instance, possibly a different day than the one the
+ *  drag started in) resolves it against the full session list itself. */
+function startDrag(e: React.DragEvent, sessionId: number) {
+  e.dataTransfer.setData(DRAG_MIME, String(sessionId));
+  e.dataTransfer.effectAllowed = "move";
+}
+
 function SessionBlock({
   session, left, width, top, height, color, clients, employees, locations, sessionTypes, typeColors,
-  onSessionClick, onDragStart,
+  onSessionClick,
 }: {
   session: CalSession; left: string; width: string; top: number; height: number; color: string;
   clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[]; sessionTypes: CalSessionType[];
   typeColors: Record<string, string>;
   onSessionClick: (s: CalSession) => void;
-  onDragStart: (e: React.DragEvent, s: CalSession) => void;
 }) {
   const [hovered, setHovered] = React.useState(false);
   const client = clients.find((c) => c.id === session.client_id);
@@ -142,7 +159,7 @@ function SessionBlock({
   return (
     <div
       draggable
-      onDragStart={(e) => onDragStart(e, session)}
+      onDragStart={(e) => startDrag(e, session.id)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={(e) => { e.stopPropagation(); onSessionClick(session); }}
@@ -170,12 +187,11 @@ function SessionBlock({
 }
 
 function StackedPill({
-  cluster, clients, employees, locations, sessionTypes, typeColors, onSessionClick, onDragStart,
+  cluster, clients, employees, locations, sessionTypes, typeColors, onSessionClick,
 }: {
   cluster: Cluster; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
   sessionTypes: CalSessionType[]; typeColors: Record<string, string>;
   onSessionClick: (s: CalSession) => void;
-  onDragStart: (e: React.DragEvent, s: CalSession) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   if (cluster.sessions.length === 1) {
@@ -185,7 +201,7 @@ function StackedPill({
       <SessionBlock
         session={s} left="2px" width="calc(100% - 4px)" top={cluster.top} height={cluster.height} color={color}
         clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors}
-        onSessionClick={onSessionClick} onDragStart={onDragStart}
+        onSessionClick={onSessionClick}
       />
     );
   }
@@ -193,11 +209,18 @@ function StackedPill({
   const color = typeColors[first.type] || "#888";
   return (
     <div
+      // Draggable on the collapsed pill itself (moves the first session in
+      // it) so a 2+ session slot isn't reschedulable only after opening the
+      // list below - a plain click still opens the list untouched, since a
+      // completed non-dragging click and a dragstart gesture are mutually
+      // exclusive per interaction.
+      draggable
+      onDragStart={(e) => startDrag(e, first.id)}
       onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
       style={{
         position: "absolute", top: cluster.top, height: cluster.height, left: 2, right: 2, zIndex: 10,
         borderRadius: 5, padding: "2px 5px", background: color + "22", borderLeft: `2.5px solid ${color}`,
-        cursor: "pointer", overflow: "visible", fontSize: 11.5,
+        cursor: "grab", overflow: "visible", fontSize: 11.5,
       }}
     >
       <div style={{ fontWeight: 600, color, lineHeight: 1.3 }}>{cluster.sessions.length} sessions</div>
@@ -214,7 +237,7 @@ function StackedPill({
               <div
                 key={s.id}
                 draggable
-                onDragStart={(e) => onDragStart(e, s)}
+                onDragStart={(e) => { e.stopPropagation(); startDrag(e, s.id); }}
                 onClick={(e) => { e.stopPropagation(); onSessionClick(s); }}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", borderRadius: 6, cursor: "pointer" }}
               >
@@ -234,28 +257,22 @@ function StackedPill({
 }
 
 function DayColumn({
-  date, sessions, clients, employees, locations, sessionTypes, typeColors, workStartHour, workEndHour,
+  date, sessions, clients, employees, locations, sessionTypes, typeColors, workStartHour, workEndHour, pxPerMin,
   splitEmployeeIds, onSlotClick, onSessionClick, onDropSession,
 }: {
   date: Date; sessions: CalSession[]; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
-  sessionTypes: CalSessionType[]; typeColors: Record<string, string>; workStartHour: number; workEndHour: number;
+  sessionTypes: CalSessionType[]; typeColors: Record<string, string>; workStartHour: number; workEndHour: number; pxPerMin: number;
   splitEmployeeIds: number[] | null;
   onSlotClick: (dateStr: string, hour: number, minute: number) => void;
   onSessionClick: (s: CalSession) => void;
-  onDropSession: (s: CalSession, dateStr: string, hour: number, minute: number) => void;
+  onDropSession: (sessionId: number, dateStr: string, hour: number, minute: number) => void;
 }) {
   const colRef = React.useRef<HTMLDivElement>(null);
   const dateStr = toDateStr(date);
-  const dragged = React.useRef<CalSession | null>(null);
-
-  function onDragStart(e: React.DragEvent, s: CalSession) {
-    dragged.current = s;
-    e.dataTransfer.effectAllowed = "move";
-  }
 
   function timeFromY(clientY: number): { hour: number; minute: number } {
     const rect = colRef.current!.getBoundingClientRect();
-    const rawMin = (clientY - rect.top) / PX_PER_MIN;
+    const rawMin = (clientY - rect.top) / pxPerMin;
     const snapped = Math.round(rawMin / SNAP_MINUTES) * SNAP_MINUTES;
     const totalMin = workStartHour * 60 + Math.max(0, snapped);
     return { hour: Math.floor(totalMin / 60), minute: totalMin % 60 };
@@ -269,13 +286,13 @@ function DayColumn({
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
-    if (!dragged.current) return;
+    const raw = e.dataTransfer.getData(DRAG_MIME);
+    if (!raw) return;
     const { hour, minute } = timeFromY(e.clientY);
-    onDropSession(dragged.current, dateStr, hour, minute);
-    dragged.current = null;
+    onDropSession(Number(raw), dateStr, hour, minute);
   }
 
-  const height = (workEndHour - workStartHour) * 60 * PX_PER_MIN;
+  const height = (workEndHour - workStartHour) * 60 * pxPerMin;
 
   const columns: { employeeId: number | null; sessions: CalSession[] }[] = splitEmployeeIds
     ? splitEmployeeIds.map((id) => ({ employeeId: id, sessions: sessions.filter((s) => s.employee_id === id) }))
@@ -290,13 +307,13 @@ function DayColumn({
       style={{ position: "relative", height, borderLeft: "0.5px solid var(--color-border-tertiary)", display: "flex" }}
     >
       {columns.map((col, i) => {
-        const clusters = clusterByOverlap(col.sessions, sessionTypes, workStartHour);
+        const clusters = clusterByOverlap(col.sessions, sessionTypes, workStartHour, pxPerMin);
         return (
           <div key={col.employeeId ?? "all"} style={{ position: "relative", flex: 1, borderLeft: i > 0 ? "0.5px dashed var(--color-border-tertiary)" : "none" }}>
             {clusters.map((cl, idx) => (
               <StackedPill
                 key={idx} cluster={cl} clients={clients} employees={employees} locations={locations}
-                sessionTypes={sessionTypes} typeColors={typeColors} onSessionClick={onSessionClick} onDragStart={onDragStart}
+                sessionTypes={sessionTypes} typeColors={typeColors} onSessionClick={onSessionClick}
               />
             ))}
           </div>
@@ -308,13 +325,23 @@ function DayColumn({
 
 export function TimeGrid({
   days, sessions, clients, employees, locations, sessionTypes, typeColors,
-  workStartHour, workEndHour, splitEmployeeIds, onSlotClick, onSessionClick, onDropSession,
+  workStartHour, workEndHour, splitEmployeeIds, onSlotClick, onSessionClick, onDropSession, containerHeight,
 }: Props) {
   const hourMarks = Array.from({ length: Math.ceil(workEndHour - workStartHour) + 1 }, (_, i) => workStartHour + i);
   const gridCols = splitEmployeeIds ? `52px repeat(${days.length}, minmax(160px, 1fr))` : `52px repeat(${days.length}, minmax(120px, 1fr))`;
+  const totalMinutes = (workEndHour - workStartHour) * 60;
+  const pxPerMin = containerHeight
+    ? Math.max((containerHeight - HEADER_ROW_H) / totalMinutes, MIN_PX_PER_MIN)
+    : PX_PER_MIN;
+  // pxPerMin can bottom out at MIN_PX_PER_MIN on a short viewport with long
+  // working hours - the body then exceeds containerHeight and this wrapper
+  // is the one deliberate scroll region left, instead of silently
+  // rendering illegibly squashed blocks.
+  const bodyHeight = totalMinutes * pxPerMin;
+  const needsScroll = bodyHeight > (containerHeight ?? Infinity) - HEADER_ROW_H;
 
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div style={{ overflowX: "auto", overflowY: needsScroll ? "auto" : "visible", height: containerHeight, maxHeight: containerHeight }}>
       <div style={{ display: "grid", gridTemplateColumns: gridCols, minWidth: 600 }}>
         <div />
         {days.map((d) => (
@@ -322,9 +349,9 @@ export function TimeGrid({
             {WEEKDAY_ABBR[d.getDay()]} <span style={{ color: "var(--color-text-tertiary)" }}>{d.getDate()}</span>
           </div>
         ))}
-        <div style={{ position: "relative", height: (workEndHour - workStartHour) * 60 * PX_PER_MIN }}>
+        <div style={{ position: "relative", height: bodyHeight }}>
           {hourMarks.map((h) => (
-            <div key={h} style={{ position: "absolute", top: (h - workStartHour) * 60 * PX_PER_MIN - 6, right: 6, fontSize: 10.5, color: "var(--color-text-tertiary)" }}>
+            <div key={h} style={{ position: "absolute", top: (h - workStartHour) * 60 * pxPerMin - 6, right: 6, fontSize: 10.5, color: "var(--color-text-tertiary)" }}>
               {h}:00
             </div>
           ))}
@@ -335,7 +362,7 @@ export function TimeGrid({
             date={d}
             sessions={sessions.filter((s) => s.session_date === toDateStr(d))}
             clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors}
-            workStartHour={workStartHour} workEndHour={workEndHour} splitEmployeeIds={splitEmployeeIds}
+            workStartHour={workStartHour} workEndHour={workEndHour} pxPerMin={pxPerMin} splitEmployeeIds={splitEmployeeIds}
             onSlotClick={onSlotClick} onSessionClick={onSessionClick} onDropSession={onDropSession}
           />
         ))}
