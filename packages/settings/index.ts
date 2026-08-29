@@ -213,6 +213,9 @@ export const SETTINGS: SettingDef[] = [
   { key: "calendar.workStart", label: "Working hours start", section: "calendar", scope: "org", type: "time", default: "08:00", keywords: ["hours", "open"] },
   { key: "calendar.workEnd", label: "Working hours end", section: "calendar", scope: "org", type: "time", default: "17:00", keywords: ["hours", "close"] },
   { key: "calendar.workDays", label: "Working days", description: "Comma-separated three-letter days, e.g. Mon,Tue,Wed,Thu,Fri.", section: "calendar", scope: "org", type: "text", default: "Mon,Tue,Wed,Thu,Fri", keywords: ["work days", "schedule"] },
+  { key: "calendar.gridlineMinutes", label: "Hour gridlines every", description: "How often the calendar draws a time gridline.", section: "calendar", scope: "org", type: "select", options: sel("15", "30", "60"), default: "60", keywords: ["gridlines", "hours"] },
+  { key: "calendar.gridIncrementMinutes", label: "Default scheduling increment (minutes)", description: "Org-wide default snap increment for creating and dragging sessions. A session type can override this for itself.", section: "calendar", scope: "org", type: "select", options: sel("5", "10", "15", "30"), default: "15", keywords: ["increment", "snap", "granularity"] },
+  { key: "calendar.dragSnapMinutes", label: "Drag snap increment (minutes)", description: "Personal preference for how finely dragging a session snaps on the calendar. Independent of the org's default scheduling increment.", section: "calendar", scope: "user", userOverridable: true, type: "select", options: sel("5", "10", "15", "30"), default: "15", keywords: ["drag", "snap"] },
 
   /* Client Portal */
   { key: "portal.sessionSummaries", label: "Families can view session summaries", section: "client-portal", scope: "org", type: "toggle", default: true, keywords: ["family", "portal"] },

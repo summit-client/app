@@ -5,6 +5,7 @@ import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
 import SessionTypeEditModal from "../components/SessionTypeEditModal";
 import { CalendarView } from "../components/calendar/CalendarView";
+import { gapsOverlap } from "../components/calendar/dateUtils";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 
 const COLORS = {
@@ -899,19 +900,26 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
 // ─── Session types view ───────────────────────────────────────────────────────
 
 function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
+  const appUser = useContext(UserContext);
   const [editingType, setEditingType] = useState(null);
 
-  function handleSave(updated) {
-    setSessionTypes(prev => prev.map(st => st.id === updated.id ? { ...st, ...updated } : st));
+  function handleSave(updated, wasNew) {
+    setSessionTypes(prev => wasNew ? [...prev, updated] : prev.map(st => st.id === updated.id ? { ...st, ...updated } : st));
     setEditingType(null);
-    showToast("Service saved");
+    showToast(wasNew ? "Session type added" : "Session type saved");
   }
 
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Session types</h2>
-        <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Configure session formats and pricing</p>
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Session types</h2>
+          <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Configure session formats, pricing, and scheduling rules</p>
+        </div>
+        <button onClick={() => setEditingType({})}
+          style={{ padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", background: "#5DCAA5", color: "#fff", cursor: "pointer" }}>
+          + New session type
+        </button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
         {sessionTypes.map(st => (
@@ -924,13 +932,18 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
                     Max {st.max_clients} clients
                   </span>
                 )}
+                {st.is_client_optional && (
+                  <span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: COLORS.bgT, color: COLORS.textS, border: `1px solid ${COLORS.border}` }}>
+                    No client
+                  </span>
+                )}
                 <button onClick={() => setEditingType(st)}
                   style={{ padding: "4px 12px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
                   Edit
                 </button>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 20 }}>
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontSize: 11, color: COLORS.textT, marginBottom: 2 }}>DURATION</div>
                 <div style={{ fontSize: 20, fontWeight: 500, color: st.color }}>
@@ -943,6 +956,14 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
                   ${st.cost ?? st.price ?? "—"}
                 </div>
               </div>
+              {(st.gap_before_minutes > 0 || st.gap_after_minutes > 0) && (
+                <div>
+                  <div style={{ fontSize: 11, color: COLORS.textT, marginBottom: 2 }}>GAP</div>
+                  <div style={{ fontSize: 13, color: COLORS.textS, marginTop: 4 }}>
+                    {st.gap_before_minutes || 0}m before · {st.gap_after_minutes || 0}m after
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -950,6 +971,7 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
       {editingType && (
         <SessionTypeEditModal
           sessionType={editingType}
+          clinicId={appUser?.clinic_id}
           onSave={handleSave}
           onClose={() => setEditingType(null)}
           showToast={showToast}
@@ -1454,6 +1476,31 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         setError(`Nothing to book — conflicts with existing sessions on all ${skipped.length} date(s).`);
         setBooking(false);
         return;
+      }
+
+      // Gap warning (never a hard block, unlike the exact-slot conflict
+      // check above): only for the same clinician or same client, per the
+      // session type's own gap_before/gap_after_minutes. One confirm covers
+      // the whole batch rather than one per date - a recurring series can
+      // be dozens of dates and can't practically prompt per occurrence.
+      const gapBefore = quickType.gap_before_minutes ?? 0;
+      const gapAfter = quickType.gap_after_minutes ?? 0;
+      if (gapBefore || gapAfter) {
+        const candDuration = quickType.duration_minutes ?? quickType.duration ?? 60;
+        const insertDates = new Set(inserts.map(i => i.session_date));
+        const hit = bookings.find(b => {
+          if (!insertDates.has(b.session_date) || b.status === "cancelled") return false;
+          if (b.employee_id !== quickStaff.id && b.client_id !== quickClient.id) return false;
+          const bType = sessionTypes.find(t => t.name === b.type);
+          return gapsOverlap(
+            { sessionDate: b.session_date, employeeId: quickStaff.id, clientId: quickClient.id, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: candDuration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
+            { sessionDate: b.session_date, employeeId: b.employee_id, clientId: b.client_id, startMinutes: b.hour * 60 + b.minute, durationMinutes: bType?.duration_minutes ?? bType?.duration ?? 60, gapBeforeMinutes: bType?.gap_before_minutes ?? 0, gapAfterMinutes: bType?.gap_after_minutes ?? 0 },
+          );
+        });
+        if (hit && !confirm(`This lands inside the buffer time around an existing ${hit.type} session on ${hit.session_date}. Book anyway?`)) {
+          setBooking(false);
+          return;
+        }
       }
 
       const { error: err } = await supabase.from("sessions").insert(inserts);

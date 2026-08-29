@@ -21,13 +21,15 @@ import { supabase } from "../../lib/supabase";
 import { useAppUser } from "../../lib/UserContext";
 import { getSetting, onSettingsChange } from "@summit/settings";
 import {
-  ViewMode, computeViewRange, shiftView, toDateStr, parseDateStr, addDays, parseTimeSetting, todayDateStr,
+  ViewMode, computeViewRange, shiftView, toDateStr, parseDateStr, addDays, parseTimeSetting, todayDateStr, gapsOverlap,
 } from "./dateUtils";
+import type { GapWindow } from "./dateUtils";
 import { TimeGrid } from "./TimeGrid";
 import { MonthGrid } from "./MonthGrid";
-import { FilterPanel, CalendarFilters, emptyFilters, activeFilterCount, matchesFilters } from "./FilterPanel";
+import { FilterPanel, CalendarFilters, emptyFilters, matchesFilters } from "./FilterPanel";
 import { RecurringIcon } from "./icons";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
+import { sessionGridIncrement, sessionDuration } from "./types";
 
 const SPLIT_THRESHOLD = 8;
 
@@ -50,10 +52,8 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const [anchor, setAnchor] = React.useState<Date>(() => parseDateStr(todayDateStr()));
   const [sessions, setSessions] = React.useState<CalSession[]>([]);
   const [filters, setFilters] = React.useState<CalendarFilters>(emptyFilters());
-  const [filterOpen, setFilterOpen] = React.useState(false);
   const [selected, setSelected] = React.useState<CalSession | null>(null);
   const [, forceTick] = React.useState(0);
-  const filterRef = React.useRef<HTMLDivElement>(null);
 
   // Measures the actual viewport-fit container so the time grid scales its
   // px-per-minute to the device instead of always rendering at one fixed
@@ -76,20 +76,21 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
   React.useEffect(() => onSettingsChange(() => forceTick((n) => n + 1)), []);
 
-  // Outside click closes the filter dropdown - it used to only close by
-  // clicking the Filter button again.
-  React.useEffect(() => {
-    if (!filterOpen) return;
-    function onDocClick(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [filterOpen]);
-
   const workStartHour = parseTimeSetting(String(getSetting("calendar.workStart")));
   const workEndHour = parseTimeSetting(String(getSetting("calendar.workEnd")));
   const workDays = String(getSetting("calendar.workDays")).split(",").map((s) => s.trim()).filter(Boolean);
+  const gridlineMinutes = Number(getSetting("calendar.gridlineMinutes")) || 60;
+  const orgIncrementMinutes = Number(getSetting("calendar.gridIncrementMinutes")) || 15;
+  const personalSnapMinutes = Number(getSetting("calendar.dragSnapMinutes")) || orgIncrementMinutes;
+
+  // Drag state lives here, not in TimeGrid, so the active drag's own
+  // session-type increment (a 63-minute type forcing finer snapping, say)
+  // can be resolved before it's handed back down as the effective snap -
+  // see sessionGridIncrement in types.ts.
+  const [draggingSessionId, setDraggingSessionId] = React.useState<number | null>(null);
+  const [dragHoverSlot, setDragHoverSlot] = React.useState<{ dateStr: string; hour: number; minute: number } | null>(null);
+  const draggingSession = draggingSessionId != null ? sessions.find((s) => s.id === draggingSessionId) : undefined;
+  const activeSnapMinutes = sessionGridIncrement(draggingSession, sessionTypes, personalSnapMinutes);
 
   const range = React.useMemo(
     () => computeViewRange(mode, anchor, { nDays, showWeekends: weekendsInView, workDays }),
@@ -143,6 +144,27 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     );
   }
 
+  function toGapWindow(session: CalSession, dateStr: string, hour: number, minute: number): GapWindow {
+    const st = sessionTypes.find((t) => t.name === session.type);
+    return {
+      sessionDate: dateStr,
+      employeeId: session.employee_id,
+      clientId: session.client_id,
+      startMinutes: hour * 60 + minute,
+      durationMinutes: sessionDuration(session, sessionTypes),
+      gapBeforeMinutes: st?.gap_before_minutes ?? 0,
+      gapAfterMinutes: st?.gap_after_minutes ?? 0,
+    };
+  }
+
+  function findGapEncroachment(session: CalSession, dateStr: string, hour: number, minute: number): CalSession | undefined {
+    const candidate = toGapWindow(session, dateStr, hour, minute);
+    return sessions.find((b) => {
+      if (b.id === session.id || b.status === "cancelled") return false;
+      return gapsOverlap(candidate, toGapWindow(b, b.session_date, b.hour, b.minute));
+    });
+  }
+
   async function applyReschedule(session: CalSession, dateStr: string, hour: number, minute: number, scope: "this" | "following" | "all") {
     if (scope === "this" || !session.recurrence_id) {
       await supabase.from("sessions").update({ session_date: dateStr, hour, minute }).eq("id", session.id);
@@ -167,6 +189,12 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       const emp = employees.find((e) => e.id === conflict.employee_id);
       const cl = clients.find((c) => c.id === conflict.client_id);
       if (!confirm(`This overlaps with ${cl?.name || "another session"} for ${emp?.name || "this clinician"} at that time. Reschedule anyway?`)) return;
+    } else {
+      const gapHit = findGapEncroachment(session, dateStr, hour, minute);
+      if (gapHit) {
+        const cl = clients.find((c) => c.id === gapHit.client_id);
+        if (!confirm(`This lands inside the buffer time around ${cl?.name || "another session"}'s ${gapHit.type}. Reschedule anyway?`)) return;
+      }
     }
     await applyReschedule(session, dateStr, hour, minute, scope);
   }
@@ -219,16 +247,11 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           />
         </div>
 
-        <div ref={filterRef} style={{ position: "relative", marginLeft: "auto" }}>
-          <button onClick={() => setFilterOpen((v) => !v)} style={{ ...navBtn, display: "flex", alignItems: "center", gap: 6 }}>
-            Filter {activeFilterCount(filters) > 0 && <span style={badgeStyle}>{activeFilterCount(filters)}</span>}
-          </button>
-          {filterOpen && (
-            <FilterPanel
-              locations={locations} sessionTypes={sessionTypes} employees={employees} clients={clients}
-              filters={filters} onChange={setFilters} onClose={() => setFilterOpen(false)}
-            />
-          )}
+        <div style={{ marginLeft: "auto" }}>
+          <FilterPanel
+            locations={locations} sessionTypes={sessionTypes} employees={employees} clients={clients}
+            filters={filters} onChange={setFilters}
+          />
         </div>
       </div>
 
@@ -245,7 +268,11 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
             days={range.days} sessions={visibleSessions} clients={clients} employees={employees} locations={locations}
             sessionTypes={sessionTypes} typeColors={typeColors} workStartHour={workStartHour} workEndHour={workEndHour}
             splitEmployeeIds={splitEmployeeIds} onSlotClick={onRequestCreate} onSessionClick={setSelected} onDropSession={handleDropSession}
-            containerHeight={gridHeight}
+            containerHeight={gridHeight} snapMinutes={activeSnapMinutes} gridlineMinutes={gridlineMinutes}
+            dragHoverSlot={dragHoverSlot}
+            onSessionDragStart={setDraggingSessionId}
+            onDragHover={setDragHoverSlot}
+            onDragEnd={() => { setDraggingSessionId(null); setDragHoverSlot(null); }}
           />
         </div>
       )}
@@ -273,10 +300,6 @@ const navBtn: React.CSSProperties = {
   background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer",
 };
 
-const badgeStyle: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 16, height: 16,
-  borderRadius: 8, background: "#5DCAA5", color: "#fff", fontSize: 10.5, padding: "0 4px",
-};
 
 function ModeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (

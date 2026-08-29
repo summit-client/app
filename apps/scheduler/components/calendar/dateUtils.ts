@@ -163,3 +163,36 @@ export function parseTimeSetting(value: string): number {
   const [h, m] = value.split(":").map(Number);
   return h + (m || 0) / 60;
 }
+
+/**
+ * A session type's gap-before/gap-after (session_types.gap_before_minutes/
+ * gap_after_minutes) is meant to warn - never block - a scheduler from
+ * booking someone into a clinician's or client's prep/wind-down buffer.
+ * "Multiple sessions can run concurrently across different clinicians or
+ * clients" (a real quote from the ask this implements) - so this only ever
+ * fires for the SAME clinician or the SAME client, matching the exact
+ * conflict check elsewhere in this app which is also warn-not-block.
+ *
+ * Both sides' gaps are honoured symmetrically: encroaching on either
+ * session's own buffer counts, not just the new one's.
+ */
+export interface GapWindow {
+  sessionDate: string;
+  employeeId: number;
+  clientId: number | null;
+  startMinutes: number; // hour * 60 + minute
+  durationMinutes: number;
+  gapBeforeMinutes: number;
+  gapAfterMinutes: number;
+}
+
+export function gapsOverlap(a: GapWindow, b: GapWindow): boolean {
+  if (a.sessionDate !== b.sessionDate) return false;
+  const sameParty = a.employeeId === b.employeeId || (a.clientId != null && a.clientId === b.clientId);
+  if (!sameParty) return false;
+  const aStart = a.startMinutes - a.gapBeforeMinutes;
+  const aEnd = a.startMinutes + a.durationMinutes + a.gapAfterMinutes;
+  const bStart = b.startMinutes - b.gapBeforeMinutes;
+  const bEnd = b.startMinutes + b.durationMinutes + b.gapAfterMinutes;
+  return aStart < bEnd && bStart < aEnd;
+}
