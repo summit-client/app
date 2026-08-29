@@ -5,6 +5,8 @@ import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
 import SessionTypeEditModal from "../components/SessionTypeEditModal";
 import { CalendarView } from "../components/calendar/CalendarView";
+import { gapsOverlap, parseTimeSetting } from "../components/calendar/dateUtils";
+import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 
 const COLORS = {
@@ -899,19 +901,26 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
 // ─── Session types view ───────────────────────────────────────────────────────
 
 function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
+  const appUser = useContext(UserContext);
   const [editingType, setEditingType] = useState(null);
 
-  function handleSave(updated) {
-    setSessionTypes(prev => prev.map(st => st.id === updated.id ? { ...st, ...updated } : st));
+  function handleSave(updated, wasNew) {
+    setSessionTypes(prev => wasNew ? [...prev, updated] : prev.map(st => st.id === updated.id ? { ...st, ...updated } : st));
     setEditingType(null);
-    showToast("Service saved");
+    showToast(wasNew ? "Session type added" : "Session type saved");
   }
 
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Session types</h2>
-        <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Configure session formats and pricing</p>
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Session types</h2>
+          <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Configure session formats, pricing, and scheduling rules</p>
+        </div>
+        <button onClick={() => setEditingType({})}
+          style={{ padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", background: "#5DCAA5", color: "#fff", cursor: "pointer" }}>
+          + New session type
+        </button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
         {sessionTypes.map(st => (
@@ -924,13 +933,18 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
                     Max {st.max_clients} clients
                   </span>
                 )}
+                {st.is_client_optional && (
+                  <span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: COLORS.bgT, color: COLORS.textS, border: `1px solid ${COLORS.border}` }}>
+                    No client
+                  </span>
+                )}
                 <button onClick={() => setEditingType(st)}
                   style={{ padding: "4px 12px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
                   Edit
                 </button>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 20 }}>
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontSize: 11, color: COLORS.textT, marginBottom: 2 }}>DURATION</div>
                 <div style={{ fontSize: 20, fontWeight: 500, color: st.color }}>
@@ -943,6 +957,14 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
                   ${st.cost ?? st.price ?? "—"}
                 </div>
               </div>
+              {(st.gap_before_minutes > 0 || st.gap_after_minutes > 0) && (
+                <div>
+                  <div style={{ fontSize: 11, color: COLORS.textT, marginBottom: 2 }}>GAP</div>
+                  <div style={{ fontSize: 13, color: COLORS.textS, marginTop: 4 }}>
+                    {st.gap_before_minutes || 0}m before · {st.gap_after_minutes || 0}m after
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -950,6 +972,7 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
       {editingType && (
         <SessionTypeEditModal
           sessionType={editingType}
+          clinicId={appUser?.clinic_id}
           onSave={handleSave}
           onClose={() => setEditingType(null)}
           showToast={showToast}
@@ -1226,12 +1249,23 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [quickClient, setQuickClient] = useState(null);
   const [quickType, setQuickType] = useState(null);
   const [quickStaff, setQuickStaff] = useState(null);
+  // Conflict-resolution suggestions (never a hard block): set only for the
+  // single, non-recurring booking - a recurring series is handled by the
+  // existing per-date auto-skip below, since prompting once per occurrence
+  // in a dozens-long series isn't practical.
+  const [pendingConflict, setPendingConflict] = useState(null);
   useEffect(() => {
     if (!prefill) return;
-    const covering = calendars.find(c => c.status !== "archived" && c.date_start <= prefill.dateStr && prefill.dateStr <= c.date_end);
+    // Prefer an active calendar over a draft one - a draft's sessions are
+    // deliberately hidden from the live calendar view until confirmed, and
+    // silently booking a click-to-create session into one would make it
+    // vanish from the exact view the scheduler just clicked on.
+    const covering = calendars.find(c => c.status === "active" && c.date_start <= prefill.dateStr && prefill.dateStr <= c.date_end)
+      ?? calendars.find(c => c.status !== "archived" && c.date_start <= prefill.dateStr && prefill.dateStr <= c.date_end);
     setSelectedCalendar(covering || null);
     setQuickClient(null); setQuickType(null); setQuickStaff(null);
     setRecurring(null); setEndType(null); setEndDate(""); setEndCount("");
+    setPendingConflict(null);
     setTrail([]);
     setStep("quickSlot");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1283,6 +1317,21 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     await supabase.from("calendars").update({ status: "archived" }).eq("id", id);
     setCalendars(prev => prev.filter(c => c.id !== id));
     if (selectedCalendar?.id === id) setSelectedCalendar(null);
+  }
+
+  // A draft calendar's sessions are deliberately kept off the live calendar
+  // view and out of conflict/gap checks (see CalendarView's draftCalendarIds)
+  // so a scheduler can build out a batch without it going live session by
+  // session. Confirming is a single status flip - every session already
+  // booked under this calendar becomes visible the moment this resolves,
+  // with nothing to migrate since they were never anywhere else.
+  async function confirmCalendar(id) {
+    const { data } = await supabase.from("calendars").update({ status: "active" }).eq("id", id).select().single();
+    if (data) {
+      setCalendars(prev => prev.map(c => c.id === id ? data : c));
+      if (selectedCalendar?.id === id) setSelectedCalendar(data);
+      showToast(`${data.name} confirmed — now live on the calendar`);
+    }
   }
 
   function buildReviewItems(res, type, client, sessionType) {
@@ -1410,58 +1459,31 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
 }
 }
 
-  // The click-to-create quick-slot path: a firm client/staff/time decision
-  // already made by clicking the real calendar, so this skips AI matching
-  // and proposedSessions entirely and inserts directly - anchored on the
-  // clicked date itself via generateDatesFrom, not the calendar term's own
-  // start date the way every other booking path in this wizard is.
-  async function bookQuickSlot() {
-    if (!selectedCalendar || !quickClient || !quickStaff || !quickType || !prefill) return;
+  // The actual insert, factored out so both the no-conflict path and the
+  // conflict-resolution modal's "Book anyway" / suggestion buttons can call
+  // it with an overridden date/hour/minute/staff without duplicating the
+  // insert shape.
+  async function insertQuickSlot({ dateStr, hour, minute, staff }) {
     setBooking(true);
     setError(null);
     try {
-      const recurrenceId = recurring === "yes" ? crypto.randomUUID() : null;
-      const dates = recurring === "yes"
-        ? generateDatesFrom(prefill.dateStr, endType, endDate, endCount)
-        : [prefill.dateStr];
-
-      const inserts = [];
-      const skipped = [];
-      dates.forEach(date => {
-        const conflict = bookings.some(b =>
-          b.employee_id === quickStaff.id && b.session_date === date && b.hour === prefill.hour && b.status !== "cancelled"
-        );
-        if (conflict) {
-          skipped.push(date);
-        } else {
-          inserts.push({
-            recurrence_id: recurrenceId,
-            client_id: quickClient.id,
-            employee_id: quickStaff.id,
-            hour: prefill.hour,
-            minute: prefill.minute,
-            session_date: date,
-            type: quickType.name,
-            calendar_id: selectedCalendar.id,
-            status: "scheduled",
-            clinic_id: appUser.clinic_id,
-            location_id: quickStaff.location_id ?? null,
-          });
-        }
+      const { error: err } = await supabase.from("sessions").insert({
+        recurrence_id: null,
+        client_id: quickClient.id,
+        employee_id: staff.id,
+        hour, minute,
+        session_date: dateStr,
+        type: quickType.name,
+        calendar_id: selectedCalendar.id,
+        status: "scheduled",
+        clinic_id: appUser.clinic_id,
+        location_id: staff.location_id ?? null,
       });
-
-      if (inserts.length === 0) {
-        setError(`Nothing to book — conflicts with existing sessions on all ${skipped.length} date(s).`);
-        setBooking(false);
-        return;
-      }
-
-      const { error: err } = await supabase.from("sessions").insert(inserts);
       if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
-
       setBooking(false);
+      setPendingConflict(null);
       refreshBookings();
-      showToast(skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Session booked");
+      showToast("Session booked");
       onConsumedPrefill?.();
       advance("booked", "Booked");
     } catch {
@@ -1469,6 +1491,133 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       showToast("Booking failed. Error code: BOOKING_FAILED");
       setError("Booking failed. Please try again.");
     }
+  }
+
+  // The click-to-create quick-slot path: a firm client/staff/time decision
+  // already made by clicking the real calendar, so this skips AI matching
+  // and proposedSessions entirely and inserts directly - anchored on the
+  // clicked date itself via generateDatesFrom, not the calendar term's own
+  // start date the way every other booking path in this wizard is.
+  async function bookQuickSlot() {
+    if (!selectedCalendar || !quickClient || !quickStaff || !quickType || !prefill) return;
+
+    if (recurring === "yes") {
+      setBooking(true);
+      setError(null);
+      try {
+        const recurrenceId = crypto.randomUUID();
+        const dates = generateDatesFrom(prefill.dateStr, endType, endDate, endCount);
+        const inserts = [];
+        const skipped = [];
+        dates.forEach(date => {
+          const conflict = bookings.some(b =>
+            b.employee_id === quickStaff.id && b.session_date === date && b.hour === prefill.hour && b.minute === prefill.minute && b.status !== "cancelled"
+          );
+          if (conflict) {
+            skipped.push(date);
+          } else {
+            inserts.push({
+              recurrence_id: recurrenceId, client_id: quickClient.id, employee_id: quickStaff.id,
+              hour: prefill.hour, minute: prefill.minute, session_date: date, type: quickType.name,
+              calendar_id: selectedCalendar.id, status: "scheduled", clinic_id: appUser.clinic_id,
+              location_id: quickStaff.location_id ?? null,
+            });
+          }
+        });
+
+        if (inserts.length === 0) {
+          setError(`Nothing to book — conflicts with existing sessions on all ${skipped.length} date(s).`);
+          setBooking(false);
+          return;
+        }
+
+        // Gap warning (never a hard block): same clinician or same client
+        // only. One confirm covers the whole batch rather than one per
+        // date - a recurring series can be dozens of dates and can't
+        // practically prompt per occurrence the way the single-date path
+        // below does with real suggestions.
+        const gapBefore = quickType.gap_before_minutes ?? 0;
+        const gapAfter = quickType.gap_after_minutes ?? 0;
+        if (gapBefore || gapAfter) {
+          const candDuration = quickType.duration_minutes ?? quickType.duration ?? 60;
+          const insertDates = new Set(inserts.map(i => i.session_date));
+          const hit = bookings.find(b => {
+            if (!insertDates.has(b.session_date) || b.status === "cancelled") return false;
+            if (b.employee_id !== quickStaff.id && b.client_id !== quickClient.id) return false;
+            const bType = sessionTypes.find(t => t.name === b.type);
+            return gapsOverlap(
+              { sessionDate: b.session_date, employeeId: quickStaff.id, clientId: quickClient.id, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: candDuration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
+              { sessionDate: b.session_date, employeeId: b.employee_id, clientId: b.client_id, startMinutes: b.hour * 60 + b.minute, durationMinutes: bType?.duration_minutes ?? bType?.duration ?? 60, gapBeforeMinutes: bType?.gap_before_minutes ?? 0, gapAfterMinutes: bType?.gap_after_minutes ?? 0 },
+            );
+          });
+          if (hit && !confirm(`This lands inside the buffer time around an existing ${hit.type} session on ${hit.session_date}. Book anyway?`)) {
+            setBooking(false);
+            return;
+          }
+        }
+
+        const { error: err } = await supabase.from("sessions").insert(inserts);
+        if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
+
+        setBooking(false);
+        refreshBookings();
+        showToast(skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked");
+        onConsumedPrefill?.();
+        advance("booked", "Booked");
+      } catch {
+        setBooking(false);
+        showToast("Booking failed. Error code: BOOKING_FAILED");
+        setError("Booking failed. Please try again.");
+      }
+      return;
+    }
+
+    // Single, non-recurring booking: offer real conflict-resolution
+    // suggestions instead of a plain skip/confirm, since there's exactly
+    // one occurrence to resolve.
+    const duration = quickType.duration_minutes ?? quickType.duration ?? 60;
+    const exactConflict = bookings.find(b =>
+      b.employee_id === quickStaff.id && b.session_date === prefill.dateStr && b.hour === prefill.hour && b.minute === prefill.minute && b.status !== "cancelled"
+    );
+    const gapBefore = quickType.gap_before_minutes ?? 0;
+    const gapAfter = quickType.gap_after_minutes ?? 0;
+    const gapHit = !exactConflict && (gapBefore || gapAfter) ? bookings.find(b => {
+      if (b.status === "cancelled" || b.session_date !== prefill.dateStr) return false;
+      if (b.employee_id !== quickStaff.id && b.client_id !== quickClient.id) return false;
+      const bType = sessionTypes.find(t => t.name === b.type);
+      return gapsOverlap(
+        { sessionDate: prefill.dateStr, employeeId: quickStaff.id, clientId: quickClient.id, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: duration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
+        { sessionDate: b.session_date, employeeId: b.employee_id, clientId: b.client_id, startMinutes: b.hour * 60 + b.minute, durationMinutes: bType?.duration_minutes ?? bType?.duration ?? 60, gapBeforeMinutes: bType?.gap_before_minutes ?? 0, gapAfterMinutes: bType?.gap_after_minutes ?? 0 },
+      );
+    }) : null;
+
+    const other = exactConflict || gapHit;
+    if (!other) {
+      await insertQuickSlot({ dateStr: prefill.dateStr, hour: prefill.hour, minute: prefill.minute, staff: quickStaff });
+      return;
+    }
+
+    const otherClient = clients.find(c => c.id === other.client_id);
+    const message = exactConflict
+      ? `${quickStaff.name} already has a session with ${otherClient?.name || "another client"} at that time.`
+      : `This lands inside the buffer time around ${otherClient?.name || "another session"}'s ${other.type}.`;
+    const existing = bookings.filter(b => b.status !== "cancelled").map(b => {
+      const t = sessionTypes.find(st => st.name === b.type);
+      return { id: b.id, employee_id: b.employee_id, session_date: b.session_date, hour: b.hour, minute: b.minute, durationMinutes: t?.duration_minutes ?? t?.duration ?? 60, status: b.status };
+    });
+    const incrementMinutes = quickType.grid_increment_minutes ?? (Number(getSetting("calendar.gridIncrementMinutes")) || 15);
+    const sameClinician = suggestSameClinicianOtherTime({
+      employeeId: quickStaff.id, employeeName: quickStaff.name, dateStr: prefill.dateStr, hour: prefill.hour, minute: prefill.minute,
+      durationMinutes: duration, sessions: existing, staffAvailability,
+      workStartHour: parseTimeSetting(String(getSetting("calendar.workStart"))), workEndHour: parseTimeSetting(String(getSetting("calendar.workEnd"))),
+      incrementMinutes,
+    });
+    const differentClinician = suggestDifferentClinicianSameSlot({
+      dateStr: prefill.dateStr, hour: prefill.hour, minute: prefill.minute, durationMinutes: duration,
+      locationId: quickStaff.location_id ?? null, excludeEmployeeId: quickStaff.id,
+      employees: employees.filter(e => e.specialties?.includes(quickType.name)), sessions: existing, staffAvailability,
+    });
+    setPendingConflict({ message, suggestions: [...sameClinician, ...differentClinician] });
   }
 
   async function runMatch(type) {
@@ -1639,18 +1788,57 @@ finally { setLoading(false); }
 
         {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "#FCEBEB", border: "0.5px solid #F7C1C1", color: "#A32D2D", fontSize: 14, marginBottom: 16 }}>{error}</div>}
         {ready && <button onClick={bookQuickSlot} disabled={booking} style={{ padding: "10px 28px", borderRadius: 10, background: "#5DCAA5", color: "#fff", border: "none", cursor: booking ? "not-allowed" : "pointer", fontSize: 15, fontWeight: 500, opacity: booking ? 0.7 : 1 }}>{booking ? "Booking…" : "Book session"}</button>}
+
+        {pendingConflict && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={e => { if (e.target === e.currentTarget) setPendingConflict(null); }}>
+            <div style={{ width: 380, background: COLORS.bg, borderRadius: 14, padding: "24px 26px", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.text, marginBottom: 6 }}>Scheduling conflict</div>
+              <p style={{ fontSize: 13, color: COLORS.textS, margin: "0 0 14px" }}>{pendingConflict.message}</p>
+              {pendingConflict.suggestions.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.04em", marginBottom: 8 }}>SUGGESTED ALTERNATIVES</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {pendingConflict.suggestions.map((s, i) => (
+                      <button key={i}
+                        onClick={() => {
+                          const staff = s.employeeId === quickStaff.id ? quickStaff : employees.find(e => e.id === s.employeeId);
+                          insertQuickSlot({ dateStr: s.dateStr, hour: s.hour, minute: s.minute, staff });
+                        }}
+                        style={{ padding: "9px 12px", borderRadius: 8, textAlign: "left", border: `0.5px solid ${COLORS.border}`, background: COLORS.bgS, color: COLORS.text, cursor: "pointer", fontSize: 13 }}>
+                        {s.kind === "same-clinician" ? `${quickStaff.name} — ${s.label}` : s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => insertQuickSlot({ dateStr: prefill.dateStr, hour: prefill.hour, minute: prefill.minute, staff: quickStaff })}
+                  disabled={booking}
+                  style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#FCE8E8", color: "#A33A3A", border: "none", cursor: booking ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 500 }}>
+                  Book anyway
+                </button>
+                <button onClick={() => setPendingConflict(null)}
+                  style={{ padding: "9px 16px", borderRadius: 8, background: COLORS.bgS, color: COLORS.textS, border: `0.5px solid ${COLORS.border}`, cursor: "pointer", fontSize: 13 }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
   if (step === "calendar") return (
     <div>{PH}
-      <StepCard question="Which calendar are you working with?">
+      <StepCard question="Which calendar are you working with?" sub="Draft calendars stay off the live calendar and out of conflict checks until you confirm them.">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
           {calendars.filter(c => c.status !== "archived").map(cal => {
             const isSelected = selectedCalendar?.id === cal.id;
             const isEditing = editingCalId === cal.id;
             const isHovered = hoveredCalId === cal.id;
+            const isDraft = cal.status === "draft";
             const color = cal.status === "active" ? "#5DCAA5" : "#378ADD";
             return (
               <div key={cal.id} style={{ position: "relative", display: "inline-block" }}
@@ -1672,6 +1860,13 @@ finally { setLoading(false); }
                 </div>
                 {isHovered && !isEditing && (
                   <div style={{ position: "absolute", top: -8, right: -8, display: "flex", gap: 4, zIndex: 10 }}>
+                    {isDraft && (
+                      <button onClick={e => { e.stopPropagation(); if (confirm(`Confirm "${cal.name}"? Its sessions become visible on the live calendar immediately.`)) confirmCalendar(cal.id); }}
+                        title="Confirm: make this calendar's sessions live"
+                        style={{ height: 24, borderRadius: 6, border: "0.5px solid #5DCAA5", background: "#5DCAA5", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 500, padding: "0 8px", display: "flex", alignItems: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>
+                        Confirm
+                      </button>
+                    )}
                     <button onClick={e => { e.stopPropagation(); setEditingCalId(cal.id); setEditingCalName(cal.name); }}
                       style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✎</button>
                     <button onClick={e => { e.stopPropagation(); archiveCalendar(cal.id); }}

@@ -346,6 +346,12 @@ Yanko's feedback on PR #74 (the real-dates calendar rebuild), triaged into four
 buckets so it doesn't get lost or re-litigated piecemeal. Read this before
 touching the scheduler calendar tab again.
 
+**Status as of 2026-08-29, end of day: items 1–19 are done** (1–7 in PR #75;
+8–19 in the PR that follows it). Two gaps found while building 12/13/19 are
+now their own OPEN follow-ups at the end of this section — read those before
+assuming the mini-calendar or drag experience is fully spec'd. Item 20 is
+still deliberately not started (roadmap only).
+
 **Bugs — fix outright, no design question involved:**
 
 1. View-mode pill order: "Full week" should sit before "Month".
@@ -375,66 +381,94 @@ touching the scheduler calendar tab again.
    decision point. Needs to be redone as the originally-agreed pre-filled hop
    into `CreateView`.
 
-**Feature work — clear spec, no open design question:**
+**Feature work — clear spec, no open design question. All DONE 2026-08-29:**
 
-8. Filter panel redesign: Locations and Session Types become hover-opening
-   pill submenus (not the current always-expanded multi-select block);
-   Clinicians and Clients become individual dropdowns with an
-   alphabetical-by-last-name list, a search field, and an "All" item at the
-   top. "Clear all" needs to stay reachable from every menu.
-9. Recurrence (repeat, plus end-by-date or end-by-occurrence-count) needs to
-   be selectable everywhere a session is created or rescheduled — the
-   calendar's quick-create, drag-to-reschedule, and the future
-   reschedule-with-mini-calendar flow — not just the original Create wizard.
-10. The drag-to-reschedule snap increment should come from a setting ("every
-    N minutes"), not the current fixed 15-minute snap — and that same setting
-    should govern how finely session blocks can be resized/positioned. (See
-    item 19 below — this may need to be per-session-type, not one global
-    number.)
-11. A visual drop indicator while dragging: highlight the hour marker and
-    activate minute ticks at the controlling increment, so the scheduler sees
-    exactly where a drop will land instead of guessing. Likely a **personal**
-    (per-user) setting rather than org-level — to be confirmed alongside item
-    19.
-12. Clicking an existing session needs a "Reschedule" action opening a
-    mini-calendar showing the client's and clinician's availability, plus
-    dropdowns to change clinician/location/session type on that booking.
-13. Both the mini-calendar and the main calendar need a visual availability
-    indicator while rescheduling/dragging, bounded by the org's working hours
-    from Settings.
-14. Session Types tab: add "gap before" / "gap after" fields per type.
-15. The gap from item 14 should produce a warning (never a hard block), and
-    only when the encroaching session shares the same clinician *or* the same
-    client as the gap's owner — concurrent sessions across different
-    clinicians/clients are fine and should never warn.
-16. Add Break, Lunch, and Meeting as session types.
+8. ~~Filter panel redesign~~ **DONE.** Locations and Session Types are
+   hover-opening pill menus; Clinicians and Clients are click-opened,
+   searchable, alphabetical-by-last-name dropdowns with an "All" row. Each
+   menu carries its own "Clear all filters" link.
+9. ~~Recurrence everywhere a session is created or rescheduled~~ **DONE for
+   quick-create** (repeat weekly, end by date or count, matching the
+   original Create wizard's own recurrence UI). Drag-to-reschedule
+   deliberately stays time-only (see item 17's note on `applyReschedule`) so
+   it never needed its own recurrence picker. **Not done for the
+   reschedule-mini-calendar (item 12)** — see the new OPEN item below.
+10. ~~Drag/create snap increment as a setting~~ **DONE.**
+    `calendar.gridIncrementMinutes` (org default) and `calendar.dragSnapMinutes`
+    (personal override) added, plus a nullable per-session-type
+    `grid_increment_minutes` override (migration 0019) resolved via
+    `sessionGridIncrement()`.
+11. ~~Visual drop indicator while dragging~~ **DONE.** A highlighted line plus
+    an exact time label on the day column being hovered, with the
+    corresponding hour gridline bolded. Implemented as **personal** (drag
+    snap is `calendar.dragSnapMinutes`, a user-scope setting).
+12. ~~"Reschedule" action with a mini-calendar~~ **DONE.** A 7-day strip plus
+    a time-slot grid, dropdowns to change clinician/location/session type on
+    that one booking. Single-session only — does not touch a recurring
+    series' other occurrences (see the new OPEN item below).
+13. ~~Visual availability indicator, mini-calendar and main calendar~~ **DONE
+    for the mini-calendar** (each time slot is colored by clinician/client
+    availability, using `staff_availability`/`client_availability`, bounded
+    by org hours). **Not done for the main calendar during a live drag** —
+    see the new OPEN item below; the drop-time indicator from item 11 is not
+    the same thing as availability shading.
+14. ~~Session Types: gap before/after fields~~ **DONE** (migration 0019,
+    `SessionTypeEditModal`).
+15. ~~Gap warning (same clinician/client only, never a hard block)~~ **DONE.**
+    Wired into quick-create, drag-to-reschedule, and the reschedule
+    mini-calendar (mini-calendar's own check is same-clinician only — see
+    the OPEN item below for the same-client gap in that one path).
+16. ~~Add Break, Lunch, Meeting session types~~ **DONE** (migration 0019 seeds
+    them per clinic as client-optional types; `SessionTypeEditModal` can now
+    also create new types, not just edit existing ones).
 
-**Needs a design conversation before any implementation — do not build ahead
-of this:**
+**Design-conversation items — Yanko approved the recommended approach for all
+three; implemented 2026-08-29:**
 
-17. **Bringing back "Calendars" as draft vs. active**, replacing the
-    term/quarter-pill concept dropped in PR #74: a draft calendar that gets
-    confirmed into an active one, rather than the old always-live quarter
-    blocks. Yanko explicitly asked to discuss this before any implementation.
-18. **Conflict-resolution suggestions, and how "fancy" they need to be.** When
-    a drag or create hits a conflict, offer: (a) another slot for the same
-    clinician later that week, (b) another slot the same day with a different
-    clinician, or (c) crediting the session against another one. Hard
-    constraints already stated: never suggest a different location (a
-    clinician doesn't move across locations mid-suggestion); if the clinician
-    has to change, the client's day cannot also change — e.g. never offer
-    "Wed with Billy" as a substitute for "Mon with Sarah," only a
-    same-day/different-clinician substitution is valid. "Credit toward
-    another session" is not a defined mechanic anywhere in this schema yet
-    and needs scoping before it can be designed against.
-19. **Time-grid granularity as a system, not one setting.** Increments (drag
-    snap, block resizing, gap enforcement, on both the main grid and the
-    future mini-calendar) may need to key off each session type's own
-    duration rather than a single global number — e.g. a 63-minute type would
-    presumably force per-minute granularity. Yanko wants this designed with
-    multi-tenancy in mind (different clinics will want different defaults —
-    15 minutes proposed as the fallback, some may want 30, 10, or per-minute)
-    before items 10/11/13 above are built against a single assumed number.
+17. ~~Draft vs. active Calendars~~ **DONE**, and turned out lighter than
+    expected: `calendars.status = 'draft'` already existed in the data model
+    (new calendars were already created as drafts) with nothing actually
+    reading it specially. Sessions under a still-draft calendar are now
+    excluded from the live calendar view and from conflict/gap checks
+    (`CalendarView`'s `liveSessions`); a "Confirm" action on a draft calendar
+    (Create wizard's calendar step) flips it to `active` in one update, and
+    click-to-create prefers an active calendar over a draft one covering the
+    same date so a new session doesn't silently vanish from the view it was
+    just created on.
+18. ~~Conflict-resolution suggestions~~ **DONE** as the agreed rule-based
+    engine (`components/calendar/suggestions.ts`), not a general solver:
+    same-clinician-later-this-week, and same-day/same-location-different-
+    clinician (quick-create only — drag never reassigns the clinician).
+    Respects both hard constraints (no cross-location suggestions; a
+    clinician swap never also moves the client's day). "Credit toward
+    another session" is still explicitly out of scope, unchanged from the
+    original discussion.
+19. ~~Time-grid granularity as a system~~ **DONE** as the simpler
+    override-plus-fallback design (not full auto-GCD computation):
+    `session_types.grid_increment_minutes` (nullable) overrides
+    `calendar.gridIncrementMinutes` (org default), both resolved through one
+    shared function (`sessionGridIncrement`) used identically by the main
+    grid's drag snap and the quick-create slot click. **The mini-calendar
+    (item 12) does not yet consume a per-type increment** for its own time
+    slots — see the OPEN item below.
+
+**New OPEN follow-ups, found while building 12/13/17–19 above — not yet
+scoped, flag before starting:**
+
+- The reschedule mini-calendar doesn't offer recurrence editing (item 9) or
+  a same-*client* gap check (item 15) — only same-clinician for both. Adding
+  either means deciding what "reschedule this one occurrence of a series
+  into a different recurrence pattern" actually means product-wise, which
+  wasn't part of the original ask.
+- The main calendar has no availability *shading* while a drag is in
+  progress (item 13's second half) — only the exact drop-time indicator
+  from item 11. Shading every visible slot by clinician/client availability
+  live during a drag is a heavier rendering pass than the mini-calendar's
+  static list and wasn't attempted in this round.
+- The mini-calendar's time slots always step at
+  `calendar.gridIncrementMinutes`, not the currently-selected session type's
+  own override (item 19) - inconsistent with the main grid, which does
+  resolve the type-specific increment.
 
 **Filed for the roadmap, not for action now:**
 
