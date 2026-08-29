@@ -6,6 +6,7 @@ import type {
 } from "next";
 import { useState } from "react";
 import Sidebar from "../components/Sidebar";
+import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient } from "../lib/admin-view-as";
 import { AdminViewBanner } from "../components/admin-view-banner";
@@ -60,6 +61,7 @@ export default function Appointments(
   return (
     <>
     {isAdminViewingAs ? <AdminViewBanner clientName={clientName} /> : null}
+    <MobileNavChrome title="Appointments" />
     <div className={styles.page}>
       <Sidebar />
 

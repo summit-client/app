@@ -14,6 +14,22 @@
   border-right: 1px solid var(--line);
 }
 
+/* Off-canvas drawer chrome for the sidebar below 760px - see
+   mobile-nav-chrome.tsx for why this reimplements @summit/design's
+   checkbox-hack pattern against this app's own class names instead of
+   sharing its CSS. Inert above 760px. */
+.navToggleInput {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.navToggleBtn,
+.mobileTopbar,
+.navToggleBackdrop {
+  display: none;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -531,8 +547,73 @@
     grid-template-columns: 1fr;
   }
 
+  .navToggleBtn {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    cursor: pointer;
+  }
+
+  .navToggleBtn span {
+    display: block;
+    height: 2px;
+    margin: 0 7px;
+    background: var(--ink);
+    border-radius: 1px;
+  }
+
+  .mobileTopbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 52px;
+    padding: 0 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .mobileTopbarTitle {
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .navToggleBackdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: var(--scrim);
+  }
+
+  .navToggleInput:checked ~ .navToggleBackdrop {
+    display: block;
+  }
+
+  /* Off-canvas instead of the old `display: none` - that left a parent on
+     a phone with no way to reach Dashboard/Appointments/Log out at all. */
   .sidebar {
-    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 45;
+    width: min(280px, 82vw);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+
+  .navToggleInput:checked ~ .page .sidebar {
+    transform: translateX(0);
   }
 
   .main {
