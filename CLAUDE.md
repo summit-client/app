@@ -275,6 +275,10 @@ valid session to login is fixed via `@summit/proxy-auth` (see "Traps that
 have already bitten" above) — application code only, no manual migration.
 
 - ~4.8 MB of clinic-specific assets in `apps/employee/public`
+- Scheduler calendar v2 (PR #74) has a large, triaged feedback backlog —
+  bugs, clear feature specs, and three items explicitly awaiting a design
+  decision before any build. See `docs/context/product.md`'s "Scheduler
+  calendar v2 — feedback backlog" section before touching that tab again.
 
 The full list — compliance gaps, product debt, ops debt, and unresolved
 conflicts between past sessions — lives in `docs/context/`. Read the relevant
