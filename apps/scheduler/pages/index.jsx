@@ -4,6 +4,8 @@ import { supabase } from "../lib/supabase";
 import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
 import SessionTypeEditModal from "../components/SessionTypeEditModal";
+import { CalendarView } from "../components/calendar/CalendarView";
+import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -728,299 +730,6 @@ function Dashboard({ clients, employees, bookings, typeColors }) {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ─── Calendar view ────────────────────────────────────────────────────────────
-
-function CalendarView({ clients, employees, bookings, locations, typeColors, calendars, workDays, workStart, workEnd, refreshBookings, showToast }) {
-  const [hoveredCell, setHoveredCell] = useState(null);
-  const [tooltipPlacement, setTooltipPlacement] = useState({
-  horizontal: "right",
-  vertical: "below",
-});
-  const [selectedCalendarId, setSelectedCalendarId] = useState(null);
-  const [selectedBooking, setSelectedBooking] = useState(null);
-  const [cancelling, setCancelling] = useState(false);
-
-  const activeCalendars = (calendars || []).filter(c => c.status !== "archived");
-  const effectiveCalId = selectedCalendarId ?? activeCalendars[0]?.id ?? null;
-  const filteredBookings = (effectiveCalId ? bookings.filter(b => b.calendar_id === effectiveCalId) : bookings)
-    .filter(b => b.status !== "cancelled");
-
-  // Derive day from session_date for grid lookup
-  const getBookings = (day, hour) =>
-    filteredBookings.filter(b => b.session_date && dayFromDate(b.session_date) === day && b.hour === hour);
-
-  async function handleCancel(booking) {
-    if (!confirm("Cancel this session?")) return;
-    setCancelling(true);
-    await supabase.from("sessions").update({ status: "cancelled" }).eq("id", booking.id);
-    setCancelling(false);
-    setSelectedBooking(null);
-    refreshBookings();
-    showToast("Session cancelled");
-  }
-
-  return (
-    <div>
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Weekly calendar</h2>
-        <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Current week at a glance</p>
-      </div>
-      {activeCalendars.length > 0 && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-          {activeCalendars.map(cal => {
-            const isActive = cal.id === effectiveCalId;
-            const color = cal.status === "active" ? "#5DCAA5" : "#378ADD";
-            return (
-              <button key={cal.id} onClick={() => setSelectedCalendarId(cal.id)}
-                style={{ padding: "5px 16px", borderRadius: 20, fontSize: 13, fontWeight: isActive ? 500 : 400, border: `1px solid ${isActive ? color : COLORS.border}`, background: isActive ? color + "18" : COLORS.bg, color: isActive ? color : COLORS.textS, cursor: "pointer", transition: "all 0.15s", display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: isActive ? color : COLORS.border, display: "inline-block" }} />
-                {cal.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: `48px repeat(${workDays.length}, 1fr)`, minWidth: 650, gap: 0, border: `0.5px solid ${COLORS.border}`, borderRadius: 10, overflow: "visible" }}>
-          <div style={{ background: COLORS.bgS, borderBottom: `0.5px solid ${COLORS.border}`, padding: "8px 0" }} />
-          {DAYS.filter(d => workDays.includes(d)).map(d => <div key={d} style={{ background: COLORS.bgS, borderBottom: `0.5px solid ${COLORS.border}`, borderLeft: `0.5px solid ${COLORS.border}`, padding: "8px 0", textAlign: "center", fontSize: 13, fontWeight: 500, color: COLORS.textS }}>{d}</div>)}
-          {Array.from({ length: workEnd - workStart }, (_, i) => workStart + i).map(hour => (
-            <Fragment key={hour}>
-              <div key={`h-${hour}`} style={{ padding: "6px 6px 0", fontSize: 11, color: COLORS.textT, borderBottom: `0.5px solid ${COLORS.border}`, display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>{hour}:00</div>
-              {DAYS.filter(d => workDays.includes(d)).map(day => {
-                const bs = getBookings(day, hour);
-                return (
-                  <div key={`${day}-${hour}`} style={{ borderLeft: `0.5px solid ${COLORS.border}`, borderBottom: `0.5px solid ${COLORS.border}`, height: 48, padding: 2, background: COLORS.bg, position: "relative" }}>
-                    {bs.length > 0 && (() => {
-                      const first = bs[0];
-                      const col = typeColors[first.type] || "#888888";
-                      const firstClient = clients.find(c => c.id === first.client_id);
-                      const firstEmp = employees.find(e => e.id === first.employee_id);
-                      const loc = locations?.find(l => l.id === firstEmp?.location_id);
-                      const cellKey = `${day}-${hour}`;
-                      return (
-                      <div
-  onMouseEnter={(e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const tooltipWidth = 240;
-    const tooltipHeight = 180;
-
-    setTooltipPlacement({
-      horizontal: rect.right + tooltipWidth > window.innerWidth ? "left" : "right",
-      vertical: rect.bottom + tooltipHeight > window.innerHeight ? "above" : "below",
-    });
-
-    setHoveredCell(cellKey);
-  }}
-  onMouseLeave={() => setHoveredCell(null)}
-                          onClick={() => setSelectedBooking(selectedBooking?.id === first.id ? null : first)}
-                          style={{ height: "100%", borderRadius: 4, padding: "2px 6px", background: col + "22", borderLeft: `2.5px solid ${col}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: col, lineHeight: 1.3 }}>{firstClient?.name?.split(" ")[0]}</div>
-                            {bs.length > 1 && <div style={{ fontSize: 11, color: COLORS.textS }}>+{bs.length - 1} more</div>}
-                          </div>
-                         {hoveredCell === cellKey && (
-  <div style={{
-    position: "absolute",
-    top: tooltipPlacement.vertical === "below" ? 52 : "auto",
-    bottom: tooltipPlacement.vertical === "above" ? 52 : "auto",
-    left: tooltipPlacement.horizontal === "right" ? 0 : "auto",
-    right: tooltipPlacement.horizontal === "left" ? 0 : "auto",
-    zIndex: 50,
-    minWidth: 220, background: COLORS.bg, border: `0.5px solid ${COLORS.borderS}`, borderRadius: 10, padding: "12px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, marginBottom: 8 }}>{day} {hour}:00 · {first.session_date}</div>
-                              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>📍 {loc?.name || "—"}</div>
-                              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>👤 {firstEmp?.name || "—"}</div>
-                              <div style={{ fontSize: 12, color: COLORS.textS, marginBottom: 4 }}>🔁 {bs.some(b => b.recurrence_id) ? "Recurring" : "One-time"}</div>
-                              <div style={{ borderTop: `0.5px solid ${COLORS.border}`, marginTop: 8, paddingTop: 8 }}>
-                                {bs.map(b => {
-                                  const c = clients.find(c => c.id === b.client_id);
-                                  const bcol = typeColors[b.type] || "#888";
-                                  return (
-                                    <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: bcol, flexShrink: 0 }} />
-                                      <span style={{ fontSize: 12, color: COLORS.text }}>{c?.name}</span>
-                                      <span style={{ fontSize: 11, color: COLORS.textT, marginLeft: "auto" }}>{b.type}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                );
-              })}
-            </Fragment>
-          ))}
-        </div>
-      </div>
-{selectedBooking && (() => {
-  const client = clients.find(c => c.id === selectedBooking.client_id);
-  const employee = employees.find(e => e.id === selectedBooking.employee_id);
- const location = locations.find(
-  l => String(l.id) === String(client?.location_id)
-);
-  const calendar = calendars.find(c => c.id === selectedBooking.calendar_id);
-
-  const color = typeColors[selectedBooking.type] || "#888888";
-  const day = selectedBooking.session_date
-    ? dayFromDate(selectedBooking.session_date)
-    : "";
-
-  const sessionDate = selectedBooking.session_date
-    ? new Date(`${selectedBooking.session_date}T12:00:00`).toLocaleDateString(
-        undefined,
-        {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        }
-      )
-    : "Not available";
-
-  const formattedTime = `${String(selectedBooking.hour ?? 0).padStart(
-    2,
-    "0"
-  )}:${String(selectedBooking.minute ?? 0).padStart(2, "0")}`;
-
-  const detailRow = (label, value) => (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 16,
-        padding: "8px 0",
-        borderBottom: `0.5px solid ${COLORS.border}`,
-      }}
-    >
-      <span style={{ fontSize: 12, color: COLORS.textS }}>{label}</span>
-
-      <span
-        style={{
-          fontSize: 13,
-          fontWeight: 500,
-          color: COLORS.text,
-          textAlign: "right",
-        }}
-      >
-        {value || "Not available"}
-      </span>
-    </div>
-  );
-
-  return (
-    <div
-      style={{
-        marginTop: 16,
-        padding: "18px 20px",
-        borderRadius: 12,
-        background: COLORS.bgS,
-        border: `0.5px solid ${color}55`,
-        borderLeft: `4px solid ${color}`,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 16,
-          marginBottom: 12,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 17,
-              fontWeight: 600,
-              color: COLORS.text,
-              marginBottom: 4,
-            }}
-          >
-            {client?.name || "Unknown client"}
-          </div>
-
-          <div style={{ fontSize: 13, color: COLORS.textS }}>
-            {employee?.name || "Unassigned staff"}
-          </div>
-        </div>
-
-        <Badge label={selectedBooking.type} color={color} />
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-          columnGap: 24,
-          marginBottom: 16,
-        }}
-      >
-        <div>
-          {detailRow("Date", `${day}, ${sessionDate}`)}
-          {detailRow("Time", formattedTime)}
-          {detailRow("Location", location?.name)}
-        </div>
-
-        <div>
-          {detailRow("Calendar", calendar?.name)}
-          {detailRow("Status", selectedBooking.status || "scheduled")}
-          {detailRow(
-            "Recurrence",
-            selectedBooking.recurrence_id ? "Recurring" : "One-time"
-          )}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: 10,
-        }}
-      >
-        <button
-          onClick={() => handleCancel(selectedBooking)}
-          disabled={cancelling}
-          style={{
-            padding: "8px 14px",
-            borderRadius: 8,
-            fontSize: 13,
-            border: "none",
-            cursor: cancelling ? "not-allowed" : "pointer",
-            background: "#FCE8E8",
-            color: "#A33A3A",
-            opacity: cancelling ? 0.6 : 1,
-          }}
-        >
-          {cancelling ? "Cancelling..." : "Cancel session"}
-        </button>
-
-        <button
-          onClick={() => setSelectedBooking(null)}
-          style={{
-            padding: "8px 14px",
-            borderRadius: 8,
-            fontSize: 13,
-            border: `0.5px solid ${COLORS.border}`,
-            background: COLORS.bg,
-            color: COLORS.text,
-            cursor: "pointer",
-          }}
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-})()}
     </div>
   );
 }
@@ -2370,9 +2079,23 @@ export default function Scheduler() {
   const [clientAvailability, setClientAvailability] = useState([]);
   const [toast, setToast] = useState(null);
   function showToast(message = "Changes saved") { setToast(message); }
-  const [workDays, setWorkDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri"]);
-  const [workStart, setWorkStart] = useState(8);
-  const [workEnd, setWorkEnd] = useState(18);
+
+  // Working hours used to be this component's own useState - never saved
+  // anywhere, resetting to Mon-Fri/8-18 on every refresh despite the
+  // Settings UI implying otherwise. They're real org-level @summit/settings
+  // keys now (calendar.workDays/workStart/workEnd); re-render on any change
+  // since getSetting() reads a synchronous in-memory cache, not React state.
+  const [, forceSettingsTick] = useState(0);
+  useEffect(() => onSettingsChange(() => forceSettingsTick(n => n + 1)), []);
+  const workDays = String(getSetting("calendar.workDays")).split(",").map(s => s.trim()).filter(Boolean);
+  const workStart = parseInt(String(getSetting("calendar.workStart")).split(":")[0], 10);
+  const workEnd = parseInt(String(getSetting("calendar.workEnd")).split(":")[0], 10);
+  function setWorkDays(updater) {
+    const next = typeof updater === "function" ? updater(workDays) : updater;
+    void setSetting("calendar.workDays", next.join(","), "org");
+  }
+  function setWorkStart(hour) { void setSetting("calendar.workStart", `${String(hour).padStart(2, "0")}:00`, "org"); }
+  function setWorkEnd(hour) { void setSetting("calendar.workEnd", `${String(hour).padStart(2, "0")}:00`, "org"); }
 
   useEffect(() => { loadData(); }, []);
 

@@ -33,10 +33,14 @@ interface Client {
   sessions: number;
   location_id: number | null;
   user_id: string | null;
+  /** Home address - the scheduler calendar auto-fills this into a session's
+   *  home_address when a clinician marks it as a home visit (still editable
+   *  per session for a one-off). */
+  address?: string | null;
 }
 
 const defaultStaffForm = { name: '', role: 'RBT', specialties: [] as string[], capacity: 20 };
-const defaultClientForm = { name: '', email: '', session_type: 'Direct Therapy', status: 'active' };
+const defaultClientForm = { name: '', email: '', session_type: 'Direct Therapy', status: 'active', address: '' };
 
 const roleColors: Record<string, string> = {
   BCBA: '#7C3AED', BCaBA: '#2563EB', RBT: '#16A34A', Supervisor: '#D97706',
@@ -145,6 +149,7 @@ async function fetchAll() {
         email: clientForm.email.trim() || null,
         session_type: clientForm.session_type,
         status: clientForm.status,
+        address: clientForm.address.trim() || null,
         sessions: 0,
         availability: [],
         clinic_id: appUser.clinic_id,
@@ -513,6 +518,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       <select style={{ ...s.select, marginBottom: 0, width: 140 }} value={editForm.status ?? client.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
         {STATUSES.map(st => <option key={st}>{st}</option>)}
       </select>
+      <input style={{ ...s.input, marginBottom: 0, width: 200 }} value={editForm.address ?? client.address ?? ''} onChange={e => setEditForm(f => ({ ...f, address: e.target.value }))} placeholder="Address" />
       <button style={s.btnPrimary} onClick={() => handleSave('clients', client.id)} disabled={saving}>Save</button>
       <button style={s.btnGhost} onClick={() => { setEditingId(null); setEditForm({}); }}>Cancel</button>
     </div>
@@ -520,7 +526,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
     <>
       <div>
         <div style={s.cardName}>{client.name}</div>
-        <div style={s.cardSub}>{client.email || 'No email'} · {client.session_type}</div>
+        <div style={s.cardSub}>{client.email || 'No email'} · {client.session_type}{client.address ? ` · ${client.address}` : ''}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(statusColors[client.status] || '#6B7280')}>{client.status}</span>
@@ -619,6 +625,14 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
                 >
                   {STATUSES.map(st => <option key={st}>{st}</option>)}
                 </select>
+
+                <label style={s.label}>Address</label>
+                <input
+                  style={s.input}
+                  value={clientForm.address}
+                  onChange={e => setClientForm(f => ({ ...f, address: e.target.value }))}
+                  placeholder="Used for home-visit sessions"
+                />
               </>
             )}
 
