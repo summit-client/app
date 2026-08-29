@@ -28,13 +28,24 @@ import { suggestSameClinicianOtherTime } from "./suggestions";
 import type { AvailabilityRow, ExistingSession, Suggestion } from "./suggestions";
 import { TimeGrid } from "./TimeGrid";
 import { MonthGrid } from "./MonthGrid";
-import { FilterPanel, CalendarFilters, emptyFilters, matchesFilters } from "./FilterPanel";
+import { FilterPanel, CalendarFilters, emptyFilters, activeFilterCount, matchesFilters } from "./FilterPanel";
 import { RecurringIcon } from "./icons";
 import { RescheduleModal } from "./RescheduleModal";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { sessionGridIncrement, sessionDuration } from "./types";
 
 const SPLIT_THRESHOLD = 8;
+
+/** Escape closes whichever modal is on top - every modal in this file (and
+ *  RescheduleModal, which keeps its own copy of this) already closes on an
+ *  outside click; this adds the keyboard equivalent. */
+function useEscapeToClose(onClose: () => void) {
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+}
 
 interface CalCalendar { id: number; status: string; }
 interface CalClientAvailability { client_id: number; day: string; start_time: string; end_time: string; }
@@ -141,9 +152,19 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     () => sessions.filter((s) => s.calendar_id == null || !draftCalendarIds.has(s.calendar_id)),
     [sessions, draftCalendarIds],
   );
+  // "Show drafts" is purely a display toggle - liveSessions above (used for
+  // every conflict/gap check) never includes drafts regardless of it, so a
+  // scheduler previewing a draft calendar's layout can't accidentally have
+  // it silently treated as already-booked.
+  const [showDrafts, setShowDrafts] = React.useState(false);
+  const draftSessionIds = React.useMemo(
+    () => new Set(sessions.filter((s) => s.calendar_id != null && draftCalendarIds.has(s.calendar_id)).map((s) => s.id)),
+    [sessions, draftCalendarIds],
+  );
+  const displaySessions = showDrafts ? sessions : liveSessions;
   const visibleSessions = React.useMemo(
-    () => liveSessions.filter((s) => matchesFilters(s as any, filters)),
-    [liveSessions, filters],
+    () => displaySessions.filter((s) => matchesFilters(s as any, filters)),
+    [displaySessions, filters],
   );
 
   const splitEmployeeIds = filters.employeeIds.size > 0 && filters.employeeIds.size <= SPLIT_THRESHOLD
@@ -289,6 +310,16 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           />
         </div>
 
+        {draftCalendarIds.size > 0 && (
+          <button
+            onClick={() => setShowDrafts((v) => !v)}
+            title="Preview draft calendars' sessions on this view - they still don't count toward conflict or gap checks until confirmed"
+            style={{ ...navBtn, borderColor: showDrafts ? "#EF9F27" : undefined, color: showDrafts ? "#8A5E10" : undefined, background: showDrafts ? "#EF9F2718" : undefined }}
+          >
+            {showDrafts ? "Hide drafts" : "Show drafts"}
+          </button>
+        )}
+
         <div style={{ marginLeft: "auto" }}>
           <FilterPanel
             locations={locations} sessionTypes={sessionTypes} employees={employees} clients={clients}
@@ -297,10 +328,19 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
         </div>
       </div>
 
+      {visibleSessions.length === 0 && activeFilterCount(filters) > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", marginBottom: 12, fontSize: 13, color: "var(--color-text-secondary)" }}>
+          No sessions match your filters for this range.
+          <button onClick={() => setFilters(emptyFilters())} style={{ fontSize: 13, color: "#3f9c78", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+            Clear filters
+          </button>
+        </div>
+      )}
+
       {mode === "month" ? (
         <MonthGrid
           days={range.days} anchorMonth={anchor} sessions={visibleSessions} clients={clients} sessionTypes={sessionTypes}
-          typeColors={typeColors}
+          typeColors={typeColors} draftSessionIds={draftSessionIds}
           onSelectDay={(dateStr) => { setMode("day"); setAnchor(parseDateStr(dateStr)); }}
           onSessionClick={setSelected}
         />
@@ -315,6 +355,8 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
             onSessionDragStart={setDraggingSessionId}
             onDragHover={setDragHoverSlot}
             onDragEnd={() => { setDraggingSessionId(null); setDragHoverSlot(null); }}
+            staffAvailability={staffAvailability} draggingEmployeeId={draggingSession?.employee_id ?? null}
+            draftSessionIds={draftSessionIds} today={todayDateStr()}
           />
         </div>
       )}
@@ -322,6 +364,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       {selected && (
         <SessionDetail
           session={selected} clients={clients} employees={employees} locations={locations} typeColors={typeColors}
+          isDraft={draftSessionIds.has(selected.id)}
           onClose={() => setSelected(null)}
           onReschedule={() => { setRescheduling(selected); setSelected(null); }}
           onCancelled={() => { setSelected(null); void loadRange(); showToast("Session cancelled"); }}
@@ -350,9 +393,10 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           client={clients.find((c) => c.id === rescheduling.client_id)}
           employees={employees} locations={locations} sessionTypes={sessionTypes}
           liveSessions={liveSessions} staffAvailability={staffAvailability} clientAvailability={clientAvailability}
-          workStartHour={workStartHour} workEndHour={workEndHour} incrementMinutes={orgIncrementMinutes}
+          clinicId={clinicId}
+          workStartHour={workStartHour} workEndHour={workEndHour} orgIncrementMinutes={orgIncrementMinutes}
           onClose={() => setRescheduling(null)}
-          onSaved={() => { setRescheduling(null); void loadRange(); showToast("Session updated"); }}
+          onSaved={(message) => { setRescheduling(null); void loadRange(); showToast(message); }}
         />
       )}
     </div>
@@ -367,6 +411,7 @@ function ConflictModal({
   onProceedAnyway: () => void;
   onCancel: () => void;
 }) {
+  useEscapeToClose(onCancel);
   return (
     <div style={overlayStyle} onClick={onCancel}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
@@ -418,6 +463,7 @@ function ModeButton({ active, label, onClick }: { active: boolean; label: string
 }
 
 function RecurrenceScopeModal({ onPick, onCancel }: { onPick: (scope: "this" | "following" | "all") => void; onCancel: () => void }) {
+  useEscapeToClose(onCancel);
   return (
     <div style={overlayStyle} onClick={onCancel}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
@@ -448,11 +494,12 @@ const modalStyle: React.CSSProperties = {
 };
 
 function SessionDetail({
-  session, clients, employees, locations, typeColors, onClose, onCancelled, onReschedule,
+  session, clients, employees, locations, typeColors, isDraft, onClose, onCancelled, onReschedule,
 }: {
   session: CalSession; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
-  typeColors: Record<string, string>; onClose: () => void; onCancelled: () => void; onReschedule: () => void;
+  typeColors: Record<string, string>; isDraft: boolean; onClose: () => void; onCancelled: () => void; onReschedule: () => void;
 }) {
+  useEscapeToClose(onClose);
   const [cancelling, setCancelling] = React.useState(false);
   const client = clients.find((c) => c.id === session.client_id);
   const emp = employees.find((e) => e.id === session.employee_id);
@@ -470,6 +517,11 @@ function SessionDetail({
   return (
     <div style={overlayStyle} onClick={onClose}>
       <div style={{ ...modalStyle, borderLeft: `4px solid ${color}` }} onClick={(e) => e.stopPropagation()}>
+        {isDraft && (
+          <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: "#8A5E10", background: "#EF9F2722", borderRadius: 5, padding: "2px 8px", marginBottom: 8 }}>
+            DRAFT — not yet on the confirmed calendar
+          </div>
+        )}
         <div style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>{client?.name || "Unknown client"}</div>
         <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14 }}>{emp?.name || "Unassigned"}</div>
         <DetailRow label="Date" value={session.session_date} />

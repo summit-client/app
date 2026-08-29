@@ -2,15 +2,21 @@
  * Opened from a session's detail view - a mini-calendar (a 7-day strip plus
  * a time-slot list for whichever day is selected) showing the client's and
  * clinician's availability, with dropdowns to change clinician, location,
- * and session type on that one booking. Single-session only, not
- * recurring-series-aware: changing who a whole series belongs to is a
- * bigger decision than this pass takes on (drag-to-reschedule's
- * this/following/all prompt is deliberately time-only for the same
- * reason - see CalendarView's applyReschedule).
+ * and session type on that one booking, plus a home-visit toggle matching
+ * the quick-create step's own location model (migration 0018).
+ *
+ * Single-session only for who it belongs to - changing a whole recurring
+ * series' clinician/type/location is a bigger decision than this pass
+ * takes on (drag-to-reschedule's this/following/all prompt is deliberately
+ * time-only for the same reason - see CalendarView's applyReschedule). The
+ * one series-shaped thing this DOES do is let a still one-time session
+ * start repeating going forward - a strictly additive change (new rows
+ * only, this session's own row untouched apart from its date/time), not a
+ * rewrite of an existing series' pattern, which stays out of scope.
  */
 import * as React from "react";
 import { supabase } from "../../lib/supabase";
-import { WEEKDAY_ABBR, addDays, toDateStr, parseDateStr, todayDateStr, gapsOverlap } from "./dateUtils";
+import { WEEKDAY_ABBR, addDays, toDateStr, parseDateStr, todayDateStr, gapsOverlap, generateWeeklyDatesFrom } from "./dateUtils";
 import { isAvailable, hasSessionConflict } from "./suggestions";
 import type { AvailabilityRow, ExistingSession } from "./suggestions";
 import { sessionDuration } from "./types";
@@ -27,21 +33,29 @@ interface Props {
   liveSessions: CalSession[];
   staffAvailability: AvailabilityRow[];
   clientAvailability: ClientAvailabilityRow[];
+  clinicId: string;
   workStartHour: number;
   workEndHour: number;
-  incrementMinutes: number;
+  orgIncrementMinutes: number;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (message: string) => void;
 }
 
 type SlotState = "open" | "clinician-only" | "client-only" | "neither" | "booked";
 
 export function RescheduleModal({
   session, client, employees, locations, sessionTypes, liveSessions, staffAvailability, clientAvailability,
-  workStartHour, workEndHour, incrementMinutes, onClose, onSaved,
+  clinicId, workStartHour, workEndHour, orgIncrementMinutes, onClose, onSaved,
 }: Props) {
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const [employeeId, setEmployeeId] = React.useState(session.employee_id);
   const [locationId, setLocationId] = React.useState(session.location_id);
+  const [isHome, setIsHome] = React.useState(session.is_home_visit);
+  const [homeAddress, setHomeAddress] = React.useState(session.home_address || "");
   const [typeName, setTypeName] = React.useState(session.type);
   const [weekStart, setWeekStart] = React.useState(() => {
     const d = parseDateStr(session.session_date);
@@ -50,14 +64,22 @@ export function RescheduleModal({
   });
   const [selectedDate, setSelectedDate] = React.useState(session.session_date);
   const [selectedSlot, setSelectedSlot] = React.useState<{ hour: number; minute: number } | null>({ hour: session.hour, minute: session.minute });
+  const [repeatWeekly, setRepeatWeekly] = React.useState(false);
+  const [endType, setEndType] = React.useState<"date" | "count" | null>(null);
+  const [endDate, setEndDate] = React.useState("");
+  const [endCount, setEndCount] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const type = sessionTypes.find((t) => t.name === typeName);
   const duration = type?.duration_minutes ?? type?.duration ?? sessionDuration(session, sessionTypes);
+  // The currently-selected session type's own increment override, matching
+  // the main grid's drag-snap resolution (sessionGridIncrement) instead of
+  // always stepping at the org default regardless of which type is picked.
+  const incrementMinutes = type?.grid_increment_minutes ?? orgIncrementMinutes;
   const existing: ExistingSession[] = liveSessions
     .filter((s) => s.status !== "cancelled" && s.id !== session.id)
-    .map((s) => ({ id: s.id, employee_id: s.employee_id, session_date: s.session_date, hour: s.hour, minute: s.minute, durationMinutes: sessionDuration(s, sessionTypes), status: s.status }));
+    .map((s) => ({ id: s.id, employee_id: s.employee_id, client_id: s.client_id, session_date: s.session_date, hour: s.hour, minute: s.minute, durationMinutes: sessionDuration(s, sessionTypes), status: s.status }));
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
@@ -94,39 +116,81 @@ export function RescheduleModal({
     booked: { bg: "#FCE8E8", text: "#A33A3A", label: "Clinician busy" },
   };
 
+  function findGapHit(dateStr: string, hour: number, minute: number): boolean {
+    const gapBefore = type?.gap_before_minutes ?? 0;
+    const gapAfter = type?.gap_after_minutes ?? 0;
+    if (!gapBefore && !gapAfter) return false;
+    const candStart = hour * 60 + minute;
+    return existing.some((b) => gapsOverlap(
+      { sessionDate: dateStr, employeeId, clientId: session.client_id, startMinutes: candStart, durationMinutes: duration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
+      { sessionDate: b.session_date, employeeId: b.employee_id, clientId: b.client_id ?? null, startMinutes: b.hour * 60 + b.minute, durationMinutes: b.durationMinutes, gapBeforeMinutes: 0, gapAfterMinutes: 0 },
+    ));
+  }
+
   async function handleSave() {
     if (!selectedSlot) return;
     setSaving(true);
     setError(null);
-    const gapBefore = type?.gap_before_minutes ?? 0;
-    const gapAfter = type?.gap_after_minutes ?? 0;
-    if (gapBefore || gapAfter) {
-      // Same-clinician only here (ExistingSession doesn't carry client_id) -
-      // the same-client case is already covered by the quick-slot and drag
-      // gap checks; this mini-calendar's own client-side gap check would
-      // need liveSessions' full CalSession shape threaded through, which
-      // isn't worth it just for this modal's warning.
-      const candStart = selectedSlot.hour * 60 + selectedSlot.minute;
-      const gapHit = existing.find((b) => gapsOverlap(
-        { sessionDate: selectedDate, employeeId, clientId: null, startMinutes: candStart, durationMinutes: duration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
-        { sessionDate: b.session_date, employeeId: b.employee_id, clientId: null, startMinutes: b.hour * 60 + b.minute, durationMinutes: b.durationMinutes, gapBeforeMinutes: 0, gapAfterMinutes: 0 },
-      ));
-      if (gapHit && !confirm("This lands inside a buffer window around another session. Save anyway?")) {
-        setSaving(false);
-        return;
-      }
+
+    if (findGapHit(selectedDate, selectedSlot.hour, selectedSlot.minute) && !confirm("This lands inside a buffer window around another session (same clinician or client). Save anyway?")) {
+      setSaving(false);
+      return;
     }
+
+    // Only actually assign a new recurrence_id when the future occurrences
+    // are really about to be created below - otherwise a checked "repeat
+    // weekly" box with no end condition chosen yet would leave this session
+    // permanently flagged as part of a series that has exactly one row in
+    // it, which would wrongly trigger drag-to-reschedule's this/following/
+    // all prompt later for a series that was never actually created.
+    const canRepeat = !session.recurrence_id;
+    const willRepeat = canRepeat && repeatWeekly && !!endType && !!(endType === "date" ? endDate : endCount);
+    const recurrenceId = willRepeat ? crypto.randomUUID() : session.recurrence_id;
+
     const { error: err } = await supabase.from("sessions").update({
       session_date: selectedDate,
       hour: selectedSlot.hour,
       minute: selectedSlot.minute,
       employee_id: employeeId,
-      location_id: session.is_home_visit ? null : locationId,
+      location_id: isHome ? null : locationId,
+      is_home_visit: isHome,
+      home_address: isHome ? (homeAddress || null) : null,
       type: typeName,
+      recurrence_id: recurrenceId,
     }).eq("id", session.id);
+
+    if (err) { setSaving(false); setError("Save failed. Try again."); return; }
+
+    if (willRepeat) {
+      // Additive only: new rows for the future occurrences, starting the
+      // week after the date just saved above - this session's own row is
+      // never touched again here.
+      const futureDates = generateWeeklyDatesFrom(selectedDate, endType, endDate, endCount).slice(1);
+      const conflictFree = futureDates.filter((d) => !existing.some((b) => b.employee_id === employeeId && b.session_date === d && b.hour === selectedSlot.hour && b.minute === selectedSlot.minute));
+      const skipped = futureDates.length - conflictFree.length;
+      const inserts = conflictFree.map((d) => ({
+        recurrence_id: recurrenceId,
+        client_id: session.client_id,
+        employee_id: employeeId,
+        hour: selectedSlot.hour,
+        minute: selectedSlot.minute,
+        session_date: d,
+        type: typeName,
+        calendar_id: session.calendar_id,
+        status: "scheduled",
+        clinic_id: clinicId,
+        location_id: isHome ? null : locationId,
+        is_home_visit: isHome,
+        home_address: isHome ? (homeAddress || null) : null,
+      }));
+      if (inserts.length) await supabase.from("sessions").insert(inserts);
+      setSaving(false);
+      onSaved(skipped > 0 ? `Session updated · ${inserts.length} future session${inserts.length !== 1 ? "s" : ""} added, ${skipped} skipped (conflicts)` : `Session updated · ${inserts.length} future session${inserts.length !== 1 ? "s" : ""} added`);
+      return;
+    }
+
     setSaving(false);
-    if (err) { setError("Save failed. Try again."); return; }
-    onSaved();
+    onSaved("Session updated");
   }
 
   return (
@@ -135,20 +199,10 @@ export function RescheduleModal({
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Reschedule</div>
         <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14 }}>{client?.name || "Unknown client"}</div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 10 }}>
           <Field label="Clinician">
             <select value={employeeId} onChange={(e) => setEmployeeId(Number(e.target.value))} style={selectStyle}>
               {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Location">
-            <select value={locationId ?? ""} disabled={session.is_home_visit} onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
-              {session.is_home_visit
-                ? <option>Client's home</option>
-                : <>
-                    <option value="">—</option>
-                    {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </>}
             </select>
           </Field>
           <Field label="Session type">
@@ -158,7 +212,22 @@ export function RescheduleModal({
           </Field>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <Field label="Location">
+          <div style={{ display: "flex", gap: 6, marginBottom: isHome ? 6 : 0 }}>
+            <button type="button" onClick={() => setIsHome(false)} style={{ ...navBtnSmall, flex: 1, borderColor: !isHome ? "#5DCAA5" : undefined }}>Clinic</button>
+            <button type="button" onClick={() => { setIsHome(true); if (!homeAddress) setHomeAddress(client?.address || ""); }} style={{ ...navBtnSmall, flex: 1, borderColor: isHome ? "#5DCAA5" : undefined }}>Client's home</button>
+          </div>
+          {isHome ? (
+            <input value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} placeholder="Address" style={selectStyle} />
+          ) : (
+            <select value={locationId ?? ""} onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
+              <option value="">—</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          )}
+        </Field>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "14px 0 8px" }}>
           <button onClick={() => setWeekStart((w) => addDays(w, -7))} style={navBtnSmall}>‹</button>
           <button onClick={() => { const t = parseDateStr(todayDateStr()); const day = t.getDay(); setWeekStart(addDays(t, day === 0 ? -6 : 1 - day)); }} style={navBtnSmall}>This week</button>
           <button onClick={() => setWeekStart((w) => addDays(w, 7))} style={navBtnSmall}>›</button>
@@ -214,13 +283,41 @@ export function RescheduleModal({
           })}
         </div>
 
+        {!session.recurrence_id && (
+          <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--color-background-secondary)", marginBottom: 14 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--color-text-primary)", cursor: "pointer", marginBottom: repeatWeekly ? 8 : 0 }}>
+              <input type="checkbox" checked={repeatWeekly} onChange={(e) => { setRepeatWeekly(e.target.checked); if (!e.target.checked) setEndType(null); }} style={{ accentColor: "#5DCAA5" }} />
+              Make this repeat weekly going forward
+            </label>
+            {repeatWeekly && (
+              <>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <button type="button" onClick={() => setEndType("date")} style={{ ...navBtnSmall, borderColor: endType === "date" ? "#5DCAA5" : undefined }}>By date</button>
+                  <button type="button" onClick={() => setEndType("count")} style={{ ...navBtnSmall, borderColor: endType === "count" ? "#5DCAA5" : undefined }}>By count</button>
+                </div>
+                {endType === "date" && <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={selectStyle} />}
+                {endType === "count" && <input type="number" min={1} value={endCount} onChange={(e) => setEndCount(e.target.value)} placeholder="e.g. 12" style={selectStyle} />}
+              </>
+            )}
+          </div>
+        )}
+
         {error && <div style={{ fontSize: 13, color: "#A32D2D", marginBottom: 10 }}>{error}</div>}
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={handleSave} disabled={saving || !selectedSlot} style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: saving ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 500, opacity: saving || !selectedSlot ? 0.6 : 1 }}>
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-          <button onClick={onClose} style={navBtnSmall}>Cancel</button>
-        </div>
+        {(() => {
+          // A checked "repeat weekly" with no end condition chosen yet is
+          // an incomplete state, not a valid "just this session" save - see
+          // the comment in handleSave on why that distinction matters.
+          const repeatIncomplete = repeatWeekly && !(endType && (endType === "date" ? endDate : endCount));
+          const disabled = saving || !selectedSlot || repeatIncomplete;
+          return (
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleSave} disabled={disabled} style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: disabled ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 500, opacity: disabled ? 0.6 : 1 }}>
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+              <button onClick={onClose} style={navBtnSmall}>Cancel</button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

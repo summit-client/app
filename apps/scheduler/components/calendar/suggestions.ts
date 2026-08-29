@@ -29,6 +29,7 @@ export interface AvailabilityRow {
 export interface ExistingSession {
   id: number;
   employee_id: number;
+  client_id?: number | null;
   session_date: string;
   hour: number;
   minute: number;

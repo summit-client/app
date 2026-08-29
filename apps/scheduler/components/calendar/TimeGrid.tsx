@@ -56,7 +56,24 @@ interface Props {
   onSessionDragStart: (sessionId: number) => void;
   onDragHover: (slot: DragHoverSlot) => void;
   onDragEnd: () => void;
+  /** Availability shading while a drag is in progress - the dragged
+   *  session's own clinician, so the scheduler can see where dropping is
+   *  actually sensible instead of only where the drop will land (that's
+   *  dragHoverSlot above, a different thing). No shading when nothing is
+   *  being dragged, and no shading for a day with no availability data on
+   *  file rather than assuming unavailable. */
+  staffAvailability: AvailabilityRow[];
+  draggingEmployeeId: number | null;
+  /** Sessions belonging to a still-draft calendar, shown only when the
+   *  toolbar's "Show drafts" toggle is on (see CalendarView) - rendered
+   *  with a dashed border and a small tag rather than looking like a real,
+   *  confirmed booking. */
+  draftSessionIds: Set<number>;
+  /** Today's date string, for the header's today-column highlight. */
+  today: string;
 }
+
+interface AvailabilityRow { staff_id: number; day: string; start_time: string; end_time: string }
 
 const DRAG_MIME = "application/x-summit-session-id";
 const HEADER_ROW_H = 34;
@@ -161,7 +178,7 @@ function startDrag(e: React.DragEvent, sessionId: number) {
 
 function SessionBlock({
   session, left, width, top, height, color, clients, employees, locations, sessionTypes, typeColors,
-  onSessionClick, onDragBegin, onDragEnd,
+  onSessionClick, onDragBegin, onDragEnd, isDraft,
 }: {
   session: CalSession; left: string; width: string; top: number; height: number; color: string;
   clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[]; sessionTypes: CalSessionType[];
@@ -169,6 +186,7 @@ function SessionBlock({
   onSessionClick: (s: CalSession) => void;
   onDragBegin: (sessionId: number) => void;
   onDragEnd: () => void;
+  isDraft: boolean;
 }) {
   const [hovered, setHovered] = React.useState(false);
   const client = clients.find((c) => c.id === session.client_id);
@@ -183,13 +201,15 @@ function SessionBlock({
       onClick={(e) => { e.stopPropagation(); onSessionClick(session); }}
       style={{
         position: "absolute", top, height, left, width, zIndex: 10,
-        borderRadius: 5, padding: "2px 5px", background: color + "22", borderLeft: `2.5px solid ${color}`,
-        cursor: "grab", overflow: "hidden", fontSize: 11.5,
+        borderRadius: 5, padding: "2px 5px", background: color + (isDraft ? "14" : "22"),
+        border: isDraft ? `1.5px dashed ${color}88` : "none", borderLeft: `2.5px solid ${color}`,
+        opacity: isDraft ? 0.75 : 1, cursor: "grab", overflow: "hidden", fontSize: 11.5,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 600, color, lineHeight: 1.3 }}>
         {session.recurrence_id && <RecurringIcon size={10} color={color} />}
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client?.name || "Unknown"}</span>
+        {isDraft && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color, opacity: 0.8, flexShrink: 0 }}>DRAFT</span>}
       </div>
       {height > 34 && (
         <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--color-text-secondary)", marginTop: 2 }}>
@@ -205,13 +225,14 @@ function SessionBlock({
 }
 
 function StackedPill({
-  cluster, clients, employees, locations, sessionTypes, typeColors, onSessionClick, onDragBegin, onDragEnd,
+  cluster, clients, employees, locations, sessionTypes, typeColors, onSessionClick, onDragBegin, onDragEnd, draftSessionIds,
 }: {
   cluster: Cluster; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
   sessionTypes: CalSessionType[]; typeColors: Record<string, string>;
   onSessionClick: (s: CalSession) => void;
   onDragBegin: (sessionId: number) => void;
   onDragEnd: () => void;
+  draftSessionIds: Set<number>;
 }) {
   const [open, setOpen] = React.useState(false);
   if (cluster.sessions.length === 1) {
@@ -221,7 +242,7 @@ function StackedPill({
       <SessionBlock
         session={s} left="2px" width="calc(100% - 4px)" top={cluster.top} height={cluster.height} color={color}
         clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors}
-        onSessionClick={onSessionClick} onDragBegin={onDragBegin} onDragEnd={onDragEnd}
+        onSessionClick={onSessionClick} onDragBegin={onDragBegin} onDragEnd={onDragEnd} isDraft={draftSessionIds.has(s.id)}
       />
     );
   }
@@ -254,6 +275,7 @@ function StackedPill({
           {cluster.sessions.map((s) => {
             const client = clients.find((c) => c.id === s.client_id);
             const c = typeColors[s.type] || "#888";
+            const draft = draftSessionIds.has(s.id);
             return (
               <div
                 key={s.id}
@@ -261,11 +283,12 @@ function StackedPill({
                 onDragStart={(e) => { e.stopPropagation(); startDrag(e, s.id); onDragBegin(s.id); }}
                 onDragEnd={onDragEnd}
                 onClick={(e) => { e.stopPropagation(); onSessionClick(s); }}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", borderRadius: 6, cursor: "pointer" }}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", borderRadius: 6, cursor: "pointer", opacity: draft ? 0.7 : 1 }}
               >
                 <SessionTypeDot size={8} color={c} />
                 {s.recurrence_id && <RecurringIcon size={10} />}
                 <span style={{ fontSize: 12, color: "var(--color-text-primary)" }}>{client?.name}</span>
+                {draft && <span style={{ fontSize: 9, fontWeight: 700, color: c }}>DRAFT</span>}
                 <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: "auto" }}>
                   {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")}
                 </span>
@@ -281,7 +304,7 @@ function StackedPill({
 function DayColumn({
   date, sessions, clients, employees, locations, sessionTypes, typeColors, workStartHour, workEndHour, pxPerMin,
   snapMinutes, dragHoverSlot, splitEmployeeIds, onSlotClick, onSessionClick, onDropSession,
-  onSessionDragStart, onDragHover, onDragEnd,
+  onSessionDragStart, onDragHover, onDragEnd, staffAvailability, draggingEmployeeId, draftSessionIds, isToday,
 }: {
   date: Date; sessions: CalSession[]; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
   sessionTypes: CalSessionType[]; typeColors: Record<string, string>; workStartHour: number; workEndHour: number; pxPerMin: number;
@@ -293,6 +316,10 @@ function DayColumn({
   onSessionDragStart: (sessionId: number) => void;
   onDragHover: (slot: DragHoverSlot) => void;
   onDragEnd: () => void;
+  staffAvailability: AvailabilityRow[];
+  draggingEmployeeId: number | null;
+  draftSessionIds: Set<number>;
+  isToday: boolean;
 }) {
   const colRef = React.useRef<HTMLDivElement>(null);
   const dateStr = toDateStr(date);
@@ -305,8 +332,15 @@ function DayColumn({
     return { hour: Math.floor(totalMin / 60), minute: totalMin % 60 };
   }
 
+  // No target-vs-currentTarget guard: every session block and stacked-pill
+  // click handler already calls stopPropagation, so a click only ever
+  // reaches here when it landed on genuinely empty space - including inside
+  // the per-employee sub-column wrapper div in split mode, which fully
+  // covers this column and would otherwise make e.target that wrapper, not
+  // this element, and silently swallow every empty-slot click. (Confirmed:
+  // that guard meant onSlotClick never fired at all - click-to-create was
+  // dead on arrival until this fix.)
   function handleColClick(e: React.MouseEvent) {
-    if (e.target !== e.currentTarget) return;
     const { hour, minute } = timeFromY(e.clientY);
     onSlotClick(dateStr, hour, minute);
   }
@@ -335,14 +369,30 @@ function DayColumn({
     ? minutesFromGridStart(dragHoverSlot.hour, dragHoverSlot.minute, workStartHour) * pxPerMin
     : null;
 
+  const dayAbbr = WEEKDAY_ABBR[date.getDay()];
+  const availabilityBands = draggingEmployeeId != null
+    ? staffAvailability
+        .filter((a) => a.staff_id === draggingEmployeeId && a.day === dayAbbr)
+        .map((a) => {
+          const [sh, sm] = a.start_time.split(":").map(Number);
+          const [eh, em] = a.end_time.split(":").map(Number);
+          const top = minutesFromGridStart(sh, sm || 0, workStartHour) * pxPerMin;
+          const bottom = minutesFromGridStart(eh, em || 0, workStartHour) * pxPerMin;
+          return { top: Math.max(top, 0), height: Math.max(bottom - top, 0) };
+        })
+    : [];
+
   return (
     <div
       ref={colRef}
       onClick={handleColClick}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      style={{ position: "relative", height, borderLeft: "0.5px solid var(--color-border-tertiary)", display: "flex" }}
+      style={{ position: "relative", height, borderLeft: "0.5px solid var(--color-border-tertiary)", display: "flex", background: isToday ? "#5DCAA508" : "transparent" }}
     >
+      {availabilityBands.map((b, i) => (
+        <div key={i} style={{ position: "absolute", left: 0, right: 0, top: b.top, height: b.height, background: "#5DCAA512", borderTop: "1px dashed #5DCAA555", borderBottom: "1px dashed #5DCAA555", zIndex: 1, pointerEvents: "none" }} />
+      ))}
       {columns.map((col, i) => {
         const clusters = clusterByOverlap(col.sessions, sessionTypes, workStartHour, pxPerMin);
         return (
@@ -351,7 +401,7 @@ function DayColumn({
               <StackedPill
                 key={idx} cluster={cl} clients={clients} employees={employees} locations={locations}
                 sessionTypes={sessionTypes} typeColors={typeColors} onSessionClick={onSessionClick}
-                onDragBegin={onSessionDragStart} onDragEnd={onDragEnd}
+                onDragBegin={onSessionDragStart} onDragEnd={onDragEnd} draftSessionIds={draftSessionIds}
               />
             ))}
           </div>
@@ -376,6 +426,7 @@ export function TimeGrid({
   days, sessions, clients, employees, locations, sessionTypes, typeColors,
   workStartHour, workEndHour, splitEmployeeIds, onSlotClick, onSessionClick, onDropSession, containerHeight,
   snapMinutes, gridlineMinutes, dragHoverSlot, onSessionDragStart, onDragHover, onDragEnd,
+  staffAvailability, draggingEmployeeId, draftSessionIds, today,
 }: Props) {
   const gridlineStepHours = gridlineMinutes / 60;
   const gridlineCount = Math.ceil((workEndHour - workStartHour) / gridlineStepHours) + 1;
@@ -397,11 +448,24 @@ export function TimeGrid({
     <div style={{ overflowX: "auto", overflowY: needsScroll ? "auto" : "visible", height: containerHeight, maxHeight: containerHeight }}>
       <div style={{ display: "grid", gridTemplateColumns: gridCols, minWidth: 600 }}>
         <div />
-        {days.map((d) => (
-          <div key={toDateStr(d)} style={{ textAlign: "center", padding: "6px 0", borderBottom: "0.5px solid var(--color-border-tertiary)", fontSize: 12.5, fontWeight: 500, color: "var(--color-text-secondary)" }}>
-            {WEEKDAY_ABBR[d.getDay()]} <span style={{ color: "var(--color-text-tertiary)" }}>{d.getDate()}</span>
-          </div>
-        ))}
+        {days.map((d) => {
+          const isToday = toDateStr(d) === today;
+          return (
+            <div
+              key={toDateStr(d)}
+              style={{
+                textAlign: "center", padding: "6px 0", borderBottom: `0.5px solid ${isToday ? "#5DCAA5" : "var(--color-border-tertiary)"}`,
+                fontSize: 12.5, fontWeight: isToday ? 600 : 500, color: isToday ? "#3f9c78" : "var(--color-text-secondary)",
+                background: isToday ? "#5DCAA50c" : "transparent",
+              }}
+            >
+              {WEEKDAY_ABBR[d.getDay()]}{" "}
+              <span style={{ color: isToday ? "#3f9c78" : "var(--color-text-tertiary)" }}>
+                {isToday ? <span style={{ display: "inline-flex", width: 18, height: 18, borderRadius: "50%", background: "#5DCAA5", color: "#fff", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{d.getDate()}</span> : d.getDate()}
+              </span>
+            </div>
+          );
+        })}
         <div style={{ position: "relative", height: bodyHeight }}>
           {hourMarks.map((h) => {
             const hh = Math.floor(h);
@@ -431,6 +495,8 @@ export function TimeGrid({
             dragHoverSlot={dragHoverSlot} splitEmployeeIds={splitEmployeeIds}
             onSlotClick={onSlotClick} onSessionClick={onSessionClick} onDropSession={onDropSession}
             onSessionDragStart={onSessionDragStart} onDragHover={onDragHover} onDragEnd={onDragEnd}
+            staffAvailability={staffAvailability} draggingEmployeeId={draggingEmployeeId}
+            draftSessionIds={draftSessionIds} isToday={toDateStr(d) === today}
           />
         ))}
       </div>

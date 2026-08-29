@@ -186,6 +186,22 @@ export interface GapWindow {
   gapAfterMinutes: number;
 }
 
+/** Weekly occurrences starting from an exact date (not a calendar term's own
+ *  start, the way the Create wizard's generateRecurringDates is anchored) -
+ *  used when converting a single session into a repeating one from the
+ *  reschedule mini-calendar. */
+export function generateWeeklyDatesFrom(startDateStr: string, endType: "date" | "count", endDate: string, endCount: string | number): string[] {
+  const dates: string[] = [];
+  const cur = parseDateStr(startDateStr);
+  const absEnd = endType === "date" && endDate ? parseDateStr(endDate) : parseDateStr("2999-12-31");
+  const max = endType === "count" ? Number(endCount) : 9999;
+  while (cur <= absEnd && dates.length < max) {
+    dates.push(toDateStr(cur));
+    cur.setDate(cur.getDate() + 7);
+  }
+  return dates;
+}
+
 export function gapsOverlap(a: GapWindow, b: GapWindow): boolean {
   if (a.sessionDate !== b.sessionDate) return false;
   const sameParty = a.employeeId === b.employeeId || (a.clientId != null && a.clientId === b.clientId);

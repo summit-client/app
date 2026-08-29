@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p 3000"
+    "start": "next start -p 3000",
+    "test:calendar": "node tests/calendar-utils.test.mjs"
   },
   "dependencies": {
     "@summit/db": "workspace:*",

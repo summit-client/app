@@ -19,11 +19,12 @@ interface Props {
   clients: CalClient[];
   sessionTypes: CalSessionType[];
   typeColors: Record<string, string>;
+  draftSessionIds: Set<number>;
   onSelectDay: (dateStr: string) => void;
   onSessionClick: (s: CalSession) => void;
 }
 
-export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, typeColors, onSelectDay, onSessionClick }: Props) {
+export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, typeColors, draftSessionIds, onSelectDay, onSessionClick }: Props) {
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const today = toDateStr(new Date());
   const monthIdx = anchorMonth.getMonth();
@@ -72,15 +73,21 @@ export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, 
             {chips.map((s) => {
               const client = clients.find((c) => c.id === s.client_id);
               const color = typeColors[s.type] || "#888";
+              const draft = draftSessionIds.has(s.id);
               return (
                 <div
                   key={s.id}
                   onClick={(e) => { e.stopPropagation(); onSessionClick(s); }}
-                  style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, padding: "1.5px 4px", marginBottom: 2, borderRadius: 4, background: color + "22", cursor: "pointer", overflow: "hidden" }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, padding: "1.5px 4px", marginBottom: 2, borderRadius: 4,
+                    background: color + (draft ? "12" : "22"), border: draft ? `1px dashed ${color}88` : "none",
+                    cursor: "pointer", overflow: "hidden", opacity: draft ? 0.75 : 1,
+                  }}
                 >
                   <SessionTypeDot size={6} color={color} />
                   {s.recurrence_id && <RecurringIcon size={8} />}
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client?.name}</span>
+                  {draft && <span style={{ fontSize: 8, fontWeight: 700, color, flexShrink: 0 }}>D</span>}
                 </div>
               );
             })}

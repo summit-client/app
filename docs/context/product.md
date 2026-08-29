@@ -346,11 +346,15 @@ Yanko's feedback on PR #74 (the real-dates calendar rebuild), triaged into four
 buckets so it doesn't get lost or re-litigated piecemeal. Read this before
 touching the scheduler calendar tab again.
 
-**Status as of 2026-08-29, end of day: items 1–19 are done** (1–7 in PR #75;
-8–19 in the PR that follows it). Two gaps found while building 12/13/19 are
-now their own OPEN follow-ups at the end of this section — read those before
-assuming the mini-calendar or drag experience is fully spec'd. Item 20 is
-still deliberately not started (roadmap only).
+**Status as of the overnight session that closed this out (2026-08-29→30):
+all 19 backlog items are done**, across PR #75 (1–7), the PR after it
+(8–19, with three gaps left as OPEN), and one final overnight PR that closed
+those three gaps, fixed a real regression (location/home-visit editing
+missing from click-to-create) and a serious previously-undetected bug
+(click-to-create's onClick handler never actually fired - see below), and
+added `apps/scheduler/tests/calendar-utils.test.mjs`. Item 20 is still
+deliberately not started (roadmap only). Read the "found and fixed" note
+below before assuming click-to-create worked in any PR before the last one.
 
 **Bugs — fix outright, no design question involved:**
 
@@ -452,23 +456,56 @@ three; implemented 2026-08-29:**
     (item 12) does not yet consume a per-type increment** for its own time
     slots — see the OPEN item below.
 
-**New OPEN follow-ups, found while building 12/13/17–19 above — not yet
-scoped, flag before starting:**
+**The three OPEN follow-ups above are now also DONE (overnight autonomous
+session, 2026-08-29→30, no further check-in — Yanko asked for this batch to
+be staged as one PR to review in the morning):**
 
-- The reschedule mini-calendar doesn't offer recurrence editing (item 9) or
-  a same-*client* gap check (item 15) — only same-clinician for both. Adding
-  either means deciding what "reschedule this one occurrence of a series
-  into a different recurrence pattern" actually means product-wise, which
-  wasn't part of the original ask.
-- The main calendar has no availability *shading* while a drag is in
-  progress (item 13's second half) — only the exact drop-time indicator
-  from item 11. Shading every visible slot by clinician/client availability
-  live during a drag is a heavier rendering pass than the mini-calendar's
-  static list and wasn't attempted in this round.
-- The mini-calendar's time slots always step at
-  `calendar.gridIncrementMinutes`, not the currently-selected session type's
-  own override (item 19) - inconsistent with the main grid, which does
-  resolve the type-specific increment.
+- Reschedule mini-calendar now supports converting a still one-time session
+  into a weekly-repeating one going forward (additive only - new rows for
+  future occurrences, never rewrites an already-recurring session's
+  pattern), a same-*client* gap check alongside the existing same-clinician
+  one, and per-session-type increment resolution for its time-slot grid
+  (`sessionGridIncrement`), matching the main grid.
+- The main calendar now shades a clinician's available windows on the day
+  column while a session is actively being dragged, not just the exact
+  drop-time indicator.
+
+**Also found and fixed in that same session, not originally on this list:**
+
+- **A real regression**: click-to-create's quickSlot step never actually
+  exposed location/home-visit editing - it existed in the original
+  quick-create modal that got replaced when click-to-create was redone to
+  route through the Create wizard, and silently didn't make the trip.
+  Fixed by adding it back as its own wizard step.
+- **A serious, previously-undetected bug**: `TimeGrid`'s `DayColumn` guarded
+  its click handler with `e.target !== e.currentTarget`, which - because
+  every session block's own click handler already calls `stopPropagation`,
+  and the day column's per-employee sub-column wrapper div fully covers it
+  via flex-stretch - meant `onSlotClick` never fired for *any* click,
+  ever. **Click-to-create has not actually been reachable by clicking the
+  calendar in any PR from this whole rebuild until this fix.** Found by a
+  manual code-review pass, not testing (still not possible in this
+  environment - no Supabase credentials to render the app in a browser).
+- Two smaller UX additions completing the draft/active feature: a "Show
+  drafts" toggle to preview a draft calendar's sessions on the main
+  calendar (dashed border, still excluded from conflict/gap checks), and a
+  "DRAFT" badge on the session detail view when previewing one this way.
+- Today's column is now visually distinct in the Day/Week/N-day grid
+  (already existed in month view); an empty-state banner when active
+  filters produce zero results; Escape now closes every calendar modal.
+- `apps/scheduler/tests/calendar-utils.test.mjs` added (mirrors
+  `apps/employee/tests/onboarding-certificates.test.mjs`'s
+  esbuild-bundles-the-real-code pattern) covering the date-range math,
+  gap-overlap detection, and both conflict-resolution-suggestion
+  functions - the only automated verification available without a
+  browser. Confirmed passing (37/37) via a tsc-compiled substitute since
+  esbuild isn't present anywhere in the remote sandbox this pass ran in
+  (documented in `CLAUDE.md`) - caught one wrong assertion in the test
+  itself before it did, and separately caught a real bug in the
+  reschedule-mini-calendar's recurring-conversion logic (a checked
+  "repeat weekly" with no end condition chosen would still tag the
+  session with a new `recurrence_id` even though no series was actually
+  created).
 
 **Filed for the roadmap, not for action now:**
 
