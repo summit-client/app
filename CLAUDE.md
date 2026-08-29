@@ -291,10 +291,18 @@ valid session to login is fixed via `@summit/proxy-auth` (see "Traps that
 have already bitten" above) — application code only, no manual migration.
 
 - ~4.8 MB of clinic-specific assets in `apps/employee/public`
-- Scheduler calendar v2 (PR #74) has a large, triaged feedback backlog —
-  bugs, clear feature specs, and three items explicitly awaiting a design
-  decision before any build. See `docs/context/product.md`'s "Scheduler
-  calendar v2 — feedback backlog" section before touching that tab again.
+- Scheduler calendar v2 (PR #74 onward) — full backlog is closed as of the
+  overnight PR that follows PR #76; see `docs/context/product.md`'s
+  "Scheduler calendar v2 — feedback backlog" section for the whole history
+  before touching that tab again. Two things worth knowing before you do:
+  `TimeGrid`'s `DayColumn.onClick` handler had a target-equality guard that
+  silently made click-to-create dead on arrival in every PR before that
+  last one — fixed, but if a future change to that handler brings back
+  anything shaped like `e.target !== e.currentTarget`, read why it was
+  wrong there first. And apps/scheduler now has its first automated test
+  (`tests/calendar-utils.test.mjs`) — it esbuild-skips silently in this
+  remote sandbox specifically (no esbuild anywhere on disk here); see the
+  Verification section below before trusting a bare SKIP.
 
 The full list — compliance gaps, product debt, ops debt, and unresolved
 conflicts between past sessions — lives in `docs/context/`. Read the relevant
