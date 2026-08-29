@@ -16,7 +16,10 @@ import {
  */
 
 export const runtime = "nodejs";
-const IS_PREVIEW = process.env.NEXT_PUBLIC_DEV_PREVIEW === "1";
+// Double-gated like proxy.ts's own PREVIEW_BYPASS - NEXT_PUBLIC_DEV_PREVIEW is
+// browser-readable, so on its own it can't be trusted to skip this route's
+// real auth/role check below.
+const IS_PREVIEW = process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
 
 interface PostedGoal {
   programId: string; goalName: string; domain: string | null; status: string;
