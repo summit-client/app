@@ -24,14 +24,20 @@ import {
   ViewMode, computeViewRange, shiftView, toDateStr, parseDateStr, addDays, parseTimeSetting, todayDateStr, gapsOverlap,
 } from "./dateUtils";
 import type { GapWindow } from "./dateUtils";
+import { suggestSameClinicianOtherTime } from "./suggestions";
+import type { AvailabilityRow, ExistingSession, Suggestion } from "./suggestions";
 import { TimeGrid } from "./TimeGrid";
 import { MonthGrid } from "./MonthGrid";
 import { FilterPanel, CalendarFilters, emptyFilters, matchesFilters } from "./FilterPanel";
 import { RecurringIcon } from "./icons";
+import { RescheduleModal } from "./RescheduleModal";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { sessionGridIncrement, sessionDuration } from "./types";
 
 const SPLIT_THRESHOLD = 8;
+
+interface CalCalendar { id: number; status: string; }
+interface CalClientAvailability { client_id: number; day: string; start_time: string; end_time: string; }
 
 interface Props {
   clients: CalClient[];
@@ -39,11 +45,14 @@ interface Props {
   locations: CalLocation[];
   sessionTypes: CalSessionType[];
   typeColors: Record<string, string>;
+  calendars: CalCalendar[];
+  staffAvailability: AvailabilityRow[];
+  clientAvailability: CalClientAvailability[];
   showToast: (msg?: string) => void;
   onRequestCreate: (dateStr: string, hour: number, minute: number) => void;
 }
 
-export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, showToast, onRequestCreate }: Props) {
+export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, staffAvailability, clientAvailability, showToast, onRequestCreate }: Props) {
   const appUser = useAppUser();
   const clinicId = appUser?.clinic_id || "";
   const [mode, setMode] = React.useState<ViewMode>("week");
@@ -53,6 +62,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const [sessions, setSessions] = React.useState<CalSession[]>([]);
   const [filters, setFilters] = React.useState<CalendarFilters>(emptyFilters());
   const [selected, setSelected] = React.useState<CalSession | null>(null);
+  const [rescheduling, setRescheduling] = React.useState<CalSession | null>(null);
   const [, forceTick] = React.useState(0);
 
   // Measures the actual viewport-fit container so the time grid scales its
@@ -117,9 +127,23 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     return () => clearTimeout(t);
   }, [loadRange]);
 
+  // Draft calendars (see the Create wizard's "calendar" step) are a working
+  // area, not a live schedule - their sessions stay off this view and out
+  // of conflict/gap checks until the scheduler explicitly confirms the
+  // calendar (bulk status flip to "active"), same as the original ask:
+  // "confirm what goes into an active version" rather than everything
+  // being live the moment it's dropped onto a draft.
+  const draftCalendarIds = React.useMemo(
+    () => new Set(calendars.filter((c) => c.status === "draft").map((c) => c.id)),
+    [calendars],
+  );
+  const liveSessions = React.useMemo(
+    () => sessions.filter((s) => s.calendar_id == null || !draftCalendarIds.has(s.calendar_id)),
+    [sessions, draftCalendarIds],
+  );
   const visibleSessions = React.useMemo(
-    () => sessions.filter((s) => matchesFilters(s as any, filters)),
-    [sessions, filters],
+    () => liveSessions.filter((s) => matchesFilters(s as any, filters)),
+    [liveSessions, filters],
   );
 
   const splitEmployeeIds = filters.employeeIds.size > 0 && filters.employeeIds.size <= SPLIT_THRESHOLD
@@ -138,7 +162,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const [pendingDrag, setPendingDrag] = React.useState<{ session: CalSession; dateStr: string; hour: number; minute: number } | null>(null);
 
   function hasConflict(session: CalSession, dateStr: string, hour: number, minute: number): CalSession | undefined {
-    return sessions.find(
+    return liveSessions.find(
       (b) => b.id !== session.id && b.employee_id === session.employee_id &&
         b.session_date === dateStr && b.hour === hour && b.minute === minute && b.status !== "cancelled",
     );
@@ -159,7 +183,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
   function findGapEncroachment(session: CalSession, dateStr: string, hour: number, minute: number): CalSession | undefined {
     const candidate = toGapWindow(session, dateStr, hour, minute);
-    return sessions.find((b) => {
+    return liveSessions.find((b) => {
       if (b.id === session.id || b.status === "cancelled") return false;
       return gapsOverlap(candidate, toGapWindow(b, b.session_date, b.hour, b.minute));
     });
@@ -183,18 +207,36 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     showToast("Session rescheduled");
   }
 
+  // Drag conflicts get suggestions too, but only the same-clinician kind:
+  // dragging never reassigns who a session belongs to (see applyReschedule
+  // above), so a different-clinician suggestion has no valid action here.
+  const [pendingConflict, setPendingConflict] = React.useState<{
+    session: CalSession; dateStr: string; hour: number; minute: number; scope: "this" | "following" | "all";
+    message: string; suggestions: Suggestion[];
+  } | null>(null);
+
   async function confirmAndApply(session: CalSession, dateStr: string, hour: number, minute: number, scope: "this" | "following" | "all") {
     const conflict = hasConflict(session, dateStr, hour, minute);
-    if (conflict) {
-      const emp = employees.find((e) => e.id === conflict.employee_id);
-      const cl = clients.find((c) => c.id === conflict.client_id);
-      if (!confirm(`This overlaps with ${cl?.name || "another session"} for ${emp?.name || "this clinician"} at that time. Reschedule anyway?`)) return;
-    } else {
-      const gapHit = findGapEncroachment(session, dateStr, hour, minute);
-      if (gapHit) {
-        const cl = clients.find((c) => c.id === gapHit.client_id);
-        if (!confirm(`This lands inside the buffer time around ${cl?.name || "another session"}'s ${gapHit.type}. Reschedule anyway?`)) return;
-      }
+    const gapHit = !conflict ? findGapEncroachment(session, dateStr, hour, minute) : undefined;
+    const other = conflict || gapHit;
+    if (other) {
+      const emp = employees.find((e) => e.id === other.employee_id);
+      const cl = clients.find((c) => c.id === other.client_id);
+      const message = conflict
+        ? `This overlaps with ${cl?.name || "another session"} for ${emp?.name || "this clinician"} at that time.`
+        : `This lands inside the buffer time around ${cl?.name || "another session"}'s ${other.type}.`;
+      const existing: ExistingSession[] = liveSessions
+        .filter((s) => s.status !== "cancelled")
+        .map((s) => ({ id: s.id, employee_id: s.employee_id, session_date: s.session_date, hour: s.hour, minute: s.minute, durationMinutes: sessionDuration(s, sessionTypes), status: s.status }));
+      const suggestions = suggestSameClinicianOtherTime({
+        employeeId: session.employee_id,
+        employeeName: employees.find((e) => e.id === session.employee_id)?.name || "This clinician",
+        dateStr, hour, minute, durationMinutes: sessionDuration(session, sessionTypes),
+        excludeSessionId: session.id, sessions: existing, staffAvailability,
+        workStartHour, workEndHour, incrementMinutes: activeSnapMinutes,
+      });
+      setPendingConflict({ session, dateStr, hour, minute, scope, message, suggestions });
+      return;
     }
     await applyReschedule(session, dateStr, hour, minute, scope);
   }
@@ -281,6 +323,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
         <SessionDetail
           session={selected} clients={clients} employees={employees} locations={locations} typeColors={typeColors}
           onClose={() => setSelected(null)}
+          onReschedule={() => { setRescheduling(selected); setSelected(null); }}
           onCancelled={() => { setSelected(null); void loadRange(); showToast("Session cancelled"); }}
         />
       )}
@@ -291,6 +334,63 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           onCancel={() => setPendingDrag(null)}
         />
       )}
+
+      {pendingConflict && (
+        <ConflictModal
+          conflict={pendingConflict}
+          onPickSuggestion={(s) => { const p = pendingConflict; setPendingConflict(null); void applyReschedule(p.session, s.dateStr, s.hour, s.minute, p.scope); }}
+          onProceedAnyway={() => { const p = pendingConflict; setPendingConflict(null); void applyReschedule(p.session, p.dateStr, p.hour, p.minute, p.scope); }}
+          onCancel={() => setPendingConflict(null)}
+        />
+      )}
+
+      {rescheduling && (
+        <RescheduleModal
+          session={rescheduling}
+          client={clients.find((c) => c.id === rescheduling.client_id)}
+          employees={employees} locations={locations} sessionTypes={sessionTypes}
+          liveSessions={liveSessions} staffAvailability={staffAvailability} clientAvailability={clientAvailability}
+          workStartHour={workStartHour} workEndHour={workEndHour} incrementMinutes={orgIncrementMinutes}
+          onClose={() => setRescheduling(null)}
+          onSaved={() => { setRescheduling(null); void loadRange(); showToast("Session updated"); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ConflictModal({
+  conflict, onPickSuggestion, onProceedAnyway, onCancel,
+}: {
+  conflict: { message: string; suggestions: Suggestion[] };
+  onPickSuggestion: (s: Suggestion) => void;
+  onProceedAnyway: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div style={overlayStyle} onClick={onCancel}>
+      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 6 }}>Scheduling conflict</div>
+        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 14px" }}>{conflict.message}</p>
+        {conflict.suggestions.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: 8 }}>SUGGESTED ALTERNATIVES</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {conflict.suggestions.map((s, i) => (
+                <button key={i} onClick={() => onPickSuggestion(s)} style={{ ...navBtn, width: "100%", textAlign: "left" }}>
+                  {s.kind === "same-clinician" ? s.label : `${s.employeeName} — ${s.label}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onProceedAnyway} style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#FCE8E8", color: "#A33A3A", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+            Reschedule anyway
+          </button>
+          <button onClick={onCancel} style={navBtn}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -348,10 +448,10 @@ const modalStyle: React.CSSProperties = {
 };
 
 function SessionDetail({
-  session, clients, employees, locations, typeColors, onClose, onCancelled,
+  session, clients, employees, locations, typeColors, onClose, onCancelled, onReschedule,
 }: {
   session: CalSession; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
-  typeColors: Record<string, string>; onClose: () => void; onCancelled: () => void;
+  typeColors: Record<string, string>; onClose: () => void; onCancelled: () => void; onReschedule: () => void;
 }) {
   const [cancelling, setCancelling] = React.useState(false);
   const client = clients.find((c) => c.id === session.client_id);
@@ -380,6 +480,9 @@ function SessionDetail({
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
           <button onClick={handleCancel} disabled={cancelling} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: cancelling ? "not-allowed" : "pointer", background: "#FCE8E8", color: "#A33A3A" }}>
             {cancelling ? "Cancelling..." : "Cancel session"}
+          </button>
+          <button onClick={onReschedule} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: "pointer", background: "#5DCAA5", color: "#fff" }}>
+            Reschedule
           </button>
           <button onClick={onClose} style={navBtn}>Close</button>
         </div>
