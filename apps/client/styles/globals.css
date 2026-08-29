@@ -21,6 +21,15 @@ body,
 button,
 select {
   font: inherit;
+  /* `font: inherit` alone still left plain, unstyled buttons (the "view as a
+     client" picker's rows, before .btn or any other explicit styling) with
+     invisible text on some devices: form controls don't reliably inherit
+     text color the way a div or span does, and nothing in this app declares
+     color-scheme anywhere, so Safari/WebKit is free to apply its own
+     dark-aware native color for a plain <button> regardless of the page's
+     own light-themed CSS - white-on-white against an explicitly
+     background: white button, on a phone with system dark mode on. */
+  color: inherit;
 }
 
 .client-layout {
