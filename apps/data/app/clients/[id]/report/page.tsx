@@ -209,7 +209,7 @@ function BlockCard({ block, packet, locked, onPatch, onRegenerate, onTone, onSho
           <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: "var(--text-sm)", color: "var(--muted)" }}>
             {block.evidenceIds.map((id) => {
               const src = evidence.find((s) => s.id === id);
-              return <li key={id}><span className="mono" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{id}</span>{src?.label ? ` — ${src.label}` : src ? ` — ${src.kind.replace(/_/g, " ")}` : ""}</li>;
+              return <li key={id}><span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{id}</span>{src?.label ? ` — ${src.label}` : src ? ` — ${src.kind.replace(/_/g, " ")}` : ""}</li>;
             })}
           </ul>
         </div>
