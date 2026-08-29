@@ -137,8 +137,15 @@ export function RescheduleModal({
       return;
     }
 
+    // Only actually assign a new recurrence_id when the future occurrences
+    // are really about to be created below - otherwise a checked "repeat
+    // weekly" box with no end condition chosen yet would leave this session
+    // permanently flagged as part of a series that has exactly one row in
+    // it, which would wrongly trigger drag-to-reschedule's this/following/
+    // all prompt later for a series that was never actually created.
     const canRepeat = !session.recurrence_id;
-    const recurrenceId = canRepeat && repeatWeekly ? crypto.randomUUID() : session.recurrence_id;
+    const willRepeat = canRepeat && repeatWeekly && !!endType && !!(endType === "date" ? endDate : endCount);
+    const recurrenceId = willRepeat ? crypto.randomUUID() : session.recurrence_id;
 
     const { error: err } = await supabase.from("sessions").update({
       session_date: selectedDate,
@@ -154,7 +161,7 @@ export function RescheduleModal({
 
     if (err) { setSaving(false); setError("Save failed. Try again."); return; }
 
-    if (canRepeat && repeatWeekly && endType && (endType === "date" ? endDate : endCount)) {
+    if (willRepeat) {
       // Additive only: new rows for the future occurrences, starting the
       // week after the date just saved above - this session's own row is
       // never touched again here.
@@ -296,12 +303,21 @@ export function RescheduleModal({
         )}
 
         {error && <div style={{ fontSize: 13, color: "#A32D2D", marginBottom: 10 }}>{error}</div>}
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={handleSave} disabled={saving || !selectedSlot} style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: saving ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 500, opacity: saving || !selectedSlot ? 0.6 : 1 }}>
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-          <button onClick={onClose} style={navBtnSmall}>Cancel</button>
-        </div>
+        {(() => {
+          // A checked "repeat weekly" with no end condition chosen yet is
+          // an incomplete state, not a valid "just this session" save - see
+          // the comment in handleSave on why that distinction matters.
+          const repeatIncomplete = repeatWeekly && !(endType && (endType === "date" ? endDate : endCount));
+          const disabled = saving || !selectedSlot || repeatIncomplete;
+          return (
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleSave} disabled={disabled} style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: disabled ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 500, opacity: disabled ? 0.6 : 1 }}>
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+              <button onClick={onClose} style={navBtnSmall}>Cancel</button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

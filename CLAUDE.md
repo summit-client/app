@@ -46,6 +46,7 @@ pnpm turbo build --filter=@summit/<app>
 pnpm -r --if-present run typecheck
 node apps/employee/qa.mjs
 cd apps/employee && node tests/onboarding-certificates.test.mjs
+cd apps/scheduler && node tests/calendar-utils.test.mjs
 ```
 
 `packages/nav` and `packages/portals` and `packages/session` have **no build
@@ -237,12 +238,27 @@ assuming the class name or selector is wrong.
 - `pnpm -r --if-present run typecheck`
 - `pnpm turbo build` for every app you touched — all five if you touched a package
 - `apps/employee/qa.mjs` **and** `tests/onboarding-certificates.test.mjs`
+- `apps/scheduler/tests/calendar-utils.test.mjs` for anything in
+  `apps/scheduler/components/calendar/` (date math, gap/conflict detection,
+  conflict-resolution suggestions)
 
-**The certificate suite self-skips.** If it cannot find esbuild in the workspace
-store it prints `SKIP` and exits **0**, which looks like a pass. Run
-`pnpm install` at the repo root first and confirm you see `7 passed`. A skip is
-not a pass, and that suite is the only one that tests the shipped functions —
-`qa.mjs` tests re-implemented copies and cannot catch drift.
+**Both esbuild-bundled suites (`onboarding-certificates.test.mjs` and
+`calendar-utils.test.mjs`) self-skip.** If a suite can't find esbuild in the
+workspace store it prints `SKIP` and exits **0**, which looks like a pass —
+confirmed live in the remote sandbox this repo is sometimes worked in: no
+esbuild anywhere on disk there at all (this Next.js version's Turbopack build
+doesn't vendor it the way the comment in the certificate suite assumes), so
+both suites always print SKIP in that environment specifically, regardless of
+`pnpm install`. **A skip is not a pass.** Run `pnpm install` at the repo root
+first; if it still skips, that's the sandbox, not a real failure — verify the
+logic instead by compiling the subject files with plain `tsc` (`--module
+commonjs`, no bundler needed since these files' relative imports resolve fine
+under CommonJS) into a scratch directory and running the same assertions
+against the compiled output with a bare `node` script. Either way, don't
+report a suite as passing without an actual `N passed, 0 failed` line — from
+the real harness when esbuild is available, from the tsc-compiled substitute
+when it isn't. `qa.mjs` and the certificate suite test re-implemented copies
+of `apps/employee`'s functions and cannot catch drift from the shipped code.
 
 For UI work, render it. Several defects here were only visible in a browser: a
 10px overflow from a token that disagreed with the element it sized, a portal
