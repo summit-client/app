@@ -126,6 +126,67 @@ end-to-end invite (through `apps/web`'s existing `/auth/callback` →
 `/update-password` flow) is the first real test, same as the smoke test this
 session already did for the second-clinic seed.
 
+**Real end-to-end test happened 2026-08-30, during dry-run prep, and found a
+real bug the sandbox couldn't have caught: no CORS/`OPTIONS` handling.** A
+real invite attempt through `apps/employee`'s Staff & Teams tab failed with
+supabase-js's generic `FunctionsFetchError` ("Failed to send a request to
+the Edge Function") - a fetch-level failure, not an HTTP error response, so
+it gave no hint whether the function was even deployed, whether the gateway
+rejected the JWT, or something else entirely. Root cause: the browser's CORS
+preflight `OPTIONS` request got a bare 405 with no `Access-Control-*`
+headers and was blocked before the real `POST` ever went out. Fixed via
+`handlePreflight()`/`CORS_HEADERS` in `_shared/auth.ts` (PR #86). See
+`CLAUDE.md`'s "Traps that have already bitten" for the full mechanism - any
+new Edge Function needs the same call.
+
+**No Supabase CLI was available on Yanko's machine when this needed
+deploying**, which the "Deploy is manual" section above assumes. The actual
+path that worked: self-contained (relative imports inlined) versions of each
+function's `index.ts` pasted directly into the Supabase Dashboard's
+browser-based Edge Function editor (Edge Functions → the function → Edit
+code → Deploy) - this sidesteps needing `supabase link`/`supabase functions
+deploy` entirely. Confirmed this actually works and is a legitimate
+alternative deploy path, not just a stopgap; keep it in mind if the CLI is
+ever unavailable again. The JWT-verification toggle mentioned in
+`_shared/auth.ts`'s comments was checked for at this time and was **not
+visible anywhere in the Dashboard** for this project - `verify_jwt = false`
+in `supabase/config.toml` may not be reflected for a project that has never
+been deployed via the CLI's declarative config path. Unconfirmed either way;
+flagged for whoever gets CLI access working, since it changes the CORS fix's
+priority (`verify_jwt` defaulting to true would reject a request with a 401
+before it ever reached `handlePreflight()` regardless - not what was
+observed here, but worth ruling out explicitly rather than assuming).
+
+## Supabase access for Claude Code sessions (2026-08-30)
+
+`.mcp.json` at the repo root configures `@supabase/mcp-server-supabase` with
+`--read-only` and `--project-ref=xbkokyxegrxutppolgtz`, so a Claude Code
+session can query the live schema and data directly (`list_tables`,
+`execute_sql`, etc.) instead of every migration/mock-data script being
+handed over as SQL for Yanko to paste into the dashboard's SQL editor by
+hand - which is how every session before this one had to work, including
+most of this file's own verification notes.
+
+Requires `SUPABASE_ACCESS_TOKEN` (a Supabase personal access token, from
+Dashboard → Account → Access Tokens) set as an environment variable on the
+**Claude Code environment** itself - not in `.env.local`, not committed
+anywhere. This is a genuinely different scope than the per-app env vars
+elsewhere in this file: it's set once per Claude Code environment (there can
+be more than one, e.g. Yanko's account had two both named "Default" with
+different `environment_id`s), and only sessions running against that
+specific environment see it. A session started against a different
+environment needs the var set there too - if a session's `ToolSearch` for
+"supabase" comes back empty, check which environment it's actually running
+on before assuming `.mcp.json` is broken.
+
+`--read-only` is the actual safety boundary, not the token - Supabase has no
+per-project token scoping today, so the token itself could reach the whole
+account. Never use this connection to run migrations or writes; hand those
+over as SQL for a human to run, exactly as before. New MCP servers require a
+one-time trust prompt on session start, and env var changes don't reach an
+already-running session's container - both need a fresh session to take
+effect.
+
 ## Env files
 
 Per-app `apps/<app>/.env.local`, git-ignored, must exist before that app can

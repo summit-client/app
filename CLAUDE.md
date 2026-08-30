@@ -56,6 +56,21 @@ app's `next.config`. A `tsup` build in `nav` once failed on a missing
 `@types/node` and took down all five app builds with it, because turbo's
 `dependsOn: ["^build"]` kills siblings when a dependency fails.
 
+## Supabase access for Claude sessions
+
+`.mcp.json` at the repo root (2026-08-30) configures a read-only Supabase MCP
+server (`@supabase/mcp-server-supabase`, `--read-only`, scoped to this one
+project via `--project-ref`) so a Claude session can query the live schema
+and data directly instead of every migration/mock-data script being handed
+over as SQL for a human to paste into the dashboard's SQL editor. It needs
+`SUPABASE_ACCESS_TOKEN` set in the Claude Code environment's own env vars
+(per-person/per-environment, never committed) — if `ToolSearch` for
+"supabase" comes back empty, that variable isn't set on the environment this
+session is running in, not a problem with `.mcp.json` itself. `--read-only`
+is the actual enforcement point (not the token, which is account-wide) — do
+not run migrations or writes through this connection; hand those over as SQL
+for a human to run, same as before.
+
 ## Hard constraints
 
 These are never violated regardless of what a task seems to ask for:
@@ -111,6 +126,18 @@ Supervisor`), written by the scheduler's admin page.
 
 Confirmed shipped: `fix/role-vocabulary` merged as PR #48 (2026-08-27). Any
 older doc that calls this "merge status unverified" is stale.
+
+**The live `user_role` enum was actually missing `'supervisor'` until
+2026-08-30 (migration `0021`).** This predates this repo's tracked migration
+history, same as the `clients` table — the enum's real members were
+`admin, scheduler, clinician, client, staff` only, despite every piece of
+code above already being written correctly for the five-role vocabulary.
+Inviting a supervisor, or any code path that cast the literal `'supervisor'`
+to `user_role`, failed with `22P02: invalid input value for enum` — not a
+logic bug, the value genuinely could not exist yet. Fixed live; no
+application code changed. If you ever see `22P02` on a role-shaped enum,
+check `select enumlabel from pg_enum where enumtypid = 'user_role'::regtype`
+before assuming the code is wrong.
 
 ## Where things belong
 
@@ -178,9 +205,54 @@ whenever the session is stale. Do not add a second place that calls
 `getUser()`/`getSession()` on a possibly-stale session; route it through the
 central refresh endpoint instead.
 
+**The same "only one place is allowed to touch the shared cookie" rule
+applies to signing out, and for the same reason (2026-08-30 fix).** Every
+portal's own browser Supabase client is built with `createBrowserClient()`
+and no cookie overrides, so its default cookie writer only clears a cookie
+scoped to *that portal's own host*. The real session cookie was written with
+an explicit `Domain=.summitclient.io` by `apps/web`'s client specifically
+(the only client-side writer configured that way) — a browser will not
+remove a cookie via a delete that doesn't repeat that same `Domain`.
+`apps/scheduler` and `apps/client` both had their own sign-out buttons that
+called `supabase.auth.signOut()` on their own client: it looked like it
+worked (that tab's state cleared, redirect to login fired) while leaving the
+real cross-portal cookie valid, ready to sign the same browser straight back
+in on the next portal visit or reload. Every sign-out now navigates to
+`signOutUrl()` (`@summit/portals`) → `apps/web/pages/api/auth/signout.js`,
+which uses `apps/web/lib/supabase-server.ts`'s domain-scoped server client —
+the only place a session is actually allowed to end, mirroring
+`/api/auth/refresh` exactly. Never call `supabase.auth.signOut()` directly
+in a portal; navigate to `signOutUrl()` instead.
+
 **`NEXT_PUBLIC_DEV_PREVIEW=1` is double-gated.** The flag must be `1` *and* the
 build must not be production. Preview mode therefore needs `next dev`, not
-`next start`. Never set it on the server.
+`next start`. Never set it on the server. **This only held for each portal's
+own `proxy.ts` bypass until 2026-08-30** — `@summit/session`'s own `IS_PREVIEW`
+export (what `hub.ts`, `@summit/settings`, and `apps/data`'s preview-data path
+actually branch on) had no `NODE_ENV` check at all, just the flag. Since a
+`NEXT_PUBLIC_` var bakes into the client bundle regardless of build mode, a
+stray `NEXT_PUBLIC_DEV_PREVIEW=1` left in a production env file would have
+kept those consumers on `localStorage`/fixtures — scoped to the *browser*,
+not the signed-in user — with a real, correctly authenticated session sitting
+on top of it. That's confirmed live as the cause of one clinician's
+onboarding/training progress in `apps/employee` appearing to "belong" to
+whoever else had used that browser. Fixed by adding the same `NODE_ENV` check
+to the one shared export every consumer reads, instead of trusting each new
+consumer to remember it independently.
+
+**Edge Functions need to handle their own CORS preflight — nothing does it
+for you.** `invite-teammate`, `edit-teammate` and `provision-clinic` (see
+`supabase/functions/`) had no `Access-Control-*` headers and no `OPTIONS`
+handling; every `Deno.serve` fell straight to a 405 "POST only" check. A
+browser's CORS preflight `OPTIONS` request got that bare 405 back with no
+CORS headers and was blocked client-side before the real request ever went
+out — which surfaces as supabase-js's generic `FunctionsFetchError`
+("Failed to send a request to the Edge Function"), a fetch-level failure
+that looks identical to "the function isn't deployed" or "the gateway
+rejected the JWT" and gives no hint that CORS is the actual cause. Fixed via
+`handlePreflight()`/`CORS_HEADERS` in `supabase/functions/_shared/auth.ts`,
+called first in every function's handler, before any method or auth check.
+Any new Edge Function needs the same call.
 
 **Check what `main` has that you do not.** `git log <branch>..origin/main`, not
 just the reverse. A review once concluded `deploy.yml` excluded `apps/employee`
@@ -290,6 +362,31 @@ endings (PR #56); and the cross-portal refresh-token race that could bounce a
 valid session to login is fixed via `@summit/proxy-auth` (see "Traps that
 have already bitten" above) — application code only, no manual migration.
 
+Fixed 2026-08-30, ahead of the first clinician dry run: the client-portal
+"reports" screen now shows real goals and signed/countersigned SOAP notes
+under RLS (PR #83, migration `0020`); the "view as a client" picker's
+invisible button text (PR #83); the scheduler calendar's dead "Completed"
+filter and unfiltered "Upcoming Sessions" query (PR #84); the live
+`user_role` enum's missing `'supervisor'` value (PR #85, migration `0021`,
+see "One role vocabulary" above); Edge Function CORS preflight handling
+(PR #86, see "Traps that have already bitten" above); `@summit/session`'s
+`IS_PREVIEW` missing its `NODE_ENV` gate (PR #87, see "Traps that have
+already bitten" above); and the cross-portal bar having no working sign-out
+at all (PR #88, see "Traps that have already bitten" above).
+
+- **`invite-teammate` does not check whether the invited email already has a
+  `profiles` row before upserting one.** Supabase's `inviteUserByEmail`
+  resolves an already-registered email to that *same existing user id*
+  rather than erroring or minting a new one, and the function then
+  `upsert`s `profiles` for that id — silently overwriting whoever already
+  owns that account with the new role/clinic/supervisor. Confirmed live
+  2026-08-30: inviting an existing admin's own email as "clinician" flipped
+  that admin's own `profiles.role` in place, and their prior
+  `hub_task_progress`/`hub_employee_training` rows (from testing under the
+  old role) then legitimately showed up under the "new" invite, because it
+  was the same account the whole time. Not yet fixed — add a check for an
+  existing `profiles` row (or an existing `auth.users` row for that email)
+  before inviting, and return a clear error instead of upserting over it.
 - ~4.8 MB of clinic-specific assets in `apps/employee/public`
 - Scheduler calendar v2 (PR #74 onward) — full backlog is closed as of the
   overnight PR that follows PR #76; see `docs/context/product.md`'s
@@ -318,6 +415,10 @@ genuinely undecided, not as a backlog to just pick up:
 - `docs/context/product.md` — who this is for, portal-to-app naming, scope
   boundaries, commercial model.
 
-These were assembled 2026-08-27 from project chat history and are already
-missing that day's later merges (PR #49, #50) — cross-check dates against
-`git log` before trusting a status claim in them.
+These were assembled 2026-08-27 from project chat history and were missing
+that day's later merges (PR #49, #50) until corrected; `decisions.md` and
+`environments.md` were updated again 2026-08-30 with that day's dry-run prep
+(PRs #83–#88, the missing `'supervisor'` enum value, the Edge Function CORS
+fix, the `IS_PREVIEW` gate fix, cross-portal sign-out, and the Supabase MCP
+access grant). Still cross-check dates against `git log` before trusting a
+status claim in them — that habit is what caught the gaps last time too.

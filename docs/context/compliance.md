@@ -28,7 +28,11 @@ made explicitly and belongs next to any go-on-sale date shown to Mount Etna.
    marking the specific projects High Compliance, plus org-wide MFA,
    Point-in-Time Recovery, SSL enforcement, network restrictions, no PHI in
    public Storage buckets, and the RLS policies. **No real PHI enters the
-   system before this is signed.**
+   system before this is signed.** This is also the gate that governs the
+   read-only Supabase MCP access granted to Claude Code sessions 2026-08-30
+   (`.mcp.json`, see `environments.md`) — fine today since no real PHI exists
+   yet, but revisit that grant's scope explicitly once it does, rather than
+   leaving it running unchanged.
 2. **`clinic_id` coverage on all PHI tables.** Migrations `0001`–`0005` put
    `clinic_id` on every clinical table they create. Whether coverage is
    complete across the original 10 scheduler tables and the 23 employee-hub
