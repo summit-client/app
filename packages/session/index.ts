@@ -37,7 +37,24 @@ import { admits, isAppRole, portal, type AppRole, type PortalKey } from "@summit
 
 export type { AppRole, PortalKey };
 
-export const IS_PREVIEW = process.env.NEXT_PUBLIC_DEV_PREVIEW === "1";
+/**
+ * Every portal's proxy.ts independently double-gates its own PREVIEW_BYPASS
+ * (flag === "1" AND NODE_ENV !== "production") before it will skip the auth
+ * check - but this export, not that one, is what every other preview/live
+ * seam actually branches on (hub.ts's loadHub(), @summit/settings, apps/data's
+ * preview-data path, clinical-ai/provider.ts). It had no NODE_ENV check at
+ * all: a NEXT_PUBLIC_ var is baked into the client bundle regardless of build
+ * mode, so a stray NEXT_PUBLIC_DEV_PREVIEW=1 left over in a production env
+ * file kept every one of those consumers running against localStorage/fixture
+ * data with a real, correctly-authenticated production session sitting on
+ * top of it - confirmed live: exactly this, in apps/employee, is why a newly
+ * invited clinician's onboarding/training showed another account's progress
+ * (localStorage is keyed per browser, not per user, so it silently "persists
+ * globally" across whoever is signed in on that device). Matching the gate
+ * proxy.ts already uses closes the gap at the one place everything else reads
+ * it, instead of requiring every future consumer to remember to re-add it.
+ */
+export const IS_PREVIEW = process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
 
 /** Why identity is unusable, when it is. Null means it is good. */
 export type SessionProblem =
