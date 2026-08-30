@@ -157,6 +157,95 @@ a blocker for Clinician Portal build.
 
 ---
 
+## 2026-08-30 — first clinician dry-run prep
+
+**DECIDED and BUILT** — Client-portal "reports" means signed/countersigned
+`session_notes` (SOAP notes) plus `programs` (goals), not the separate
+`clinical_reports` table — clarified mid-session after an initial pass
+scoped to the wrong table. Migration `0020` adds client-scoped RLS
+(`auth_client_row_id()`, hardened per the `0009` pattern from the start —
+schema-qualified, `pg_temp` named last); a `session_notes` row is visible to
+the family only once `status in ('signed', 'countersigned')`, never
+`'draft'`. Shipped as PR #83 alongside a real bug fix: the "view as a
+client" picker's buttons had invisible text (unstyled `<button>`/`<select>`
+don't reliably inherit `color`, and nothing declared `color-scheme`, so
+Safari applied its own dark-aware default against an explicit white
+background).
+
+**DECIDED and BUILT** — The live `user_role` Postgres enum was missing
+`'supervisor'` entirely (members were `admin, scheduler, clinician, client,
+staff` only), discovered when seeding client-portal mock data threw
+`22P02: invalid input value for enum`. This predates the repo's tracked
+migration history, same situation as the `clients` table. Every piece of
+code that assumed `'supervisor'` existed (`INVITE_MATRIX`,
+`auth_is_staff()`, `profiles.supervisor_id`) was already correct — the enum
+itself was the only thing missing. Fixed live via migration `0021`
+(`alter type user_role add value if not exists 'supervisor'`, run as its
+own standalone statement — Postgres forbids using a new enum value in the
+same transaction that adds it). PR #85, merged.
+
+**DECIDED and BUILT** — Edge Function CORS. `invite-teammate`,
+`edit-teammate`, `provision-clinic` had no `OPTIONS`/`Access-Control-*`
+handling at all, so a browser's CORS preflight got a bare 405 with no CORS
+headers and was blocked before the real request ever reached the function —
+surfacing client-side as supabase-js's generic `FunctionsFetchError`
+("Failed to send a request to the Edge Function"), discovered live when a
+real clinician invite attempt through `apps/employee`'s Staff & Teams tab
+failed with exactly that message during dry-run prep. Fixed via a shared
+`handlePreflight()`/`CORS_HEADERS` in `supabase/functions/_shared/auth.ts`.
+PR #86, merged. See `environments.md` for how this was actually deployed
+without the Supabase CLI.
+
+**DECIDED and BUILT** — `@summit/session`'s `IS_PREVIEW` export gained the
+same `NODE_ENV !== "production"` gate every portal's `proxy.ts` already
+applied independently to its own `PREVIEW_BYPASS`. It had never had one —
+apps/data/lib/data.ts had independently reimplemented the correct
+double-gate for its own local `IS_PREVIEW`, which is what exposed that the
+shared one, which `hub.ts`/`@summit/settings`/apps/data's preview-data path
+all actually read, did not have it. A stray `NEXT_PUBLIC_DEV_PREVIEW=1` in
+a production env file — a `NEXT_PUBLIC_` var bakes into the client bundle
+regardless of build mode — would silently run those consumers against
+`localStorage`/fixtures scoped to the browser, not the signed-in user,
+underneath a real authenticated session. Not confirmed as the actual live
+cause in this case (the production env files were checked and didn't have
+the flag set), but fixed regardless since the gap itself was real and
+match the guard every other consumer of the flag already had. PR #87,
+merged.
+
+**DECIDED and BUILT** — Cross-portal sign-out. `apps/data` and
+`apps/employee`'s shared nav bar (`@summit/nav`'s `AppNav`) had no sign-out
+control at all. Added one, but routed through a new
+`apps/web/pages/api/auth/signout.js` rather than each portal calling
+`supabase.auth.signOut()` on its own client — the same reasoning as the
+refresh-token race fix: only `apps/web`'s client writes the shared
+`.summitclient.io`-domain cookie, so only its server client can actually
+clear it. `apps/scheduler` and `apps/client`'s pre-existing sign-out buttons
+had this same latent gap (looked like it worked locally, left the shared
+cookie valid) and were repointed at the same endpoint. PR #88, merged.
+
+**OPEN, discovered live 2026-08-30** — `invite-teammate` has no guard
+against inviting an email that already has an `auth.users`/`profiles` row.
+Supabase's `inviteUserByEmail` resolves an existing email to that same
+user id rather than erroring, and the function's `upsert` then overwrites
+that person's `profiles` row with the new role/clinic/supervisor. Surfaced
+when an admin invited their own email as a test "clinician" and their
+account was silently role-flipped in place. Not yet fixed — see
+`CLAUDE.md`'s "Known open work."
+
+**DECIDED** — Grant Claude Code sessions read-only access to the live
+Supabase project via `@supabase/mcp-server-supabase` (`.mcp.json`,
+`--read-only`, scoped to this one project via `--project-ref`), so schema/
+data questions and migration verification no longer require every query to
+be handed over as SQL for Yanko to paste into the dashboard's SQL editor by
+hand. `SUPABASE_ACCESS_TOKEN` lives only in each Claude Code environment's
+own env var config, never committed. `--read-only` is the actual
+enforcement boundary, not the token (which is account-wide — Supabase has
+no finer-grained PAT scoping today). No real PHI exists in the system yet
+(see `compliance.md`), so this doesn't touch the BAA gate as written today —
+revisit this grant's scope explicitly once real client data is ever loaded.
+
+---
+
 ## Contractor work and merges
 
 **DECIDED (2026-08-26)** — PR #40 (`release/v1`, Adina) merged to `main` as
