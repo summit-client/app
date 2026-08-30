@@ -1,0 +1,32 @@
+-- ============================================================================
+-- 0021 · Add the missing 'supervisor' value to the live user_role enum.
+--
+-- Confirmed live while seeding the client-portal mock data (see PR #85):
+-- profiles.role is backed by a real Postgres enum (user_role), defined
+-- before this repo's tracked migration history began - same situation as
+-- the `clients` table. Its actual live members were admin/scheduler/
+-- clinician/client/staff only. 'supervisor' was never actually added,
+-- despite CLAUDE.md documenting it as one of five real roles and despite
+-- code across this schema already assuming it exists:
+--   - invite-teammate's INVITE_MATRIX lets an admin invite a 'supervisor'
+--   - auth_is_staff() already checks role in ('admin','supervisor','clinician')
+--   - session_notes.countersigned_by, mastery_evaluations.confirmed_by, and
+--     profiles.supervisor_id all model a real supervisor relationship
+-- None of that code needs to change - it was written correctly for a
+-- five-role vocabulary from the start. It was only ever blocked by the
+-- enum itself never having the value, so inviting a supervisor failed with
+-- 22P02 (invalid input value for enum) and every auth_role() = 'supervisor'
+-- check was unreachable dead code, not a logic bug.
+--
+-- `staff` still being a live member despite CLAUDE.md's "no staff role,
+-- retired" note is expected, not a contradiction - Postgres has no clean
+-- way to drop a value from an existing enum type, so retired-but-never-
+-- removed values are the norm, not a sign the retirement didn't happen.
+--
+-- ADD VALUE cannot be combined, in the same transaction or script, with
+-- anything that USES the new value - this migration must be run alone, as
+-- its own execution, before anything else references 'supervisor'.
+-- `if not exists` makes it safe to re-run if it's ever applied twice.
+-- ============================================================================
+
+alter type user_role add value if not exists 'supervisor';
