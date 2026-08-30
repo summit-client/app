@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { json, recordAudit, serviceClient, verifyCaller } from "../_shared/auth.ts";
+import { handlePreflight, json, recordAudit, serviceClient, verifyCaller } from "../_shared/auth.ts";
 
 /**
  * Creating a brand-new clinic and its first admin is deliberately NOT gated
@@ -21,6 +21,8 @@ interface ProvisionRequest {
 }
 
 Deno.serve(async (req) => {
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
   if (req.method !== "POST") return json(405, { error: "Method not allowed" });
 
   const callerId = await verifyCaller(req);
