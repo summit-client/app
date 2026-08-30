@@ -11,10 +11,23 @@
 -- Depends on migration 0020 (client-scoped RLS on programs/session_notes)
 -- to actually be visible from the client portal - run 0020 first.
 --
--- Requires the clinic to have at least one profiles row with
--- role in ('clinician','supervisor') to satisfy programs.created_by /
--- session_notes.clinician_id's not-null FK - the subqueries below pick
--- whichever one exists rather than needing a specific id pasted in.
+-- Requires the clinic to have at least one profiles row with role =
+-- 'clinician' to satisfy programs.created_by / session_notes.clinician_id's
+-- not-null FK - the subquery below picks whichever one exists rather than
+-- needing a specific id pasted in.
+--
+-- Originally also accepted 'supervisor' here - dropped after confirming
+-- live that 'supervisor' is not actually a member of the user_role enum
+-- (`select enumlabel from pg_enum where enumtypid = 'user_role'::regtype`
+-- returns admin/scheduler/clinician/client/staff only), so `role in
+-- ('clinician','supervisor')` raised 22P02 (invalid input value for enum)
+-- before ever reaching a real row - not a "no supervisor exists" case, a
+-- "that value can't exist yet" case. Separate, real gap from this script:
+-- invite-teammate would fail the same way for an actual supervisor invite,
+-- and every auth_role() = 'supervisor' check in this schema's RLS is
+-- currently unreachable dead code, not merely unused. Not this script's
+-- job to fix - flagged for the product owner to decide whether/when to
+-- `alter type user_role add value 'supervisor'`.
 -- ============================================================================
 
 do $$
@@ -30,12 +43,11 @@ declare
 begin
   select id into v_clinician_id
   from profiles
-  where clinic_id = v_clinic_id and role in ('clinician', 'supervisor')
-  order by role -- 'clinician' sorts before 'supervisor'; either is fine
+  where clinic_id = v_clinic_id and role = 'clinician'
   limit 1;
 
   if v_clinician_id is null then
-    raise exception 'No clinician/supervisor profile found for clinic %; cannot seed demo data (session_notes.clinician_id and programs.created_by both require one).', v_clinic_id;
+    raise exception 'No clinician profile found for clinic %; cannot seed demo data (session_notes.clinician_id and programs.created_by both require one).', v_clinic_id;
   end if;
 
   -- Three distinct real past sessions for Aria, oldest-picked-last so the
