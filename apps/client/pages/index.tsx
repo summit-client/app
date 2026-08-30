@@ -114,6 +114,14 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     .eq("id", user.id)
     .maybeSingle();
 
+  // "Upcoming Sessions" - the card's own label - had no date filter at all,
+  // so it fetched every session ever booked (past and future) in ascending
+  // date order: with months of history, the card showed the oldest already-
+  // happened session first, not what's actually coming up. Scoped to today
+  // forward and capped to a handful for the dashboard snapshot; the full
+  // history (including past sessions) is still one click away via
+  // "View all" -> /appointments.
+  const todayDateStr = new Date().toISOString().slice(0, 10);
   const { data: sessions, error: sessionsError } = await supabase
     .from("sessions")
     .select(`
@@ -125,9 +133,12 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       status
     `)
     .eq("client_id", viewed.clientId)
+    .gte("session_date", todayDateStr)
+    .neq("status", "cancelled")
     .order("session_date", { ascending: true })
     .order("hour", { ascending: true })
-    .order("minute", { ascending: true });
+    .order("minute", { ascending: true })
+    .limit(5);
 
   if (sessionsError) {
     console.error(
