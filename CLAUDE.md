@@ -387,6 +387,29 @@ at all (PR #88, see "Traps that have already bitten" above).
   was the same account the whole time. Not yet fixed — add a check for an
   existing `profiles` row (or an existing `auth.users` row for that email)
   before inviting, and return a clear error instead of upserting over it.
+- **The Admin console's "Queues" tab (`apps/employee/app/admin/page.tsx`) was scoped to the
+  wrong user.** Every queue there read `getProgress()`/`getPd()`/`getTimeOff()` — the
+  CALLER's own loaded hub snapshot (`hub.ts`'s `requireSnap()` is always the signed-in
+  user's), never the clinic's — so an admin or supervisor could only ever see their *own*
+  onboarding tasks, PD records and time-off requests in a console whose whole point is
+  managing everyone else's. RLS already supported a clinic/team-wide read
+  (`hub_progress_manage_select` etc., migration `0006`); nothing queried it. Confirmed
+  live 2026-08-30 when a clinician's "ready for sign-off" task never appeared in the
+  signed-in admin's "Pending sign-offs" list. Fixed **for pending sign-offs only**:
+  `HubBackend.listPendingSignoffs()` queries `hub_task_progress` clinic-wide (no
+  `user_id` filter — relies on RLS) and the admin screen joins the result against
+  `directory()` for names. `signOffTask()` had a second, compounding bug on the write
+  side: it gated on the CALLER's own in-memory snapshot before ever calling the backend,
+  so signing off someone else's task matched no local row and silently no-op'ed — fixed
+  in the same change; the DB update also now requires `status = 'AWAITING_SIGNOFF'` so a
+  stale queue can't complete a row that already moved.
+  **Not yet fixed**, same shape of bug: "Certificates to issue," "Time-off requests,"
+  "PD awaiting verification," and the single-row "Team directory" table on that same
+  screen. Before wiring those the same way, note `hub_pd_records` and
+  `hub_time_off_requests` are missing a `..._manage_select` RLS policy entirely in
+  migration `0006` (only `hub_certificates` and `hub_task_progress` have one) — a
+  corrected client query against either would silently return nothing for anyone but the
+  caller (the "RLS returns empty sets, not errors" trap above) until that policy is added.
 - ~4.8 MB of clinic-specific assets in `apps/employee/public`
 - Scheduler calendar v2 (PR #74 onward) — full backlog is closed as of the
   overnight PR that follows PR #76; see `docs/context/product.md`'s
