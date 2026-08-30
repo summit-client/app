@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   getCallerProfile,
+  handlePreflight,
   isRateLimited,
   json,
   recordAudit,
@@ -30,6 +31,8 @@ interface EditRequest {
 }
 
 Deno.serve(async (req) => {
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
   if (req.method !== "POST") return json(405, { error: "Method not allowed" });
 
   const callerId = await verifyCaller(req);

@@ -109,9 +109,35 @@ export async function recordAudit(
   await admin.from("provisioning_audit").insert(row);
 }
 
+/**
+ * All three provisioning functions are called from a browser (apps/employee's
+ * Staff & Teams tab, apps/scheduler's admin.tsx) via supabase-js's
+ * functions.invoke(), which sends a real CORS preflight (OPTIONS) before the
+ * POST. Confirmed live: with no Access-Control-* headers at all, the
+ * browser blocked that preflight and the request never reached this code -
+ * surfaced client-side as supabase-js's generic "Failed to send a request to
+ * the Edge Function" (a fetch-level failure, not an HTTP error response, so
+ * no amount of fixing the function's own logic would have shown up in that
+ * error). `*` is safe here specifically because auth is a Bearer token in
+ * the Authorization header (verifyCaller), never a cookie - there is no
+ * credentialed-request/CSRF surface a wildcard origin would open up.
+ */
+export const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+/** Call first in every function's Deno.serve handler, before any method/auth
+ *  check - the preflight carries no Authorization header, so it must be
+ *  answered before verifyCaller() would ever get a chance to reject it. */
+export function handlePreflight(req: Request): Response | null {
+  return req.method === "OPTIONS" ? new Response(null, { status: 204, headers: CORS_HEADERS }) : null;
+}
+
 export function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
   });
 }
