@@ -10,6 +10,7 @@
 
 import * as React from "react";
 import { AppNav } from "@summit/nav";
+import { signOutUrl } from "@summit/portals";
 import { getIdentity, type AppRole } from "@summit/session";
 
 export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
@@ -23,5 +24,5 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
     return () => { cancelled = true; };
   }, []);
 
-  return <AppNav {...props} role={role} />;
+  return <AppNav {...props} role={role} signOutHref={signOutUrl()} />;
 }

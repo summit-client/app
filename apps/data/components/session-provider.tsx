@@ -14,6 +14,7 @@
 
 import * as React from "react";
 import { AppNav } from "@summit/nav";
+import { signOutUrl } from "@summit/portals";
 import {
   explainProblem, gate, getIdentity, refreshIdentity, type Identity,
 } from "@summit/session";
@@ -82,5 +83,5 @@ export function SessionGate({ children }: { children: React.ReactNode }) {
 /** The cross-portal bar, with the viewer's role once it resolves. */
 export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
   const { identity } = useSession();
-  return <AppNav {...props} role={identity?.appRole} />;
+  return <AppNav {...props} role={identity?.appRole} signOutHref={signOutUrl()} />;
 }
