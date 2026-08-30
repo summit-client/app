@@ -97,6 +97,25 @@ provider configured (Dashboard → Authentication → Emails) for
 either function - the functions succeed either way (the row gets written)
 even if the email silently doesn't arrive.
 
+**The invite email itself (2026-08-30): custom template committed, not yet
+confirmed live.** The platform default - bare "You have been invited" /
+"Accept the invite" text, no branding, no greeting, no styling - was
+confirmed to be what recipients actually received (a real invite
+screenshotted and reported as reading like spam). Replaced with
+`supabase/templates/invite.html`, wired via `[auth.email.template.invite]`
+in `config.toml`; `invite-teammate` now also passes `full_name`/`role` as
+invite metadata so the template can greet the person by name and name the
+role, degrading gracefully to generic copy when either is absent.
+`config.toml` changes need the same caveat already on `verify_jwt` above:
+**unconfirmed whether they reach this project at all** without a working
+`supabase link` + a declarative config push, which nothing in this repo's
+history has done yet. Until that's confirmed, the actual live template is
+whatever's in the Dashboard (Authentication → Email Templates → "Invite
+user") - paste `supabase/templates/invite.html`'s rendered HTML and the
+`config.toml` subject there directly, the same manual path that already
+worked for deploying the three Edge Functions when the CLI wasn't
+available.
+
 **`provision-clinic` has no UI** (deliberate - see `docs/context/decisions.md`
 and `product.md`): it creates a brand-new clinic and its first admin, gated
 on membership in the `platform_operators` table (add/remove rows by hand,
