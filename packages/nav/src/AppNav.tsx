@@ -6,6 +6,16 @@ interface AppNavProps {
   /** When set, a settings cogwheel sits at the right of the bar. */
   settingsHref?: string;
   /**
+   * When set, a sign-out control sits at the far right of the bar (after the
+   * settings cogwheel, if both are present). This must be the shared
+   * `signOutUrl()` from @summit/portals, not a local supabase.auth.signOut()
+   * call - see that function's own comment for why a per-portal signOut()
+   * cannot actually end the cross-portal session. Deliberately a plain link,
+   * not a button with an onClick: @summit/nav takes no Supabase dependency,
+   * and a real navigation is exactly what's needed here anyway (see above).
+   */
+  signOutHref?: string;
+  /**
    * The viewer's `profiles.role`. Identity resolves asynchronously (it's a
    * Supabase round trip), so callers pass `undefined` while it's in flight and
    * the real value once it lands - `role` is not an optional extra, every
@@ -33,7 +43,7 @@ interface AppNavProps {
  * Client so staff move between them from any screen. Colours come from the
  * shared tokens, so it follows the theme and accent like everything else.
  */
-export function AppNav({ activeKey, settingsHref, role }: AppNavProps) {
+export function AppNav({ activeKey, settingsHref, signOutHref, role }: AppNavProps) {
   const visible = role == null
     ? portals.filter((p) => p.key === activeKey)
     : portalsFor(role);
@@ -116,6 +126,33 @@ export function AppNav({ activeKey, settingsHref, role }: AppNavProps) {
             strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.6.76 1 1.4 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </a>
+      ) : null}
+      {signOutHref ? (
+        <a
+          href={signOutHref}
+          aria-label="Sign out"
+          title="Sign out"
+          style={{
+            marginLeft: settingsHref ? 4 : 'auto',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 30,
+            height: 30,
+            flexShrink: 0,
+            borderRadius: 'var(--radius-full, 999px)',
+            color: 'oklch(100% 0 0 / 0.66)',
+            textDecoration: 'none',
+            transition: 'all var(--duration-fast, 110ms) var(--ease-out-quart, ease)',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
           </svg>
         </a>
       ) : null}

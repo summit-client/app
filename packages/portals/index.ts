@@ -114,6 +114,27 @@ export function refreshUrl(): string {
 }
 
 /**
+ * The one place allowed to end a session, for the same reason refreshUrl()
+ * is the one place allowed to redeem a refresh token: every portal's browser
+ * Supabase client is built with createBrowserClient() and no cookie
+ * overrides, so its default cookie writer clears a cookie scoped to the
+ * *current* host only. The actual shared session cookie was written with an
+ * explicit `Domain=.summitclient.io` (apps/web/lib/supabase.ts, the only
+ * client-side writer configured that way), and a browser will not remove a
+ * cookie via a delete that doesn't repeat that same Domain - so a portal
+ * calling `supabase.auth.signOut()` on its own client looks like it worked
+ * locally (that tab's in-memory state clears, the redirect to /login fires)
+ * while leaving the real cross-portal cookie valid, ready to sign the same
+ * browser straight back in the moment it visits another portal or reloads.
+ * Routing every sign-out through apps/web's own domain-scoped server client
+ * (apps/web/lib/supabase-server.ts) is what actually clears it once, for
+ * every portal at once, matching the refresh endpoint's precedent exactly.
+ */
+export function signOutUrl(): string {
+  return `${webUrl()}/api/auth/signout`;
+}
+
+/**
  * Who may use which portal.
  *
  * `clinician` and `employee` mirror auth_is_staff() deliberately: both read

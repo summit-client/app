@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
-import { supabase } from "@summit/db";
+import { signOutUrl } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
 
 type SidebarIconName =
@@ -107,23 +107,17 @@ const navItems: NavItem[] = [
 export default function Sidebar() {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState("");
 
-  async function handleLogout() {
+  // Navigates to apps/web's own signout endpoint rather than calling
+  // supabase.auth.signOut() on this app's own client: this client's default
+  // cookie writer can only clear a cookie scoped to this host, not the
+  // shared `.summitclient.io` cookie every portal reads - see
+  // @summit/portals's signOutUrl() for the full reasoning. Calling signOut()
+  // here used to look like it worked (this tab cleared, redirected to
+  // login) while leaving that shared cookie valid for every other portal.
+  function handleLogout() {
     setLoggingOut(true);
-    setLogoutError("");
-
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      setLogoutError("Could not log out. Please try again.");
-      setLoggingOut(false);
-      return;
-    }
-
-    window.location.href =
-      process.env.NEXT_PUBLIC_LOGIN_URL ||
-      "https://summitclient.io/login";
+    window.location.href = signOutUrl();
   }
 
   return (
@@ -207,20 +201,6 @@ export default function Sidebar() {
           paddingTop: 20,
         }}
       >
-        {logoutError && (
-          <p
-            role="alert"
-            style={{
-              color: "#b42318",
-              fontSize: 12,
-              margin: "0 8px 10px",
-              lineHeight: 1.4,
-            }}
-          >
-            {logoutError}
-          </p>
-        )}
-
         <button
           type="button"
           onClick={handleLogout}
