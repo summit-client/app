@@ -23,6 +23,11 @@ export interface EmployeeProfile {
 export interface TaskProgress { taskKey: string; status: TaskStatus; notes: string; applicable: boolean; completedAt: string | null }
 export interface TrainingRecord { courseKey: string; status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED"; completedAt: string | null }
 
+/** One other person's task awaiting a supervisor/admin's sign-off. Unlike
+ *  TaskProgress this is never part of the caller's own loaded snapshot - it
+ *  comes from a clinic/team-wide query, so it carries the subject's id. */
+export interface PendingSignoff { userId: string; taskKey: string; notes: string }
+
 export interface PdRecord {
   id: string; title: string; provider: string; hours: number; date: string; verified: boolean;
   category: "BACB_CEU" | "CPBAO_CE" | "IBAO_CEU" | "GENERAL_PD";

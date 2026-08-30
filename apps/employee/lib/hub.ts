@@ -23,7 +23,7 @@ import { previewBackend, supabaseBackend, type HubBackend, type HubSnapshot } fr
 export { IS_PREVIEW };
 export * from "./hub-types";
 import type {
-  AuditEvent, Certificate, EmployeeProfile, PdRecord, TaskProgress,
+  AuditEvent, Certificate, EmployeeProfile, PdRecord, PendingSignoff, TaskProgress,
   TaskStatus, TimeOffRequest, TrainingRecord,
 } from "./hub-types";
 
@@ -258,14 +258,35 @@ export async function updateTask(taskKey: string, patch: { status?: TaskStatus; 
   return row;
 }
 
-/** Supervisor/admin sign-off: AWAITING_SIGNOFF → COMPLETED, recorded. */
+/** Everything AWAITING_SIGNOFF across the caller's team/clinic - see
+ *  HubBackend.listPendingSignoffs. Not part of the loaded snapshot: it names
+ *  other people, so hub.ts's single-user requireSnap() shape doesn't fit it. */
+export async function listPendingSignoffs(): Promise<PendingSignoff[]> {
+  return be().listPendingSignoffs();
+}
+
+/**
+ * Supervisor/admin sign-off: AWAITING_SIGNOFF → COMPLETED, recorded.
+ *
+ * The loaded snapshot (`s.progress`) is always the CALLER's own, never the
+ * subject's - guarding on it before writing (the old behaviour) meant signing
+ * off someone else's task found no matching local row and returned early
+ * without ever calling the backend, so the button silently did nothing for
+ * every cross-employee sign-off, which is the only kind the admin queue
+ * produces. Now the write always happens; the local snapshot is only patched
+ * when the caller happened to sign off their own task.
+ */
 export async function signOffTask(taskKey: string, subjectId?: string): Promise<void> {
   const s = requireSnap();
-  const row = s.progress.find((p) => p.taskKey === taskKey);
-  if (!row || row.status !== "AWAITING_SIGNOFF") return;
-  row.status = "COMPLETED";
-  row.completedAt = new Date().toISOString();
-  await be().signOffTask(taskKey, subjectId ?? s.profile.id);
+  const subject = subjectId ?? s.profile.id;
+  await be().signOffTask(taskKey, subject);
+  if (subject === s.profile.id) {
+    const row = s.progress.find((p) => p.taskKey === taskKey);
+    if (row && row.status === "AWAITING_SIGNOFF") {
+      row.status = "COMPLETED";
+      row.completedAt = new Date().toISOString();
+    }
+  }
   await audit("onboarding.signoff", HUB_TASKS.find((t) => t.key === taskKey)?.title ?? taskKey);
   changed();
 }
