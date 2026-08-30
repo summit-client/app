@@ -35,6 +35,7 @@ type PageProps =
       sessions: Session[];
       clientName: string;
       isAdminViewingAs: boolean;
+      todayDateStr: string;
     }
   | { mode: "problem"; problem: AccountProblem };
 
@@ -49,13 +50,15 @@ export default function Appointments(
     return <AccountProblemNotice problem={props.problem} />;
   }
 
-  const { sessions, clientName, isAdminViewingAs } = props;
+  const { sessions, clientName, isAdminViewingAs, todayDateStr } = props;
 
   const filteredSessions =
     filter === "All"
       ? sessions
       : sessions.filter(
-          (session) => normalizeStatus(session.status) === filter.toLowerCase()
+          (session) =>
+            normalizeStatus(session.status, session.session_date, todayDateStr) ===
+            filter.toLowerCase()
         );
 
   return (
@@ -150,7 +153,7 @@ export default function Appointments(
             </div>
           ) : (
             filteredSessions.map((session) => {
-              const status = normalizeStatus(session.status);
+              const status = normalizeStatus(session.status, session.session_date, todayDateStr);
               const clinicianName = session.staff?.[0]?.name;
 
               return (
@@ -295,6 +298,8 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     .order("hour", { ascending: true })
     .order("minute", { ascending: true });
 
+  const todayDateStr = new Date().toISOString().slice(0, 10);
+
   if (sessionsError) {
     console.error("Failed to load appointments:", sessionsError.message);
 
@@ -304,6 +309,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
         sessions: [],
         clientName: viewed.clientName,
         isAdminViewingAs: viewed.isAdminViewingAs,
+        todayDateStr,
       },
     };
   }
@@ -314,22 +320,32 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       sessions: (sessions ?? []) as Session[],
       clientName: viewed.clientName,
       isAdminViewingAs: viewed.isAdminViewingAs,
+      todayDateStr,
     },
   };
 };
 
-function normalizeStatus(status: string | null): SessionStatus {
-  const normalized = status?.toLowerCase();
-
-  if (normalized === "completed") {
-    return "completed";
-  }
-
-  if (normalized === "cancelled") {
+/**
+ * "Completed" was never a real value of sessions.status - the scheduler only
+ * ever writes "scheduled" or "cancelled" to this column (confirmed by
+ * reading every write path in apps/scheduler; nothing sets "completed"
+ * anywhere). Every past session displayed as "Scheduled" forever, and the
+ * Completed filter tab always returned nothing. Derived from the date
+ * instead: a non-cancelled session in the past is complete, one today or
+ * later is still scheduled. Same day-level boundary the dashboard's
+ * "Upcoming Sessions" query uses, so the two pages agree on what counts as
+ * upcoming vs. already happened.
+ */
+function normalizeStatus(
+  status: string | null,
+  sessionDate: string,
+  todayDateStr: string
+): SessionStatus {
+  if (status?.toLowerCase() === "cancelled") {
     return "cancelled";
   }
 
-  return "scheduled";
+  return sessionDate < todayDateStr ? "completed" : "scheduled";
 }
 
 function formatSessionDate(date: string) {
