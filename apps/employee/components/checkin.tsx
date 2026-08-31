@@ -14,10 +14,15 @@ import { currentCycle, directory, hr, rate as saveRating, submitPeerFeedback } f
  * Scoreboard tabs. Peers come from the clinician's own team. */
 
 export function Scale({ value, onPick, label }: { value?: RatingValue; onPick: (v: RatingValue) => void; label: string }) {
+  // The visible label on each button is the number; what the number MEANS
+  // lives in the title, which is mouse-only. aria-label carries the same
+  // meaning to anyone on a keyboard or a screen reader, who would otherwise
+  // get "3, pressed" with nothing to say what 3 is.
   return (
     <div className="scale-row" role="group" aria-label={label}>
       {RATING_SCALE.map((r) => (
         <button key={r.value} className={`scale-btn ${value === r.value ? "on" : ""}`} title={`${r.label}: ${r.short}`}
+          aria-label={`${r.value} — ${r.label}: ${r.short}`}
           aria-pressed={value === r.value} onClick={() => onPick(r.value)}>{r.value}</button>
       ))}
     </div>
