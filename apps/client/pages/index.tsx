@@ -171,11 +171,12 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // via RLS (programs_client_read) - the client_id filter here is
   // defense-in-depth, matching the same pattern sessions already uses,
   // not the only thing standing between one family and another's data.
+  // Ordered by name from the DB; re-sorted by a deliberate status
+  // priority below rather than alphabetically (see sortProgramsForFamily).
   const { data: programs, error: programsError } = await supabase
     .from("programs")
     .select("id, name, domain, status")
     .eq("client_id", viewed.clientId)
-    .order("status", { ascending: true })
     .order("name", { ascending: true });
 
   if (programsError) {
@@ -185,12 +186,17 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // SOAP notes: RLS (session_notes_client_read) also enforces status in
   // ('signed','countersigned') server-side - a draft is never selectable
   // here even if this query's own filter were ever removed by mistake.
+  // nullsFirst: false because Postgres's default for `order by ... desc`
+  // is NULLS FIRST: a note with no signed_at (if a countersigned note can
+  // ever have one) would sort ahead of every actually-signed note
+  // regardless of how recent it is, not to the back where a null date
+  // belongs in a "most recent first" list.
   const { data: soapNotes, error: soapNotesError } = await supabase
     .from("session_notes")
     .select("id, status, signed_at, countersigned_at, body")
     .eq("client_id", viewed.clientId)
     .in("status", ["signed", "countersigned"])
-    .order("signed_at", { ascending: false })
+    .order("signed_at", { ascending: false, nullsFirst: false })
     .limit(5);
 
   if (soapNotesError) {
@@ -212,7 +218,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       clientName: viewed.clientName || "Client",
       sessions: (sessions ?? []) as DashboardSession[],
       sessionsError: Boolean(sessionsError),
-      programs: (programs ?? []) as DashboardProgram[],
+      programs: sortProgramsForFamily((programs ?? []) as DashboardProgram[]),
       programsError: Boolean(programsError),
       soapNotes: (soapNotes ?? []) as DashboardSoapNote[],
       soapNotesError: Boolean(soapNotesError),
@@ -220,3 +226,32 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     },
   };
 };
+
+/**
+ * "Progress Snapshot" ordered goals alphabetically by status
+ * ("active" < "archived" < "draft" < "maintenance" < "mastered" <
+ * "on_hold" < "pending_signoff"), which put discontinued ("archived")
+ * goals second - ahead of "maintenance", "mastered" and "on_hold" - for
+ * no reason other than the letter A. Sorted by an explicit priority
+ * instead: goals actively worked on first, then goals worth celebrating
+ * or needing attention, then not-yet-visible internal states, archived
+ * goals last since they're the least relevant to a family checking on
+ * current progress. Name breaks ties within the same priority.
+ */
+const PROGRAM_STATUS_PRIORITY: Record<string, number> = {
+  active: 0,
+  maintenance: 1,
+  on_hold: 2,
+  mastered: 3,
+  pending_signoff: 4,
+  draft: 5,
+  archived: 6,
+};
+
+function sortProgramsForFamily(programs: DashboardProgram[]): DashboardProgram[] {
+  return [...programs].sort((a, b) => {
+    const priorityA = PROGRAM_STATUS_PRIORITY[a.status] ?? PROGRAM_STATUS_PRIORITY.draft;
+    const priorityB = PROGRAM_STATUS_PRIORITY[b.status] ?? PROGRAM_STATUS_PRIORITY.draft;
+    return priorityA !== priorityB ? priorityA - priorityB : a.name.localeCompare(b.name);
+  });
+}

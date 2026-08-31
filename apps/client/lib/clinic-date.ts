@@ -30,3 +30,25 @@ const CLINIC_TIME_ZONE = "America/Toronto";
 export function clinicTodayDateStr(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: CLINIC_TIME_ZONE }).format(new Date());
 }
+
+/**
+ * Formats a timestamp for display (e.g. "Aug 31, 2026") with a fixed
+ * locale and timezone, rather than `toLocaleDateString(undefined, ...)`'s
+ * ambient-environment behavior. This app is server-rendered
+ * (getServerSideProps) but the same formatting call also runs again in the
+ * browser during hydration - `undefined` resolves to the *server's* locale
+ * during SSR and the *visitor's device* locale/timezone during hydration,
+ * which don't have to agree (a family member overseas, or simply a server
+ * container with a different default locale than a browser's language
+ * setting) and can each land on a different calendar day near a local
+ * midnight, not just a different string format. Pinning both removes the
+ * mismatch instead of relying on server and client happening to agree.
+ */
+export function formatClinicDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: CLINIC_TIME_ZONE,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(iso));
+}

@@ -2,6 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import Sidebar from "./Sidebar";
 import { MobileNavChrome } from "./mobile-nav-chrome";
+import { formatClinicDate } from "../lib/clinic-date";
 import styles from "../styles/design-b.module.css";
 
 type IconName =
@@ -668,9 +669,8 @@ function formatUpdateDate(iso: string | null) {
     return "Recently";
   }
 
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  // formatClinicDate(), not toLocaleDateString(undefined, ...) - see
+  // lib/clinic-date.ts for why an ambient-locale/timezone format here was
+  // a real SSR/hydration mismatch, not just a cosmetic inconsistency.
+  return formatClinicDate(iso);
 }
