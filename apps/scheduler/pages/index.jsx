@@ -33,6 +33,17 @@ function dayFromDate(dateStr) {
   return DAY_MAP[new Date(dateStr + "T12:00:00").getDay()];
 }
 
+// TEMPORARY - hardcoded 7am-8pm, unlike CalendarView.tsx's real calendar
+// grid, which already reads calendar.workStart/workEnd from @summit/settings
+// per clinic. This wizard's own preview/availability-editing grids
+// (PreviewGrid, AvailabilityGrid below) still assume every clinic's day
+// runs 7-20, evaluated once at module load rather than per clinic. Not
+// fixed this session - TIME_SLOTS/PREVIEW_SLOTS are module-level constants
+// computed before any settings are loaded, so making them clinic-aware
+// means turning them into values computed inside the component (useMemo
+// off getSetting()), which also changes the availability-grid's slot
+// granularity and needs a UI pass to verify, not just a data change. See
+// BLOCKED-scheduler.md.
 function generateTimeSlots() {
   const s = [];
   for (let h = 7; h < 20; h++) {

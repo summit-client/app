@@ -67,7 +67,47 @@ not done here to keep this pass's diff focused on the exact-slot race the
 task called out; flagging it as the natural next step alongside item 1's
 migration.
 
-## 3. `apps/scheduler/dump.txt` and `index_dump.txt`
+## 3. The Create wizard's preview/availability grids hardcode a 7am-8pm day
+
+**Multi-tenant hardening finding.** `pages/index.jsx`'s `generateTimeSlots()`
+and `buildPreviewSlots()` (feeding `TIME_SLOTS`/`PREVIEW_SLOTS`, used by the
+Create wizard's `PreviewGrid` multi-client matching view and the staff/
+client `AvailabilityGrid` editor) hardcode every clinic's operating day to
+7:00-20:00. This is now inconsistent with the *other* calendar in this same
+app: `CalendarView.tsx`'s real day/week grid already reads
+`calendar.workStart`/`calendar.workEnd` from `@summit/settings` per clinic
+(landed alongside the calendar v2 rebuild - see CLAUDE.md). A clinic that
+sets different hours in Settings gets a real calendar honoring them and a
+Create-wizard preview/availability grid that silently doesn't.
+
+Marked with a `TEMPORARY` comment at the definition rather than fixed this
+session: `TIME_SLOTS`/`PREVIEW_SLOTS` are module-level constants computed
+once at import time, before `@summit/settings` has resolved anything.
+Making them clinic-aware means turning both into values computed inside the
+component (`useMemo` off `getSetting("calendar.workStart"/"workEnd")`,
+matching how `CalendarView.tsx` already does it), which also changes the
+availability-editing grid's rendered slot range - a UI-visible change that
+needs to be checked in a browser, not just a data fix, and this session has
+no Supabase credentials to render the app live (same limitation noted
+elsewhere in this repo's docs for the last calendar-v2 pass). Flagging
+instead of guessing at the refactor blind.
+
+## 4. Client `session_type` used a hardcoded 4-item list, not this clinic's own
+
+**Multi-tenant hardening finding - fixed this session.** `pages/admin.tsx`
+offered exactly four fixed session-type names ("Assessment", "RBA
+Supervision", "Direct Therapy", "Group Therapy") for a client's
+`session_type` field, identical for every clinic regardless of what that
+clinic actually configured in the real, per-clinic-editable `session_types`
+table (`SessionTypeEditModal`, migration `0019` - a clinic can rename,
+remove, or add its own types there). `fetchAll()` now also loads
+`session_types.name` for the signed-in clinic and the dropdown renders from
+that instead, falling back to the original four only if a clinic somehow
+has no session types configured yet (shouldn't happen post-`0019`, which
+seeds a default set per clinic, but kept as a defensive fallback rather
+than an empty dropdown).
+
+## 5. `apps/scheduler/dump.txt` and `index_dump.txt`
 
 Pre-existing, unrelated to this pass. `docs/context/environments.md`
 already flags these as tracked-in-git-despite-being-gitignored and
