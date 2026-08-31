@@ -1,0 +1,23 @@
+name: Overnight task
+description: Queue a task for the overnight orchestrator to pick up and dispatch to an agent.
+title: "[overnight] "
+labels:
+  - overnight
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: What needs to be done
+      description: Be as specific as you'd be talking to a person — which app/module, what's wrong or wanted, and any context the agent won't already have.
+      placeholder: |
+        e.g. apps/scheduler: the conflict-resolution suggestions on the calendar tab
+        sometimes suggest a slot that's still double-booked. Check DayColumn's
+        conflict detection against calendar-utils.test.mjs.
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        This issue is picked up automatically by the overnight orchestrator.
+        It will comment here when claimed, and again with a PR link when done —
+        it never merges to `main` on its own, so nothing goes live without review.
