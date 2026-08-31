@@ -350,6 +350,62 @@ export async function getSession(sessionId: number): Promise<ScheduledSession | 
   return all.find((s) => s.id === sessionId) ?? null;
 }
 
+/**
+ * Create a new goal. Previously "Save goal (pending supervisor sign-off)"
+ * (app/clients/[id]/programs/page.tsx's NewGoalForm) built a plain local
+ * object and never called Supabase at all — the whole "pending supervisor
+ * sign-off" claim was cosmetic, since nothing was ever saved anywhere a
+ * supervisor could see it. Now writes a real `programs` row with
+ * `status: 'pending_signoff'`.
+ */
+export async function createProgram(input: {
+  clientId: number; name: string; domain: string | null; mode: Program["mode"];
+  operationalDefinition: string; masteryPct: number; promptLevel: Program["promptLevel"];
+  reinforcementSchedule: string; sd: string | null; targetDirection: Program["targetDirection"];
+}): Promise<Program> {
+  const masteryCriteria = `${input.masteryPct}% across 3 consecutive sessions, 2 settings, 2 people`;
+  if (IS_PREVIEW) {
+    return {
+      id: `p-${Date.now()}`, clientId: input.clientId, name: input.name, domain: input.domain,
+      mode: input.mode, operationalDefinition: input.operationalDefinition, masteryCriteria,
+      masteryPct: input.masteryPct, masteryConsecutive: 3, promptLevel: input.promptLevel,
+      reinforcementSchedule: input.reinforcementSchedule, sd: input.sd,
+      targetDirection: input.targetDirection, status: "pending_signoff",
+      intervalSeconds: 30, dailyTargetMinutes: null, steps: [], targets: [], last5: [],
+    };
+  }
+  const user = (await sb().auth.getUser()).data.user;
+  const { data, error } = await sb()
+    .from("programs")
+    .insert({
+      clinic_id: await myClinicId(), client_id: input.clientId, name: input.name, domain: input.domain,
+      measurement_mode: input.mode, operational_definition: input.operationalDefinition,
+      mastery_criteria: masteryCriteria, mastery_pct: input.masteryPct,
+      prompt_level: input.promptLevel, reinforcement_schedule: input.reinforcementSchedule,
+      sd: input.sd, target_direction: input.targetDirection, status: "pending_signoff",
+      created_by: user?.id,
+    })
+    .select("*, program_steps(*), program_targets(*)")
+    .single();
+  if (error) throw error;
+  return mapProgram(data);
+}
+
+/**
+ * The supervisor sign-off action: pending_signoff -> active. App-layer gated
+ * only (see ProgramsPage) — `programs`' RLS update policy
+ * (`clinic_id = auth_clinic_id() and auth_is_staff()`, migration 0001) admits
+ * clinician, supervisor and admin identically, the same shape of gap as
+ * `session_notes`' countersign policy. Logged in BLOCKED-data.md; the
+ * `.eq("status", "pending_signoff")` at least keeps this call a no-op
+ * against a program that already moved on.
+ */
+export async function activateProgram(programId: string): Promise<void> {
+  if (IS_PREVIEW) return; // nothing server-side to flip; the caller updates its own local list
+  const { error } = await sb().from("programs").update({ status: "active" }).eq("id", programId).eq("status", "pending_signoff");
+  if (error) throw error;
+}
+
 /* ---- writes --------------------------------------------------------------- */
 /**
  * Every tap creates one of these — the atomic observation, immediately, with
