@@ -74,53 +74,80 @@ out to be wrong is a liability that should be visible.
 
 ## Status — read this before calling anything done
 
-**Verified.** `packages/workforce/esa.ts` — 16 tests, all passing under
-`node --experimental-strip-types --test esa.test.ts`. They cover the work-week
-boundary (including the Toronto DST transition), the overtime threshold, the
-work-week-versus-pay-period defect, exclusion of paid-but-not-worked time from
-the threshold, blended-rate overtime, salary-to-hourly reduction, the 4%/6%
-vacation step, and public holiday pay.
+### Verified, by execution
 
-**Not verified.** Every one of the six migrations. There is no PostgreSQL and
-no Docker on the machine they were written on, so not one statement has been
-executed. They have been checked structurally — balanced blocks, matched
-`begin`/`end`, `if not exists` throughout — and reviewed against the existing
-schema's conventions, and that is all. Before any of this is relied on:
+**All 31 migrations apply from an empty database.** `supabase/tests/apply.mjs`
+runs them in order against PGlite, a real Postgres 18 compiled to WASM, with no
+install required. Result: 85 tables, 11 views, 35 functions, 265 policies.
 
-1. `supabase db reset` against a local instance, which is also the first real
-   test of whether `0000` reconstructs the eight tables correctly.
-2. Run the `esa.test.ts` cases against the SQL views. The tests are the
-   specification; `employee_work_weeks` should reproduce them exactly, and any
-   disagreement is a defect in the view, not in the tests.
-3. Confirm the `0023` seed is genuinely a no-op by comparing what each
-   existing role can reach before and after.
-4. `pg_dump --schema-only` the eight baseline tables from production and
-   reconcile against `0000`.
+**45 behavioural tests pass.** `supabase/tests/behaviour.mjs` covers permission
+resolution and expiry, the HR/clinical boundary in both directions, the
+append-only event stream, employment constraints, the ESA overtime split, the
+timesheet state machine including refusal of self-approval, rate resolution,
+minimum-wage reporting, budget arithmetic, and the session derivation.
 
-**Known incomplete, deliberately.**
+**16 TypeScript tests pass.** `packages/workforce/esa.test.ts`. The overtime
+cases there and in `behaviour.mjs` are deliberately identical, because one rule
+implemented twice is only safe if both are checked against one specification.
+
+### What running it found
+
+Four defects that reading it had not:
+
+1. **`profiles.role` is a Postgres enum, not text.** Migration `0021` proves it.
+   The `0000` baseline had it as `text`, which would have produced a database
+   that looked right and rejected `0021`.
+2. **`clients.user_id` was missing from the baseline.** It is what
+   `auth_client_row_id()` reads, so every client-portal RLS policy in `0020`
+   and `0022` depends on it.
+3. **`hr_admin` and `payroll_admin` were unassignable.** `0023` seeded a
+   permission matrix for two roles the enum could not hold — the same
+   unreachable-role situation `0021` describes for `supervisor`. Fixed by
+   `0029`.
+4. **`budget_entries.session_id` referenced the wrong table**, and
+   `client_sessions` had no link to `sessions` at all. See the header of
+   `0030`; both are corrected there.
+
+### Still unverified
+
+- **RLS enforcement.** PGlite runs as the superuser, who bypasses row security.
+  Policies are verified as creatable and their functions tested directly, but
+  whether a policy filters correctly for a given JWT needs a Supabase instance
+  and the psql path in `supabase/tests/README.md`.
+- **The three overlap-exclusion constraints** on `employment_positions`,
+  `pay_periods` and `pay_rates`. They need `btree_gist`, which PGlite does not
+  bundle. Available on Supabase; unproven here.
+- **The `0000` baseline against production.** Two defects in it were caught by
+  the migrations that follow it. That is evidence the method works, not
+  evidence the file is now complete. `pg_dump --schema-only` the eight tables
+  and reconcile before treating a rebuilt database as a restore target.
+
+### Known incomplete, deliberately
 
 - No source deductions. Income tax, CPP and EI withholding belong to the
   payroll provider. This produces gross earnings by pay code. Nothing here
   should be described as "payroll" without that sentence attached.
-- `employment_records.staff_id` is null for every backfilled row. Matching a
-  scheduler resource to a login is the gap `0025` exists to close and cannot
-  close by guessing — names are not unique and a wrong match pays one person
-  for another's hours. It needs a screen showing both rosters and a person who
-  knows the roster.
+- `employment_records.staff_id` is null for every backfilled row, so
+  `record_session_delivery` reports every session for those people as blocked.
+  That is the intended behaviour — it refuses to guess which login a scheduler
+  resource belongs to — but it means the derivation does nothing useful until
+  someone works through `underived_sessions` and links them.
 - The `0025` backfill asserts `full_time` for everyone, because
-  `hub_employee_profiles` does not record employment type. That is wrong for
-  every part-time and casual employee and will produce wrong overtime
-  thresholds until corrected. Those rows are placeholders, not data.
-- `employer_cost_loading.vacation_percent` is one clinic-wide figure and
-  cannot express the ESA's 6% at five years of service. It understates cost
-  for long-service employees.
+  `hub_employee_profiles` does not record employment type. Wrong for every
+  part-time and casual employee, and it will produce wrong overtime thresholds
+  until corrected. Those rows are placeholders, not data.
+- `employer_cost_loading.vacation_percent` is one clinic-wide figure and cannot
+  express the ESA's 6% at five years of service. It understates cost for
+  long-service employees.
 - Contribution percentages are flat and ignore annual maxima. An employee past
   the CPP or EI ceiling costs less than this arithmetic says. Planning-grade,
   not books-grade.
-- Averaging agreements, the three-hour rule, and on-call rate rules are not
-  modelled. `pay_codes.ONCALL` defaults to 0.25 as a placeholder that must be
-  set deliberately before use.
+- Averaging agreements, the three-hour rule and on-call rules are not modelled.
+  `pay_codes.ONCALL` defaults to 0.25 as a placeholder that must be set
+  deliberately before use.
 - `public_holidays` is seeded through 2027 only. A missing year makes the
   holiday views silent rather than wrong, which is the intended failure mode,
   but it still needs a row added annually.
-- No UI. Section 67: a screen is not evidence that the layer beneath it works.
+- `client_sessions.scheduled_session_id` exists but nothing sets it yet. The
+  Run Session workspace needs to carry the booking through.
+- No UI for any of it. A screen is not evidence that the layer beneath works.

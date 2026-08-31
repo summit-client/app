@@ -72,16 +72,33 @@
 --   changing, but a baseline file is the wrong place to change it.
 
 -- ---------------------------------------------------------------------------
--- profiles
+-- profiles, and the user_role enum behind it
 --
--- Supabase projects usually create this alongside auth. 0001 ALTERs it to add
--- clinic_id and supervisor_id, so those live there, not here; this creates
--- only the pre-0001 shape.
+-- profiles.role is NOT text. It is a Postgres enum named user_role, which
+-- migration 0021 establishes beyond doubt: that migration is a single
+-- `alter type user_role add value 'supervisor'`, and its header records the
+-- live members it found — admin, scheduler, clinician, client, staff. Those
+-- five are what this creates; 0021 adds the sixth.
+--
+-- 'staff' is a retired role that is still a live enum member. Postgres has no
+-- clean way to drop a value from an enum, so retired-but-present values are
+-- normal. It is included here because production has it, not because anything
+-- should issue it. See the "One role vocabulary" section of CLAUDE.md.
+--
+-- 0001 ALTERs this table to add clinic_id and supervisor_id, so those live
+-- there, not here; this creates only the pre-0001 shape.
 -- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'user_role') then
+    create type user_role as enum ('admin', 'scheduler', 'clinician', 'client', 'staff');
+  end if;
+end $$;
+
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
-  role text,
+  role user_role,
   created_at timestamptz not null default now()
 );
 
@@ -104,8 +121,17 @@ create table if not exists clients (
   status text not null default 'active',   -- active | waitlist | inactive
   location_id bigint references locations(id),
   session_type text,                       -- the type this client is waitlisted for
+
+  -- The family's portal login. Required by auth_client_row_id() in migration
+  -- 0020, which is the whole basis of every client-role RLS policy:
+  --   select id from clients where user_id = auth.uid()
+  -- Nullable because most clients predate the portal and have no login.
+  user_id uuid references auth.users(id) on delete set null,
+
   created_at timestamptz not null default now()
 );
+create unique index if not exists clients_user_id_unique
+  on clients(user_id) where user_id is not null;
 
 -- ---------------------------------------------------------------------------
 -- staff · the scheduler's own roster, distinct from profiles.
