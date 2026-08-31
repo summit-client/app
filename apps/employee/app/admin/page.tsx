@@ -380,28 +380,41 @@ function InviteForm({
   return (
     <div className="card card-pad" style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, maxWidth: 420 }}>
       <b style={{ fontSize: "var(--text-sm)" }}>Invite a teammate</b>
+      {/* Real labels, not placeholders. A placeholder is not an accessible name
+          and it disappears the moment someone types, so a screen reader gets
+          nothing and a sighted person loses the only clue what the field was.
+          `.input` from components.css replaces four inline borders that read
+          `var(--border, #ccc)` — `--border` is not a token in this design
+          system, so every one of them resolved to that hardcoded grey and
+          ignored the palette, including in dark mode. */}
+      <label htmlFor="inv-name" className="sub">Full name</label>
       <input
-        type="text" placeholder="Full name" value={fullName}
+        id="inv-name" type="text" className="input" autoComplete="name"
+        placeholder="Full name" value={fullName}
         onChange={(e) => setFullName(e.target.value)}
-        style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ccc)" }}
       />
+      <label htmlFor="inv-email" className="sub">Email address</label>
       <input
-        type="email" placeholder="Email address" value={email}
+        id="inv-email" type="email" className="input" autoComplete="email"
+        placeholder="name@example.com" value={email}
         onChange={(e) => setEmail(e.target.value)}
-        style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ccc)" }}
       />
-      <select value={role} onChange={(e) => setRole(e.target.value as (typeof INVITE_ROLES)[number])}
-        style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ccc)" }}>
+      <label htmlFor="inv-role" className="sub">Role</label>
+      <select id="inv-role" className="input" value={role}
+        onChange={(e) => setRole(e.target.value as (typeof INVITE_ROLES)[number])}>
         {INVITE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
       </select>
       {role === "clinician" ? (
-        <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)}
-          style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ccc)" }}>
-          <option value="">No supervisor yet</option>
-          {people.filter((p) => p.accessLevel === "SUPERVISOR" || p.accessLevel === "ADMIN").map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+        <>
+          <label htmlFor="inv-supervisor" className="sub">Supervisor</label>
+          <select id="inv-supervisor" className="input" value={supervisorId}
+            onChange={(e) => setSupervisorId(e.target.value)}>
+            <option value="">No supervisor yet</option>
+            {people.filter((p) => p.accessLevel === "SUPERVISOR" || p.accessLevel === "ADMIN").map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </>
       ) : null}
       <button onClick={send} disabled={sending || !email.trim()} className="btn" style={{ alignSelf: "flex-start" }}>
         {sending ? "Sending\u2026" : "Send invite"}
@@ -456,30 +469,42 @@ function TeammateActions({
     }
   }
 
+  // One row per person, so every control here repeats down the table. Without
+  // the person's name in the accessible name, a screen reader announces "Edit
+  // button" a dozen times with nothing to tell them apart. The visible text
+  // stays short because the row it sits in supplies that context visually.
   if (!editing) {
     return (
       <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={() => setEditing(true)} disabled={busy} className="btn secondary">Edit</button>
-        <button onClick={deactivate} disabled={busy} className="btn secondary">Deactivate</button>
+        <button onClick={() => setEditing(true)} disabled={busy} className="btn secondary"
+          aria-label={`Edit ${person.name}`}>Edit</button>
+        <button onClick={deactivate} disabled={busy} className="btn secondary"
+          aria-label={`Deactivate ${person.name}`}>Deactivate</button>
       </div>
     );
   }
 
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      <select value={role} onChange={(e) => setRole(e.target.value)}>
+      <select className="input" style={{ width: "auto" }} value={role}
+        aria-label={`Role for ${person.name}`}
+        onChange={(e) => setRole(e.target.value)}>
         {INVITE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
       </select>
       {role === "clinician" ? (
-        <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)}>
+        <select className="input" style={{ width: "auto" }} value={supervisorId}
+          aria-label={`Supervisor for ${person.name}`}
+          onChange={(e) => setSupervisorId(e.target.value)}>
           <option value="">No supervisor</option>
           {people.filter((p) => p.id !== person.id && (p.accessLevel === "SUPERVISOR" || p.accessLevel === "ADMIN")).map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
       ) : null}
-      <button onClick={saveEdit} disabled={busy} className="btn">Save</button>
-      <button onClick={() => setEditing(false)} disabled={busy} className="btn secondary">Cancel</button>
+      <button onClick={saveEdit} disabled={busy} className="btn"
+        aria-label={`Save changes to ${person.name}`}>Save</button>
+      <button onClick={() => setEditing(false)} disabled={busy} className="btn secondary"
+        aria-label={`Cancel editing ${person.name}`}>Cancel</button>
     </div>
   );
 }

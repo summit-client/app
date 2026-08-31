@@ -98,7 +98,30 @@ app. The two Supabase vars are the anon URL/key, which are public by design.
 The one misuse found — the "Preview data" badge reading the raw flag without
 the `NODE_ENV` check — is fixed in this branch rather than logged here.
 
-### 7. PHI in logs, URLs and error messages
+### 7. Responsive breakpoints — no tiers needed, and adding them would be noise
+
+The brief points at `apps/client`'s `design-b.module.css` (1100/760/520 on top
+of the shared 820px drawer) as the reference. This app has only the 820px
+block, and after checking, that is correct rather than a gap:
+
+- Both grids in `app.css` use `repeat(auto-fill, minmax(...))`, which reflows
+  continuously. Fixed tiers would do nothing they do not already do.
+- No `gridTemplateColumns` anywhere in the TSX declares fixed columns.
+- No fixed width at or above 600px except the certificate itself
+  (`width: 1123` — A4 landscape), which is deliberately fixed and already sits
+  inside its own `.cert-scroll { overflow-x: auto }` container.
+- `.settings-nav` is the one fixed-width element (230px) and the existing 820px
+  block already collapses it.
+- All nine `<table className="data">` are already wrapped in
+  `.card table-wrap`, so they scroll inside themselves rather than pushing the
+  page body sideways. (I initially read this as nine unwrapped tables — the
+  wrapper is on the preceding line and a same-line grep missed it. Checked
+  before changing anything; no change was needed.)
+
+Adding three empty media queries to match another app's file would be
+cargo-culting. No change made.
+
+### 8. PHI in logs, URLs and error messages
 
 Two `console.warn` calls, both in audit-write failure paths
 (`lib/hub-backend.ts`, `lib/hr-backend.ts`), and both log a Supabase
