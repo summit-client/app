@@ -122,33 +122,44 @@ than an empty dropdown).
 
 ## 5. Click-to-create's calendar grid has no keyboard path of its own
 
-**Accessibility finding, not fixed this session - marked with a comment at
-the definition.** `TimeGrid.tsx`'s `DayColumn.handleColClick` derives the
-target time from `e.clientY`, a continuous pixel Y position with no
-discrete, focusable element per time slot. There is currently no way to
-invoke click-to-create, or reach a specific time in the grid, from the
-keyboard.
+**FIXED in the follow-up pass, plus the same treatment for existing session
+blocks.** `DayColumn` is now itself a tab stop (`role="slider"`,
+`aria-orientation="vertical"`) rather than only ever deriving a target time
+from `e.clientY`: arrow keys move a focused minute-offset in `snapMinutes`
+steps, Home/End jump to the start/end of the work day, and Enter/Space
+calls `onSlotClick` at the focused time - the same call a click already
+makes. `aria-valuetext` announces the focused time, and `aria-label`
+spells out the keys since plain `role="slider"` doesn't define an "Enter
+activates" convention on its own. The focus indicator reuses the drag-hover
+indicator's exact visual language (a highlighted line plus an exact time
+label) instead of inventing a second one, and a mouse click also updates
+the keyboard-focus position so Tab/arrow navigation afterward continues
+from wherever was just clicked.
 
-This is real, but narrower than "you can't book a session by keyboard":
-the Create wizard (the `calendar` -> `matchCount` -> ... -> time-picker
-steps in `pages/index.jsx`) is a fully keyboard-operable path to the same
-outcome that doesn't touch the calendar grid at all, and it's the primary
-path this app already steers most bookings through. What's missing is
-specifically click-to-create's shortcut (click an empty slot, get a
-pre-filled quick-create modal). Likewise, drag-to-reschedule uses native
-HTML5 drag-and-drop (mouse-only by definition) but already has a full
-keyboard-operable equivalent: `SessionDetail`'s "Reschedule" button opens
-`RescheduleModal`, which is entirely `<select>`/button-driven.
+While in the same file: `SessionBlock` (an existing session's block) and
+`StackedPill`'s collapsed multi-session pill and its expanded list rows
+were the identical shape of gap - plain `onClick` divs with no
+`tabIndex`/`role`/keydown at all, so an existing session could be seen but
+never opened, and a 2+ session stack could never be expanded, by keyboard.
+All three now have `tabIndex={0}`, `role="button"`, a real `aria-label`,
+and an Enter/Space handler equivalent to their click handler.
 
-Not fixed here because doing it properly means giving `TimeGrid` real
-per-slot focusable targets (or some other keyboard path into the same
-`onSlotClick`), which changes how the whole grid renders - a UI-visible
-change to exactly the component CLAUDE.md's "Scheduler calendar v2"
-history already flags as having caused a real, previously-undetected
-regression once (`e.target !== e.currentTarget` silently killing
-click-to-create entirely). This sandbox still has no Supabase credentials
-to render the app and verify a grid change live, the same limitation noted
-for that same component in this repo's own docs.
+The concern that held this back last pass (a UI-visible change to exactly
+the component CLAUDE.md's "Scheduler calendar v2" history flags as having
+caused a real, previously-undetected regression before - `e.target !==
+e.currentTarget` silently killing click-to-create entirely) still applies:
+this sandbox still has no Supabase credentials to click through the app in
+a browser. What changed here is the same as item 3 above - `tsc --noEmit`,
+a full `next build`, and a careful trace of every prior click/drag call
+site (`handleColClick`, `handleDragOver`, `handleDrop` all now share one
+`snappedOffsetFromY`/`timeFromMinuteOffset` pair instead of the old
+`timeFromY`, so their existing mouse/drag behavior is provably unchanged,
+not just "probably fine") gave enough confidence to make the change. Worth
+a deliberate look in a browser before this reaches production, same as any
+other unverified UI change in this pass - in particular, confirm Tab order
+through a day with several sessions reads sensibly, and that arrow-key
+time selection feels right on a touch/mobile layout where hover isn't a
+concept.
 
 ## 6. `apps/scheduler/dump.txt` and `index_dump.txt`
 
