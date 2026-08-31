@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { getPrograms, runSessionsFor } from "@/lib/data";
+import { getPrograms, hydrateClientHistory, runSessionsFor } from "@/lib/data";
 import { trendArrow } from "@/lib/mastery";
 import { blockEndingSoon, blockFor } from "@/lib/clinical-docs";
 import type { Program, RunSession } from "@/lib/types";
@@ -19,7 +19,10 @@ export default function ClientOverviewPage() {
 
   React.useEffect(() => {
     void getPrograms(clientId).then(setPrograms);
-    setSessions(runSessionsFor(clientId));
+    let cancelled = false;
+    hydrateClientHistory(clientId).catch(() => { /* best-effort — falls back to this device's own history */ })
+      .finally(() => { if (!cancelled) setSessions(runSessionsFor(clientId)); });
+    return () => { cancelled = true; };
   }, [clientId]);
 
   const active = programs.filter((p) => p.status === "active");
@@ -44,7 +47,7 @@ export default function ClientOverviewPage() {
       <div className="tiles">
         <div className="card tile"><div className="n">{active.length}</div><div className="l">Active goals</div></div>
         <div className="card tile"><div className="n">{mastered.length}</div><div className="l">Mastered / maintenance</div></div>
-        <div className="card tile"><div className="n">{completed.length}</div><div className="l">Sessions this device</div></div>
+        <div className="card tile"><div className="n">{completed.length}</div><div className="l">Sessions completed</div></div>
       </div>
 
       <h2 className="section-title">Goal snapshot</h2>
