@@ -71,15 +71,18 @@ export default function Home() {
     return () => io.disconnect()
   }, [])
 
-  // Simple count-up for the hero "2x faster" stat
-  const [multiplier, setMultiplier] = useState(0)
+  // Count-up for the hero's portal-count stat. Previously it counted to 2 for
+  // a "2x faster scheduling" claim; it counts to 5 now, which is the number of
+  // portals that actually exist (web, scheduler, data, client, employee) rather
+  // than a speed multiple nobody measured.
+  const [portalCount, setPortalCount] = useState(0)
   useEffect(() => {
     const duration = 900
     const start = performance.now()
     let raf: number
     const tick = (now: number) => {
       const progress = Math.min((now - start) / duration, 1)
-      setMultiplier(Math.round(progress * 2 * 10) / 10)
+      setPortalCount(Math.round(progress * 5))
       if (progress < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -171,10 +174,18 @@ export default function Home() {
   const badgeOpacity = useTransform(scrollYProgress, [0.10, 0.18], [1, 0])
   const sceneOpacity = useTransform(scrollYProgress, [0.88, 1], [1, 0])
 
+  // Three pills, one per portal the platform actually gives someone, rather
+  // than three scheduler features. PILL_COUNT above must stay at 3.
+  //
+  // The privacy pill previously read "HIPAA-ready". HIPAA is a US regime and
+  // does not bind this product: the anchor client is Canadian, so PHIPA
+  // (Ontario) and PIPEDA (federal) are what apply. See CLAUDE.md. Claiming the
+  // wrong regime on a public page is the kind of thing a buyer's compliance
+  // reviewer reads as not knowing which rules you are under.
   const PILLS = [
-    { glyph: '🤖', title: 'AI staff matching',    sub: 'Best-qualified and available, instantly' },
-    { glyph: '📅', title: 'Recurring schedules',  sub: 'Set once, built in bulk' },
-    { glyph: '🔒', title: 'HIPAA-ready',          sub: 'Encrypted, role-based access' },
+    { glyph: '🗓️', title: 'Schedule and deliver', sub: 'Matched, booked, recorded in the app' },
+    { glyph: '📈', title: 'Data to reports',      sub: 'Graphs and notes from what was recorded' },
+    { glyph: '🔒', title: 'PHIPA and PIPEDA',     sub: 'Per clinic access control throughout' },
   ]
 
   return (
@@ -217,9 +228,9 @@ export default function Home() {
                     fontWeight: 800, lineHeight: 1.15,
                     color: navy, marginBottom: '1.25rem',
                   }}>
-                    Scheduling that works<br />
-                    as hard as{' '}
-                    <span className="grad-text">your clinicians do.</span>
+                    Run the whole clinic,<br />
+                    not just{' '}
+                    <span className="grad-text">the calendar.</span>
                   </h1>
                 </FadeOut>
 
@@ -228,7 +239,7 @@ export default function Home() {
                     fontSize: '1.05rem', color: g700,
                     marginBottom: '2rem', maxWidth: 460, lineHeight: 1.75,
                   }}>
-                    Summit matches clients to the right staff automatically, eliminates double bookings, and builds your entire recurring schedule in minutes, not hours.
+                    Scheduling, session data, assessments, reports, the family portal, credentials and payroll, all on one record. Book a session and everything downstream follows from it.
                   </p>
                 </FadeOut>
 
@@ -270,10 +281,14 @@ export default function Home() {
 
               <FadeOut progress={scrollYProgress} start={0.22} active={!staticScene}>
                 <div className="an5" style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
-                  {[['×','faster scheduling'],['0','double bookings'],['AI','powered matching']].map(([v,l], i) => (
+                  {/* One stat per part of the platform, not three about the
+                      calendar. "1" is the actual claim being made: the session
+                      is recorded once and the note, the graph, the family
+                      statement and the timesheet all come from that record. */}
+                  {[['1','record, end to end'],['','portals, one login'],['0','double entry']].map(([v,l], i) => (
                     <div key={l}>
                       <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 800, color: navy }}>
-                        {i === 0 ? `${multiplier}${v}` : v}
+                        {i === 1 ? portalCount : v}
                       </div>
                       <div style={{ fontSize: '.78rem', color: g500, fontWeight: 500 }}>{l}</div>
                     </div>
@@ -410,19 +425,19 @@ export default function Home() {
             fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
             fontWeight: 800, color: navy, marginBottom: '.9rem', maxWidth: 580,
           }}>
-            Everything your clinic needs to run smoothly
+            One platform, from the first booking to the last payroll line
           </h2>
           <p style={{ fontSize: '1rem', color: g700, maxWidth: 540, marginBottom: '2.8rem' }}>
-            From intake to recurring sessions, Summit handles the complexity so your team stays focused on clients.
+            Most of this is work that usually takes three or four separate systems, plus the reconciliation between them.
           </p>
           <div className="grid-3" style={{ display: 'grid', gap: '1.25rem' }}>
             {[
-              { icon: '🤖', title: 'AI-Powered Staff Matching',       desc: 'Automatically matches each client to the best-qualified, available staff — factoring session type, availability, and location in seconds.' },
-              { icon: '📅', title: 'Smart Recurring Schedules',        desc: 'Set it once and Summit builds the full recurring calendar — weekly, biweekly, or custom — with zero manual entry required.' },
-              { icon: '🗓️', title: 'Visual Drag-and-Drop Calendar',   desc: 'See your full week at a glance. Drag sessions to reposition them, with real-time conflict detection keeping everything clean.' },
-              { icon: '👥', title: 'Multi-Portal Access',              desc: 'Dedicated views for admins, clinicians, and families. Everyone sees exactly what they need — nothing more.' },
-              { icon: '🔒', title: 'HIPAA-Ready Infrastructure',       desc: 'Built on enterprise-grade infrastructure with role-based access control and encrypted data at rest and in transit.' },
-              { icon: '📍', title: 'Multi-Location Support',           desc: 'Manage sessions across all your clinic locations from one dashboard. Staff, clients, and rooms all in one place.' },
+              { icon: '🗓️', title: 'Scheduling that matches',      desc: 'Matches each client to qualified, available staff and builds the recurring calendar, with conflict detection as you drag. Across every site you run.' },
+              { icon: '📝', title: 'Session data as it happens',  desc: 'Run the session in the app and record observations as they occur. Graphs and mastery are derived from that data, never typed in a second time.' },
+              { icon: '📈', title: 'Assessments and reports',     desc: 'ABLLS-R, AFLS, ADL and MOTAS scored in place. Reports are built from the evidence actually recorded, and a clinician signs every one.' },
+              { icon: '👪', title: 'A portal families use',       desc: 'Upcoming sessions, progress, signed notes, and a funding statement that reconciles: total budget, spent to date, and every charge behind it.' },
+              { icon: '🎓', title: 'Credentials and training',    desc: 'Onboarding, training records and certificates, with CEU tracking across BACB, CPBAO and IBA that counts one course toward each without inflating the total.' },
+              { icon: '🔒', title: 'Time, pay and privacy',       desc: 'Delivered sessions become hours and charges on their own, with overtime worked out over the declared work week as the ESA requires. Built for PHIPA and PIPEDA, with per clinic access control throughout.' },
             ].map((f, i) => (
               <div key={f.title} className="feature-card reveal" style={{
                 background: off, borderRadius: 16,
@@ -454,16 +469,16 @@ export default function Home() {
             fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
             fontWeight: 800, color: navy, marginBottom: '.9rem', maxWidth: 580,
           }}>
-            From intake to booked session in minutes
+            Record it once. Everything downstream follows.
           </h2>
           <p style={{ fontSize: '1rem', color: g700, maxWidth: 540, marginBottom: '2.8rem' }}>
-            No training required. Summit guides your admin through each step with a simple, guided flow.
+            The pieces fit because they are the same record, not four systems reconciled at month end.
           </p>
           <div className="grid-3" style={{ display: 'grid', gap: '2rem' }}>
             {[
-              { n: '1', title: 'Add your clients & staff',  desc: 'Enter client profiles and staff availability. Summit learns who can see who, and when — automatically.' },
-              { n: '2', title: 'Run AI matching',            desc: 'Tell Summit the session type and parameters. It surfaces the best matches instantly, colour-coded by availability.' },
-              { n: '3', title: 'Confirm & go',               desc: 'Review the proposed schedule, drag to adjust if needed, then confirm. Recurring sessions booked in bulk automatically.' },
+              { n: '1', title: 'Set the clinic up once',   desc: 'Clients, staff, sites, services and funding. Everything after this reads from it, so the same fact is never entered twice.' },
+              { n: '2', title: 'Deliver and record',       desc: 'Book the session, run it in the app, record what happened. That one act is the source for the note, the graph and the hours.' },
+              { n: '3', title: 'The rest follows',         desc: 'The family sees progress and a statement that adds up. The clinician has hours on a timesheet. The charge sits on the budget. Nobody re-keyed any of it.' },
             ].map((s, i) => (
               <div key={s.n} className="reveal" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', transitionDelay: `${i * 120}ms` }}>
                 <div style={{
