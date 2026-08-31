@@ -1,8 +1,8 @@
--- 0032 · Provisional data, and the readiness checks that gate a deploy
+-- 0033 · Provisional data, and the readiness checks that gate a deploy
 --
 -- THE PROBLEM
 --
--- Migration 0025's backfill writes an employment position for everyone in
+-- Migration 0026's backfill writes an employment position for everyone in
 -- hub_employee_profiles, and asserts `employment_type = 'full_time'` for all of
 -- them, because hub_employee_profiles does not record employment type and there
 -- is nothing to derive it from. The column has to be non-null for the
@@ -14,7 +14,7 @@
 -- failure is silent: every view returns a number, the number looks reasonable,
 -- and it is somebody's pay.
 --
--- 0025's own comment says these rows are placeholders awaiting a pass by
+-- 0026's own comment says these rows are placeholders awaiting a pass by
 -- someone who knows the roster. A comment in a migration file is not a control.
 -- This makes it one.
 --

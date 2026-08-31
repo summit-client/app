@@ -1,4 +1,4 @@
--- 0026 · Activity codes and pay codes
+-- 0027 · Activity codes and pay codes
 --
 -- THE TWO VOCABULARIES, AND WHY THEY ARE TWO
 --
@@ -18,7 +18,7 @@
 --
 -- Keeping them separate is what lets one time entry carry both, and lets the
 -- two be resolved by different rules — an activity code is chosen by the
--- person recording the work, a pay code is DERIVED by the ESA rules in 0027
+-- person recording the work, a pay code is DERIVED by the ESA rules in 0028
 -- and is not the employee's to pick.
 --
 -- BILLABILITY IS AN ACTIVITY PROPERTY, NOT A PAY PROPERTY
@@ -48,7 +48,7 @@ create table if not exists activity_codes (
 
   -- Billable to a client's funding. When true, a time entry using this code
   -- must name a client; when false, naming one is meaningless. Enforced on
-  -- the time entry in 0027.
+  -- the time entry in 0028.
   billable boolean not null default false,
   requires_client boolean not null default false,
 

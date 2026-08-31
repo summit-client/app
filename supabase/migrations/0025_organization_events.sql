@@ -1,4 +1,4 @@
--- 0024 · The organization event stream
+-- 0025 · The organization event stream
 --
 -- WHAT IT IS FOR
 --
@@ -18,7 +18,7 @@
 --   for 31. Which of the three moved, when, and who moved it?
 --
 -- This table is the one place those are answerable. Modules keep their own
--- tables; they additionally emit here, and every derived view in 0025-0028
+-- tables; they additionally emit here, and every derived view in 0026-0029
 -- reads from here rather than from a status column somebody has to remember
 -- to update.
 --

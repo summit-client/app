@@ -1,6 +1,6 @@
 # Deploying the workforce branch
 
-`feat/client-budget-and-credential-numbers` — migrations `0000` and `0022`–`0032`.
+`feat/client-budget-and-credential-numbers` — migrations `0000` and `0023`–`0033`.
 
 Read this end to end before running anything. Three of these migrations are not
 ordinary: one runs out of order, two cannot run alongside anything else, and one
@@ -19,8 +19,8 @@ Run these as read-only queries against production and keep the output. Two of
 them decide whether step 4 is safe.
 
 ```sql
--- a. Row security posture on the tables 0031 touches.
---    Expected: all true. If any is false, 0031 is a real change, not a no-op —
+-- a. Row security posture on the tables 0032 touches.
+--    Expected: all true. If any is false, 0032 is a real change, not a no-op —
 --    read step 4 before continuing.
 select relname, relrowsecurity
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -34,7 +34,7 @@ select relname, relrowsecurity
 select policyname, cmd, qual, with_check
   from pg_policies where schemaname = 'public' and tablename = 'profiles';
 
--- c. The live user_role enum members, which 0000 asserts and 0029 extends.
+-- c. The live user_role enum members, which 0000 asserts and 0030 extends.
 select enumlabel from pg_enum e
   join pg_type t on t.oid = e.enumtypid
  where t.typname = 'user_role' order by e.enumsortorder;
@@ -68,7 +68,7 @@ rebuilt environment will diverge from production in a way nothing else catches.
 ## 2. Apply, in this order
 
 Take a backup first. Supabase's point-in-time restore is the rollback plan for
-everything except `0021` and `0029`; see step 5.
+everything except `0021` and `0030`; see step 5.
 
 ### 2a. `0000`, out of order
 
@@ -83,28 +83,28 @@ Every statement in `0000` is `if not exists`, so against production this writes
 nothing. Recording it is the point: it puts the repo and the live history in
 agreement, and it is what lets anyone build a database from this repo at all.
 
-### 2b. `0022` through `0028`, `0030`, `0032` — ordinary
+### 2b. `0023` through `0029`, `0031`, `0033` — ordinary
 
 ```bash
 supabase db push
 ```
 
-### 2c. `0029` — alone
+### 2c. `0030` — alone
 
 `alter type ... add value` cannot run in the same transaction as anything that
 uses the new value. `0021` carries the same warning and for the same reason.
 
 ```bash
-psql "$PRODUCTION_URL" -f supabase/migrations/0029_add_hr_and_payroll_roles.sql
+psql "$PRODUCTION_URL" -f supabase/migrations/0030_add_hr_and_payroll_roles.sql
 ```
 
 If `supabase db push` batches it with neighbours and fails, this is why. Run it
 by itself, then re-run the push.
 
-### 2d. `0031` — the one that can take access away
+### 2d. `0032` — the one that can take access away
 
 Read step 4 first. If pre-flight (a) and (b) came back the way this file expects
-— row security already on, profiles already carrying policies — then `0031`'s
+— row security already on, profiles already carrying policies — then `0032`'s
 first half is a no-op and its second half replaces hand-made policies with
 recorded ones. That still deserves a staging run.
 
@@ -134,9 +134,9 @@ real profile.
 
 ---
 
-## 4. The `0031` risk, stated plainly
+## 4. The `0032` risk, stated plainly
 
-`0031` enables row security on nine tables and adds policies to `profiles`.
+`0032` enables row security on nine tables and adds policies to `profiles`.
 
 **What the evidence says.** Migration `0014`'s header reports a clinician's
 `getClients()` returning "a plain, RLS-filtered empty array" — the reported
@@ -149,17 +149,17 @@ repository does not reproduce production**, not that production is open.
 
 **What to do if pre-flight disagrees.** If (a) shows row security off on the
 eight scheduler tables, then production has been open to any authenticated user
-across all clinics, and `0031` is a security fix to apply urgently — but
+across all clinics, and `0032` is a security fix to apply urgently — but
 carefully, because turning row security on immediately starts enforcing policies
 that have never been exercised. Apply to staging, run through every portal, then
 production during a quiet window.
 
 **If (b) returns no policies on `profiles` at all**, that is the serious case.
 Every portal's auth gate reads `profiles`, and the moment row security comes on,
-only what `0031` permits keeps working. `0031`'s policies are written to cover
+only what `0032` permits keeps working. `0032`'s policies are written to cover
 every read the applications actually make — own row, and clinic peers for the
 team screens — but verify against staging with real data before production. The
-`0031` migration refuses to enable row security on any table with no policies at
+`0032` migration refuses to enable row security on any table with no policies at
 all, so it will stop rather than lock everyone out.
 
 ---
@@ -168,13 +168,13 @@ all, so it will stop rather than lock everyone out.
 
 Everything except the two enum migrations rolls back by point-in-time restore.
 
-`0021` and `0029` do not. **Postgres cannot remove a value from an enum.** If
+`0021` and `0030` do not. **Postgres cannot remove a value from an enum.** If
 you roll back past them, the values stay. That is harmless — an unused enum
 member costs nothing, and `0021` documents the same situation for the retired
 `staff` role — but it means the enum is not a clean revert. Nothing else depends
 on it.
 
-`0031` rolls back with `alter table ... disable row level security`, which
+`0032` rolls back with `alter table ... disable row level security`, which
 restores the previous posture exactly. Do that only as an emergency measure and
 with the understanding that it reopens whatever it was closing.
 
@@ -191,8 +191,8 @@ record names a `staff_id`, delivered sessions cannot become hours, and
 names side by side because the mismatch is the thing worth checking; software
 matching on names would eventually pay one person for another's hours.
 
-**Confirm employment terms.** `0025`'s backfill wrote `full_time` for everyone
-because `hub_employee_profiles` does not record employment type. `0032` marks
+**Confirm employment terms.** `0026`'s backfill wrote `full_time` for everyone
+because `hub_employee_profiles` does not record employment type. `0033` marks
 every one of those rows provisional, and `employee_week_economics` returns null
 cost for them rather than a plausible wrong figure. Someone who knows the roster
 has to set the real employment type, standard hours and FTE. Query:

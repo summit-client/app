@@ -128,16 +128,16 @@ These are never violated regardless of what a task seems to ask for:
 ## One role vocabulary
 
 `profiles.role` is `admin | supervisor | clinician | scheduler | client`, plus
-`hr_admin` and `payroll_admin` added by migration `0023`. That is what migration
+`hr_admin` and `payroll_admin` added by migration `0024`. That is what migration
 `0001` documents on the column and what `auth_role()` / `auth_is_staff()` read.
 
-**Roles are no longer the unit of permission.** Migration `0023` added
+**Roles are no longer the unit of permission.** Migration `0024` added
 `auth_can('domain.object.verb')`, resolved from a per-clinic role/action matrix
 with per-user exceptions. New tables gate on actions, not on role names; the
 existing policies still compare role names and are being moved over one table
 at a time, which is why both forms are in the schema right now.
 
-The `0023` seed reproduces every existing role's access exactly, so the two
+The `0024` seed reproduces every existing role's access exactly, so the two
 forms agree today. If you change the seed, you are changing who can do what.
 
 **There is no `staff` role.** The scheduler used to declare one; it was retired
@@ -154,7 +154,7 @@ for schedulers. Scheduler still maps to `HubRole.EMPLOYEE` everywhere else
 in that portal (`session.ts`) — self-service hub screens only, never
 blanket supervisor power over other people's records; the Admin console
 grant is the one deliberate exception, not a role promotion. Migration
-`0022` (applied live 2026-08-31) widened `hub_can_manage()` to
+`0023` (applied live 2026-08-31) widened `hub_can_manage()` to
 `auth_role() in ('admin', 'scheduler')` so the console's queues actually
 return data for a scheduler instead of rendering empty (the
 `ACCESS.employee` "renders and shows nothing" trap this same section's
@@ -444,7 +444,7 @@ generic "Edge Function returned a non-2xx status code" message that hid
 the real reason an invite/edit/deactivate call was rejected (PR #93,
 `hr-backend.ts`'s `describeFunctionError()`); and schedulers having no
 access to `apps/employee` at all, now scoped specifically to the Admin
-console (PR #94, migration `0022` — applied live — widened
+console (PR #94, migration `0023` — applied live — widened
 `hub_can_manage()`, see "One role vocabulary" above).
 
 - **`invite-teammate` does not check whether the invited email already has a

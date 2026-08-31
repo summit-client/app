@@ -1,4 +1,4 @@
--- 0025 · The employment record
+-- 0026 · The employment record
 --
 -- THE PROBLEM THIS SOLVES
 --
@@ -40,7 +40,7 @@
 --
 -- WHAT IT DOES NOT ADD
 --
--- No compensation. Not an oversight: pay rates live in 0028 with the rest of
+-- No compensation. Not an oversight: pay rates live in 0029 with the rest of
 -- the money, behind finance actions, so that the HR read which shows a title
 -- and an FTE does not also show a salary. Someone who administers onboarding
 -- has no business seeing what a colleague earns, and the cheapest way to
@@ -260,7 +260,7 @@ where r.end_date is null;
 
 -- The lookup the rest of the platform actually needs: given a scheduler staff
 -- id, who is this as a login, and the reverse. Every hours, utilization and
--- payroll query in 0026-0028 goes through here rather than matching on names.
+-- payroll query in 0027-0029 goes through here rather than matching on names.
 create or replace view employment_identity as
 select
   r.clinic_id,
@@ -278,7 +278,7 @@ left join profiles pr on pr.id = r.user_id;
 -- ---------------------------------------------------------------------------
 -- RLS
 --
--- Own record always readable. Anyone else's needs the HR boundary from 0023.
+-- Own record always readable. Anyone else's needs the HR boundary from 0024.
 -- Writes need hr.record.write, which no clinical role holds.
 -- ---------------------------------------------------------------------------
 alter table employment_records enable row level security;

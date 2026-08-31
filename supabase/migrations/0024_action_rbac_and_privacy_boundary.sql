@@ -1,4 +1,4 @@
--- 0023 · Action-based permissions, and a real boundary between HR and clinical
+-- 0024 · Action-based permissions, and a real boundary between HR and clinical
 --
 -- WHAT IS WRONG WITH THE CURRENT MODEL
 --
@@ -38,7 +38,7 @@
 -- loses access to their own data on a Friday. The mechanism lands first,
 -- seeded to be a no-op; policies move over table by table, each with its own
 -- migration and its own verification. New tables from here on use auth_can()
--- from the start, which is what migrations 0024-0028 do.
+-- from the start, which is what migrations 0025-0029 do.
 --
 -- The one place it does act immediately is the HR/clinical boundary, because
 -- that one is a live confidentiality problem rather than a structural
@@ -92,6 +92,7 @@ insert into permission_actions (action, domain, label, description, exposes_phi,
 
   -- hr
   ('hr.self.read',                'hr',         'View my own HR record',     'Every employee holds this over their own file.', false, false),
+  ('hr.hub.manage',               'hr',         'Run the hub queues',        'Work the onboarding, PD, certificate and time-off queues for the clinic.', false, true),
   ('hr.record.read',              'hr',         'View HR records',           'Read another employee''s HR file.', false, true),
   ('hr.record.write',             'hr',         'Edit HR records',           'Amend employment, credential and document records.', false, true),
   ('hr.performance.read',         'hr',         'View performance',          'Read scorecards, reviews and development plans.', false, true),
@@ -239,6 +240,12 @@ select null, 'clinician', action, true from permission_actions
    'clinical.report.generate',
    'scheduling.calendar.read',
    'hr.self.read',
+   -- Only ever true together with an actual supervisory relationship, which is
+   -- what hub_can_manage's third branch tests. A clinician with someone
+   -- reporting to them has always been able to manage that person's records
+   -- (migration 0006), and a clinician with nobody reporting to them still
+   -- cannot manage anybody's.
+   'hr.performance.read',
    'finance.budget.read')
 on conflict do nothing;
 
@@ -250,12 +257,16 @@ select null, 'scheduler', action, true from permission_actions
  where action in (
    'scheduling.calendar.read','scheduling.session.book',
    'scheduling.availability.write','scheduling.catalogue.write',
-   'hr.self.read')
+   'hr.self.read',
+   -- Migration 0022 widened hub_can_manage to admit scheduler so the Employee
+   -- Hub's Admin console has something to show. Carried here so the rewrite
+   -- above preserves it instead of silently taking it back.
+   'hr.hub.manage')
 on conflict do nothing;
 
 -- client: nothing in this catalogue. A family's access is not an action they
 -- perform on the organization's data; it is a read of their own file, and the
--- client-role policies in 0020 and 0022 express it directly.
+-- client-role policies in 0020 and 0023 express it directly.
 insert into role_permissions (clinic_id, role, action, granted)
 select null, 'client', action, false from permission_actions
 on conflict do nothing;
@@ -265,7 +276,7 @@ on conflict do nothing;
 insert into role_permissions (clinic_id, role, action, granted)
 select null, 'hr_admin', action, true from permission_actions
  where action in (
-   'hr.self.read','hr.record.read','hr.record.write',
+   'hr.self.read','hr.hub.manage','hr.record.read','hr.record.write',
    'hr.performance.read','hr.performance.write',
    'hr.timesheet.approve','hr.timeoff.approve',
    'admin.staff.manage','admin.audit.read')
@@ -304,14 +315,19 @@ on conflict do nothing;
 -- whole point of the seeding above. Checked case by case against the seed:
 --
 --   admin          holds hr.record.read            -> true, as before
+--   scheduler      holds hr.hub.manage              -> true, which is what
+--                                                     migration 0022 granted
+--                                                     it and this must not
+--                                                     take back
 --   supervisor     holds hr.performance.read, and
 --                  the supervisor_id test is kept  -> true for their own
 --                                                     supervisees, as before
---   clinician      holds neither                   -> false, as before
---   scheduler      holds neither                   -> false, as before
+--   clinician      same                            -> true for their own
+--                                                     supervisees and nobody
+--                                                     else, as before
 --   hr_admin       holds hr.record.read            -> true (new role, the
 --                                                     reason for the change)
---   payroll_admin  holds neither                   -> false
+--   payroll_admin  holds none of the three         -> false
 --
 -- Every policy in 0006 and 0007 that calls hub_can_manage keeps working
 -- unchanged and now means something a new role can satisfy. None of those
@@ -322,22 +338,31 @@ on conflict do nothing;
 create or replace function public.hub_can_manage(subject uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
   select
-    -- Whoever holds the HR record action, for anyone in their clinic.
-    (public.auth_can('hr.record.read')
+    -- Whoever runs the hub's own queues — onboarding, PD, certificates, time
+    -- off — for anyone in their clinic. This is the branch that carries
+    -- migration 0022's grant to scheduler.
+    (public.auth_can('hr.hub.manage')
      and exists (select 1 from public.profiles p
                   where p.id = subject and p.clinic_id = public.auth_clinic_id()))
-    -- Or this person's own supervisor, holding the performance action. A
-    -- supervisor reading their supervisee's development plan is the job; the
-    -- same supervisor reading a colleague's is not, and never was.
+    -- Or whoever administers HR records generally.
+    or (public.auth_can('hr.record.read')
+        and exists (select 1 from public.profiles p
+                     where p.id = subject and p.clinic_id = public.auth_clinic_id()))
+    -- Or this person's own supervisor. A supervisor reading their supervisee's
+    -- development plan is the job; the same person reading a colleague's is
+    -- not, and never was. Note this branch is about who reports to whom, not
+    -- about holding the 'supervisor' ROLE: a clinician with someone reporting
+    -- to them has always had this, and still does.
     or (public.auth_can('hr.performance.read')
         and exists (select 1 from public.profiles p
                      where p.id = subject and p.supervisor_id = auth.uid()));
 $$;
 
 comment on function public.hub_can_manage(uuid) is
-  'Whether the caller may manage the named employee''s HR records. Redefined in '
-  '0023 from role names to actions; behaviour is identical for admin, supervisor, '
-  'clinician and scheduler, and now extends to HR-specific roles.';
+  'Whether the caller may manage the named employee''s hub and HR records. '
+  'Redefined in 0024 from role names to actions. Behaviour is identical to '
+  'migration 0022''s version for admin, scheduler, supervisor and clinician, and '
+  'now extends to the HR-specific roles.';
 
 -- The same test, phrased for tables added from here on. hub_can_manage answers
 -- "may I administer this person's file"; this answers "may I read it", which

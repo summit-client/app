@@ -334,7 +334,7 @@ await check("two pay rates cannot be effective at once", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0031 · profiles, and the privilege-escalation guard
+// 0032 · profiles, and the privilege-escalation guard
 // --------------------------------------------------------------------------
 await check("a person reads their own profile and their clinic's, not another clinic's", async () => {
   await as(aClin, async () => {

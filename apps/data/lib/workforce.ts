@@ -4,7 +4,7 @@
  * 1. Linking a scheduler `staff` row to a login. Sessions are booked against
  *    the first and every HR, credential and pay record hangs off the second,
  *    and until one employment record says they are the same person, hours
- *    cannot be attributed and nothing downstream computes. Migration 0025
+ *    cannot be attributed and nothing downstream computes. Migration 0026
  *    explains why this cannot be inferred: names are not unique, are not
  *    always spelled the same in both systems, and a wrong match pays one
  *    person for another's hours.

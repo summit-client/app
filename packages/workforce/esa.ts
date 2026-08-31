@@ -1,8 +1,8 @@
 /**
  * Ontario Employment Standards Act derivations.
  *
- * This is the same arithmetic as the views in migration 0027 and the rate
- * functions in 0028, written a second time in TypeScript. Two implementations
+ * This is the same arithmetic as the views in migration 0028 and the rate
+ * functions in 0029, written a second time in TypeScript. Two implementations
  * of one rule is normally a defect; here it is deliberate, for two reasons:
  *
  *   The screen has to show an employee their week as they enter it, before

@@ -85,7 +85,7 @@ const client = (await one(
   `insert into clients (name, status, clinic_id) values ('Test Child','active','${clinic}') returning id`)).id;
 
 // --------------------------------------------------------------------------
-// 0023 · permission resolution
+// 0024 · permission resolution
 // --------------------------------------------------------------------------
 await check("auth_can grants what the role's seed grants", async () => {
   await be(people.clinician);
@@ -141,7 +141,7 @@ await check("an action cannot expose PHI and HR confidences at once", async () =
 });
 
 // --------------------------------------------------------------------------
-// 0023 · the HR boundary, via hub_can_manage
+// 0024 · the HR boundary, via hub_can_manage
 // --------------------------------------------------------------------------
 await check("hub_can_manage: behaviour preserved for the pre-existing roles", async () => {
   await be(people.admin);
@@ -151,6 +151,37 @@ await check("hub_can_manage: behaviour preserved for the pre-existing roles", as
   eq((await one(`select public.hub_can_manage('${people.admin}') g`)).g, false, "supervisor manages a non-supervisee");
   await be(people.clinician);
   eq((await one(`select public.hub_can_manage('${people.supervisor}') g`)).g, false, "clinician manages anyone");
+});
+
+await check("hub_can_manage: 0022's grant to scheduler survives the rewrite", async () => {
+  // Migration 0022 (on main) widened hub_can_manage to admit scheduler so the
+  // Employee Hub's Admin console has something to show. 0024 redefines the same
+  // function in terms of actions, and would silently take that back if the
+  // scheduler seed did not carry hr.hub.manage. This is the test that says so.
+  const u = (await one(`insert into auth.users (email) values ('sched@t.test') returning id`)).id;
+  await db.exec(`insert into profiles (id, full_name, role, clinic_id)
+                 values ('${u}','sched','scheduler','${clinic}')`);
+  await be(u);
+  eq((await one(`select public.hub_can_manage('${people.clinician}') g`)).g, true, "scheduler manages");
+  // And it is scoped to the hub, not widened into employment or pay records.
+  eq((await one(`select public.auth_can('hr.record.read') g`)).g, false, "scheduler reads HR records");
+  eq((await one(`select public.auth_can('finance.payroll.read') g`)).g, false, "scheduler reads pay");
+  eq((await one(`select public.auth_can('clinical.client.read') g`)).g, false, "scheduler reads clients");
+});
+
+await check("hub_can_manage: a clinician who supervises someone keeps their access", async () => {
+  // 0006's version was `admin or supervises subject`, so a CLINICIAN with
+  // someone reporting to them has always had this. The action rewrite must not
+  // quietly narrow it to the 'supervisor' role.
+  const u = (await one(`insert into auth.users (email) values ('leadclin@t.test') returning id`)).id;
+  await db.exec(`insert into profiles (id, full_name, role, clinic_id)
+                 values ('${u}','lead','clinician','${clinic}')`);
+  const rep = (await one(`insert into auth.users (email) values ('reports@t.test') returning id`)).id;
+  await db.exec(`insert into profiles (id, full_name, role, clinic_id, supervisor_id)
+                 values ('${rep}','reports','clinician','${clinic}','${u}')`);
+  await be(u);
+  eq((await one(`select public.hub_can_manage('${rep}') g`)).g, true, "own supervisee");
+  eq((await one(`select public.hub_can_manage('${people.admin}') g`)).g, false, "a non-supervisee");
 });
 
 await check("hub_can_manage: the new HR role now works, which is the point", async () => {
@@ -167,7 +198,7 @@ await check("auth_may_read_hr_of always allows your own file", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0024 · the event stream
+// 0025 · the event stream
 // --------------------------------------------------------------------------
 await check("organization_events is append-only", async () => {
   await db.exec(`insert into organization_events
@@ -196,7 +227,7 @@ await check("an unknown event type is refused", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0025 · employment
+// 0026 · employment
 // --------------------------------------------------------------------------
 const staffId = (await one(
   `insert into staff (name, clinic_id) values ('Test Clinician','${clinic}') returning id`)).id;
@@ -242,7 +273,7 @@ await check("current_employment derives scheduled weekly hours", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0027 · the ESA overtime split — the same cases as esa.test.ts
+// 0028 · the ESA overtime split — the same cases as esa.test.ts
 // --------------------------------------------------------------------------
 const codeId = async (code) =>
   (await one(`select id from activity_codes where code='${code}' and clinic_id is null`)).id;
@@ -332,7 +363,7 @@ await check("time cannot be recorded outside the employment", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0027 · timesheets
+// 0028 · timesheets
 // --------------------------------------------------------------------------
 const period = (await one(
   `insert into pay_periods (clinic_id, starts_on, ends_on) values ('${clinic}','2026-03-08','2026-03-21') returning id`)).id;
@@ -374,7 +405,7 @@ await check("an entry on an approved timesheet cannot be edited or deleted", asy
 });
 
 // --------------------------------------------------------------------------
-// 0028 · rates
+// 0029 · rates
 // --------------------------------------------------------------------------
 await check("a pay rate resolves, and a salary reduces over 52 weeks", async () => {
   await db.exec(`insert into pay_rates (clinic_id, employment_id, basis, amount, effective_from, change_reason)
@@ -418,7 +449,7 @@ await check("minimum wage compliance reports rather than blocks", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0022 · budgets
+// 0023 · budgets
 // --------------------------------------------------------------------------
 await check("budget position is derived from entries", async () => {
   const b = (await one(`insert into client_budgets
@@ -445,7 +476,7 @@ await check("a reconciled entry cannot have its money edited", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0030 · delivered session -> time entry -> budget charge
+// 0031 · delivered session -> time entry -> budget charge
 // --------------------------------------------------------------------------
 const stype = (await one(
   `insert into session_types (name, duration, price, clinic_id)
@@ -540,11 +571,11 @@ await check("derivation writes correlated events, and they cannot be edited", as
 });
 
 // --------------------------------------------------------------------------
-// 0032 · provisional data refuses to be priced
+// 0033 · provisional data refuses to be priced
 // --------------------------------------------------------------------------
 await check("a backfilled position is marked provisional, an entered one is not", async () => {
   // The employment used throughout this file was created with created_by null,
-  // the same shape the 0025 backfill produces, so it is marked provisional.
+  // the same shape the 0026 backfill produces, so it is marked provisional.
   const r = await one(`select provisional from employment_positions
                         where employment_id='${employment}' order by effective_from limit 1`);
   eq(r.provisional, true, "backfilled position");
@@ -611,7 +642,7 @@ await check("deployment_readiness reports the checks that are outstanding", asyn
   const rows = (await db.query(`select check_name, outstanding, passing, why from deployment_readiness`)).rows;
   if (rows.length < 6) throw new Error(`expected the full checklist, got ${rows.length} rows`);
   const rls = rows.find((r) => r.check_name === "Row security active");
-  eq(rls.outstanding, 0, "inert policies after 0031");
+  eq(rls.outstanding, 0, "inert policies after 0032");
   eq(rls.passing, true, "row security check");
   // Every row explains itself; a checklist of bare booleans is not a checklist.
   if (rows.some((r) => !r.why || r.why.length < 20)) throw new Error("a check has no explanation");

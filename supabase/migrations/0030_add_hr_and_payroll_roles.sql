@@ -1,12 +1,12 @@
--- 0029 · Add 'hr_admin' and 'payroll_admin' to the user_role enum
+-- 0030 · Add 'hr_admin' and 'payroll_admin' to the user_role enum
 --
 -- Found by executing the migration history rather than by reading it.
 --
--- Migration 0023 seeds a permission matrix for two new roles, and
+-- Migration 0024 seeds a permission matrix for two new roles, and
 -- role_permissions.role is a text column, so those seeds insert happily. What
 -- they do not do is make the roles assignable: profiles.role is the user_role
 -- enum, and an enum will not accept a value it does not have. Without this
--- migration, 0023's hr_admin and payroll_admin rows are a matrix for roles
+-- migration, 0024's hr_admin and payroll_admin rows are a matrix for roles
 -- nobody can hold — every one of them unreachable, in exactly the way 0021
 -- describes 'supervisor' having been unreachable for months.
 --
@@ -15,7 +15,7 @@
 -- the same warning for the same reason. `if not exists` makes it safe to
 -- re-run.
 --
--- The permissions these roles carry are defined in 0023, not here:
+-- The permissions these roles carry are defined in 0024, not here:
 --
 --   hr_admin       employment records, credentials, performance, timesheet
 --                  and time-off approval, staff administration. No clinical

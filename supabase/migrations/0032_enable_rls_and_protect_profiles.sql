@@ -1,4 +1,4 @@
--- 0031 · Enable RLS where policies were written but row security never turned on
+-- 0032 · Enable RLS where policies were written but row security never turned on
 --
 -- WHAT WAS FOUND
 --

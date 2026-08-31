@@ -140,7 +140,7 @@ create unique index if not exists clients_user_id_unique
 -- nothing joins them. profiles is the identity (an auth user, a role, a
 -- supervisor); staff is a schedulable resource (a name, a capacity, a set of
 -- specialties). A person who both logs in and gets booked has a row in each
--- with no link between them. Migration 0025 introduces the employment record
+-- with no link between them. Migration 0026 introduces the employment record
 -- that finally reconciles the two; this file only records the shape as it
 -- stands.
 -- ---------------------------------------------------------------------------

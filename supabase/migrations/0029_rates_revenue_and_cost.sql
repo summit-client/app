@@ -1,4 +1,4 @@
--- 0028 · Rates, revenue and cost
+-- 0029 · Rates, revenue and cost
 --
 -- The money layer, and the last piece the workforce work needs. Three rate
 -- kinds, deliberately separate:
@@ -352,7 +352,7 @@ left join minimum_wage_rates m
 -- Pay rates are the most confidential thing in the schema. Own rate, or a
 -- payroll action. Not HR: an HR administrator maintaining onboarding records
 -- has no automatic business knowing what colleagues earn, and the two actions
--- are separate in 0023 precisely so this policy can say so.
+-- are separate in 0024 precisely so this policy can say so.
 -- ---------------------------------------------------------------------------
 alter table billing_rates enable row level security;
 alter table pay_rates enable row level security;

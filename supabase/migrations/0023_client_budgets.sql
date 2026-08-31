@@ -1,4 +1,4 @@
--- 0022 · Client budgets and the statement ledger
+-- 0023 · Client budgets and the statement ledger
 --
 -- Funding-source agnostic by design. A budget is an amount of money made
 -- available to a client for a period, whatever its origin: a government

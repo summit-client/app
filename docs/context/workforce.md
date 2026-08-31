@@ -1,6 +1,6 @@
 # Workforce, OBM and payroll — the schema layer
 
-Migrations `0000` and `0023`–`0028`, plus `packages/workforce`.
+Migrations `0000` and `0024`–`0029`, plus `packages/workforce`.
 
 This document is written to be read before anyone builds a screen on top of
 this layer, and specifically before anyone reports it as finished. The last
@@ -11,12 +11,12 @@ section is the honest status.
 | Migration | What it establishes |
 |---|---|
 | `0000` | Baseline DDL for the eight scheduler tables that predate the migration history. Makes `supabase db reset` possible for the first time. No-op against production. |
-| `0023` | Action-based permissions: `auth_can('domain.object.verb')`, a per-clinic role/action matrix, per-user exceptions, and the HR/clinical boundary redefined in terms of actions. |
-| `0024` | `organization_events`: one append-only stream that crosses module boundaries, with a fixed reviewed catalogue of event types. |
-| `0025` | The employment record — the row that finally says a scheduler `staff` resource and a `profiles` login are the same employment. Effective-dated positions, leaves, ESA continuous service. |
-| `0026` | Activity codes (what was done) and pay codes (how it is paid), kept separate. Ontario public holidays as data. |
-| `0027` | Time entries, timesheets, the declared work week, and the ESA overtime split as a derived view. |
-| `0028` | Billing rates, pay rates, employer cost loading; revenue and cost derived per entry and per week. |
+| `0024` | Action-based permissions: `auth_can('domain.object.verb')`, a per-clinic role/action matrix, per-user exceptions, and the HR/clinical boundary redefined in terms of actions. |
+| `0025` | `organization_events`: one append-only stream that crosses module boundaries, with a fixed reviewed catalogue of event types. |
+| `0026` | The employment record — the row that finally says a scheduler `staff` resource and a `profiles` login are the same employment. Effective-dated positions, leaves, ESA continuous service. |
+| `0027` | Activity codes (what was done) and pay codes (how it is paid), kept separate. Ontario public holidays as data. |
+| `0028` | Time entries, timesheets, the declared work week, and the ESA overtime split as a derived view. |
+| `0029` | Billing rates, pay rates, employer cost loading; revenue and cost derived per entry and per week. |
 
 ## The four decisions worth knowing
 
@@ -46,7 +46,7 @@ entered: a duration, a rate, an allocation.
 
 `auth_can()` actions carry `exposes_phi` and `exposes_hr_confidential`, and a
 constraint forbids an action carrying both. `hub_can_manage()` — which every
-HR policy from `0006` and `0007` already called — is redefined in `0023` from
+HR policy from `0006` and `0007` already called — is redefined in `0024` from
 role names to actions, so an HR administrator can exist who reads employment
 files and no PHI, and a clinical role can exist that reads PHI and no
 colleague's HR file.
@@ -103,23 +103,23 @@ Six defects that reading it had not. The last two are the ones that mattered.
    The `0000` baseline had `text`, which builds a database that looks right and
    then rejects `0021`.
 2. **`clients.user_id` was missing from the baseline.** `auth_client_row_id()`
-   reads it, so every client-portal policy in `0020` and `0022` rests on it.
-3. **`hr_admin` and `payroll_admin` were unassignable.** `0023` seeded a matrix
-   for two roles the enum could not hold. Fixed by `0029`.
+   reads it, so every client-portal policy in `0020` and `0023` rests on it.
+3. **`hr_admin` and `payroll_admin` were unassignable.** `0024` seeded a matrix
+   for two roles the enum could not hold. Fixed by `0030`.
 4. **`budget_entries.session_id` referenced the wrong table**, and
-   `client_sessions` had no link to `sessions` at all. Both corrected in `0030`.
+   `client_sessions` had no link to `sessions` at all. Both corrected in `0031`.
 5. **Thirty-nine policies across eight tables were inert.** Migration `0013`
    writes every policy for `clients`, `staff`, `sessions`, `calendars`,
    `locations`, `session_types` and both availability tables, and never runs
    `alter table ... enable row level security`. A policy on a table without row
-   security is not consulted. Fixed by `0031`.
+   security is not consulted. Fixed by `0032`.
 6. **`profiles` had no policies and no row security**, making
    `update profiles set role = 'admin' where id = auth.uid()` a straight
-   privilege escalation. Fixed by `0031`, with a trigger for the part RLS
+   privilege escalation. Fixed by `0032`, with a trigger for the part RLS
    cannot express: `profiles_self_update` has to let a person edit their own
    row, and without the guard that includes their own role.
 
-On 5 and 6, read `0031`'s header before assuming production is open. Migration
+On 5 and 6, read `0032`'s header before assuming production is open. Migration
 `0014`'s own account of the "empty caseload" bug is only possible if row
 security IS active on `clients` there, so the likely truth is schema drift —
 the repo does not reproduce production — rather than a live hole. `docs/DEPLOY.md`
@@ -145,7 +145,7 @@ step 1 is the query that settles it.
   That is the intended behaviour — it refuses to guess which login a scheduler
   resource belongs to — but it means the derivation does nothing useful until
   someone works through `underived_sessions` and links them.
-- The `0025` backfill asserts `full_time` for everyone, because
+- The `0026` backfill asserts `full_time` for everyone, because
   `hub_employee_profiles` does not record employment type. Wrong for every
   part-time and casual employee, and it will produce wrong overtime thresholds
   until corrected. Those rows are placeholders, not data.
@@ -177,7 +177,7 @@ the kind rather than being typed, because a credit entered as a charge
 reconciles to the wrong number in the direction nobody checks.
 
 **Settings → Workforce** (`apps/data/components/settings/workforce.tsx`). The
-staff-to-login linking screen migration `0025` calls for, and the derivation
+staff-to-login linking screen migration `0026` calls for, and the derivation
 queue. Where a scheduler name differs from the person's name, both are shown
 rather than the difference being hidden behind a confirmation. A scheduler
 record already claimed by someone else does not appear in the list.

@@ -1,8 +1,8 @@
--- 0030 · Delivered session -> time entry -> budget charge
+-- 0031 · Delivered session -> time entry -> budget charge
 --
 -- THE GAP THIS CLOSES
 --
--- After 0022 through 0028 the platform can hold budgets, time and rates, and
+-- After 0023 through 0029 the platform can hold budgets, time and rates, and
 -- can derive hours, overtime, revenue and cost from them. Nothing writes the
 -- atoms. `time_entries` and `budget_entries` have no producer, so every view
 -- built on them returns an empty set forever, and the family dashboard shows a
@@ -33,7 +33,7 @@
 --
 -- If the session's staff member has no employment record linked to their
 -- scheduler row, there is nobody to attribute the hours to. It says so and
--- writes nothing. That is the staff_id/user_id gap 0025 describes, and the
+-- writes nothing. That is the staff_id/user_id gap 0026 describes, and the
 -- correct behaviour here is to surface it, not to pick a plausible employee.
 --
 -- If no billing rate resolves for the day, the charge is not written at a
@@ -45,20 +45,20 @@
 --
 -- 1. budget_entries.session_id pointed at the WRONG TABLE.
 --
--- 0022 declared it `references client_sessions(id)`. client_sessions is the
+-- 0023 declared it `references client_sessions(id)`. client_sessions is the
 -- clinical workspace record — the thing a clinician opens to run a session and
 -- record observations. `sessions` is the scheduler's booking: it is what has a
 -- date, a type, a duration and a delivered status, and it is the billable
--- unit. time_entries.session_id in 0027 already points at `sessions`, so as
+-- unit. time_entries.session_id in 0028 already points at `sessions`, so as
 -- shipped the two halves of one derivation referenced two different tables and
 -- no single session could satisfy both.
 --
--- Corrected here rather than by editing 0022, because 0022 has been pushed and
+-- Corrected here rather than by editing 0023, because 0023 has been pushed and
 -- may already have been applied somewhere.
 --
 -- 2. client_sessions and sessions are not linked to each other AT ALL.
 --
--- The same class of gap as staff/profiles that 0025 closed, and it was
+-- The same class of gap as staff/profiles that 0026 closed, and it was
 -- invisible until something tried to use both. A clinician runs a session in
 -- the workspace and nothing records which booking it was. So:
 --
@@ -87,7 +87,7 @@ create index if not exists client_sessions_scheduled_idx
 
 comment on column client_sessions.scheduled_session_id is
   'The scheduler booking this clinical session was run against. Null for sessions '
-  'started without a booking, and for every row predating migration 0030.';
+  'started without a booking, and for every row predating migration 0031.';
 
 -- One charge per session, the same way there is one time entry per session.
 create unique index if not exists budget_entries_one_per_session
@@ -145,7 +145,7 @@ begin
   end if;
 
   -- Who worked it. The staff_id -> employment link is the one thing this
-  -- cannot invent; see 0025.
+  -- cannot invent; see 0026.
   select r.id into employment
     from public.employment_records r
    where r.staff_id = s.employee_id

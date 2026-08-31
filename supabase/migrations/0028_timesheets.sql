@@ -1,4 +1,4 @@
--- 0027 · Time entries, timesheets and the work week
+-- 0028 · Time entries, timesheets and the work week
 --
 -- THE SHAPE
 --
@@ -316,7 +316,7 @@ create trigger time_entries_approval_guard
 -- What this does NOT do, stated so nobody assumes it: it does not allocate
 -- overtime to particular entries. An hour of overtime in a week where the
 -- employee worked at two different rates has to be paid at a blended regular
--- rate under the ESA, and that blending needs the rates in 0028. This view
+-- rate under the ESA, and that blending needs the rates in 0029. This view
 -- produces the HOURS; the money is computed there.
 -- ---------------------------------------------------------------------------
 create or replace view employee_work_weeks as
