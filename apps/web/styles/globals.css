@@ -147,6 +147,59 @@ html { scroll-behavior: smooth; }
   to   { transform: translateX(-50%); }
 }
 
+/* ── Hero scroll scene (structural, breakpoint-driven) ──
+   These properties used to be chosen in JS by an `isMobile` state that
+   starts `false` (to match server-rendered HTML) and flips after a
+   `matchMedia` check runs in a `useEffect`. That flip lands ~1 render tick
+   after hydration, so on a phone the page briefly laid out as the 320vh
+   pinned-scroll desktop scene (2-column grid squeezed into the viewport)
+   and then collapsed to the real mobile stack - confirmed live: hero
+   height went from 2700px to 1039px within ~100ms of load on a 390px
+   viewport, a huge, visible reflow. CSS media queries apply during the
+   very first paint, before any JS runs, so moving the breakpoint-sensitive
+   properties here removes the reflow entirely. `isMobile` in index.tsx now
+   only chooses which *scroll-linked motion values* (opacity/rotate driven
+   by scrollYProgress) apply on top of this already-correct layout - a
+   cosmetic decision, never a layout one. */
+.hero-bg { position: relative; height: 320vh; }
+@media (max-width: 780px) {
+  .hero-bg { height: auto; }
+}
+
+.hero-sticky {
+  position: sticky; top: 64px; height: calc(100vh - 64px);
+  display: flex; align-items: center; overflow: hidden; padding: 0 2rem;
+}
+@media (max-width: 780px) {
+  .hero-sticky {
+    position: static; height: auto; overflow: visible;
+    padding: 96px 1.25rem 2.5rem;
+  }
+}
+
+.hero-grid {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center;
+  perspective: 1500px;
+}
+@media (max-width: 780px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 2.5rem; perspective: none; }
+}
+
+/* Feature pills fly in on top of the fading copy on desktop; on mobile the
+   copy never fades (see `staticScene` in index.tsx) so they'd just sit
+   permanently on top of it instead - hidden here rather than left unmounted,
+   so there's no conditional-render flash to match either. */
+.hero-pills {
+  position: absolute; left: 0; right: 0; top: 0;
+  display: flex; flex-direction: column; gap: 1.1rem;
+  pointer-events: none; z-index: 2;
+  perspective: 1200px; transform-style: preserve-3d;
+}
+@media (max-width: 780px) {
+  .hero-pills { display: none; }
+}
+
 /* Pseudo-elements */
 .hero-bg::after {
   content: '';
