@@ -97,14 +97,7 @@ export default function Appointments(
           </p>
         </header>
 
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 8,
-            marginBottom: 20,
-          }}
-        >
+        <div className={styles.filters}>
           {(["All", "Scheduled", "Completed", "Cancelled"] as const).map(
             (option) => (
               <button
@@ -112,20 +105,9 @@ export default function Appointments(
                 onClick={() => setFilter(option)}
                 type="button"
                 aria-pressed={filter === option}
-                style={{
-                  padding: "9px 14px",
-                  borderRadius: 10,
-                  border:
-                    filter === option
-                      ? "1px solid #173f5f"
-                      : "1px solid #cddde4",
-                  background:
-                    filter === option ? "#173f5f" : "#ffffff",
-                  color:
-                    filter === option ? "#ffffff" : "#365468",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
+                className={`${styles.filterButton} ${
+                  filter === option ? styles.filterButtonActive : ""
+                }`}
               >
                 {option}
               </button>
@@ -133,65 +115,28 @@ export default function Appointments(
           )}
         </div>
 
-        <section
-          style={{
-            display: "grid",
-            gap: 12,
-          }}
-        >
+        <section className={styles.apptList}>
           {filteredSessions.length === 0 ? (
-            <div
-              style={{
-                padding: 24,
-                background: "#ffffff",
-                border: "1px solid #d4e2e8",
-                borderRadius: 14,
-                color: "#607987",
-              }}
-            >
-              No appointments scheduled.
-            </div>
+            <div className={styles.apptEmpty}>No appointments scheduled.</div>
           ) : (
             filteredSessions.map((session) => {
               const status = normalizeStatus(session.status, session.session_date, todayDateStr);
               const clinicianName = session.staff?.[0]?.name;
+              // Reuses the dashboard's own status pill classes (same
+              // confirmed/cancelled/completed tokens as design-b.tsx's
+              // statusClass()) instead of a second hardcoded colour map -
+              // "scheduled" maps to the same green as the dashboard's
+              // default case.
+              const statusClassName = status === "scheduled" ? "confirmed" : status;
 
               return (
-                <article
-                  key={session.id}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1fr) auto",
-                    gap: 16,
-                    alignItems: "center",
-                    padding: 18,
-                    background: "#ffffff",
-                    border: "1px solid #d4e2e8",
-                    borderRadius: 14,
-                    boxShadow: "0 8px 24px rgba(20, 60, 80, 0.04)",
-                  }}
-                >
+                <article key={session.id} className={styles.apptCard}>
                   <div>
-                    <strong
-                      style={{
-                        display: "block",
-                        marginBottom: 6,
-                        color: "#173247",
-                        fontSize: 15,
-                      }}
-                    >
+                    <strong className={styles.apptTitle}>
                       {session.type || "Session"}
                     </strong>
 
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 12,
-                        color: "#607987",
-                        fontSize: 12,
-                      }}
-                    >
+                    <div className={styles.apptMeta}>
                       <span>
                         {formatSessionDate(session.session_date)} ·{" "}
                         {formatSessionTime(session.hour, session.minute)}
@@ -202,25 +147,8 @@ export default function Appointments(
                   </div>
 
                   <span
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      background:
-                        status === "completed"
-                          ? "#e8edf0"
-                          : status === "cancelled"
-                          ? "#fbe9e7"
-                          : "#dff6eb",
-                      color:
-                        status === "completed"
-                          ? "#60717b"
-                          : status === "cancelled"
-                          ? "#a14b43"
-                          : "#237960",
-                      fontSize: 11,
-                      fontWeight: 800,
-                      textTransform: "capitalize",
-                    }}
+                    className={`${styles.status} ${styles[statusClassName]}`}
+                    style={{ textTransform: "capitalize" }}
                   >
                     {status}
                   </span>
