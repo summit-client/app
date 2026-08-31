@@ -97,24 +97,31 @@ provider configured (Dashboard → Authentication → Emails) for
 either function - the functions succeed either way (the row gets written)
 even if the email silently doesn't arrive.
 
-**The invite email itself (2026-08-30): custom template committed, not yet
-confirmed live.** The platform default - bare "You have been invited" /
-"Accept the invite" text, no branding, no greeting, no styling - was
-confirmed to be what recipients actually received (a real invite
-screenshotted and reported as reading like spam). Replaced with
-`supabase/templates/invite.html`, wired via `[auth.email.template.invite]`
-in `config.toml`; `invite-teammate` now also passes `full_name`/`role` as
-invite metadata so the template can greet the person by name and name the
-role, degrading gracefully to generic copy when either is absent.
-`config.toml` changes need the same caveat already on `verify_jwt` above:
-**unconfirmed whether they reach this project at all** without a working
-`supabase link` + a declarative config push, which nothing in this repo's
-history has done yet. Until that's confirmed, the actual live template is
-whatever's in the Dashboard (Authentication → Email Templates → "Invite
-user") - paste `supabase/templates/invite.html`'s rendered HTML and the
-`config.toml` subject there directly, the same manual path that already
-worked for deploying the three Edge Functions when the CLI wasn't
-available.
+**The invite email itself (2026-08-30, confirmed live 2026-08-31).** The
+platform default - bare "You have been invited" / "Accept the invite"
+text, no branding, no greeting, no styling - was confirmed to be what
+recipients actually received (a real invite screenshotted and reported as
+reading like spam). Replaced with `supabase/templates/invite.html`;
+`invite-teammate` also passes `full_name`/`role` as invite metadata so the
+template can greet the person by name and name the role, degrading
+gracefully to generic copy when either is absent.
+
+As predicted, `config.toml`'s `[auth.email.template.invite]` did **not**
+reach the live project on its own - same unconfirmed-declarative-config-push
+gap as `verify_jwt` above. What actually made it live: the rendered HTML
+pasted directly into Dashboard → Authentication → Email Templates → "Invite
+user", and the updated `invite-teammate/index.ts` (the `full_name`/`role`
+metadata) redeployed via the same self-contained-Dashboard-paste path
+Edge Functions already use (see above) - `config.toml` stays the
+declarative source of truth for whenever CLI config push gets sorted, but
+until then, both of those need the manual step. Confirmed working
+end-to-end 2026-08-31: a fresh test invite rendered the branded template
+with the invitee's name in the greeting. Also confirmed: this project has
+a real SMTP provider configured for Auth (not Supabase's default/shared
+mailer, which was the other live suspect for the earlier "landed in spam"
+report) - if a future invite lands in spam again, the cause is elsewhere
+(content, sender domain reputation drift, recipient-side filtering), not a
+missing SMTP config.
 
 **`provision-clinic` has no UI** (deliberate - see `docs/context/decisions.md`
 and `product.md`): it creates a brand-new clinic and its first admin, gated
@@ -205,6 +212,29 @@ over as SQL for a human to run, exactly as before. New MCP servers require a
 one-time trust prompt on session start, and env var changes don't reach an
 already-running session's container - both need a fresh session to take
 effect.
+
+**A correctly-set token is not enough on its own (2026-08-31).** Confirmed
+live: with `SUPABASE_ACCESS_TOKEN` set and correctly formatted, the server
+still connected with zero usable tools - `ToolSearch` returned nothing for
+every query, even though the server's own MCP instructions loaded fine.
+Root cause, confirmed by running the server binary directly and sending it
+a raw `tools/list` request: `@supabase/mcp-server-supabase` calls
+`https://api.supabase.com` for everything (org lookups, `list_tables`,
+`execute_sql`, all of it - checked the package source, it's hardcoded, no
+flag changes it), and this environment's outbound network policy defaults
+to **Trusted**, which does not include `api.supabase.com` - the proxy
+rejects the connection with a 403 before the token is ever checked. The
+fix is in the Claude Code environment's own settings, not `.mcp.json` or
+the token: **Network access → Custom**, add `api.supabase.com` and
+`*.supabase.co` to **Allowed domains**, and check "also include default
+list of common package managers" (unchecking it would break `npx`/`pnpm`
+installs, which the Trusted default otherwise covers). Changes apply only
+to *new* sessions - an already-running session needs to be replaced, not
+just reconfigured, same as the env-var-changes caveat above. So: if
+`ToolSearch` for "supabase" comes back empty, check the environment's
+network access level before assuming the token or `.mcp.json` is the
+problem - that used to be the first guess, and in the case that motivated
+this note, it was the wrong one.
 
 ## Env files
 
