@@ -14,6 +14,30 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Summit brand palette - the same literal hex values pages/index.tsx's
+     own consts (`navy`/`teal`/`g100`/`g500`/`g700`/`off`) already use, and
+     the landing page's inline styles still read from those JS consts
+     rather than these tokens - retrofitting that is a larger, separate
+     change. These exist so anything CSS-only (the auth pages below, and
+     any future CSS-based work) has one canonical source instead of a third
+     copy of the same hex codes. Text-use teal (`--brand-teal-ink`) is
+     already darkened from the decorative `--brand-teal` for WCAG AA at
+     small sizes - see the identical note in index.tsx.
+     Colours only, unchanged from what already ships. */
+  --brand-navy: #1A3F5C;
+  --brand-teal: #28B4A6;
+  --brand-teal-2: #21798A;
+  --brand-teal-ink: #1C7A70;
+  --brand-gray-100: #EEF3F6;
+  --brand-gray-500: #57748A;
+  --brand-gray-700: #3D5A6A;
+  --brand-off: #F7FAFB;
+  --brand-error: #B3261E;
+  --brand-error-bg: #FDECEC;
+  --brand-error-border: #F5C6C6;
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'Hanken Grotesk', sans-serif;
 }
 
 html,
@@ -39,6 +63,18 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Site-wide keyboard focus indicator. Nothing here ever removed the
+   browser default outline, so keyboard focus was never literally invisible
+   - but the default varies by browser (a plain blue halo in some, barely
+   visible against light backgrounds in others) and nothing on-brand was
+   defined. More specific rules (`.auth-input:focus-visible` etc.) still win
+   on specificity, so this only fills the gap for plain links/buttons that
+   don't have their own - the public nav's links, the marquee, footer links. */
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--brand-teal);
+  outline-offset: 2px;
 }
 
 /* ── Landing page additions ── */
@@ -101,18 +137,33 @@ html { scroll-behavior: smooth; }
   .pubnav-inner { padding: 0 16px !important; }
 }
 
-/* Features / How-it-works: both sections use this for their 3-up card grid,
-   plain inline gridTemplateColumns fixed at repeat(3,1fr) with nothing to
-   override it on a phone - each card had well under 120px to work with. */
+/* ── Responsive scheme for the marketing sections below the hero ──
+   Matches apps/client's design-b.module.css 3-tier breakpoints (1100/760/
+   520, layered under the hero/nav's own already-tuned 780px cutover above -
+   see that rule's comment for why 780 stays as-is) rather than the ad hoc
+   900/640 this file used before. */
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .grid-3 { grid-template-columns: repeat(2, 1fr); }
 }
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .grid-3 { grid-template-columns: 1fr; }
 }
 .feature-card         { transition: transform .2s, box-shadow .2s; }
 .feature-card:hover   { transform: translateY(-5px); box-shadow: 0 16px 44px rgba(26,63,92,.1) !important; }
+
+/* Shared section padding rhythm - was a flat `88px 2rem` inline on every
+   section regardless of viewport, which can't respond to a media query at
+   all. Tapers at the same 1100/760/520 tiers as the grid above. */
+.landing-section { padding: 88px 2rem; }
+@media (max-width: 1100px) { .landing-section { padding: 72px 2rem; } }
+@media (max-width: 760px)  { .landing-section { padding: 56px 1.5rem; } }
+@media (max-width: 520px)  { .landing-section { padding: 44px 1.25rem; } }
+
+.landing-section-lg { padding: 100px 2rem; }
+@media (max-width: 1100px) { .landing-section-lg { padding: 80px 2rem; } }
+@media (max-width: 760px)  { .landing-section-lg { padding: 60px 1.5rem; } }
+@media (max-width: 520px)  { .landing-section-lg { padding: 48px 1.25rem; } }
 
 .btn-primary { transition: transform .2s ease, box-shadow .2s ease; }
 .btn-primary:hover {
@@ -147,6 +198,59 @@ html { scroll-behavior: smooth; }
   to   { transform: translateX(-50%); }
 }
 
+/* ── Hero scroll scene (structural, breakpoint-driven) ──
+   These properties used to be chosen in JS by an `isMobile` state that
+   starts `false` (to match server-rendered HTML) and flips after a
+   `matchMedia` check runs in a `useEffect`. That flip lands ~1 render tick
+   after hydration, so on a phone the page briefly laid out as the 320vh
+   pinned-scroll desktop scene (2-column grid squeezed into the viewport)
+   and then collapsed to the real mobile stack - confirmed live: hero
+   height went from 2700px to 1039px within ~100ms of load on a 390px
+   viewport, a huge, visible reflow. CSS media queries apply during the
+   very first paint, before any JS runs, so moving the breakpoint-sensitive
+   properties here removes the reflow entirely. `isMobile` in index.tsx now
+   only chooses which *scroll-linked motion values* (opacity/rotate driven
+   by scrollYProgress) apply on top of this already-correct layout - a
+   cosmetic decision, never a layout one. */
+.hero-bg { position: relative; height: 320vh; }
+@media (max-width: 780px) {
+  .hero-bg { height: auto; }
+}
+
+.hero-sticky {
+  position: sticky; top: 64px; height: calc(100vh - 64px);
+  display: flex; align-items: center; overflow: hidden; padding: 0 2rem;
+}
+@media (max-width: 780px) {
+  .hero-sticky {
+    position: static; height: auto; overflow: visible;
+    padding: 96px 1.25rem 2.5rem;
+  }
+}
+
+.hero-grid {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center;
+  perspective: 1500px;
+}
+@media (max-width: 780px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 2.5rem; perspective: none; }
+}
+
+/* Feature pills fly in on top of the fading copy on desktop; on mobile the
+   copy never fades (see `staticScene` in index.tsx) so they'd just sit
+   permanently on top of it instead - hidden here rather than left unmounted,
+   so there's no conditional-render flash to match either. */
+.hero-pills {
+  position: absolute; left: 0; right: 0; top: 0;
+  display: flex; flex-direction: column; gap: 1.1rem;
+  pointer-events: none; z-index: 2;
+  perspective: 1200px; transform-style: preserve-3d;
+}
+@media (max-width: 780px) {
+  .hero-pills { display: none; }
+}
+
 /* Pseudo-elements */
 .hero-bg::after {
   content: '';
@@ -161,6 +265,19 @@ html { scroll-behavior: smooth; }
   0%, 100% { transform: translate(0,0) scale(1); }
   50%      { transform: translate(-24px,28px) scale(1.06); }
 }
+/* Final CTA: white text over the brand gradient failed AA at the gradient's
+   lighter (teal) end - measured 2.57:1 for the heading and 2.04:1 for the
+   paragraph against #28B4A6, both well under the 3:1/4.5:1 AA needs. A flat
+   30% black scrim (not a new hue - same gradient underneath, just darkened)
+   brings the worst case to 4.9:1 for white text everywhere the gradient can
+   land, checked against all three of its stops. */
+#trial::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.3);
+  pointer-events: none;
+}
+
 .testi-bg::before {
   content: '"';
   position: absolute;
@@ -181,4 +298,119 @@ html { scroll-behavior: smooth; }
     opacity: 1 !important;
     transform: none !important;
   }
+}
+
+/* ── Auth pages (login / signup / forgot-password / update-password) ──
+   Shared by AuthCard and the four page components. Inline styles can't
+   express :focus-visible, :hover or :disabled, so the actual form controls
+   live here instead of following the landing page's inline-style
+   convention - needed for real focus indicators and touch targets. */
+.auth-shell {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 6rem 1.5rem 3rem; background: var(--brand-off);
+  font-family: var(--font-body);
+}
+.auth-card {
+  width: 100%; max-width: 400px;
+  display: flex; flex-direction: column; gap: 1.5rem;
+  background: #fff; border: 1px solid var(--brand-gray-100); border-radius: 16px;
+  padding: 2.25rem 2rem;
+  box-shadow: 0 24px 64px rgba(26,63,92,.10), 0 4px 16px rgba(26,63,92,.05);
+}
+.auth-title {
+  font-family: var(--font-display); font-size: 1.5rem; font-weight: 800;
+  color: var(--brand-navy); margin: 0 0 .4rem;
+}
+.auth-subtitle { font-size: .9rem; color: var(--brand-gray-500); margin: 0; line-height: 1.5; }
+
+.auth-form { display: flex; flex-direction: column; gap: 1.15rem; }
+.auth-field { display: flex; flex-direction: column; gap: .4rem; }
+.auth-label {
+  font-family: var(--font-display); font-size: .82rem; font-weight: 700;
+  color: var(--brand-gray-700);
+}
+.auth-input-wrap { position: relative; display: flex; }
+.auth-input {
+  width: 100%; padding: .75rem .85rem; font-size: .95rem;
+  border: 1px solid #D7E1E7; border-radius: 8px;
+  font-family: var(--font-body); color: var(--brand-navy); background: #fff;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.auth-input::placeholder { color: var(--brand-gray-500); }
+.auth-input-wrap:has(.auth-toggle-visibility) .auth-input { padding-right: 2.5rem; }
+.auth-input:focus-visible {
+  outline: none; border-color: var(--brand-teal);
+  box-shadow: 0 0 0 3px rgba(40,180,166,.18);
+}
+.auth-input[aria-invalid="true"] { border-color: var(--brand-error); }
+.auth-input[aria-invalid="true"]:focus-visible {
+  border-color: var(--brand-error); box-shadow: 0 0 0 3px rgba(179,38,30,.14);
+}
+.auth-field-error {
+  font-size: .78rem; color: var(--brand-error); margin: 0;
+  display: flex; gap: .35rem; align-items: flex-start; line-height: 1.4;
+}
+.auth-form-error {
+  font-size: .85rem; color: var(--brand-error); background: var(--brand-error-bg);
+  border: 1px solid var(--brand-error-border); border-radius: 8px;
+  padding: .7rem .85rem; margin: 0; line-height: 1.5;
+}
+.auth-form-success {
+  font-size: .85rem; color: #1E6B3E; background: #EAF7EF;
+  border: 1px solid #C8E9D4; border-radius: 8px;
+  padding: .7rem .85rem; margin: 0; line-height: 1.5;
+}
+
+.auth-toggle-visibility {
+  position: absolute; right: .35rem; top: 50%; transform: translateY(-50%);
+  width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; cursor: pointer;
+  color: var(--brand-gray-500);
+}
+.auth-toggle-visibility:hover { color: var(--brand-navy); background: var(--brand-gray-100); }
+.auth-toggle-visibility:focus-visible {
+  outline: 2px solid var(--brand-teal); outline-offset: 1px;
+}
+
+.auth-submit {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: .55rem;
+  padding: .85rem 1rem; border: none; border-radius: 8px;
+  background: linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%);
+  color: #fff; font-family: var(--font-display); font-weight: 700; font-size: .95rem;
+  cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+}
+.auth-submit:hover:not(:disabled) {
+  transform: translateY(-1px); box-shadow: 0 8px 20px rgba(26,63,92,.25);
+}
+.auth-submit:focus-visible { outline: 2px solid var(--brand-navy); outline-offset: 2px; }
+.auth-submit:disabled { cursor: not-allowed; opacity: .72; }
+
+.auth-spinner {
+  width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+  animation: auth-spin .7s linear infinite;
+}
+@keyframes auth-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .auth-spinner { animation-duration: 1.4s; }
+}
+
+.auth-links {
+  display: flex; flex-wrap: wrap; gap: .5rem 1rem; justify-content: space-between;
+  font-size: .82rem; color: var(--brand-gray-500);
+}
+.auth-link { color: var(--brand-teal-ink); font-weight: 600; }
+.auth-link:hover { text-decoration: underline; }
+.auth-link:focus-visible { outline: 2px solid var(--brand-teal); outline-offset: 2px; border-radius: 2px; }
+
+.auth-back-link {
+  font-size: .85rem; color: var(--brand-gray-500); font-weight: 500;
+  display: inline-flex; align-items: center; gap: .35rem; align-self: flex-start;
+}
+.auth-back-link:hover { color: var(--brand-navy); }
+.auth-back-link:focus-visible { outline: 2px solid var(--brand-teal); outline-offset: 2px; border-radius: 2px; }
+
+@media (max-width: 520px) {
+  .auth-shell { padding: 5rem 1rem 2.5rem; }
+  .auth-card { padding: 1.75rem 1.35rem; }
 }
