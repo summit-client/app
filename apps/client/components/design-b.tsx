@@ -2,6 +2,10 @@ import Head from "next/head";
 import Link from "next/link";
 import Sidebar from "./Sidebar";
 import { MobileNavChrome } from "./mobile-nav-chrome";
+import { ProgramStatusBadge } from "./program-status-badge";
+import { formatClinicDate } from "../lib/clinic-date";
+import { formatStatus } from "../lib/format-status";
+import type { Program } from "../lib/program-display";
 import styles from "../styles/design-b.module.css";
 
 type IconName =
@@ -33,12 +37,10 @@ export type DashboardSession = {
   status: string | null;
 };
 
-export type DashboardProgram = {
-  id: string;
-  name: string;
-  domain: string | null;
-  status: string;
-};
+/** Kept under its original exported name so existing importers
+ *  (pages/index.tsx) don't need to change - the type itself now lives in
+ *  lib/program-display.ts, shared with pages/progress.tsx. */
+export type DashboardProgram = Program;
 
 /** `body` mirrors session_notes.body's shape (migration 0001) - only
  *  familyUpdate is ever shown here. perProgram/abcNarrative/planNext are
@@ -65,9 +67,14 @@ type DesignBProps = {
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
+  sessionsCount: number;
+  sessionsError: boolean;
   programs: DashboardProgram[];
+  programsError: boolean;
   soapNotes: DashboardSoapNote[];
+  soapNotesError: boolean;
   budget: DashboardBudget | null;
+  budgetError: boolean;
 };
 
 function formatMoney(amount: number, currency = "CAD"): string {
@@ -196,9 +203,14 @@ export default function DesignB({
   familyName,
   clientName,
   sessions,
+  sessionsCount,
+  sessionsError,
   programs,
+  programsError,
   soapNotes,
+  soapNotesError,
   budget,
+  budgetError,
 }: DesignBProps) {
   const masteredCount = programs.filter((p) => p.status === "mastered").length;
   const activeGoalsCount = programs.filter((p) => p.status !== "mastered" && p.status !== "archived").length;
@@ -248,7 +260,14 @@ export default function DesignB({
 
               <div>
                 <div className={styles.metricValue}>
-                  {sessions.length}
+                  {/* "—" (matching ComingSoonMetric's own convention for
+                      "we don't actually have this number") rather than 0 -
+                      a failed fetch and a genuinely empty schedule aren't
+                      the same fact and shouldn't render identically.
+                      sessionsCount, not sessions.length - the list below
+                      is capped to a handful for the preview, but the tile
+                      should show the true upcoming count. */}
+                  {sessionsError ? "—" : sessionsCount}
                 </div>
 
                 <div className={styles.metricLabel}>
@@ -268,7 +287,7 @@ export default function DesignB({
 
               <div>
                 <div className={styles.metricValue}>
-                  {masteredCount}
+                  {programsError ? "—" : masteredCount}
                 </div>
 
                 <div className={styles.metricLabel}>
@@ -288,7 +307,7 @@ export default function DesignB({
 
               <div>
                 <div className={styles.metricValue}>
-                  {activeGoalsCount}
+                  {programsError ? "—" : activeGoalsCount}
                 </div>
 
                 <div className={styles.metricLabel}>
@@ -308,7 +327,23 @@ export default function DesignB({
           </section>
 
           <section className={styles.dashboardGrid}>
-            {budget ? (
+            {/* A failed budget read must not look like "you have no budget".
+                Money is the one figure on this page a family will act on, and
+                a silent zero is worse here than anywhere else — this follows
+                the same error-before-empty order the sessions, programs and
+                notes cards use. */}
+            {budgetError ? (
+              <article className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <div>
+                    <h2>Funding</h2>
+                  </div>
+                </div>
+                <div style={{ padding: "20px 0", color: "#607987" }}>
+                  Couldn&apos;t load your funding details. Try refreshing the page.
+                </div>
+              </article>
+            ) : budget ? (
               <article className={styles.card}>
                 <div className={styles.cardHeader}>
                   <div>
@@ -382,7 +417,16 @@ export default function DesignB({
               </div>
 
               <div className={styles.sessionList}>
-                {sessions.length === 0 ? (
+                {sessionsError ? (
+                  <div
+                    style={{
+                      padding: "20px 0",
+                      color: "#607987",
+                    }}
+                  >
+                    Couldn&apos;t load your sessions. Try refreshing the page.
+                  </div>
+                ) : sessions.length === 0 ? (
                   <div
                     style={{
                       padding: "20px 0",
@@ -466,9 +510,21 @@ export default function DesignB({
                   <h2>Progress Snapshot</h2>
                   <p>{clientName}&apos;s current goals</p>
                 </div>
+
+                {/* Matches "Upcoming Sessions" -> /appointments - this card
+                    had no way to see the full goal list at all before
+                    pages/progress.tsx existed. */}
+                <Link className={styles.textButton} href="/progress">
+                  View all
+                </Link>
               </div>
 
-              {programs.length === 0 ? (
+              {programsError ? (
+                <EmptyState
+                  title="Couldn't load goals"
+                  message="Something went wrong loading this. Try refreshing the page."
+                />
+              ) : programs.length === 0 ? (
                 <EmptyState
                   title="No goals yet"
                   message="Goals will appear here once your clinical team adds them."
@@ -502,9 +558,20 @@ export default function DesignB({
                   <h2>Recent Updates</h2>
                   <p>Notes from your clinical team</p>
                 </div>
+
+                {/* Same parity fix as Progress Snapshot above - this card
+                    was capped at 5 with no way to see older updates. */}
+                <Link className={styles.textButton} href="/updates">
+                  View all
+                </Link>
               </div>
 
-              {soapNotes.length === 0 ? (
+              {soapNotesError ? (
+                <EmptyState
+                  title="Couldn't load updates"
+                  message="Something went wrong loading this. Try refreshing the page."
+                />
+              ) : soapNotes.length === 0 ? (
                 <EmptyState
                   title="No updates yet"
                   message="Session updates will appear here once your clinical team shares one."
@@ -666,55 +733,13 @@ function statusClass(status: string | null) {
   }
 }
 
-function formatStatus(status: string | null) {
-  if (!status) {
-    return "Scheduled";
-  }
-
-  return status
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (character) =>
-      character.toUpperCase()
-    );
-}
-
-function ProgramStatusBadge({ status }: { status: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    mastered: { bg: "#E6F6EF", text: "#1A7F4B" },
-    active: { bg: "#EAF2FE", text: "#1D5FAE" },
-    maintenance: { bg: "#EAF2FE", text: "#1D5FAE" },
-    on_hold: { bg: "#FEF3E6", text: "#B4690E" },
-    draft: { bg: "#F1F2F4", text: "#607987" },
-    pending_signoff: { bg: "#F1F2F4", text: "#607987" },
-    archived: { bg: "#F1F2F4", text: "#607987" },
-  };
-  const color = colors[status] ?? colors.draft;
-
-  return (
-    <span
-      style={{
-        padding: "3px 10px",
-        borderRadius: 999,
-        fontSize: 12.5,
-        fontWeight: 600,
-        whiteSpace: "nowrap",
-        background: color.bg,
-        color: color.text,
-      }}
-    >
-      {formatStatus(status)}
-    </span>
-  );
-}
-
 function formatUpdateDate(iso: string | null) {
   if (!iso) {
     return "Recently";
   }
 
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  // formatClinicDate(), not toLocaleDateString(undefined, ...) - see
+  // lib/clinic-date.ts for why an ambient-locale/timezone format here was
+  // a real SSR/hydration mismatch, not just a cosmetic inconsistency.
+  return formatClinicDate(iso);
 }

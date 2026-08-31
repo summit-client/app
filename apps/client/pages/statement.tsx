@@ -24,6 +24,7 @@ import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient } from "../lib/admin-view-as";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { AccountProblemNotice } from "../components/account-problem-notice";
+import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
@@ -45,7 +46,13 @@ type PageProps =
       isAdminViewingAs: boolean;
       generatedOn: string;
     }
-  | { mode: "problem"; problem: AccountProblem };
+  | { mode: "problem"; problem: AccountProblem }
+  // A real query failure resolving the account, as distinct from an account
+  // that resolved fine and has no clinic or no linked client. Added on main
+  // while this branch was open; without it a transient failure fell through
+  // to "not-permitted" and redirected, which reads as an access decision
+  // rather than a blip.
+  | { mode: "error" };
 
 const INK = "#173247";
 const MUTED = "#607987";
@@ -81,6 +88,9 @@ export default function Statement(
     [selected, entries]
   );
 
+  if (props.mode === "error") {
+    return <LoadErrorNotice />;
+  }
   if (props.mode === "problem") {
     return <AccountProblemNotice problem={props.problem} />;
   }
@@ -438,6 +448,9 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
 
   const resolved = await resolveViewedClient(supabase, req as NextApiRequest, user.id);
 
+  if (resolved.kind === "error") {
+    return { props: { mode: "error" } };
+  }
   if (resolved.kind === "needs-selection") {
     return { redirect: { destination: "/", permanent: false } };
   }

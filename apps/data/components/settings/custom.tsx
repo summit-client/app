@@ -8,6 +8,15 @@ import {
   readAudit, resolve, restore, setSetting, term, TERMINOLOGY_DEFAULTS, TERMINOLOGY_SUGGESTIONS,
 } from "@summit/settings";
 import { GenericSection, SettingRow, useSettingsTick } from "./controls";
+import { useSession } from "@/components/session-provider";
+
+/** Org-scope writes are admin-only at the RLS layer (migration 0012). See the
+ *  comment on controls.tsx's SettingRow for why this app also disables the
+ *  control rather than letting a non-admin's write round-trip and fail. */
+function useCanWriteOrg(): boolean {
+  const { identity } = useSession();
+  return identity?.isPreview === true || identity?.appRole === "admin";
+}
 
 /* ---- small store for structured (non-scalar) configuration collections ------- */
 
@@ -32,6 +41,7 @@ const LOGO_SLOTS = ["Primary logo", "Square / icon", "Light background", "Dark b
 
 export function AppearanceSection() {
   useSettingsTick();
+  const canWriteOrg = useCanWriteOrg();
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   // Read from the document only after mount — this component also server-renders.
   const [theme, setTheme] = React.useState<ReturnType<typeof currentTheme>>("system");
@@ -107,13 +117,19 @@ export function AppearanceSection() {
       </div>
 
       <div>
-        <button className="btn secondary" onClick={() => {
-          applyTheme("system"); applyAccent("blue"); setTheme("system"); setAccent("blue");
-          setSetting("appearance.primaryColor", null, "org"); setSetting("appearance.accentColor", null, "org");
-          setSetting("appearance.density", null, "org"); force();
-        }}>
+        <button
+          className="btn secondary"
+          disabled={!canWriteOrg}
+          title={canWriteOrg ? undefined : "Only an administrator can reset organization defaults."}
+          onClick={() => {
+            applyTheme("system"); applyAccent("blue"); setTheme("system"); setAccent("blue");
+            if (!canWriteOrg) { force(); return; }
+            setSetting("appearance.primaryColor", null, "org"); setSetting("appearance.accentColor", null, "org");
+            setSetting("appearance.density", null, "org"); force();
+          }}>
           Reset to Summit Default
         </button>
+        {!canWriteOrg ? <p className="sub" style={{ marginTop: 6 }}>🔒 Organization defaults are admin only — this resets your local preview only.</p> : null}
       </div>
     </div>
   );
@@ -149,7 +165,7 @@ export function LanguageSection() {
       </p>
       <div className="card table-wrap" style={{ marginTop: 10 }}>
         <table className="data">
-          <thead><tr><th>Summit default</th><th>Your organization uses</th></tr></thead>
+          <thead><tr><th scope="col">Summit default</th><th scope="col">Your organization uses</th></tr></thead>
           <tbody>
             {Object.keys(TERMINOLOGY_DEFAULTS).map((k) => <TermRow key={k} name={k} />)}
           </tbody>
@@ -166,6 +182,7 @@ export function LanguageSection() {
 }
 
 function TermRow({ name }: { name: string }) {
+  const canWriteOrg = useCanWriteOrg();
   const key = `terminology.${name}`;
   const r = resolve(key);
   const suggestions = TERMINOLOGY_SUGGESTIONS[name] ?? [TERMINOLOGY_DEFAULTS[name]];
@@ -174,7 +191,9 @@ function TermRow({ name }: { name: string }) {
       <td><b>{TERMINOLOGY_DEFAULTS[name]}</b></td>
       <td>
         <select className="input" style={{ width: "auto", minWidth: 180 }} aria-label={`Term for ${TERMINOLOGY_DEFAULTS[name]}`}
-          value={String(r.effective)} onChange={(e) => setSetting(key, e.target.value, "org")}>
+          value={String(r.effective)} disabled={!canWriteOrg}
+          title={canWriteOrg ? undefined : "Only an administrator can change organization terminology."}
+          onChange={(e) => { if (canWriteOrg) setSetting(key, e.target.value, "org"); }}>
           {suggestions.map((s) => <option key={s}>{s}</option>)}
           {!suggestions.includes(String(r.effective)) ? <option>{String(r.effective)}</option> : null}
         </select>
@@ -296,7 +315,7 @@ export function NotificationsSection() {
           <h3 className="set-h">{group}</h3>
           <div className="card table-wrap">
             <table className="data">
-              <thead><tr><th>Event</th>{CHANNELS.map((c) => <th key={c} style={{ textAlign: "center" }}>{c}</th>)}</tr></thead>
+              <thead><tr><th scope="col">Event</th>{CHANNELS.map((c) => <th key={c} scope="col" style={{ textAlign: "center" }}>{c}</th>)}</tr></thead>
               <tbody>
                 {events.map((ev) => (
                   <tr key={ev}>
@@ -358,7 +377,7 @@ export function RolesSection() {
       </div>
       <div className="card table-wrap">
         <table className="data">
-          <thead><tr><th>Module</th>{PERMS.map((p) => <th key={p} style={{ textAlign: "center" }}>{p}</th>)}</tr></thead>
+          <thead><tr><th scope="col">Module</th>{PERMS.map((p) => <th key={p} scope="col" style={{ textAlign: "center" }}>{p}</th>)}</tr></thead>
           <tbody>
             {PERM_MODULES.map((m) => (
               <tr key={m}>
@@ -488,7 +507,7 @@ export function PrivacySection() {
       <p className="sub">Every settings change: who, what, previous → new value. Clinical records are never silently overwritten anywhere in Summit.</p>
       <div className="card table-wrap">
         <table className="data">
-          <thead><tr><th>Setting</th><th>Change</th><th>Level</th><th>Who</th><th>When</th><th aria-label="Restore" /></tr></thead>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Change</th><th scope="col">Level</th><th scope="col">Who</th><th scope="col">When</th><th aria-label="Restore" /></tr></thead>
           <tbody>
             {audit.slice(0, 15).map((e, i) => (
               <tr key={i}>

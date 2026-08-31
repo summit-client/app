@@ -6,13 +6,22 @@ import type { ProgramFacts } from "@summit/analytics";
  * Live evidence retrieval (step 1): date-bounded, source IDs preserved,
  * shared by every Clinical Intelligence endpoint (reports, supervision, …).
  * Runs under the caller's RLS session — clinic isolation applies at the DB.
+ *
+ * Deliberately never reads `clients.name` into the packet. This packet is
+ * what `buildEvidencePacket()`/`runReportPipeline()` (packages/clinical-ai)
+ * hand to the AI provider — compliance.md's PHI rule is unconditional
+ * ("De-identify before any AI call. Stable IDs replace names and DOBs.
+ * Never call a model directly with PHI."), not scoped to only the
+ * non-BAA vendor. A stable `Client ${id}` label carries everything the
+ * downstream prompt code and the UI (e.g. the Supervision brief heading)
+ * actually need without ever putting the real name on the wire to a model.
  */
 export function liveRetriever(sb: SupabaseClient): EvidenceRetriever {
   return {
     async retrieve({ clientId, startDate, endDate }) {
       const endTs = `${endDate}T23:59:59`;
       const [client, programs, records, notes, incidents, mods, decisions, cg, integrity, bankRels] = await Promise.all([
-        sb.from("clients").select("id,name").eq("id", clientId).single(),
+        sb.from("clients").select("id").eq("id", clientId).single(),
         sb.from("programs").select("*, program_steps(*)").eq("client_id", clientId).neq("status", "archived"),
         sb.from("session_records").select("id, program_id, started_at, summary_pct, summary_count").eq("client_id", clientId)
           .gte("started_at", startDate).lte("started_at", endTs).not("ended_at", "is", null).order("started_at"),
@@ -40,7 +49,7 @@ export function liveRetriever(sb: SupabaseClient): EvidenceRetriever {
       const facts: ProgramFacts[] = ((programs.data ?? []) as Record<string, unknown>[]).map((p) => ({
         programId: p.id as string,
         clientId,
-        clientName: (client.data?.name as string) ?? `Client ${clientId}`,
+        clientName: `Client ${clientId}`, // never the real name — see file header
         goalName: p.name as string,
         domain: (p.domain as string) ?? null,
         targetDirection: (p.target_direction as "increase" | "decrease") ?? "increase",
@@ -85,7 +94,7 @@ export function liveRetriever(sb: SupabaseClient): EvidenceRetriever {
 
       const cgRows = cg.data ?? [];
       return {
-        client: { id: clientId, displayName: (client.data?.name as string) ?? `Client ${clientId}` },
+        client: { id: clientId, displayName: `Client ${clientId}` }, // never the real name — see file header
         clinicId: null,
         facts,
         notes: noteRows,

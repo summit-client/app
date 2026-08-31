@@ -138,36 +138,6 @@
   gap: 10px;
 }
 
-.iconButton {
-  position: relative;
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  cursor: pointer;
-}
-
-.notificationDot {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  min-width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  padding: 0 5px;
-  color: var(--surface);
-  background: var(--danger);
-  border: 2px solid var(--surface-2);
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 900;
-}
-
 .clientSelect {
   min-width: 162px;
   padding: 11px 13px;
@@ -381,155 +351,179 @@
   background: var(--surface-2);
 }
 
-.virtual {
-  color: var(--info);
-  background: var(--info-soft);
-}
-
-.progressList {
-  padding: 6px 18px 17px;
-}
-
-.progressRow {
-  padding: 13px 0;
-}
-
-.progressTop {
+/* Appointments page (pages/appointments.tsx) - shares .page/.sidebar/.main
+   and the .status/.confirmed/.cancelled/.completed pill classes above with
+   the dashboard, but its own filter bar and session cards previously lived
+   entirely as inline styles with no breakpoint behaviour of their own, so
+   the page didn't reflow at the same 1100/760/520 tiers the dashboard does.
+   These reuse that same scheme rather than inventing a new one. */
+.filters {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.progressLabel {
-  display: inline-flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  font-weight: 800;
+  margin-bottom: 20px;
 }
 
-.progressIcon {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: 9px;
-}
-
-.progressTrack {
-  height: 8px;
-  overflow: hidden;
-  background: var(--line);
-  border-radius: 999px;
-}
-
-.progressFill {
-  height: 100%;
-  border-radius: inherit;
-}
-
-.teal {
-  background: var(--stat-2);
-}
-
-.blue {
-  background: var(--stat-1);
-}
-
-.orange {
-  background: var(--stat-3);
-}
-
-.announcementList {
-  padding: 4px 18px;
-}
-
-.announcement {
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  gap: 12px;
-  padding: 15px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.announcement:last-child {
-  border-bottom: 0;
-}
-
-.announcementIcon {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: 11px;
-}
-
-.announcement strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 13px;
-}
-
-.announcement p {
-  margin: 0 0 5px;
+.filterButton {
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   color: var(--muted);
-  font-size: 12px;
-}
-
-.announcement small {
-  color: var(--faint);
-  font-size: 10px;
-}
-
-.moodGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 17px 18px 12px;
-}
-
-.moodButton {
-  min-height: 66px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  color: var(--ink);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 12px;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
 }
 
-.moodButton:hover,
-.moodButton:focus-visible {
-  color: var(--accent);
-  background: var(--accent-soft);
+.filterButtonActive {
   border-color: var(--accent);
-}
-
-.primaryButton {
-  width: calc(100% - 36px);
-  margin: 0 18px 18px;
-  padding: 12px 15px;
-  color: var(--accent-ink);
   background: var(--accent);
-  border: 0;
-  border-radius: 11px;
-  font-weight: 800;
-  cursor: pointer;
+  color: var(--accent-ink);
 }
 
-.primaryButton:hover {
-  background: var(--accent-strong);
+.apptList {
+  display: grid;
+  gap: 12px;
+}
+
+/* Shared empty/error-state box - appointments, progress and updates all
+   need the exact same "nothing here" / "couldn't load this" treatment. */
+.emptyBox {
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+}
+
+.apptCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.apptTitle {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.apptMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* pages/progress.tsx - goals grouped by domain, each domain its own
+   section heading over a list of goal cards. Reuses .filters/.filterButton
+   (defined above for the appointments filter tabs) for its status filter -
+   same chip pattern, not a second one. */
+.domainSection {
+  margin-bottom: 26px;
+}
+
+.domainSection:last-child {
+  margin-bottom: 0;
+}
+
+.domainHeading {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.goalList {
+  display: grid;
+  gap: 10px;
+}
+
+.goalCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.goalName {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* pages/updates.tsx - full session-notes history, reverse chronological.
+   Each entry is a full-width card rather than a compact row, since the
+   body text (the clinical team's family-facing summary) is the point. */
+.updateList {
+  display: grid;
+  gap: 14px;
+}
+
+.updateCard {
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.updateCardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.updateDate {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.updateBody {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.noteBadge {
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.noteBadgeSigned {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.noteBadgeCountersigned {
+  color: var(--good);
+  background: var(--good-soft);
 }
 
 @media (max-width: 1100px) {
@@ -567,6 +561,15 @@
     margin: 0 7px;
     background: var(--ink);
     border-radius: 1px;
+  }
+
+  /* The real interactive control is the hidden checkbox itself (Space
+     toggles it), not this label - so a keyboard user tabbing to it needs a
+     visible focus indicator on the label that stands in for it, since the
+     checkbox itself is opacity: 0 and shows nothing when focused. */
+  .navToggleInput:focus-visible ~ .mobileTopbar .navToggleBtn {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   .mobileTopbar {
@@ -644,6 +647,14 @@
 
   .status {
     grid-column: 2;
+    justify-self: start;
+  }
+
+  .apptCard {
+    grid-template-columns: 1fr;
+  }
+
+  .apptCard .status {
     justify-self: start;
   }
 }

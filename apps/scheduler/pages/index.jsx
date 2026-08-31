@@ -1,13 +1,16 @@
-import { useState, useEffect, useRef, useContext, Fragment } from "react";
+import { useState, useEffect, useRef, useMemo, useContext, Fragment } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabase";
 import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
 import SessionTypeEditModal from "../components/SessionTypeEditModal";
 import { CalendarView } from "../components/calendar/CalendarView";
-import { gapsOverlap, parseTimeSetting } from "../components/calendar/dateUtils";
+import { gapsOverlap, parseTimeSetting, toDateStr, todayDateStr } from "../components/calendar/dateUtils";
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
+import { refreshUrl } from "@summit/portals";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../lib/checkSlotConflict";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -31,49 +34,57 @@ function dayFromDate(dateStr) {
   return DAY_MAP[new Date(dateStr + "T12:00:00").getDay()];
 }
 
-function generateTimeSlots() {
+// Previously hardcoded 7am-8pm regardless of clinic - CalendarView.tsx's
+// real calendar grid already reads calendar.workStart/workEnd from
+// @summit/settings per clinic, but this wizard's own preview/availability-
+// editing grids (PreviewGrid, AvailabilityGrid below) didn't. Fixed by
+// parametrizing on startHour/endHour instead of a module-level constant -
+// every caller now derives these from the workStart/workEnd props already
+// threaded down from Scheduler() (the top-level component, which already
+// subscribes to onSettingsChange for exactly this reason - see its own
+// comment), matching how PreviewGrid already filters its day columns by the
+// workDays prop rather than assuming a fixed set.
+function generateTimeSlots(startHour, endHour) {
   const s = [];
-  for (let h = 7; h < 20; h++) {
+  for (let h = startHour; h < endHour; h++) {
     s.push(`${String(h).padStart(2, "0")}:00`);
     s.push(`${String(h).padStart(2, "0")}:30`);
   }
   return s;
 }
-const TIME_SLOTS = generateTimeSlots();
 
-function buildPreviewSlots() {
+function buildPreviewSlots(startHour, endHour) {
   const s = [];
-  for (let h = 7; h < 20; h++) {
+  for (let h = startHour; h < endHour; h++) {
     s.push({ h, m: 0, label: `${h}:00`, key: `${String(h).padStart(2, "0")}:00` });
     s.push({ h, m: 30, label: "", key: `${String(h).padStart(2, "0")}:30` });
   }
   return s;
 }
-const PREVIEW_SLOTS = buildPreviewSlots();
 
-function availToSlots(avail) {
+function availToSlots(avail, timeSlots) {
   const sel = new Set();
   (avail || []).forEach(({ day, start_time, end_time }) => {
     const s = String(start_time).substring(0, 5);
     const e = String(end_time).substring(0, 5);
-    TIME_SLOTS.forEach(t => { if (t >= s && t < e) sel.add(`${day}-${t}`); });
+    timeSlots.forEach(t => { if (t >= s && t < e) sel.add(`${day}-${t}`); });
   });
   return sel;
 }
 
-function slotsToRanges(selected, entityId, entityType = "staff") {
+function slotsToRanges(selected, entityId, entityType, availDays, timeSlots, endOfDayTime) {
   const idField = entityType === "staff" ? "staff_id" : "client_id";
   const result = [];
-  AVAIL_DAYS.forEach(day => {
-    const daySlots = TIME_SLOTS.filter(t => selected.has(`${day}-${t}`));
+  availDays.forEach(day => {
+    const daySlots = timeSlots.filter(t => selected.has(`${day}-${t}`));
     if (!daySlots.length) return;
     let start = daySlots[0], prev = daySlots[0];
     for (let i = 1; i <= daySlots.length; i++) {
       const curr = daySlots[i];
-      const pi = TIME_SLOTS.indexOf(prev), ci = curr ? TIME_SLOTS.indexOf(curr) : -1;
+      const pi = timeSlots.indexOf(prev), ci = curr ? timeSlots.indexOf(curr) : -1;
       if (ci === pi + 1) { prev = curr; } else {
-        const ei = TIME_SLOTS.indexOf(prev) + 1;
-        result.push({ [idField]: entityId, day, start_time: start, end_time: ei < TIME_SLOTS.length ? TIME_SLOTS[ei] : "20:00" });
+        const ei = timeSlots.indexOf(prev) + 1;
+        result.push({ [idField]: entityId, day, start_time: start, end_time: ei < timeSlots.length ? timeSlots[ei] : endOfDayTime });
         if (curr) { start = curr; prev = curr; }
       }
     }
@@ -111,7 +122,12 @@ function generateRecurringDates(calStart, calEnd, dayOfWeek, endType, endDate, e
   cur.setDate(cur.getDate() + (target - cur.getDay() + 7) % 7);
   const dates = [], max = endType === "count" ? Number(endCount) : 9999;
   while (cur <= absEnd && dates.length < max) {
-    dates.push(cur.toISOString().split("T")[0]);
+    // toDateStr (local Y/M/D), not toISOString - the latter converts to UTC
+    // first, which can land on the wrong calendar day depending on the
+    // browser's timezone offset even though `cur` is deliberately noon-
+    // anchored to dodge exactly that. Matches the one convention this app
+    // already uses everywhere else (see dateUtils.ts's file header).
+    dates.push(toDateStr(cur));
     cur.setDate(cur.getDate() + 7);
   }
   return dates;
@@ -130,7 +146,8 @@ function generateDatesFrom(startDateStr, endType, endDate, endCount) {
   const absEnd = endType === "date" && endDate ? new Date(endDate + "T12:00:00") : new Date("2999-12-31T12:00:00");
   const max = endType === "count" ? Number(endCount) : 9999;
   while (cur <= absEnd && dates.length < max) {
-    dates.push(cur.toISOString().split("T")[0]);
+    // See generateRecurringDates above for why toDateStr, not toISOString.
+    dates.push(toDateStr(cur));
     cur.setDate(cur.getDate() + 7);
   }
   return dates;
@@ -158,8 +175,17 @@ function clientAvailAt(clientId, day, timeKey, clientAvailability) {
 
 // ─── Generic availability drag grid ──────────────────────────────────────────
 
-function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, onCancel }) {
-  const [selected, setSelected] = useState(() => availToSlots(existingAvailability));
+function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, onCancel, workStart, workEnd, workDays }) {
+  // Previously always rendered a fixed Mon-Sat/7am-8pm grid, unrelated to
+  // what the clinic actually configured in Settings - CalendarView.tsx's
+  // real calendar has honored calendar.workDays/workStart/workEnd for a
+  // while; this editor didn't, so it was possible to mark availability on a
+  // day/hour the clinic never schedules against at all. availDays mirrors
+  // PreviewGrid's own workDays-filter of the same Mon-Sat ordering.
+  const availDays = AVAIL_DAYS.filter(d => workDays.includes(d));
+  const timeSlots = useMemo(() => generateTimeSlots(workStart, workEnd), [workStart, workEnd]);
+  const endOfDayTime = `${String(workEnd).padStart(2, "0")}:00`;
+  const [selected, setSelected] = useState(() => availToSlots(existingAvailability, timeSlots));
   const [saving, setSaving] = useState(false);
   const dragRef = useRef({ active: false, mode: null });
   const appUser = useContext(UserContext);
@@ -177,10 +203,19 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
     setSelected(prev => { const n = new Set(prev); dragRef.current.mode === "remove" ? n.delete(key) : n.add(key); return n; });
   }
   function handleMouseUp() { dragRef.current.active = false; }
+  // Drag-select has no keyboard equivalent, and these cells were plain divs
+  // with no tabIndex/role/keydown handler at all - a keyboard-only user
+  // could not reach or toggle a single slot here. A single-slot toggle (no
+  // drag-range semantics) is the reasonable keyboard equivalent.
+  function handleKeyToggle(e, key) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
 
   async function handleSave() {
     setSaving(true);
-    const ranges = slotsToRanges(selected, entityId, entityType).map(r => ({ ...r, clinic_id: appUser.clinic_id }));
+    const ranges = slotsToRanges(selected, entityId, entityType, availDays, timeSlots, endOfDayTime).map(r => ({ ...r, clinic_id: appUser.clinic_id }));
     await supabase.from(tableName).delete().eq(idField, entityId);
     if (ranges.length) await supabase.from(tableName).insert(ranges);
     setSaving(false);
@@ -193,19 +228,21 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
       <div style={{ fontSize: 13, fontWeight: 500, color: COLORS.textS, marginBottom: 10 }}>
         Drag to set availability · {selected.size} × 30-min slots
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "40px repeat(6, 1fr)", gap: 2, marginBottom: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: `40px repeat(${availDays.length}, 1fr)`, gap: 2, marginBottom: 4 }}>
         <div />
-        {AVAIL_DAYS.map(d => <div key={d} style={{ fontSize: 12, fontWeight: 500, color: COLORS.textS, textAlign: "center" }}>{d}</div>)}
+        {availDays.map(d => <div key={d} style={{ fontSize: 12, fontWeight: 500, color: COLORS.textS, textAlign: "center" }}>{d}</div>)}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "40px repeat(6, 1fr)", gap: 2 }}>
-        {TIME_SLOTS.map(t => (
+      <div style={{ display: "grid", gridTemplateColumns: `40px repeat(${availDays.length}, 1fr)`, gap: 2 }}>
+        {timeSlots.map(t => (
           <>
             <div key={`l-${t}`} style={{ fontSize: 10, color: COLORS.textT, textAlign: "right", paddingRight: 6, height: 14, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
               {t.endsWith(":00") ? t : ""}
             </div>
-            {AVAIL_DAYS.map(day => {
+            {availDays.map(day => {
               const key = `${day}-${t}`, on = selected.has(key);
               return <div key={key} onMouseDown={() => handleMouseDown(key)} onMouseEnter={() => handleMouseEnter(key)}
+                role="checkbox" aria-checked={on} aria-label={`${day} ${t}`} tabIndex={0}
+                onKeyDown={(e) => handleKeyToggle(e, key)}
                 style={{ height: 14, borderRadius: 2, cursor: "pointer", background: on ? "#5DCAA5" : COLORS.bgT, border: `0.5px solid ${on ? "#5DCAA544" : COLORS.border}`, transition: "background 0.05s" }} />;
             })}
           </>
@@ -223,7 +260,12 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
 
 // ─── Preview Grid ─────────────────────────────────────────────────────────────
 
-function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, staffAvailability, clientAvailability, employees, clients, locations, sessionTypes, unmatchedClients, typeColors, workDays }) {
+function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, staffAvailability, clientAvailability, employees, clients, locations, sessionTypes, unmatchedClients, typeColors, workDays, workStart, workEnd }) {
+  // Already correctly filtered its day columns by workDays; the hour range
+  // was still the hardcoded 7am-8pm PREVIEW_SLOTS constant regardless of
+  // what the clinic actually configured. Now derives from the same
+  // workStart/workEnd props CalendarView.tsx's real calendar already reads.
+  const previewSlots = useMemo(() => buildPreviewSlots(workStart, workEnd), [workStart, workEnd]);
   const [filterLocId, setFilterLocId] = useState(null);
   const [filterStaffIds, setFilterStaffIds] = useState([]);
   const [tooltip, setTooltip] = useState(null);
@@ -328,7 +370,7 @@ function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, 
             <div />
             {DAYS.map(d => <div key={d} style={{ padding: "6px 0", textAlign: "center", fontSize: 13, fontWeight: 500, color: COLORS.textS, borderLeft: `0.5px solid ${COLORS.border}` }}>{d}</div>)}
           </div>
-          {PREVIEW_SLOTS.map(({ h, m, label, key: tKey }) => (
+          {previewSlots.map(({ h, m, label, key: tKey }) => (
             <div key={tKey} style={{ display: "grid", gridTemplateColumns: "44px repeat(6, 1fr)", borderBottom: `0.5px solid ${m === 0 ? COLORS.border : COLORS.border + "55"}` }}>
               <div style={{ height: CELL_H, background: COLORS.bgS, fontSize: 10, color: COLORS.textT, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 5 }}>{label}</div>
               {DAYS.filter(d => workDays.includes(d)).map(day => {
@@ -537,8 +579,8 @@ function GroupSessionCard({ items, sessionTypeName, maxClients, accepted, onAcce
           )}
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-          <button onClick={() => onAccept(r.key, r.match, r.item)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isA ? "#5DCAA5" : "#E1F5EE", color: isA ? "#fff" : "#0F6E56" }}>✓</button>
-          <button onClick={() => onReject(r.key)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isR ? "#E24B4A" : "#FCEBEB", color: isR ? "#fff" : "#A32D2D" }}>✕</button>
+          <button aria-label={`Accept ${r.item.clientName} · ${r.match?.staffName || "this match"}`} onClick={() => onAccept(r.key, r.match, r.item)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isA ? "#5DCAA5" : "#E1F5EE", color: isA ? "#fff" : "#0F6E56" }}>✓</button>
+          <button aria-label={`Reject ${r.item.clientName} · ${r.match?.staffName || "this match"}`} onClick={() => onReject(r.key)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isR ? "#E24B4A" : "#FCEBEB", color: isR ? "#fff" : "#A32D2D" }}>✕</button>
         </div>
       </div>
     );
@@ -614,8 +656,8 @@ function ClientMatchCard({ item, accepted, onAccept, onReject, typeColors }) {
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button onClick={() => onAccept(key, m, item)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isA ? "#5DCAA5" : "#E1F5EE", color: isA ? "#fff" : "#0F6E56" }}>✓</button>
-                    <button onClick={() => onReject(key)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isR ? "#E24B4A" : "#FCEBEB", color: isR ? "#fff" : "#A32D2D" }}>✕</button>
+                    <button aria-label={`Accept ${m.staffName}`} onClick={() => onAccept(key, m, item)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isA ? "#5DCAA5" : "#E1F5EE", color: isA ? "#fff" : "#0F6E56" }}>✓</button>
+                    <button aria-label={`Reject ${m.staffName}`} onClick={() => onReject(key)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isR ? "#E24B4A" : "#FCEBEB", color: isR ? "#fff" : "#A32D2D" }}>✕</button>
                   </div>
                 </div>
               );
@@ -757,7 +799,7 @@ function Dashboard({ clients, employees, bookings, typeColors }) {
 
 // ─── Clients view ─────────────────────────────────────────────────────────────
 
-function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast }) {
+function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast, workStart, workEnd, workDays }) {
   const [expandedId, setExpandedId] = useState(null);
   const [search, setSearch] = useState("");
   const filtered = clients.filter(c => JSON.stringify(c).toLowerCase().includes(search.toLowerCase()));
@@ -811,7 +853,7 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
                 </button>
               </div>
               {isExp && <div style={{ padding: "0 16px 16px" }}>
-                <AvailabilityGrid entityId={client.id} entityType="client" existingAvailability={cAvail} onSave={handleSave} onCancel={() => setExpandedId(null)} />
+                <AvailabilityGrid entityId={client.id} entityType="client" existingAvailability={cAvail} onSave={handleSave} onCancel={() => setExpandedId(null)} workStart={workStart} workEnd={workEnd} workDays={workDays} />
               </div>}
             </div>
           );
@@ -823,7 +865,7 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
 
 // ─── Staff view ───────────────────────────────────────────────────────────────
 
-function EmployeesView({ employees, locations, staffAvailability, setStaffAvailability, typeColors, showToast }) {
+function EmployeesView({ employees, locations, staffAvailability, setStaffAvailability, typeColors, showToast, workStart, workEnd, workDays }) {
   const [expandedId, setExpandedId] = useState(null);
   const [search, setSearch] = useState("");
   const filtered = employees.filter(e => JSON.stringify(e).toLowerCase().includes(search.toLowerCase()));
@@ -888,7 +930,7 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
                 </button>
               </div>
               {isExp && <div style={{ padding: "0 16px 16px" }}>
-                <AvailabilityGrid entityId={emp.id} entityType="staff" existingAvailability={empAvail} onSave={handleSave} onCancel={() => setExpandedId(null)} />
+                <AvailabilityGrid entityId={emp.id} entityType="staff" existingAvailability={empAvail} onSave={handleSave} onCancel={() => setExpandedId(null)} workStart={workStart} workEnd={workEnd} workDays={workDays} />
               </div>}
             </div>
           );
@@ -1203,7 +1245,7 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
 
 // ─── Create view ──────────────────────────────────────────────────────────────
 
-function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays, prefill, onConsumedPrefill }) {
+function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays, workStart, workEnd, prefill, onConsumedPrefill }) {
   const appUser = useContext(UserContext);
   const [step, setStep] = useState("calendar");
   const [trail, setTrail] = useState([]);
@@ -1211,6 +1253,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [editingCalId, setEditingCalId] = useState(null);
   const [editingCalName, setEditingCalName] = useState("");
   const [hoveredCalId, setHoveredCalId] = useState(null);
+  // The Confirm/rename/archive buttons below were only ever revealed on
+  // mouse hover - a keyboard-only user tabbing to a calendar pill had no way
+  // to make them appear at all, so they were unreachable by keyboard.
+  const [focusedCalId, setFocusedCalId] = useState(null);
 
   const [selectedCalendar, setSelectedCalendar] = useState(null);
   const [showNewCal, setShowNewCal] = useState(false);
@@ -1268,6 +1314,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [pendingConflict]);
+  const pendingConflictTrapRef = useFocusTrap(!!pendingConflict);
   useEffect(() => {
     if (!prefill) return;
     // Prefer an active calendar over a draft one - a draft's sessions are
@@ -1317,7 +1364,13 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   async function createCalendar(asDraft = false) {
     if (!newCalName) return;
     setCalCreating(true);
-    const today = new Date().toISOString().split("T")[0];
+    // toDateStr(new Date()) (local Y/M/D), not new Date().toISOString() -
+    // the latter converts "now" to UTC before extracting the date, which is
+    // already the next calendar day in any timezone behind UTC for several
+    // hours every evening (e.g. Eastern time from ~8pm-midnight). A calendar
+    // created that evening would silently get a date_start of tomorrow,
+    // excluding today from its term. See dateUtils.ts's file header.
+    const today = todayDateStr();
     const farFuture = `${new Date().getFullYear() + 3}-12-31`;
     const { data } = await supabase
       .from("calendars")
@@ -1456,7 +1509,21 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         return;
       }
 
-      const { error: err } = await supabase.from("sessions").insert(inserts);
+      // Re-check the whole batch against the database right before writing -
+      // `bookings` state above can be stale for as long as this wizard has
+      // been open. See lib/checkSlotConflict.ts.
+      const freshKeys = await fetchFreshConflictKeys(
+        inserts.map(i => ({ employeeId: i.employee_id, dateStr: i.session_date, hour: i.hour, minute: i.minute })),
+      );
+      const freshInserts = inserts.filter(i => !freshKeys.has(slotKeyOf({ employeeId: i.employee_id, dateStr: i.session_date, hour: i.hour, minute: i.minute })));
+      const freshlySkipped = inserts.length - freshInserts.length;
+      if (freshInserts.length === 0) {
+        setError("Nothing to book — every proposed slot was just booked by someone else.");
+        setBooking(false);
+        return;
+      }
+
+      const { error: err } = await supabase.from("sessions").insert(freshInserts);
       if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
 
       // Auto-promote waitlist clients booked for Assessment
@@ -1477,7 +1544,8 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
 
       setBooking(false);
       refreshBookings();
-      const baseMsg = skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked";
+      const totalSkipped = skipped.length + freshlySkipped;
+      const baseMsg = totalSkipped ? `${freshInserts.length} booked · ${totalSkipped} skipped (conflicts)` : "Sessions booked";
       showToast(promoted > 0 ? `${baseMsg} · ${promoted} client${promoted !== 1 ? "s" : ""} promoted to active` : baseMsg);
       advance("booked", "Booked");
    } catch {
@@ -1496,6 +1564,17 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     setBooking(true);
     setError(null);
     try {
+      // Re-check against the database right before writing - every path
+      // that reaches here (no-conflict quick-book, "book anyway", accepting
+      // a conflict-resolution suggestion) only checked `bookings` state,
+      // which can be stale for as long as this wizard has been open. See
+      // lib/checkSlotConflict.ts for why this is a real, if partial, fix.
+      const fresh = await fetchFreshConflict({ employeeId: staff.id, dateStr, hour, minute });
+      if (fresh) {
+        setBooking(false);
+        setError("That slot was just booked by someone else - pick another time.");
+        return;
+      }
       const { error: err } = await supabase.from("sessions").insert({
         recurrence_id: null,
         client_id: quickClient.id,
@@ -1589,12 +1668,26 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
           }
         }
 
-        const { error: err } = await supabase.from("sessions").insert(inserts);
+        // Re-check the whole batch against the database right before writing
+        // - `bookings` state above can be stale. See lib/checkSlotConflict.ts.
+        const freshKeys = await fetchFreshConflictKeys(
+          inserts.map(i => ({ employeeId: i.employee_id, dateStr: i.session_date, hour: i.hour, minute: i.minute })),
+        );
+        const freshInserts = inserts.filter(i => !freshKeys.has(slotKeyOf({ employeeId: i.employee_id, dateStr: i.session_date, hour: i.hour, minute: i.minute })));
+        const freshlySkipped = inserts.length - freshInserts.length;
+        if (freshInserts.length === 0) {
+          setError("Nothing to book — every proposed date was just booked by someone else.");
+          setBooking(false);
+          return;
+        }
+
+        const { error: err } = await supabase.from("sessions").insert(freshInserts);
         if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
 
         setBooking(false);
         refreshBookings();
-        showToast(skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked");
+        const totalSkipped = skipped.length + freshlySkipped;
+        showToast(totalSkipped ? `${freshInserts.length} booked · ${totalSkipped} skipped (conflicts)` : "Sessions booked");
         onConsumedPrefill?.();
         advance("booked", "Booked");
       } catch {
@@ -1674,6 +1767,12 @@ Respond ONLY with valid JSON — no extra text:
 {"matches":[{"staffName":"...","overlappingSlots":["Mon 9:00"]}],"recommendation":"..."}`;
       maxTokens = 800;
     } else {
+      // Previously scanned the hardcoded module-level AVAIL_DAYS/TIME_SLOTS
+      // (Mon-Sat, 7am-8pm) regardless of this clinic's configured
+      // calendar.workDays/workStart/workEnd - same gap as PreviewGrid and
+      // AvailabilityGrid, fixed the same way.
+      const matchDays = AVAIL_DAYS.filter(d => workDays.includes(d));
+      const matchTimeSlots = generateTimeSlots(workStart, workEnd);
       const clientMatches = multiClients.map(({ client, session_type }) => {
         const eligible = employees
           .filter(e =>
@@ -1685,8 +1784,8 @@ Respond ONLY with valid JSON — no extra text:
 
         const matches = eligible.slice(0, 3).map(emp => {
           const overlappingSlots = [];
-          for (const day of AVAIL_DAYS) {
-            for (const t of TIME_SLOTS) {
+          for (const day of matchDays) {
+            for (const t of matchTimeSlots) {
               if (
                 staffAvailAt(emp.id, day, t, staffAvailability) &&
                 clientAvailAt(client.id, day, t, clientAvailability)
@@ -1715,6 +1814,16 @@ Respond ONLY with valid JSON — no extra text:
     try {
       const res = await fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }) });
       const data = await res.json();
+      if (res.status === 401 && data?.code === "SESSION_STALE") {
+        // Same race /api/match's handler guards against server-side: this
+        // browser's session is due to refresh. Send it through the one place
+        // allowed to redeem a refresh token instead of surfacing a confusing
+        // "AI match failed" for what is really a stale-session redirect.
+        const refresh = new URL(refreshUrl());
+        refresh.searchParams.set("return_to", window.location.href);
+        window.location.href = refresh.toString();
+        return;
+      }
       const raw = data.content?.map(b => b.text || "").join("");
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       const result = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
@@ -1845,7 +1954,7 @@ finally { setLoading(false); }
         {pendingConflict && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={e => { if (e.target === e.currentTarget) setPendingConflict(null); }}>
-            <div style={{ width: 380, background: COLORS.bg, borderRadius: 14, padding: "24px 26px", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+            <div ref={pendingConflictTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Scheduling conflict" style={{ width: 380, background: COLORS.bg, borderRadius: 14, padding: "24px 26px", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.text, marginBottom: 6 }}>Scheduling conflict</div>
               <p style={{ fontSize: 13, color: COLORS.textS, margin: "0 0 14px" }}>{pendingConflict.message}</p>
               {pendingConflict.suggestions.length > 0 && (
@@ -1890,14 +1999,20 @@ finally { setLoading(false); }
           {calendars.filter(c => c.status !== "archived").map(cal => {
             const isSelected = selectedCalendar?.id === cal.id;
             const isEditing = editingCalId === cal.id;
-            const isHovered = hoveredCalId === cal.id;
+            const isHovered = hoveredCalId === cal.id || focusedCalId === cal.id;
             const isDraft = cal.status === "draft";
             const color = cal.status === "active" ? "#5DCAA5" : "#378ADD";
             return (
               <div key={cal.id} style={{ position: "relative", display: "inline-block" }}
                 onMouseEnter={() => setHoveredCalId(cal.id)}
-                onMouseLeave={() => setHoveredCalId(null)}>
+                onMouseLeave={() => setHoveredCalId(null)}
+                onFocus={() => setFocusedCalId(cal.id)}
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusedCalId(null); }}>
                 <div onClick={() => !isEditing && setSelectedCalendar(cal)}
+                  tabIndex={0}
+                  role="button"
+                  aria-pressed={isSelected}
+                  onKeyDown={e => { if (!isEditing && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setSelectedCalendar(cal); } }}
                   style={{ padding: "11px 18px", borderRadius: 10, border: `1.5px solid ${isSelected ? color : COLORS.border}`, background: isSelected ? color + "18" : COLORS.bg, cursor: "pointer", minWidth: 130, transition: "all 0.15s" }}>
                   {isEditing ? (
                     <input autoFocus value={editingCalName} onChange={e => setEditingCalName(e.target.value)}
@@ -1920,9 +2035,9 @@ finally { setLoading(false); }
                         Confirm
                       </button>
                     )}
-                    <button onClick={e => { e.stopPropagation(); setEditingCalId(cal.id); setEditingCalName(cal.name); }}
+                    <button aria-label={`Rename ${cal.name}`} onClick={e => { e.stopPropagation(); setEditingCalId(cal.id); setEditingCalName(cal.name); }}
                       style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✎</button>
-                    <button onClick={e => { e.stopPropagation(); archiveCalendar(cal.id); }}
+                    <button aria-label={`Archive ${cal.name}`} onClick={e => { e.stopPropagation(); archiveCalendar(cal.id); }}
                       style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✕</button>
                   </div>
                 )}
@@ -2150,6 +2265,8 @@ finally { setLoading(false); }
             unmatchedClients={[]}
             typeColors={typeColors}
             workDays={workDays}
+            workStart={workStart}
+            workEnd={workEnd}
           />
         </div>
         <div style={{ borderTop: `0.5px solid ${COLORS.border}`, paddingTop: 20, marginTop: 4 }}>
@@ -2214,9 +2331,20 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   const [selected, setSelected] = useState(new Set());
   const [cancelling, setCancelling] = useState(false);
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  // This modal had no Escape-to-close at all (every other modal in this
+  // wizard does) - only its own Cancel button closed it.
+  useEffect(() => {
+    if (!rescheduleTarget) return;
+    const onKey = e => { if (e.key === "Escape") setRescheduleTarget(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [rescheduleTarget]);
+  const rescheduleTrapRef = useFocusTrap(!!rescheduleTarget);
   const [proposeDay, setProposeDay] = useState("Mon");
   const [proposeHour, setProposeHour] = useState(9);
   const [proposeDate, setProposeDate] = useState("");
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState(null);
 
   const [sortKey, setSortKey] = useState("session_date");
   const [sortDir, setSortDir] = useState("asc");
@@ -2273,28 +2401,47 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
       : `Cancel ${ids.length} session(s)?`;
     if (!confirm(msg)) return;
     setCancelling(true);
-    await supabase.from("sessions").update({ status: "cancelled" }).in("id", ids);
+    const { error: err } = await supabase.from("sessions").update({ status: "cancelled" }).in("id", ids);
     setCancelling(false);
     setSelected(new Set());
     refreshBookings();
-    showToast(`${ids.length} session${ids.length !== 1 ? "s" : ""} cancelled`);
+    // Previously showed "N cancelled" regardless of whether the write
+    // actually succeeded - optimistic UI with no failure path at all.
+    showToast(err ? "Cancel failed. Please try again." : `${ids.length} session${ids.length !== 1 ? "s" : ""} cancelled`);
   }
 
   function exportICS() {
     const toExport = selected.size > 0 ? filtered.filter(b => selected.has(b.id)) : filtered;
     const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Summit Scheduler//EN"];
+    // DTSTART/DTEND previously emitted the local wall-clock time with no `Z`
+    // suffix and no TZID - "floating" time per RFC 5545, which an importing
+    // calendar app interprets in ITS OWN configured zone, not the clinic's.
+    // A 9am Eastern session imported into a calendar set to Pacific shows at
+    // 9am Pacific. Converting through a real Date - built from the session's
+    // own local date/hour/minute, so it picks up this browser's timezone
+    // (the clinic's, for on-site scheduling staff) and that exact date's DST
+    // state - to a UTC `Z` timestamp makes the exported time unambiguous
+    // everywhere without hand-building a VTIMEZONE component. This is a
+    // deliberate, correct use of toISOString() for a real UTC instant - not
+    // the earlier day-boundary bug (see git history) where it was used to
+    // extract a date string from "now," which is a different, unsafe use.
+    const toICSUTC = (date) => date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
     toExport.forEach(b => {
       const client = clients.find(c => c.id === b.client_id);
       const emp = employees.find(e => e.id === b.employee_id);
-      const dateStr = (b.session_date || "").replace(/-/g, "");
       const st = sessionTypes.find(s => s.name === b.type);
       const dur = st?.duration || 60;
-      const startH = String(b.hour).padStart(2, "0");
-      const endH = String(b.hour + Math.floor(dur / 60)).padStart(2, "0");
-      const endM = String(dur % 60).padStart(2, "0");
+      const [y, mo, d] = (b.session_date || "").split("-").map(Number);
+      if (!y || !mo || !d) return;
+      // b.minute was dropped entirely before (both start and end always
+      // computed as if the session began exactly on the hour), so anything
+      // on this app's 15/30-minute scheduling grid exported at the wrong
+      // start AND end time.
+      const start = new Date(y, mo - 1, d, b.hour, b.minute || 0);
+      const end = new Date(start.getTime() + dur * 60000);
       lines.push("BEGIN:VEVENT",
-        `DTSTART:${dateStr}T${startH}0000`,
-        `DTEND:${dateStr}T${endH}${endM}00`,
+        `DTSTART:${toICSUTC(start)}`,
+        `DTEND:${toICSUTC(end)}`,
         `SUMMARY:${b.type} – ${client?.name || "Client"}`,
         `DESCRIPTION:Staff: ${emp?.name || "—"} | Status: ${b.status}`,
         "END:VEVENT");
@@ -2306,16 +2453,33 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   }
 
   async function submitReschedule() {
-    if (isAdminOrScheduler && proposeDate) {
-      await supabase.from("sessions").update({
-        session_date: proposeDate,
-        hour: proposeHour,
-      }).eq("id", rescheduleTarget.id);
-      refreshBookings();
-      showToast("Session rescheduled");
-    } else {
-      showToast("Reschedule request sent to scheduler");
+    if (!proposeDate) return;
+    setRescheduleSaving(true);
+    setRescheduleError(null);
+    // This write previously had no conflict check at all (not even against
+    // stale local state - the other reschedule paths at least had that) and
+    // never checked its own result, so "Session rescheduled" showed
+    // regardless of whether the write actually succeeded or silently
+    // double-booked the clinician. minute is preserved from the existing
+    // row - this modal only ever lets someone change the hour, and the
+    // update below never touches `minute`.
+    const fresh = await fetchFreshConflict(
+      { employeeId: rescheduleTarget.employee_id, dateStr: proposeDate, hour: proposeHour, minute: rescheduleTarget.minute },
+      rescheduleTarget.id,
+    );
+    if (fresh) {
+      setRescheduleSaving(false);
+      setRescheduleError("That slot was just booked by someone else - pick another time.");
+      return;
     }
+    const { error: err } = await supabase.from("sessions").update({
+      session_date: proposeDate,
+      hour: proposeHour,
+    }).eq("id", rescheduleTarget.id);
+    setRescheduleSaving(false);
+    if (err) { setRescheduleError("Reschedule failed. Please try again."); return; }
+    refreshBookings();
+    showToast("Session rescheduled");
     setRescheduleTarget(null);
   }
 
@@ -2430,14 +2594,15 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                 {!isCancelled && (
                   <>
                     <button title={isAdminOrScheduler ? "Reschedule" : "Propose reschedule"}
-                      onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); }}
+                      aria-label={isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"}
+                      onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); setRescheduleError(null); }}
                       style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 14 }}>✎</button>
                     {isAdminOrScheduler && (
-                      <button title="Cancel" onClick={async () => {
+                      <button title="Cancel" aria-label="Cancel session" onClick={async () => {
                         if (!confirm(lateCancel ? `Within the ${CANCEL_HOURS}-hour window. Cancel anyway?` : "Cancel this session?")) return;
-                        await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id);
+                        const { error: err } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id);
                         refreshBookings();
-                        showToast("Session cancelled");
+                        showToast(err ? "Cancel failed. Please try again." : "Session cancelled");
                       }} style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 14 }}>✕</button>
                     )}
                   </>
@@ -2453,14 +2618,14 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
         const client = clients.find(c => c.id === rescheduleTarget.client_id);
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 380, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div ref={rescheduleTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 380, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: COLORS.text, marginBottom: 4 }}>
-                {isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"}
+                Reschedule session
               </div>
               <div style={{ fontSize: 13, color: COLORS.textS, marginBottom: 20 }}>
                 {client?.name} · {rescheduleTarget.type}
-                {!isAdminOrScheduler && <div style={{ marginTop: 6, padding: "8px 10px", borderRadius: 8, background: COLORS.bgS, fontSize: 12, color: COLORS.textT }}>Your request will be sent to the scheduler for approval.</div>}
               </div>
+              {rescheduleError && <div style={{ fontSize: 12, color: "#A32D2D", marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: "#FCEBEB" }}>{rescheduleError}</div>}
               <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>New date</div>
@@ -2476,11 +2641,11 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={submitReschedule}
-                  style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-                  {isAdminOrScheduler ? "Confirm" : "Send request"}
+                <button onClick={submitReschedule} disabled={rescheduleSaving}
+                  style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: rescheduleSaving ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 500, opacity: rescheduleSaving ? 0.7 : 1 }}>
+                  {rescheduleSaving ? "Saving…" : "Confirm"}
                 </button>
-                <button onClick={() => setRescheduleTarget(null)}
+                <button onClick={() => { setRescheduleTarget(null); setRescheduleError(null); }} disabled={rescheduleSaving}
                   style={{ padding: "8px 16px", borderRadius: 8, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 14 }}>
                   Cancel
                 </button>
@@ -2579,6 +2744,14 @@ export default function Scheduler() {
   // looking at (the calendar) never actually goes anywhere - it's just
   // covered by the popup until this closes.
   const [calendarPrefill, setCalendarPrefill] = useState(null);
+  // Click-to-create's quick-slot wizard modal had no Escape-to-close.
+  useEffect(() => {
+    if (!calendarPrefill) return;
+    const onKey = e => { if (e.key === "Escape") setCalendarPrefill(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [calendarPrefill]);
+  const calendarPrefillTrapRef = useFocusTrap(!!calendarPrefill);
   function requestCreateAt(dateStr, hour, minute) {
     setCalendarPrefill({ dateStr, hour, minute });
   }
@@ -2649,6 +2822,11 @@ export default function Scheduler() {
           }}
         >
           <div
+            ref={calendarPrefillTrapRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Create session"
             onClick={e => e.stopPropagation()}
             style={{
               width: "min(560px, 96vw)", maxHeight: "92vh", overflowY: "auto",
@@ -2679,6 +2857,8 @@ export default function Scheduler() {
               refreshBookings={refreshBookings}
               typeColors={typeColors}
               workDays={workDays}
+              workStart={workStart}
+              workEnd={workEnd}
               showToast={showToast}
               prefill={calendarPrefill}
               onConsumedPrefill={() => setCalendarPrefill(null)}

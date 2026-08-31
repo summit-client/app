@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { FormEvent, useState } from 'react'
+import AuthCard from '../components/auth/AuthCard'
+import FormField from '../components/auth/FormField'
+import SubmitButton from '../components/auth/SubmitButton'
 
 /* ============================================================
    OLD SIGNUP FLOW (real account creation via supabase.auth.signUp)
@@ -122,80 +125,119 @@ export default function Signup() {
    public signups are re-enabled in Supabase Auth settings.
    ============================================================ */
 
+function validateFullName(value: string) {
+  if (!value.trim()) return 'Enter your full name.'
+  return ''
+}
+
+function validateClinicName(value: string) {
+  if (!value.trim()) return 'Enter your clinic name.'
+  return ''
+}
+
+function validateEmail(value: string) {
+  if (!value.trim()) return 'Enter your email address.'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Enter a valid email address.'
+  return ''
+}
+
 export default function Signup() {
   const [fullName, setFullName] = useState('')
   const [clinicName, setClinicName] = useState('')
   const [email, setEmail] = useState('')
   const [hpField, setHpField] = useState('')
-  const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<{ fullName?: string; clinicName?: string; email?: string }>({})
+  const [formError, setFormError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit() {
-    setLoading(true)
-    setError('')
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (loading) return
 
-    const res = await fetch('/api/leads/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        full_name: fullName,
-        clinic_name: clinicName,
-        email,
-        hp_field: hpField
-      })
-    })
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      setError(body.error || 'Something went wrong. Please try again.')
-      setLoading(false)
-      return
+    const errors = {
+      fullName: validateFullName(fullName),
+      clinicName: validateClinicName(clinicName),
+      email: validateEmail(email),
     }
+    setFieldErrors(errors)
+    setFormError('')
+    if (errors.fullName || errors.clinicName || errors.email) return
 
-    setSuccess(true)
-    setLoading(false)
+    setLoading(true)
+
+    try {
+      const res = await fetch('/api/leads/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: fullName,
+          clinic_name: clinicName,
+          email,
+          hp_field: hpField,
+        }),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setFormError(body.error || 'Something went wrong. Please try again.')
+        setLoading(false)
+        return
+      }
+
+      setSuccess(true)
+      setLoading(false)
+    } catch {
+      setFormError("We couldn't reach the server. Check your connection and try again.")
+      setLoading(false)
+    }
   }
 
   if (success) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
-        <div style={{ width: 360, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Thanks for your interest</h1>
-          <p style={{ color: '#555', margin: 0 }}>We'll be in touch shortly.</p>
-          <a href="/" style={{ color: '#1A3F5C', fontSize: 14 }}>Back to home</a>
-        </div>
-      </div>
+      <AuthCard title="Thanks for your interest" subtitle="We'll be in touch shortly.">
+        <a href="/" className="auth-back-link">← Back to home</a>
+      </AuthCard>
     )
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
-      <div style={{ width: 360, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Launching Q4 2026. Sign up for our mailing list for updates.</h1>
+    <AuthCard
+      title="Get early access"
+      subtitle="Launching Q4 2026 — sign up for updates and we'll reach out when your clinic can get started."
+    >
+      <form className="auth-form" onSubmit={handleSubmit} noValidate>
+        {formError && (
+          <p className="auth-form-error" role="alert">{formError}</p>
+        )}
 
-        {error && <p style={{ color: 'red', margin: 0, fontSize: 14 }}>{error}</p>}
-
-        <input
+        <FormField
+          label="Full name"
           type="text"
-          placeholder="Full name"
+          autoComplete="name"
           value={fullName}
           onChange={e => setFullName(e.target.value)}
-          style={{ padding: '10px 12px', fontSize: 15, border: '1px solid #ccc', borderRadius: 6 }}
+          error={fieldErrors.fullName}
+          required
         />
-        <input
+        <FormField
+          label="Clinic name"
           type="text"
-          placeholder="Clinic name"
+          autoComplete="organization"
           value={clinicName}
           onChange={e => setClinicName(e.target.value)}
-          style={{ padding: '10px 12px', fontSize: 15, border: '1px solid #ccc', borderRadius: 6 }}
+          error={fieldErrors.clinicName}
+          required
         />
-        <input
+        <FormField
+          label="Email"
           type="email"
-          placeholder="Email"
+          autoComplete="email"
+          inputMode="email"
           value={email}
           onChange={e => setEmail(e.target.value)}
-          style={{ padding: '10px 12px', fontSize: 15, border: '1px solid #ccc', borderRadius: 6 }}
+          error={fieldErrors.email}
+          required
         />
 
         {/* honeypot field, hidden from real users */}
@@ -206,20 +248,19 @@ export default function Signup() {
           style={{ display: 'none' }}
           tabIndex={-1}
           autoComplete="off"
+          aria-hidden="true"
         />
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{ padding: '10px 12px', fontSize: 15, background: '#1A3F5C', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-        >
-          {loading ? 'Submitting...' : 'Get started'}
-        </button>
+        <SubmitButton loading={loading} loadingLabel="Submitting…">
+          Get started
+        </SubmitButton>
 
-        <p style={{ fontSize: 13, color: '#666', margin: 0 }}>
-          Already have an account? <a href="/login">Sign in</a>
-        </p>
-      </div>
-    </div>
+        <div className="auth-links">
+          <span>
+            Already have an account? <a href="/login" className="auth-link">Sign in</a>
+          </span>
+        </div>
+      </form>
+    </AuthCard>
   )
 }

@@ -33,6 +33,8 @@ import { RecurringIcon } from "./icons";
 import { RescheduleModal } from "./RescheduleModal";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { sessionGridIncrement, sessionDuration } from "./types";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../../lib/checkSlotConflict";
+import { useFocusTrap } from "../../lib/useFocusTrap";
 
 const SPLIT_THRESHOLD = 8;
 
@@ -251,21 +253,77 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   }
 
   async function applyReschedule(session: CalSession, dateStr: string, hour: number, minute: number, scope: "this" | "following" | "all") {
+    // Re-check against the database right before writing, not just the
+    // possibly-stale `liveSessions` state `hasConflict`/`findGapEncroachment`
+    // already checked above - see lib/checkSlotConflict.ts for why this
+    // doesn't fully close the race (that needs a DB constraint, logged in
+    // BLOCKED-scheduler.md) but is still a real reduction of it.
+    const fresh = await fetchFreshConflict(
+      { employeeId: session.employee_id, dateStr, hour, minute },
+      session.id,
+    );
+    if (fresh) {
+      showToast("That slot was just booked by someone else - pick another time.");
+      await loadRange();
+      return;
+    }
+
+    // Track write failures rather than assuming success once the request is
+    // sent - this previously never checked the update's own error, so a
+    // rejected write (an RLS denial, a dropped connection) still showed
+    // "Session rescheduled" and reloaded the grid as though nothing had
+    // gone wrong, leaving the session silently unmoved.
+    let failed = false;
     if (scope === "this" || !session.recurrence_id) {
-      await supabase.from("sessions").update({ session_date: dateStr, hour, minute }).eq("id", session.id);
+      const { error } = await supabase.from("sessions").update({ session_date: dateStr, hour, minute }).eq("id", session.id);
+      failed = !!error;
     } else {
       const { data: rows } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
       const oldDate = parseDateStr(session.session_date);
       const newDate = parseDateStr(dateStr);
       const dayDelta = Math.round((newDate.getTime() - oldDate.getTime()) / 86400000);
       const targets = (rows || []).filter((r: any) => scope === "all" || r.session_date >= session.session_date);
-      await Promise.all(targets.map((r: any) => {
-        const shifted = addDays(parseDateStr(r.session_date), dayDelta);
-        return supabase.from("sessions").update({ session_date: toDateStr(shifted), hour, minute }).eq("id", r.id);
+      const shiftedTargets = targets.map((r: any) => ({
+        row: r,
+        shiftedDateStr: toDateStr(addDays(parseDateStr(r.session_date), dayDelta)),
       }));
+
+      // BLOCKED-scheduler.md previously logged this as a real, unfixed gap:
+      // only the dragged session's own anchor slot was ever conflict-checked
+      // above - every OTHER occurrence in a "following"/"all" shift wrote
+      // with no check at all, so a multi-week series move could silently
+      // double-book a later occurrence nothing here ever looked at.
+      // All-or-nothing rather than the per-date skip pattern batch-booking
+      // uses elsewhere: these rows are one series moving together, so
+      // partially applying the shift (some occurrences moved, some silently
+      // left behind at the old time) would leave the series split across
+      // two times, which is worse than refusing the whole move. Known,
+      // accepted limitation: fetchFreshConflictKeys has no per-candidate
+      // exclusion (unlike fetchFreshConflict's excludeSessionId), so if two
+      // occurrences of this same series happen to swap into each other's
+      // still-unmoved pre-shift slot, this can report a false-positive
+      // collision - fails safe (blocks the move) rather than silently
+      // corrupting the series, which is the right tradeoff for something
+      // this rare.
+      const freshKeys = await fetchFreshConflictKeys(
+        shiftedTargets.map(({ shiftedDateStr }) => ({ employeeId: session.employee_id, dateStr: shiftedDateStr, hour, minute })),
+      );
+      const collision = shiftedTargets.find(({ shiftedDateStr }) =>
+        freshKeys.has(slotKeyOf({ employeeId: session.employee_id, dateStr: shiftedDateStr, hour, minute })),
+      );
+      if (collision) {
+        showToast(`Can't move the series - ${collision.shiftedDateStr} already has a session at that time.`);
+        await loadRange();
+        return;
+      }
+
+      const results = await Promise.all(shiftedTargets.map(({ row, shiftedDateStr }) =>
+        supabase.from("sessions").update({ session_date: shiftedDateStr, hour, minute }).eq("id", row.id),
+      ));
+      failed = results.some((r) => r.error);
     }
     await loadRange();
-    showToast("Session rescheduled");
+    showToast(failed ? "Reschedule failed for one or more sessions - please check the calendar." : "Session rescheduled");
   }
 
   // Drag conflicts get suggestions too, but only the same-clinician kind:
@@ -353,9 +411,9 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 4 }}>
-          <button onClick={() => go(-1)} style={navBtn}>‹</button>
+          <button aria-label="Previous" onClick={() => go(-1)} style={navBtn}>‹</button>
           <button onClick={goToday} style={navBtn}>Today</button>
-          <button onClick={() => go(1)} style={navBtn}>›</button>
+          <button aria-label="Next" onClick={() => go(1)} style={navBtn}>›</button>
         </div>
 
         <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
@@ -519,9 +577,10 @@ function ConflictModal({
   onCancel: () => void;
 }) {
   useEscapeToClose(onCancel);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   return (
     <div style={overlayStyle} onClick={onCancel}>
-      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Scheduling conflict" style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 6 }}>Scheduling conflict</div>
         <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 14px" }}>{conflict.message}</p>
         {conflict.suggestions.length > 0 && (
@@ -571,9 +630,10 @@ function ModeButton({ active, label, onClick }: { active: boolean; label: string
 
 function RecurrenceScopeModal({ onPick, onCancel }: { onPick: (scope: "this" | "following" | "all") => void; onCancel: () => void }) {
   useEscapeToClose(onCancel);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   return (
     <div style={overlayStyle} onClick={onCancel}>
-      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Move recurring session" style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, marginBottom: 4, color: "var(--color-text-primary)" }}>
           <RecurringIcon size={16} /> Move recurring session
         </div>
@@ -607,7 +667,9 @@ function SessionDetail({
   typeColors: Record<string, string>; isDraft: boolean; onClose: () => void; onCancelled: () => void; onReschedule: () => void;
 }) {
   useEscapeToClose(onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const [cancelling, setCancelling] = React.useState(false);
+  const [cancelError, setCancelError] = React.useState<string | null>(null);
   const client = clients.find((c) => c.id === session.client_id);
   const emp = employees.find((e) => e.id === session.employee_id);
   const loc = locations.find((l) => l.id === session.location_id);
@@ -616,14 +678,20 @@ function SessionDetail({
   async function handleCancel() {
     if (!confirm("Cancel this session?")) return;
     setCancelling(true);
-    await supabase.from("sessions").update({ status: "cancelled" }).eq("id", session.id);
+    setCancelError(null);
+    // Previously called onCancelled() (which closes this modal and shows a
+    // success toast) regardless of whether the update actually succeeded -
+    // optimistic UI with no failure path. Keep the modal open with an error
+    // instead of reporting a cancellation that may not have happened.
+    const { error } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", session.id);
     setCancelling(false);
+    if (error) { setCancelError("Cancel failed. Please try again."); return; }
     onCancelled();
   }
 
   return (
     <div style={overlayStyle} onClick={onClose}>
-      <div style={{ ...modalStyle, borderLeft: `4px solid ${color}` }} onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Session detail for ${client?.name || "session"}`} style={{ ...modalStyle, borderLeft: `4px solid ${color}` }} onClick={(e) => e.stopPropagation()}>
         {isDraft && (
           <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: "#8A5E10", background: "#EF9F2722", borderRadius: 5, padding: "2px 8px", marginBottom: 8 }}>
             DRAFT — not yet on the confirmed calendar
@@ -636,6 +704,7 @@ function SessionDetail({
         <DetailRow label="Location" value={session.is_home_visit ? (session.home_address || "Client's home") : (loc?.name || "—")} />
         <DetailRow label="Type" value={session.type} />
         <DetailRow label="Recurrence" value={session.recurrence_id ? "Recurring" : "One-time"} />
+        {cancelError && <div style={{ fontSize: 13, color: "#A33A3A", marginTop: 8 }}>{cancelError}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
           <button onClick={handleCancel} disabled={cancelling} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: cancelling ? "not-allowed" : "pointer", background: "#FCE8E8", color: "#A33A3A" }}>
             {cancelling ? "Cancelling..." : "Cancel session"}

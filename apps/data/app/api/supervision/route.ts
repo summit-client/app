@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import {
   buildCaseReview, buildEvidencePacket, buildSupervisionBrief, MockProvider,
   PROMPT_TEMPLATE_VERSION, resolveProvider,
   type ClinicalAIProvider, type EvidenceRetriever,
 } from "@summit/clinical-ai";
+import { requireStaff, routeServerClient } from "@/lib/server/authz";
 
 /**
  * POST /api/supervision — Prepare Case Review + Supervision Brief.
@@ -29,15 +29,11 @@ export async function POST(request: NextRequest) {
 
   let userId: string | null = null;
   let clinicId: string | null = null;
-  const sb = !IS_PREVIEW ? serverClient(request) : null;
+  const sb = !IS_PREVIEW ? routeServerClient(request) : null;
   if (sb) {
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ ok: false, error: "Sign in required." }, { status: 401 });
-    const { data: profile } = await sb.from("profiles").select("role, clinic_id").eq("id", user.id).single();
-    if (!profile || !["admin", "supervisor", "clinician"].includes(profile.role)) {
-      return NextResponse.json({ ok: false, error: "Staff access required." }, { status: 403 });
-    }
-    userId = user.id; clinicId = profile.clinic_id ?? null;
+    const auth = await requireStaff(sb);
+    if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+    userId = auth.userId; clinicId = auth.clinicId;
   }
 
   // Theme extraction uses the routed provider when available; the brief and
@@ -75,12 +71,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, packet, review, brief });
-}
-
-function serverClient(request: NextRequest) {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-    { cookies: { getAll: () => request.cookies.getAll(), setAll: () => { /* read-only */ } } },
-  );
 }

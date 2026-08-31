@@ -1,90 +1,125 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
+import { withTimeout } from '../lib/withTimeout'
+import { describeAuthError } from '../lib/authErrors'
+import AuthCard from '../components/auth/AuthCard'
+import FormField from '../components/auth/FormField'
+import SubmitButton from '../components/auth/SubmitButton'
+
+const AUTH_TIMEOUT_MS = 15000
+const MIN_PASSWORD_LENGTH = 8
+
+function validatePassword(value) {
+  if (!value) return 'Enter a new password.'
+  if (value.length < MIN_PASSWORD_LENGTH) return `Use at least ${MIN_PASSWORD_LENGTH} characters.`
+  return ''
+}
 
 export default function UpdatePassword() {
   const router = useRouter()
-  const [newPass, setNewPass]   = useState('')
-  const [message, setMessage]   = useState('')
-  const [loading, setLoading]   = useState(false)
+  const [newPass, setNewPass] = useState('')
+  const [fieldError, setFieldError] = useState('')
+  const [formError, setFormError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
   const [authorized, setAuthorized] = useState(false) // guard: only allow via reset link
+  const [checkingSession, setCheckingSession] = useState(true)
 
   useEffect(() => {
-    // Supabase puts a recovery session in the URL hash when coming from a reset email.
-    // getSession() resolves it automatically if the hash is present.
+    // Supabase puts a recovery session in the URL hash when coming from a
+    // reset email, and getSession() resolves it automatically if the hash
+    // is present. This is the one legitimate direct getSession() call in
+    // apps/web (see CLAUDE.md's cross-portal refresh-token race): it isn't
+    // gating access to a possibly-stale existing session, it's picking up
+    // a brand-new recovery session that only exists because the user just
+    // clicked a first-party link into this exact page.
+    let cancelled = false
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return
+      setCheckingSession(false)
       if (session) {
         setAuthorized(true)
       } else {
-        // No valid session — redirect back to login
         router.replace('/login')
       }
     })
-  }, [])
+    return () => { cancelled = true }
+  }, [router])
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (loading) return
+
+    const error = validatePassword(newPass)
+    setFieldError(error)
+    setFormError('')
+    if (error) return
+
     setLoading(true)
-    setMessage('Updating…')
 
-    const res = await fetch('/api/auth/update-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: newPass }),
-    })
+    try {
+      const res = await withTimeout(
+        fetch('/api/auth/update-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: newPass }),
+        }),
+        AUTH_TIMEOUT_MS,
+        'This is taking longer than expected. Please try again.',
+      )
 
-    const data = await res.json()
+      const data = await res.json().catch(() => ({}))
 
-    if (!res.ok) {
-      setMessage(data.error || 'Update failed')
+      if (!res.ok) {
+        setFormError(data.error || 'Update failed. Please try again.')
+        setLoading(false)
+        return
+      }
+
+      setDone(true)
+      window.location.href = '/login'
+      // Not resetting `loading` here either - see the same note in login.tsx.
+    } catch (err) {
+      setFormError(describeAuthError(err))
       setLoading(false)
-      return
     }
-
-    setMessage('Password updated! Redirecting…')
-    window.location.href = '/login'
   }
 
-  if (!authorized) return null // prevents flash of form before redirect
+  if (checkingSession) {
+    return (
+      <AuthCard title="Set new password">
+        <p className="auth-subtitle" role="status">Checking your reset link…</p>
+      </AuthCard>
+    )
+  }
+
+  if (!authorized) return null // redirecting to /login
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
-      <div style={{ width: 360, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Set New Password</h1>
-        <p style={{ fontSize: 14, color: '#555', margin: 0 }}>
-          Choose a new password for your account.
-        </p>
+    <AuthCard title="Set new password" subtitle="Choose a new password for your account.">
+      <form className="auth-form" onSubmit={handleSubmit} noValidate>
+        {formError && (
+          <p className="auth-form-error" role="alert">{formError}</p>
+        )}
+        {done && (
+          <p className="auth-form-success" role="status">Password updated! Redirecting…</p>
+        )}
 
-        <input
+        <FormField
+          label="New password"
           type="password"
+          autoComplete="new-password"
           value={newPass}
           onChange={e => setNewPass(e.target.value)}
-          placeholder="New password"
+          error={fieldError}
           required
-          style={{ padding: '10px 12px', fontSize: 15, border: '1px solid #ccc', borderRadius: 6 }}
         />
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{
-            padding: '10px 12px', fontSize: 15,
-            background: '#1A3F5C', color: '#fff',
-            border: 'none', borderRadius: 6,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.7 : 1,
-          }}
-        >
-          {loading ? 'Updating…' : 'Update Password'}
-        </button>
-
-        {message && (
-          <p style={{ fontSize: 14, color: message.startsWith('Password updated') ? '#2e7d32' : 'red', margin: 0 }}>
-            {message}
-          </p>
-        )}
-      </div>
-    </div>
+        <SubmitButton loading={loading} loadingLabel="Updating…">
+          Update password
+        </SubmitButton>
+      </form>
+    </AuthCard>
   )
 }

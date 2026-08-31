@@ -1,8 +1,9 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import type { ClinicalEvidencePacket, ReportBlock } from "@summit/clinical-ai";
 import type {
-  AbcIncident, ClientRow, Program, RunSession, ScheduledSession,
+  AbcIncident, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
   SessionNoteDraft, SessionPlanDraft, SessionProgramSummary, TrialEvent,
 } from "./types";
 import { deriveProgramSummary } from "./mastery";
@@ -204,10 +205,18 @@ export async function endRunSession(sessionId: number, programs: Program[]): Pro
   const updated = await updateRunSession(sessionId, { status: "documentation", endTime: end, actualDurationMin: mins });
 
   if (!IS_PREVIEW) {
+    // session_program_summaries' RLS policies (migration 0004) are
+    // `clinic_id = auth_clinic_id() and auth_is_staff()` with no `clinic_id
+    // is null` fallback, unlike the shared-metric tables that deliberately
+    // allow a null clinic_id (scorecard_metrics, credential_rule_versions).
+    // A null clinic_id here doesn't leak cross-clinic - `null = auth_clinic_id()`
+    // is never true in SQL - it makes the insert's own WITH CHECK fail, so
+    // every session-end with a computed summary would have thrown here.
+    const clinicId = await myClinicId();
     const rows = mem.summaries.filter((x) => x.sessionId === sessionId).map((x) => ({
       client_session_id: sessionId, program_id: x.programId,
       raw_observation_count: x.rawObservationCount, numerator: x.numerator, denominator: x.denominator,
-      calculated_value: x.calculatedValue, metric_type: x.metricType, clinic_id: null,
+      calculated_value: x.calculatedValue, metric_type: x.metricType, clinic_id: clinicId,
     }));
     if (rows.length) {
       const { error } = await sb().from("session_program_summaries").upsert(rows, { onConflict: "client_session_id,program_id" });
@@ -342,6 +351,183 @@ export async function getSession(sessionId: number): Promise<ScheduledSession | 
   return all.find((s) => s.id === sessionId) ?? null;
 }
 
+/**
+ * Create a new goal. Previously "Save goal (pending supervisor sign-off)"
+ * (app/clients/[id]/programs/page.tsx's NewGoalForm) built a plain local
+ * object and never called Supabase at all — the whole "pending supervisor
+ * sign-off" claim was cosmetic, since nothing was ever saved anywhere a
+ * supervisor could see it. Now writes a real `programs` row with
+ * `status: 'pending_signoff'`.
+ */
+export async function createProgram(input: {
+  clientId: number; name: string; domain: string | null; mode: Program["mode"];
+  operationalDefinition: string; masteryPct: number; promptLevel: Program["promptLevel"];
+  reinforcementSchedule: string; sd: string | null; targetDirection: Program["targetDirection"];
+}): Promise<Program> {
+  const masteryCriteria = `${input.masteryPct}% across 3 consecutive sessions, 2 settings, 2 people`;
+  if (IS_PREVIEW) {
+    return {
+      id: `p-${Date.now()}`, clientId: input.clientId, name: input.name, domain: input.domain,
+      mode: input.mode, operationalDefinition: input.operationalDefinition, masteryCriteria,
+      masteryPct: input.masteryPct, masteryConsecutive: 3, promptLevel: input.promptLevel,
+      reinforcementSchedule: input.reinforcementSchedule, sd: input.sd,
+      targetDirection: input.targetDirection, status: "pending_signoff",
+      intervalSeconds: 30, dailyTargetMinutes: null, steps: [], targets: [], last5: [],
+    };
+  }
+  const user = (await sb().auth.getUser()).data.user;
+  const { data, error } = await sb()
+    .from("programs")
+    .insert({
+      clinic_id: await myClinicId(), client_id: input.clientId, name: input.name, domain: input.domain,
+      measurement_mode: input.mode, operational_definition: input.operationalDefinition,
+      mastery_criteria: masteryCriteria, mastery_pct: input.masteryPct,
+      prompt_level: input.promptLevel, reinforcement_schedule: input.reinforcementSchedule,
+      sd: input.sd, target_direction: input.targetDirection, status: "pending_signoff",
+      created_by: user?.id,
+    })
+    .select("*, program_steps(*), program_targets(*)")
+    .single();
+  if (error) throw error;
+  return mapProgram(data);
+}
+
+/**
+ * The supervisor sign-off action: pending_signoff -> active. App-layer gated
+ * only (see ProgramsPage) — `programs`' RLS update policy
+ * (`clinic_id = auth_clinic_id() and auth_is_staff()`, migration 0001) admits
+ * clinician, supervisor and admin identically, the same shape of gap as
+ * `session_notes`' countersign policy. Logged in BLOCKED-data.md; the
+ * `.eq("status", "pending_signoff")` at least keeps this call a no-op
+ * against a program that already moved on.
+ */
+export async function activateProgram(programId: string): Promise<void> {
+  if (IS_PREVIEW) return; // nothing server-side to flip; the caller updates its own local list
+  const { error } = await sb().from("programs").update({ status: "active" }).eq("id", programId).eq("status", "pending_signoff");
+  if (error) throw error;
+}
+
+/* ---- clinical reports (progress-report sign/lock persistence) ------------- */
+/**
+ * `app/clients/[id]/report/page.tsx`'s draft → reviewed → approved → signed
+ * flow used to be pure React state: `useState<Status>("draft")` with no
+ * write to Supabase anywhere. The `clinical_reports` table already exists
+ * with exactly this status flow and its own immutability trigger
+ * (`forbid_signed_report_update`, migration 0003 — a signed/locked row can
+ * only ever move to 'superseded', never be edited further), built for
+ * precisely this workflow. A "signed, locked, immutable" report that isn't
+ * persisted anywhere satisfies none of that — it's just a page that
+ * happens to say "locked" until the next reload wipes it. This wires the
+ * page onto the real table, including resuming an in-progress or already
+ * signed report on load instead of always starting from a blank draft.
+ */
+
+export type ClinicalReportStatus = "draft" | "reviewed" | "approved" | "signed" | "locked" | "superseded";
+
+export interface ClinicalReportRecord {
+  reportGroup: string;
+  version: number;
+  status: ClinicalReportStatus;
+  periodStart: string;
+  periodEnd: string;
+  packetId: string | null;
+  blocks: ReportBlock[];
+  modelNote: string | null;
+  packet: ClinicalEvidencePacket | null;
+}
+
+/** The latest non-superseded version of this client's progress report, if any. */
+export async function getLatestClinicalReport(
+  clientId: number,
+  reportType = "progress_report",
+): Promise<ClinicalReportRecord | null> {
+  if (IS_PREVIEW) return null; // preview keeps its existing from-scratch-each-visit behaviour
+  const { data, error } = await sb()
+    .from("clinical_reports")
+    .select("report_group, version, status, period_start, period_end, packet_id, blocks, model_note")
+    .eq("client_id", clientId)
+    .eq("report_type", reportType)
+    .neq("status", "superseded")
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  let packet: ClinicalEvidencePacket | null = null;
+  if (data.packet_id) {
+    const { data: pkt } = await sb().from("evidence_packets").select("packet").eq("id", data.packet_id).maybeSingle();
+    packet = (pkt?.packet as ClinicalEvidencePacket) ?? null;
+  }
+
+  return {
+    reportGroup: data.report_group as string,
+    version: data.version as number,
+    status: data.status as ClinicalReportStatus,
+    periodStart: data.period_start as string,
+    periodEnd: data.period_end as string,
+    packetId: (data.packet_id as string | null) ?? null,
+    blocks: (data.blocks as ReportBlock[]) ?? [],
+    modelNote: (data.model_note as string | null) ?? null,
+    packet,
+  };
+}
+
+/**
+ * Upsert the current version's status and blocks. Called after generation
+ * (status: 'draft') and after every review-flow transition. Upserting the
+ * same (report_group, version) is what keeps this idempotent through
+ * "Mark reviewed" -> "Approve" -> "Sign & lock" without creating extra rows;
+ * once a row is actually 'signed'/'locked', the table's own trigger rejects
+ * any further update here that isn't a move to 'superseded' — this
+ * function doesn't need to duplicate that check, the write will just fail
+ * with a clear Postgres error if a stale client tries it.
+ */
+export async function saveClinicalReportProgress(input: {
+  reportGroup: string;
+  version: number;
+  clientId: number;
+  reportType?: string;
+  periodStart: string;
+  periodEnd: string;
+  packetId: string | null;
+  blocks: ReportBlock[];
+  modelNote: string | null;
+  status: ClinicalReportStatus;
+}): Promise<void> {
+  if (IS_PREVIEW) return;
+  const user = (await sb().auth.getUser()).data.user;
+  const row: Record<string, unknown> = {
+    clinic_id: await myClinicId(), client_id: input.clientId,
+    report_group: input.reportGroup, version: input.version,
+    report_type: input.reportType ?? "progress_report",
+    period_start: input.periodStart, period_end: input.periodEnd,
+    packet_id: input.packetId, blocks: input.blocks, model_note: input.modelNote,
+    status: input.status, created_by: user?.id,
+  };
+  if (input.status === "signed") row.signed_by = user?.id;
+  if (input.status === "signed") row.signed_at = new Date().toISOString();
+  const { error } = await sb().from("clinical_reports").upsert(row, { onConflict: "report_group,version" });
+  if (error) throw error;
+}
+
+/**
+ * "Create revision": supersede the current signed/locked version (the only
+ * transition the immutability trigger allows on it) and hand back the next
+ * version number for the caller's next `saveClinicalReportProgress()` call,
+ * which inserts a brand-new row rather than updating the old one.
+ */
+export async function reviseClinicalReport(reportGroup: string, currentVersion: number): Promise<number> {
+  if (IS_PREVIEW) return currentVersion + 1;
+  const { error } = await sb()
+    .from("clinical_reports")
+    .update({ status: "superseded" })
+    .eq("report_group", reportGroup)
+    .eq("version", currentVersion);
+  if (error) throw error;
+  return currentVersion + 1;
+}
+
 /* ---- writes --------------------------------------------------------------- */
 /**
  * Every tap creates one of these — the atomic observation, immediately, with
@@ -465,6 +651,106 @@ export function getNote(sessionId: number): SessionNoteDraft | undefined {
 
 export function pendingNotes(): SessionNoteDraft[] {
   return [...mem.notes.values()].filter((n) => n.status === "awaiting_countersign");
+}
+
+/**
+ * The supervisor Review Queue, for real: every session note awaiting
+ * countersign across the WHOLE CLINIC, not just the ones this browser
+ * happened to write. `pendingNotes()` above only ever reads the local
+ * `mem.notes` mirror — populated exclusively by this same browser's own
+ * `saveNote()` calls — so a supervisor opening the Review Queue on their
+ * own device saw an empty queue no matter how many real clinicians had
+ * real notes awaiting countersign, unless they personally happened to be
+ * the one who wrote it. RLS already grants clinic-wide staff read on
+ * `session_notes` (`clinic_id = auth_clinic_id() and auth_is_staff()`,
+ * migration 0001), the same policy shape apps/employee's
+ * `listPendingSignoffs()` already relies on for its own clinic-wide queue —
+ * this just actually calls it.
+ */
+export async function getPendingCountersigns(): Promise<PendingCountersign[]> {
+  if (IS_PREVIEW) {
+    return pendingNotes().map((n) => ({
+      id: `preview-${n.sessionId}`,
+      sessionId: n.sessionId,
+      clientId: n.clientId ?? 0,
+      clientName: previewClients.find((c) => c.id === n.clientId)?.name ?? `Client ${n.clientId}`,
+      clinicianId: null,
+      clinicianName: "You (preview)",
+      createdAt: new Date().toISOString(),
+      note: n,
+    }));
+  }
+  const { data, error } = await sb()
+    .from("session_notes")
+    .select("id, session_id, client_id, clinician_id, body, billable_code, status, created_at, clients(name), profiles!clinician_id(full_name)")
+    .eq("status", "awaiting_countersign")
+    .order("created_at");
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => {
+    const body = (row.body as Record<string, unknown>) ?? {};
+    const note: SessionNoteDraft = {
+      sessionId: row.session_id as number,
+      clientId: row.client_id as number | null,
+      subjective: (body.subjective as string) ?? "",
+      objective: (body.objective as string) ?? "",
+      assessment: (body.assessment as string) ?? "",
+      plan: (body.plan as string) ?? "",
+      perProgram: (body.perProgram as SessionNoteDraft["perProgram"]) ?? [],
+      abcNarrative: (body.abcNarrative as string) ?? "",
+      billableCode: row.billable_code as SessionNoteDraft["billableCode"],
+      status: row.status as SessionNoteDraft["status"],
+    };
+    return {
+      id: row.id as string,
+      sessionId: row.session_id as number,
+      clientId: row.client_id as number,
+      clientName: ((row.clients as { name?: string } | null)?.name) ?? `Client ${row.client_id}`,
+      clinicianId: row.clinician_id as string | null,
+      clinicianName: ((row.profiles as { full_name?: string } | null)?.full_name) ?? "Unknown clinician",
+      createdAt: row.created_at as string,
+      note,
+    };
+  });
+}
+
+/**
+ * Countersign or return a note by its real `session_notes.id`, regardless of
+ * which browser originally wrote it — unlike `saveNote()`/`lockRunSession()`,
+ * which only ever operate on this browser's own `mem` mirror and would
+ * silently no-op (nothing matches) for a note someone else drafted.
+ */
+export async function countersignNote(
+  item: PendingCountersign,
+  decision: "countersigned" | "returned",
+  returnNote?: string,
+): Promise<void> {
+  if (IS_PREVIEW) {
+    await saveNote({ ...item.note, status: decision });
+    if (decision === "countersigned") await lockRunSession(item.sessionId);
+    return;
+  }
+  const user = (await sb().auth.getUser()).data.user;
+  const patch: Record<string, unknown> = { status: decision };
+  if (decision === "countersigned") {
+    patch.countersigned_by = user?.id ?? null;
+    patch.countersigned_at = new Date().toISOString();
+  } else {
+    patch.return_note = returnNote ?? null;
+  }
+  const { error } = await sb().from("session_notes").update(patch).eq("id", item.id);
+  if (error) throw error;
+
+  if (decision === "countersigned") {
+    // Only from 'completed' -> 'locked': the forbid_locked_session_update
+    // trigger (migration 0004) rejects any other transition, and this
+    // write may be racing a session that never reached 'completed' at all.
+    const { error: lockErr } = await sb()
+      .from("client_sessions")
+      .update({ status: "locked" })
+      .eq("id", item.sessionId)
+      .eq("status", "completed");
+    if (lockErr) throw lockErr;
+  }
 }
 
 /* ---- helpers -------------------------------------------------------------- */

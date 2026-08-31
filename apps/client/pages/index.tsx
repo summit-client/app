@@ -12,9 +12,12 @@ import DesignB, {
 import { positionOf, totalPosition, type BudgetEntry, type ClientBudget } from "../lib/budget";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
+import { clinicTodayDateStr } from "../lib/clinic-date";
+import { sortProgramsForFamily } from "../lib/program-display";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { SelectClient } from "../components/select-client";
 import { AccountProblemNotice } from "../components/account-problem-notice";
+import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
 
@@ -23,18 +26,24 @@ type DashboardProps = {
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
+  sessionsCount: number;
+  sessionsError: boolean;
   programs: DashboardProgram[];
+  programsError: boolean;
   soapNotes: DashboardSoapNote[];
+  soapNotesError: boolean;
   budget: {
     allocated: number; spent: number; remaining: number; percentUsed: number; currency: string;
     count: number;
   } | null;
+  budgetError: boolean;
   isAdminViewingAs: boolean;
 };
 
 type SelectProps = {
   mode: "select";
   clients: SelectableClient[];
+  clientsError: boolean;
 };
 
 type ProblemProps = {
@@ -42,17 +51,25 @@ type ProblemProps = {
   problem: AccountProblem;
 };
 
-type PageProps = DashboardProps | SelectProps | ProblemProps;
+type ErrorProps = {
+  mode: "error";
+};
+
+type PageProps = DashboardProps | SelectProps | ProblemProps | ErrorProps;
 
 export default function ClientDashboard(
   props: InferGetServerSidePropsType<typeof getServerSideProps>
 ) {
   if (props.mode === "select") {
-    return <SelectClient clients={props.clients} />;
+    return <SelectClient clients={props.clients} error={props.clientsError} />;
   }
 
   if (props.mode === "problem") {
     return <AccountProblemNotice problem={props.problem} />;
+  }
+
+  if (props.mode === "error") {
+    return <LoadErrorNotice />;
   }
 
   return (
@@ -90,11 +107,14 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   const resolved = await resolveViewedClient(supabase, req as NextApiRequest, user.id);
 
+  if (resolved.kind === "error") {
+    return { props: { mode: "error" } };
+  }
   if (resolved.kind === "needs-selection") {
     // The admin picker lives right here on the landing page, not a separate
     // route - the first thing an admin sees after following the nav link.
-    const clients = await listClinicClients(supabase, resolved.clinicId);
-    return { props: { mode: "select", clients } };
+    const { clients, error: clientsError } = await listClinicClients(supabase, resolved.clinicId);
+    return { props: { mode: "select", clients, clientsError } };
   }
   if (resolved.kind === "account-problem") {
     return { props: { mode: "problem", problem: resolved.problem } };
@@ -125,18 +145,32 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // happened session first, not what's actually coming up. Scoped to today
   // forward and capped to a handful for the dashboard snapshot; the full
   // history (including past sessions) is still one click away via
-  // "View all" -> /appointments.
-  const todayDateStr = new Date().toISOString().slice(0, 10);
-  const { data: sessions, error: sessionsError } = await supabase
+  // "View all" -> /appointments. clinicTodayDateStr() (not
+  // new Date().toISOString()) so this cutoff is the clinic's own calendar
+  // day, not the UTC server's - see lib/clinic-date.ts for why that
+  // mattered here specifically.
+  const todayDateStr = clinicTodayDateStr();
+  // { count: "exact" } so `sessionsCount` below is the true number of
+  // upcoming sessions, not just how many fit in this capped preview list -
+  // the "Sessions / Upcoming" stat tile used to read `sessions.length`
+  // directly, which is this same query's own .limit(5) result: a family
+  // with 6+ upcoming sessions saw a tile permanently stuck at "5" no
+  // matter how many they actually had booked. PostgREST returns the exact
+  // total alongside the limited page in one round trip, so this doesn't
+  // need a second query.
+  const { data: sessions, error: sessionsError, count: sessionsCount } = await supabase
     .from("sessions")
-    .select(`
+    .select(
+      `
       id,
       hour,
       minute,
       type,
       session_date,
       status
-    `)
+    `,
+      { count: "exact" }
+    )
     .eq("client_id", viewed.clientId)
     .gte("session_date", todayDateStr)
     .neq("status", "cancelled")
@@ -156,11 +190,12 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // via RLS (programs_client_read) - the client_id filter here is
   // defense-in-depth, matching the same pattern sessions already uses,
   // not the only thing standing between one family and another's data.
+  // Ordered by name from the DB; re-sorted by a deliberate status
+  // priority below rather than alphabetically (see sortProgramsForFamily).
   const { data: programs, error: programsError } = await supabase
     .from("programs")
     .select("id, name, domain, status")
     .eq("client_id", viewed.clientId)
-    .order("status", { ascending: true })
     .order("name", { ascending: true });
 
   if (programsError) {
@@ -198,12 +233,17 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     console.error("Failed to load budget entries:", entriesError.message);
   }
 
+  // nullsFirst: false because Postgres's default for `order by ... desc`
+  // is NULLS FIRST: a note with no signed_at (if a countersigned note can
+  // ever have one) would sort ahead of every actually-signed note
+  // regardless of how recent it is, not to the back where a null date
+  // belongs in a "most recent first" list.
   const { data: soapNotes, error: soapNotesError } = await supabase
     .from("session_notes")
     .select("id, status, signed_at, countersigned_at, body")
     .eq("client_id", viewed.clientId)
     .in("status", ["signed", "countersigned"])
-    .order("signed_at", { ascending: false })
+    .order("signed_at", { ascending: false, nullsFirst: false })
     .limit(5);
 
   if (soapNotesError) {
@@ -224,9 +264,18 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       familyName,
       clientName: viewed.clientName || "Client",
       sessions: (sessions ?? []) as DashboardSession[],
-      programs: (programs ?? []) as DashboardProgram[],
+      sessionsCount: sessionsCount ?? (sessions ?? []).length,
+      sessionsError: Boolean(sessionsError),
+      programs: sortProgramsForFamily((programs ?? []) as DashboardProgram[]),
+      programsError: Boolean(programsError),
       soapNotes: (soapNotes ?? []) as DashboardSoapNote[],
+      soapNotesError: Boolean(soapNotesError),
       budget: summarizeBudgets(budgetRows ?? [], entryRows ?? []),
+      // Either read failing makes the total wrong, not merely incomplete: a
+      // missing entry understates spend, and a missing budget hides the
+      // allocation it was spent against. Both roll into one flag so the card
+      // says it could not load rather than showing a confident wrong number.
+      budgetError: Boolean(budgetsError || entriesError),
       isAdminViewingAs: viewed.isAdminViewingAs,
     },
   };

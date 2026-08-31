@@ -1,86 +1,101 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { withTimeout } from '../lib/withTimeout'
+import { describeAuthError } from '../lib/authErrors'
+import AuthCard from '../components/auth/AuthCard'
+import FormField from '../components/auth/FormField'
+import SubmitButton from '../components/auth/SubmitButton'
+
+const AUTH_TIMEOUT_MS = 15000
+
+function validateEmail(value) {
+  if (!value.trim()) return 'Enter your email address.'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Enter a valid email address.'
+  return ''
+}
 
 export default function ForgotPassword() {
-  const [email, setEmail]     = useState('')
-  const [message, setMessage] = useState('')
+  const [email, setEmail] = useState('')
+  const [fieldError, setFieldError] = useState('')
+  const [formError, setFormError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [sent, setSent]       = useState(false)
+  const [sent, setSent] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (loading || sent) return
+
+    const error = validateEmail(email)
+    setFieldError(error)
+    setFormError('')
+    if (error) return
+
     setLoading(true)
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback`,
-    })
+    try {
+      // Supabase's resetPasswordForEmail already doesn't error for an email
+      // with no account - it silently succeeds either way, precisely so
+      // this form can't be used to test which addresses exist. Matching
+      // that: any error surfaced here is a real failure (network/rate
+      // limit), never "no such account".
+      const { error: authError } = await withTimeout(
+        supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        }),
+        AUTH_TIMEOUT_MS,
+        'This is taking longer than expected. Please try again.',
+      )
 
-    setLoading(false)
+      if (authError) {
+        setFormError(describeAuthError(authError))
+        setLoading(false)
+        return
+      }
 
-    if (error) {
-      setMessage(error.message)
-    } else {
       setSent(true)
-      setMessage('Check your email for a reset link.')
+      setLoading(false)
+    } catch (err) {
+      setFormError(describeAuthError(err))
+      setLoading(false)
     }
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
-      <div style={{ width: 360, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Reset Password</h1>
-        <p style={{ fontSize: 14, color: '#555', margin: 0 }}>
-          Enter your email and we'll send you a reset link.
-        </p>
-
-        <input
-          type="email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          placeholder="Your email"
-          required
-          style={{ padding: '10px 12px', fontSize: 15, border: '1px solid #ccc', borderRadius: 6 }}
-        />
-
-        <button
-          onClick={handleSubmit}
-          disabled={loading || sent}
-          style={{
-            padding: '10px 12px', fontSize: 15,
-            background: sent ? '#4caf50' : '#1A3F5C',
-            color: '#fff', border: 'none', borderRadius: 6,
-            cursor: (loading || sent) ? 'not-allowed' : 'pointer',
-            opacity: (loading || sent) ? 0.8 : 1,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          }}
-        >
-          {loading && (
-            <span style={{
-              width: 14, height: 14, border: '2px solid rgba(255,255,255,0.4)',
-              borderTopColor: '#fff', borderRadius: '50%',
-              display: 'inline-block', animation: 'spin 0.7s linear infinite',
-            }} />
-          )}
-          {loading ? 'Sending…' : sent ? 'Email sent!' : 'Send Reset Link'}
-        </button>
-
-        {message && (
-          <p style={{ fontSize: 14, color: sent ? '#2e7d32' : 'red', margin: 0 }}>
-            {message}
+    <AuthCard
+      title="Reset your password"
+      subtitle={sent ? undefined : "Enter your email and we'll send you a reset link."}
+    >
+      {sent ? (
+        <>
+          <p className="auth-form-success" role="status">
+            If an account exists for <strong>{email}</strong>, a reset link is on its way. Check your inbox.
           </p>
-        )}
+          <a href="/login" className="auth-back-link">← Back to sign in</a>
+        </>
+      ) : (
+        <form className="auth-form" onSubmit={handleSubmit} noValidate>
+          {formError && (
+            <p className="auth-form-error" role="alert">{formError}</p>
+          )}
 
-        <a href="/login" style={{ fontSize: 13, color: '#555', textDecoration: 'none' }}
-          onMouseOver={e => (e.currentTarget.style.textDecoration = 'underline')}
-          onMouseOut={e  => (e.currentTarget.style.textDecoration = 'none')}
-        >
-          ← Back to sign in
-        </a>
-      </div>
+          <FormField
+            label="Email"
+            type="email"
+            autoComplete="email"
+            inputMode="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            error={fieldError}
+            required
+          />
 
-      {/* Spinner keyframe — inline since these pages have no shared CSS yet */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+          <SubmitButton loading={loading} loadingLabel="Sending…">
+            Send reset link
+          </SubmitButton>
+
+          <a href="/login" className="auth-back-link">← Back to sign in</a>
+        </form>
+      )}
+    </AuthCard>
   )
 }

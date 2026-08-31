@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { signOutUrl } from "@summit/portals";
+import { admits, signOutUrl } from "@summit/portals";
 import { supabase } from "./supabase";
 
 /**
@@ -34,6 +34,19 @@ export interface AppUser {
   clinic_id: string;
 }
 
+/**
+ * Why the signed-in person can't use this portal, when that's true. RLS
+ * filters queries to empty results rather than erroring (see CLAUDE.md's
+ * "RLS returns empty sets, not errors" trap), so without this a wrong-role
+ * or clinic-less account just sees the full shell with nothing in it -
+ * indistinguishable from "no data yet."
+ */
+export type UserProblem = "NO_PROFILE" | "NO_CLINIC" | "ROLE_EXCLUDED";
+
+/** @summit/portals' ACCESS.scheduler - the one place that owns which roles
+ *  this portal serves. Read via admits() rather than duplicating the list. */
+const PORTAL_KEY = "scheduler" as const;
+
 /** Reject rather than hang forever if a call never settles. */
 function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -46,6 +59,7 @@ function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T
 
 export function useUser() {
   const [user, setUser] = useState<AppUser | null>(null);
+  const [problem, setProblem] = useState<UserProblem | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -55,6 +69,7 @@ export function useUser() {
       try {
         if (!session) {
           setUser(null);
+          setProblem(null);
           return;
         }
 
@@ -66,10 +81,26 @@ export function useUser() {
         if (cancelled) return;
 
         if (error) console.error("[useUser] profile lookup failed", error);
-        setUser(profile ? (profile as AppUser) : null);
+
+        if (!profile) {
+          setUser(null);
+          setProblem("NO_PROFILE");
+          return;
+        }
+
+        const p = profile as AppUser;
+        setUser(p);
+        setProblem(
+          !p.clinic_id ? "NO_CLINIC" :
+          !admits(PORTAL_KEY, p.role) ? "ROLE_EXCLUDED" :
+          null
+        );
       } catch (err) {
         console.error("[useUser] profile load failed", err);
-        if (!cancelled) setUser(null);
+        if (!cancelled) {
+          setUser(null);
+          setProblem("NO_PROFILE");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -87,8 +118,19 @@ export function useUser() {
         if (!cancelled) await applySession(session);
       } catch (err) {
         console.error("[useUser] initial auth load failed", err);
+        // This branch (getSession() itself throwing or timing out - a
+        // network blip, not a role/clinic problem) previously left `problem`
+        // at its initial `null` while also leaving `user` null. _app.tsx
+        // treats "no problem" as "render the app normally," so this fell
+        // straight through to the full shell with UserContext set to null -
+        // the exact RLS-empty-set trap this hook exists to prevent, just
+        // reached through a different door (a failed identity load instead
+        // of a real role/clinic gap). Setting NO_PROFILE here gives the same
+        // explanation the inner catch below already gives for the
+        // equivalent failure one step later in the same flow.
         if (!cancelled) {
           setUser(null);
+          setProblem("NO_PROFILE");
           setLoading(false);
         }
       }
@@ -122,5 +164,5 @@ export function useUser() {
     window.location.href = signOutUrl();
   };
 
-  return { user, loading, signOut };
+  return { user, problem, loading, signOut };
 }

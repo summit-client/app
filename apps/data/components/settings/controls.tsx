@@ -5,11 +5,22 @@ import {
   onSettingsChange, resolve, setSetting, SETTINGS,
   type ResolvedSetting, type SettingScope, type SettingValue,
 } from "@summit/settings";
+import { useSession } from "@/components/session-provider";
 
 /**
  * Shared building blocks for Settings. Every control renders from the central
  * registry, shows which level owns it (Organization / Role / Personal), and —
  * when a user override is allowed — the inheritance chain with a reset.
+ *
+ * Writing an Organization Setting is admin-only at the RLS layer
+ * (`org_settings_admin_*`, migration 0012 — `auth_role() = 'admin'`). Before
+ * this, a clinician or supervisor could click any org-scope control here and
+ * `setSetting()` would try the write, get blocked by RLS, roll back
+ * optimistically, and throw an unhandled rejection with no on-screen
+ * explanation — the "RLS returns empty sets, not errors" trap in spirit,
+ * even though this particular write path does raise (upsert's `with check`
+ * failure), because nothing here awaited or surfaced it. Disabling the
+ * control for non-admins avoids the doomed round trip entirely.
  */
 
 export function useSettingsTick(): number {
@@ -33,11 +44,18 @@ function writeLevel(r: ResolvedSetting): SettingScope {
 
 export function SettingRow({ settingKey }: { settingKey: string }) {
   useSettingsTick();
+  const { identity } = useSession();
   const r = resolve(settingKey);
   const level = writeLevel(r);
   const overriding = level === "user" && r.def.scope !== "user";
+  // Only admins can write org_settings (RLS: auth_role() = 'admin', migration
+  // 0012). Preview mode has no real RLS to hit, so don't block there.
+  const orgWriteBlocked = level === "org" && !identity?.isPreview && identity?.appRole !== "admin";
 
-  const set = (v: SettingValue) => setSetting(settingKey, v, level);
+  const set = (v: SettingValue) => {
+    if (orgWriteBlocked) return;
+    void setSetting(settingKey, v, level);
+  };
 
   return (
     <div className="set-row" id={`setting-${settingKey.replace(/\./g, "-")}`}>
@@ -48,6 +66,9 @@ export function SettingRow({ settingKey }: { settingKey: string }) {
             {SCOPE_LABEL[r.def.scope]}
           </span>
           {r.def.locked ? <span className="pill warn" title="Users cannot override this setting.">🔒 Organization Controlled</span> : null}
+          {orgWriteBlocked ? (
+            <span className="pill warn" title="Only an administrator can change organization settings.">🔒 Admin only</span>
+          ) : null}
         </div>
         {r.def.description ? <p className="sub" style={{ maxWidth: "58ch" }}>{r.def.description}</p> : null}
         {overriding ? (
@@ -63,7 +84,7 @@ export function SettingRow({ settingKey }: { settingKey: string }) {
         ) : null}
       </div>
       <div className="set-control">
-        <SettingControl r={r} disabled={r.def.locked && level !== "org" && false} onChange={set} />
+        <SettingControl r={r} disabled={orgWriteBlocked} onChange={set} />
       </div>
     </div>
   );

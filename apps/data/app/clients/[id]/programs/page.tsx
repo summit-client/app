@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { getPrograms } from "@/lib/data";
+import { activateProgram, createProgram, getPrograms } from "@/lib/data";
 import { masteryCheck, trendArrow } from "@/lib/mastery";
+import { useIdentity } from "@/components/session-provider";
 import { MODE_LABEL, PROMPT_ORDER, type Program } from "@/lib/types";
 
 const ARROW = { up: "▲", down: "▼", flat: "■" } as const;
@@ -16,12 +17,29 @@ const ARROW = { up: "▲", down: "▼", flat: "■" } as const;
 export default function ProgramsPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
+  const identity = useIdentity();
+  const canSignOff = identity.appRole === "admin" || identity.appRole === "supervisor";
   const [programs, setPrograms] = React.useState<Program[]>([]);
   const [showForm, setShowForm] = React.useState(false);
+  const [activatingId, setActivatingId] = React.useState<string | null>(null);
+  const [activateError, setActivateError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     void getPrograms(clientId).then(setPrograms);
   }, [clientId]);
+
+  const activate = async (p: Program) => {
+    setActivatingId(p.id);
+    setActivateError(null);
+    try {
+      await activateProgram(p.id);
+      setPrograms((x) => x.map((y) => (y.id === p.id ? { ...y, status: "active" } : y)));
+    } catch (e) {
+      setActivateError(e instanceof Error ? e.message : "Could not activate this goal.");
+    } finally {
+      setActivatingId(null);
+    }
+  };
 
   return (
     <div>
@@ -35,6 +53,12 @@ export default function ProgramsPage() {
       </div>
 
       {showForm ? <NewGoalForm clientId={clientId} onSaved={(p) => { setPrograms((x) => [...x, p]); setShowForm(false); }} /> : null}
+
+      {activateError ? (
+        <div className="card card-pad" role="alert" style={{ marginTop: 14, borderLeft: "3px solid var(--danger)" }}>
+          <p className="sub" style={{ color: "var(--ink)" }}>{activateError}</p>
+        </div>
+      ) : null}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
         {programs.map((p) => {
@@ -58,6 +82,18 @@ export default function ProgramsPage() {
                     <p className="trend" style={{ marginTop: 4 }}>
                       Targets: {p.targets.join(" · ")}
                     </p>
+                  ) : null}
+                  {p.status === "pending_signoff" && canSignOff ? (
+                    <button
+                      className="btn secondary" style={{ marginTop: 10 }}
+                      disabled={activatingId === p.id}
+                      onClick={() => activate(p)}
+                    >
+                      {activatingId === p.id ? "Activating…" : "Activate goal (sign off)"}
+                    </button>
+                  ) : null}
+                  {p.status === "pending_signoff" && !canSignOff ? (
+                    <p className="sub" style={{ marginTop: 8 }}>Awaiting your supervisor&rsquo;s sign-off.</p>
                   ) : null}
                 </div>
                 <div style={{ textAlign: "right", flex: "none" }}>
@@ -90,24 +126,34 @@ function NewGoalForm({ clientId, onSaved }: { clientId: number; onSaved: (p: Pro
     promptLevel: "verbal", reinforcementSchedule: "FR1", sd: "",
     masteryPct: 80, targetDirection: "increase",
   });
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const set = (k: string, v: string | number) => setF((x) => ({ ...x, [k]: v }));
 
-  const save = () => {
-    const p: Program = {
-      id: `p-${Date.now()}`, clientId, name: f.name, domain: f.domain,
-      mode: f.mode as Program["mode"], operationalDefinition: f.operationalDefinition,
-      masteryCriteria: `${f.masteryPct}% across 3 consecutive sessions, 2 settings, 2 people`,
-      masteryPct: Number(f.masteryPct), masteryConsecutive: 3,
-      promptLevel: f.promptLevel as Program["promptLevel"],
-      reinforcementSchedule: f.reinforcementSchedule, sd: f.sd || null,
-      targetDirection: f.targetDirection as Program["targetDirection"],
-      status: "pending_signoff", intervalSeconds: 30, dailyTargetMinutes: null, steps: [], targets: [], last5: [],
-    };
-    onSaved(p);
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const p = await createProgram({
+        clientId, name: f.name, domain: f.domain,
+        mode: f.mode as Program["mode"], operationalDefinition: f.operationalDefinition,
+        masteryPct: Number(f.masteryPct), promptLevel: f.promptLevel as Program["promptLevel"],
+        reinforcementSchedule: f.reinforcementSchedule, sd: f.sd || null,
+        targetDirection: f.targetDirection as Program["targetDirection"],
+      });
+      onSaved(p);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Could not save this goal.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="card card-pad" style={{ marginTop: 16, display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+    <div className="card card-pad two-col-grid" style={{ marginTop: 16 }}>
+      {saveError ? (
+        <p className="sub" role="alert" style={{ gridColumn: "1 / -1", color: "var(--danger)" }}>{saveError}</p>
+      ) : null}
       <div className="field" style={{ gridColumn: "1 / -1" }}>
         <label htmlFor="g-name">Goal name</label>
         <input id="g-name" className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Mand for break" />
@@ -137,8 +183,8 @@ function NewGoalForm({ clientId, onSaved }: { clientId: number; onSaved: (p: Pro
         <input id="g-sched" className="input" value={f.reinforcementSchedule} onChange={(e) => set("reinforcementSchedule", e.target.value)} />
       </div>
       <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10, alignItems: "center" }}>
-        <button className="btn" onClick={save} disabled={!f.name.trim() || !f.operationalDefinition.trim()}>
-          Save goal (pending supervisor sign-off)
+        <button className="btn" onClick={save} disabled={saving || !f.name.trim() || !f.operationalDefinition.trim()}>
+          {saving ? "Saving…" : "Save goal (pending supervisor sign-off)"}
         </button>
         <span className="sub">New goals activate once your supervisor signs off.</span>
       </div>

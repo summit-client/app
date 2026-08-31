@@ -175,6 +175,19 @@
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
+/* Fixed 2-column form grids (NewGoalForm, the doc sign-off row) had no
+   responsive treatment at all before this — an inline gridTemplateColumns
+   never reads a media query, so these stayed 2 columns down to phone width
+   regardless of the 820px shell breakpoint below. apps/client's
+   design-b.module.css has an established finer-grained breakpoint scheme
+   (1100/760/520px) beyond the shared 820px drawer; 760px is its own
+   "stack a 2-column layout to 1" tier (its .page rule), so this reuses that
+   value rather than inventing a new one. */
+.two-col-grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 760px) {
+  .two-col-grid { grid-template-columns: 1fr; }
+}
+
 /* The mobile sidebar-drawer breakpoint itself lives in
    @summit/design/components.css (the one shared copy - see its comment) so
    this app and apps/employee can't drift apart on it again. */

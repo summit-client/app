@@ -112,21 +112,54 @@ export default function Home() {
   // few values - so below the breakpoint this renders a plain, static,
   // unpinned stack instead, same pattern used for this kind of effect
   // everywhere else (Apple/Stripe-style pages do the same on mobile).
-  const [isMobile, setIsMobile] = useState(false)
+  //
+  // The mobile/desktop split itself lives entirely in CSS now
+  // (`.hero-bg`/`.hero-sticky`/`.hero-grid`/`.hero-pills` in globals.css) -
+  // `staticScene` below only ever chooses which *scroll-linked motion
+  // values* apply on top of that already-correct layout, never layout
+  // itself. It used to also pick `height: '320vh'` vs `'auto'` inline
+  // directly: since that same state started `false` (to match the
+  // server-rendered HTML) and only flipped after a `matchMedia` check ran in
+  // a `useEffect` a tick after hydration, a phone visibly rendered the
+  // desktop pinned-scroll layout for one frame and then collapsed to the
+  // real mobile stack. Confirmed live: hero height dropped from 2700px to
+  // 1039px within ~100ms of load on a 390px viewport.
+  //
+  // Now that layout no longer depends on this flag, it's tempting to read
+  // `matchMedia` synchronously in the initial state to close the flip
+  // window entirely - don't: that makes the *first client render* disagree
+  // with the server-rendered HTML (server always computes `false`, having
+  // no `window`), which is a real hydration mismatch, not a cosmetic one -
+  // React logs it and discards/regenerates the whole subtree on the client.
+  // Starting `false` and flipping in an effect keeps the initial client
+  // render identical to the server's, so hydration succeeds cleanly; since
+  // every motion value this flag gates is already at its scroll-position-0
+  // resting state on load (opacity 1, rotate 0, pills' translateX un-flown),
+  // the later flip changes nothing visible unless the user has already
+  // scrolled - by which point it has long since settled the same way the
+  // original `isMobile` flip did. `prefers-reduced-motion` is folded into
+  // the same flag so a reduced-motion user gets the settled state too,
+  // matching every CSS animation's own reduced-motion rule below.
+  const [staticScene, setStaticScene] = useState(false)
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 780px)')
-    setIsMobile(mq.matches)
-    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
+    const mqMobile = window.matchMedia('(max-width: 780px)')
+    const mqReduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = () => setStaticScene(mqMobile.matches || mqReduced.matches)
+    onChange()
+    mqMobile.addEventListener('change', onChange)
+    mqReduced.addEventListener('change', onChange)
+    return () => {
+      mqMobile.removeEventListener('change', onChange)
+      mqReduced.removeEventListener('change', onChange)
+    }
   }, [])
   // A settled (never-animating) progress value for SessionCell/pills math
-  // when isMobile - clamped past every threshold, so it reads as "finished".
+  // when staticScene - clamped past every threshold, so it reads as "finished".
   const staticProgress = useMotionValue(1)
 
   const heroRef = useRef<HTMLDivElement>(null)
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end end'] })
-  const cellProgress = isMobile ? staticProgress : scrollYProgress
+  const cellProgress = staticScene ? staticProgress : scrollYProgress
 
   // Springed copy drives the heavy calendar rotation so it carries weight
   // and smooths trackpad jitter. Pills stay on the raw value to feel snappy.
@@ -149,24 +182,13 @@ export default function Home() {
 
 {/* ── HERO / SCROLL SCENE ── */}
       <div ref={heroRef} className="hero-bg" style={{
-        position: 'relative', height: isMobile ? 'auto' : '320vh',
         background: 'linear-gradient(180deg,#EDF6F9 0%,#fff 100%)',
       }}>
-        <motion.div style={{
-          opacity: isMobile ? 1 : sceneOpacity,
-          position: isMobile ? 'static' : 'sticky', top: 64,
-          height: isMobile ? 'auto' : 'calc(100vh - 64px)',
-          display: 'flex', alignItems: 'center',
-          overflow: isMobile ? 'visible' : 'hidden',
-          padding: isMobile ? '96px 1.25rem 2.5rem' : '0 2rem',
+        <motion.div className="hero-sticky" style={{
+          opacity: staticScene ? 1 : sceneOpacity,
           fontFamily: body,
         }}>
-          <div style={{
-            maxWidth: 1200, margin: '0 auto', width: '100%',
-            display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-            gap: isMobile ? '2.5rem' : '4rem', alignItems: 'center',
-            perspective: isMobile ? undefined : 1500,
-          }}>
+          <div className="hero-grid">
 
             {/* Left: copy fades out, pills fly in.
                 COPY BAND holds badge/headline/paragraph and defines the region.
@@ -175,7 +197,7 @@ export default function Home() {
             <div style={{ position: 'relative' }}>
 
               <div style={{ position: 'relative' }}>
-                <FadeOut progress={scrollYProgress} start={0.10} active={!isMobile}>
+                <FadeOut progress={scrollYProgress} start={0.10} active={!staticScene}>
                   <div className="an1" style={{
                     display: 'inline-flex', alignItems: 'center', gap: '.4rem',
                     background: 'rgba(40,180,166,.12)', color: teal,
@@ -188,7 +210,7 @@ export default function Home() {
                   </div>
                 </FadeOut>
 
-                <FadeOut progress={scrollYProgress} start={0.13} active={!isMobile}>
+                <FadeOut progress={scrollYProgress} start={0.13} active={!staticScene}>
                   <h1 className="an2" style={{
                     fontFamily: display,
                     fontSize: 'clamp(2.1rem,3.8vw,3.1rem)',
@@ -201,7 +223,7 @@ export default function Home() {
                   </h1>
                 </FadeOut>
 
-                <FadeOut progress={scrollYProgress} start={0.16} active={!isMobile}>
+                <FadeOut progress={scrollYProgress} start={0.16} active={!staticScene}>
                   <p className="an3" style={{
                     fontSize: '1.05rem', color: g700,
                     marginBottom: '2rem', maxWidth: 460, lineHeight: 1.75,
@@ -213,22 +235,16 @@ export default function Home() {
                 {/* Pills — top-anchored to the band, height is intrinsic.
                     They fly in on top of the copy above as it fades out, so
                     on mobile (copy never fades - see FadeOut active={false}
-                    above) they'd just sit permanently on top of it. Skipped
-                    entirely there; Features further down the page covers the
-                    same three claims as plain, static content. */}
-                {!isMobile ? (
-                  <div style={{
-                    position: 'absolute', left: 0, right: 0, top: 0,
-                    display: 'flex', flexDirection: 'column',
-                    gap: '1.1rem',
-                    pointerEvents: 'none', zIndex: 2,
-                    perspective: 1200, transformStyle: 'preserve-3d',
-                  }}>
-                    {PILLS.map((p, i) => (
-                      <FeaturePill key={p.title} progress={scrollYProgress} index={i} {...p} />
-                    ))}
-                  </div>
-                ) : null}
+                    above) they'd just sit permanently on top of it. Hidden
+                    via CSS (.hero-pills) rather than left unmounted, so
+                    there's no conditional-render flash to match either;
+                    Features further down the page covers the same three
+                    claims as plain, static content. */}
+                <div className="hero-pills" aria-hidden="true">
+                  {PILLS.map((p, i) => (
+                    <FeaturePill key={p.title} progress={scrollYProgress} index={i} {...p} />
+                  ))}
+                </div>
               </div>
 
               <div className="an4" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '2.5rem' }}>
@@ -241,7 +257,7 @@ export default function Home() {
                 }}>
                   Start Free Trial
                 </a>
-                <FadeOut progress={scrollYProgress} start={0.19} active={!isMobile}>
+                <FadeOut progress={scrollYProgress} start={0.19} active={!staticScene}>
                   <a href="#how" style={{
                     color: navy,
                     fontFamily: display, fontSize: '1rem', fontWeight: 600,
@@ -252,7 +268,7 @@ export default function Home() {
                 </FadeOut>
               </div>
 
-              <FadeOut progress={scrollYProgress} start={0.22} active={!isMobile}>
+              <FadeOut progress={scrollYProgress} start={0.22} active={!staticScene}>
                 <div className="an5" style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
                   {[['×','faster scheduling'],['0','double bookings'],['AI','powered matching']].map(([v,l], i) => (
                     <div key={l}>
@@ -267,12 +283,14 @@ export default function Home() {
             </div>
 
             {/* Right: calendar rotates in place (desktop only - flat and
-                static on mobile, see the isMobile note above heroRef) */}
-            <motion.div style={{
-              rotateX: isMobile ? 0 : rotateX,
-              rotateY: isMobile ? 0 : rotateY,
-              scale: isMobile ? 1 : calScale,
-              position: 'relative', transformStyle: isMobile ? undefined : 'preserve-3d',
+                static on mobile, see the staticScene note above heroRef).
+                Purely illustrative - hidden from assistive tech so a screen
+                reader doesn't read out a fake week of mock session names. */}
+            <motion.div aria-hidden="true" style={{
+              rotateX: staticScene ? 0 : rotateX,
+              rotateY: staticScene ? 0 : rotateY,
+              scale: staticScene ? 1 : calScale,
+              position: 'relative', transformStyle: staticScene ? undefined : 'preserve-3d',
               willChange: 'transform',
             }}>
               <div style={{
@@ -325,7 +343,7 @@ export default function Home() {
               </div>
 
               <motion.div className="float-badge" style={{
-                opacity: isMobile ? 1 : badgeOpacity,
+                opacity: staticScene ? 1 : badgeOpacity,
                 position: 'absolute', bottom: -18, right: 20,
                 background: '#fff', borderRadius: 12, padding: '11px 15px',
                 boxShadow: '0 8px 32px rgba(26,63,92,.14)',
@@ -381,7 +399,7 @@ export default function Home() {
       </div>
 
       {/* ── FEATURES ── */}
-      <section id="features" style={{ padding: '88px 2rem', background: '#fff', fontFamily: body }}>
+      <section id="features" className="landing-section" style={{ background: '#fff', fontFamily: body }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
             fontFamily: display, fontSize: '.72rem', fontWeight: 700,
@@ -411,7 +429,7 @@ export default function Home() {
                 padding: '1.75rem', border: `1px solid ${g100}`,
                 transitionDelay: `${(i % 3) * 90}ms`,
               }}>
-                <div style={{
+                <div aria-hidden="true" style={{
                   width: 46, height: 46, borderRadius: 12, background: grad,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '1.1rem', fontSize: '1.25rem',
@@ -425,7 +443,7 @@ export default function Home() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section id="how" style={{ padding: '88px 2rem', background: off, fontFamily: body }}>
+      <section id="how" className="landing-section" style={{ background: off, fontFamily: body }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
             fontFamily: display, fontSize: '.72rem', fontWeight: 700,
@@ -465,8 +483,8 @@ export default function Home() {
       </section>
 
       {/* ── TESTIMONIAL ── */}
-      <section id="testimonials" className="testi-bg" style={{
-        padding: '88px 2rem', background: '#0F2E3D',
+      <section id="testimonials" className="testi-bg landing-section" style={{
+        background: '#0F2E3D',
         position: 'relative', overflow: 'hidden',
         fontFamily: body,
       }}>
@@ -493,12 +511,12 @@ export default function Home() {
       </section>
 
       {/* ── FINAL CTA ── */}
-      <section id="trial" style={{
-        padding: '100px 2rem', background: grad,
+      <section id="trial" className="landing-section-lg" style={{
+        background: grad,
         textAlign: 'center', position: 'relative', overflow: 'hidden',
         fontFamily: body,
       }}>
-        <div className="reveal" style={{ position: 'relative', maxWidth: 680, margin: '0 auto' }}>
+        <div className="reveal" style={{ position: 'relative', zIndex: 1, maxWidth: 680, margin: '0 auto' }}>
           <h2 style={{
             fontFamily: display,
             fontSize: 'clamp(2rem,3.8vw,2.9rem)',

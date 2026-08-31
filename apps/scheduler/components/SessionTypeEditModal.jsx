@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -26,6 +27,16 @@ export default function SessionTypeEditModal({ sessionType, clinicId, onSave, on
   const [color, setColor] = useState(sessionType.color || PALETTE[0]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // No Escape-to-close and no keyboard focus containment at all - closing
+  // only worked via the outside-click handler already on the overlay div
+  // below, or the close/Cancel buttons.
+  useEffect(() => {
+    function onKey(e) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const trapRef = useFocusTrap();
 
   async function handleSave() {
     if (!name.trim()) { setError("Session type name is required."); return; }
@@ -72,7 +83,8 @@ export default function SessionTypeEditModal({ sessionType, clinicId, onSave, on
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: COLORS.bg, borderRadius: 14, padding: "28px 28px 24px", width: 380, maxHeight: "85vh", overflowY: "auto", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 32px rgba(0,0,0,0.22)" }}>
+      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={isNew ? "New session type" : "Edit session type"}
+        style={{ background: COLORS.bg, borderRadius: 14, padding: "28px 28px 24px", width: 380, maxHeight: "85vh", overflowY: "auto", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
           <div style={{ fontSize: 17, fontWeight: 500, color: COLORS.text }}>{isNew ? "New session type" : "Edit session type"}</div>
           <button aria-label="Close edit session type modal" onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textT, cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>

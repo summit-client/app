@@ -92,7 +92,7 @@ export default function DocumentsPage() {
       <h2 className="section-title">On file</h2>
       <div className="card table-wrap">
         <table className="data">
-          <thead><tr><th>Document</th><th>Type</th><th>Date</th></tr></thead>
+          <thead><tr><th scope="col">Document</th><th scope="col">Type</th><th scope="col">Date</th></tr></thead>
           <tbody>
             {DOCS.map((d) => (
               <tr key={d.name}>

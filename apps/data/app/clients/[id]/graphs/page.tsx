@@ -166,7 +166,7 @@ function TargetView({ program, sessions }: { program: Program; sessions: RunSess
   return (
     <div className="table-wrap" style={{ marginTop: 10 }}>
       <table className="data">
-        <thead><tr><th>Target</th><th>Independent</th><th>Opportunities</th><th>Performance</th></tr></thead>
+        <thead><tr><th scope="col">Target</th><th scope="col">Independent</th><th scope="col">Opportunities</th><th scope="col">Performance</th></tr></thead>
         <tbody>
           {[...byTarget.entries()].map(([t, v]) => (
             <tr key={t}>
