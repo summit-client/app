@@ -2394,18 +2394,35 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   function exportICS() {
     const toExport = selected.size > 0 ? filtered.filter(b => selected.has(b.id)) : filtered;
     const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Summit Scheduler//EN"];
+    // DTSTART/DTEND previously emitted the local wall-clock time with no `Z`
+    // suffix and no TZID - "floating" time per RFC 5545, which an importing
+    // calendar app interprets in ITS OWN configured zone, not the clinic's.
+    // A 9am Eastern session imported into a calendar set to Pacific shows at
+    // 9am Pacific. Converting through a real Date - built from the session's
+    // own local date/hour/minute, so it picks up this browser's timezone
+    // (the clinic's, for on-site scheduling staff) and that exact date's DST
+    // state - to a UTC `Z` timestamp makes the exported time unambiguous
+    // everywhere without hand-building a VTIMEZONE component. This is a
+    // deliberate, correct use of toISOString() for a real UTC instant - not
+    // the earlier day-boundary bug (see git history) where it was used to
+    // extract a date string from "now," which is a different, unsafe use.
+    const toICSUTC = (date) => date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
     toExport.forEach(b => {
       const client = clients.find(c => c.id === b.client_id);
       const emp = employees.find(e => e.id === b.employee_id);
-      const dateStr = (b.session_date || "").replace(/-/g, "");
       const st = sessionTypes.find(s => s.name === b.type);
       const dur = st?.duration || 60;
-      const startH = String(b.hour).padStart(2, "0");
-      const endH = String(b.hour + Math.floor(dur / 60)).padStart(2, "0");
-      const endM = String(dur % 60).padStart(2, "0");
+      const [y, mo, d] = (b.session_date || "").split("-").map(Number);
+      if (!y || !mo || !d) return;
+      // b.minute was dropped entirely before (both start and end always
+      // computed as if the session began exactly on the hour), so anything
+      // on this app's 15/30-minute scheduling grid exported at the wrong
+      // start AND end time.
+      const start = new Date(y, mo - 1, d, b.hour, b.minute || 0);
+      const end = new Date(start.getTime() + dur * 60000);
       lines.push("BEGIN:VEVENT",
-        `DTSTART:${dateStr}T${startH}0000`,
-        `DTEND:${dateStr}T${endH}${endM}00`,
+        `DTSTART:${toICSUTC(start)}`,
+        `DTEND:${toICSUTC(end)}`,
         `SUMMARY:${b.type} – ${client?.name || "Client"}`,
         `DESCRIPTION:Staff: ${emp?.name || "—"} | Status: ${b.status}`,
         "END:VEVENT");
