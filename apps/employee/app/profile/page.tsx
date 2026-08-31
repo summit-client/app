@@ -4,6 +4,7 @@ import Link from "next/link";
 import { HubGate } from "@/components/hub-provider";
 import { HrGate } from "@/components/hr-provider";
 import { credentialLine, primaryCredential } from "@/lib/hr-store";
+import { SignaturePad } from "@/components/signature-pad";
 
 import * as React from "react";
 import { getProfile, saveProfile } from "@/lib/hub";
@@ -85,6 +86,8 @@ function Profile() {
           ? "Preview mode: the role switcher demos the supervisor and admin views. Signed in, your role comes from your Summit account and cannot be changed here."
           : "Your role comes from your Summit account. An administrator changes it."}
       </p>
+
+      <SignaturePad />
     </div>
   );
 }

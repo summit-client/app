@@ -648,6 +648,112 @@ await check("deployment_readiness reports the checks that are outstanding", asyn
   if (rows.some((r) => !r.why || r.why.length < 20)) throw new Error("a check has no explanation");
 });
 
+// --------------------------------------------------------------------------
+// 0034 · receipt identity
+// --------------------------------------------------------------------------
+const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+
+await check("a signature must actually be an image", async () => {
+  // As the owner: the ownership trigger runs BEFORE the check constraint, so
+  // signing as anyone else would be rejected for the wrong reason and this
+  // test would pass without ever exercising the image check.
+  await be(people.clinician);
+  await throws(
+    `insert into employee_signatures (clinic_id, user_id, image_data_uri, signed_name, created_by)
+     values ('${clinic}','${people.clinician}','javascript:alert(1)','A Clinician','${people.clinician}')`,
+    /employee_signatures_is_image/, "non-image signature");
+});
+
+await check("nobody signs for anybody else", async () => {
+  await be(people.admin);
+  await throws(
+    `insert into employee_signatures (clinic_id, user_id, image_data_uri, signed_name, created_by)
+     values ('${clinic}','${people.clinician}','${PNG}','A Clinician','${people.admin}')`,
+    /only be created by the person it belongs to/, "admin signing for a clinician");
+});
+
+await check("a person can record their own signature, and only one is current", async () => {
+  await be(people.clinician);
+  await db.exec(`insert into employee_signatures
+    (clinic_id, user_id, image_data_uri, signed_name, effective_from, created_by)
+    values ('${clinic}','${people.clinician}','${PNG}','A Clinician','2026-01-01','${people.clinician}')`);
+  await throws(
+    `insert into employee_signatures
+      (clinic_id, user_id, image_data_uri, signed_name, effective_from, created_by)
+      values ('${clinic}','${people.clinician}','${PNG}','A Clinician','2026-06-01','${people.clinician}')`,
+    /employee_signatures_one_current|duplicate key/, "a second current signature");
+
+  // Superseding the old one is what makes room for the new.
+  await db.exec(`update employee_signatures set superseded_at = now()
+                  where user_id = '${people.clinician}' and superseded_at is null`);
+  await db.exec(`insert into employee_signatures
+    (clinic_id, user_id, image_data_uri, signed_name, effective_from, created_by)
+    values ('${clinic}','${people.clinician}','${PNG}','A. Clinician','2026-06-01','${people.clinician}')`);
+  eq((await one(`select count(*)::int n from employee_signatures where user_id='${people.clinician}'`)).n,
+     2, "both signatures kept");
+});
+
+await check("exactly one site can be the receipt default", async () => {
+  await db.exec(`insert into locations (name, address_line1, city, province, postal_code, clinic_id, is_default_for_receipts)
+                 values ('Durham Clinic','1 Main St','Oshawa','ON','L1H 1A1','${clinic}', true)`);
+  await throws(
+    `insert into locations (name, address_line1, clinic_id, is_default_for_receipts)
+     values ('Toronto Clinic','2 King St','${clinic}', true)`,
+    /locations_one_receipt_default|duplicate key/, "a second default site");
+  // A second NON-default site is fine — that is the multi-site case.
+  await db.exec(`insert into locations (name, address_line1, city, province, clinic_id)
+                 values ('Toronto Clinic','2 King St','Toronto','ON','${clinic}')`);
+  eq((await one(`select count(*)::int n from locations where clinic_id='${clinic}'`)).n, 2, "two sites");
+});
+
+await check("a receipt line carries the client, clinician, credential number and signature", async () => {
+  await db.exec(`update clinics set legal_name='Test Clinic Inc.', address_line1='1 Main St',
+                  city='Oshawa', province='ON', postal_code='L1H 1A1', business_number='12345 6789 RT0001'
+                  where id='${clinic}'`);
+  await db.exec(`insert into employee_credentials
+    (clinic_id, user_id, credential, credential_number, cycle_start, cycle_end, status)
+    values ('${clinic}','${people.clinician}','BCBA','1-23-45678','2026-01-01','2028-12-31','GOOD_STANDING')`);
+
+  const line = await one(`select * from receipt_lines
+    where clinic_id='${clinic}' and clinician_user_id='${people.clinician}' limit 1`);
+  if (!line) throw new Error("no receipt line resolved for the derived charge");
+
+  eq(line.client_name, "Test Child", "client name");
+  eq(line.clinician_name, "clinician", "clinician name");
+  eq(line.clinician_credential, "BCBA", "credential");
+  eq(line.clinician_credential_number, "1-23-45678", "credential number");
+  eq(line.organization_name, "Test Clinic Inc.", "legal name preferred over trading name");
+  eq(line.business_number, "12345 6789 RT0001", "business number");
+  if (!line.clinician_signature) throw new Error("signature did not resolve");
+  // The charge is dated 2026-04-09, so the signature effective 2026-01-01 is
+  // the one that applies — not the later one superseding it.
+  eq(line.clinician_signed_name, "A Clinician", "the signature current on the charge date");
+});
+
+await check("a lapsed credential never reaches a receipt", async () => {
+  await db.exec(`update employee_credentials set status='LAPSED' where user_id='${people.clinician}'`);
+  const line = await one(`select clinician_credential_number from receipt_lines
+    where clinic_id='${clinic}' and clinician_user_id='${people.clinician}' limit 1`);
+  if (line.clinician_credential_number !== null)
+    throw new Error(`lapsed number leaked: ${line.clinician_credential_number}`);
+  await db.exec(`update employee_credentials set status='GOOD_STANDING' where user_id='${people.clinician}'`);
+});
+
+await check("a credit is not a receipt line", async () => {
+  const b = (await one(`select id from client_budgets limit 1`)).id;
+  await db.exec(`insert into budget_entries (clinic_id, budget_id, entry_date, kind, description, amount)
+                 values ('${clinic}','${b}','2026-05-01','CREDIT','Refund', -50)`);
+  eq((await one(`select count(*)::int n from receipt_lines where service='Refund'`)).n,
+     0, "credit appearing as a receipt line");
+});
+
+await check("receipt_readiness names what is missing", async () => {
+  const r = await one(`select * from receipt_readiness where clinic_id='${clinic}'`);
+  eq(r.blocker, "ready", `blocker: ${r.blocker}`);
+  eq(r.missing_org_address, false, "org address");
+  eq(r.missing_default_site, false, "default site");
+});
+
 console.log(results.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
