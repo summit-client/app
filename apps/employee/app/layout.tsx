@@ -46,6 +46,7 @@ const NAV: { href: string; label: string; group?: string; icon?: string }[] = [
   { href: "/documents", label: "My Documents", icon: "▤", group: "Records" },
   { href: "/onboarding", label: "My Onboarding", icon: "◉", group: "Records" },
   { href: "/policies", label: "Policies & Handbook", icon: "▣", group: "Records" },
+  { href: "/payroll", label: "Payroll", icon: "◐", group: "Records" },
   { href: "/time-off", label: "Time Off", icon: "◷", group: "Records" },
   { href: "/profile", label: "My Profile", icon: "⊕", group: "Records" },
   { href: "/help", label: "Help", icon: "?", group: "Records" },

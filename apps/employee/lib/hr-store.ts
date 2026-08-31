@@ -80,6 +80,33 @@ export function currentCycle(): string { return thisCycle(); }
 /** Everyone in the clinic with an account. Empty in preview beyond yourself. */
 export function directory(): Person[] { return hr().directory; }
 
+/**
+ * The credential this employee is identified by professionally, and its
+ * registration number.
+ *
+ * Recorded once on My Credentials and read everywhere else — the profile, a
+ * certificate, and (once it exists) a client-facing receipt. Never re-typed
+ * per screen: a registration number that can be entered in three places is a
+ * number that will eventually disagree with itself, and it is the field an
+ * insurer or a College actually checks.
+ *
+ * "Primary" is the credential in good standing with the furthest-out renewal —
+ * the one someone is currently practising under. A lapsed credential is never
+ * returned as primary, because presenting a lapsed number on a receipt is
+ * worse than presenting none.
+ */
+export function primaryCredential(): EmployeeCredential | null {
+  const held = hr().credentials.filter((c) => c.status === "GOOD_STANDING" && c.number.trim() !== "");
+  if (held.length === 0) return null;
+  return held.slice().sort((a, b) => b.cycleEnd.localeCompare(a.cycleEnd))[0];
+}
+
+/** How a credential should read wherever a person is identified by it. */
+export function credentialLine(c: EmployeeCredential | null = primaryCredential()): string | null {
+  if (!c) return null;
+  return `${c.credential} #${c.number}`;
+}
+
 export function personId(name: string): string | null {
   return hr().directory.find((p) => p.name === name)?.id ?? null;
 }
