@@ -2,7 +2,7 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 import type {
-  AbcIncident, ClientRow, Program, RunSession, ScheduledSession,
+  AbcIncident, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
   SessionNoteDraft, SessionPlanDraft, SessionProgramSummary, TrialEvent,
 } from "./types";
 import { deriveProgramSummary } from "./mastery";
@@ -473,6 +473,106 @@ export function getNote(sessionId: number): SessionNoteDraft | undefined {
 
 export function pendingNotes(): SessionNoteDraft[] {
   return [...mem.notes.values()].filter((n) => n.status === "awaiting_countersign");
+}
+
+/**
+ * The supervisor Review Queue, for real: every session note awaiting
+ * countersign across the WHOLE CLINIC, not just the ones this browser
+ * happened to write. `pendingNotes()` above only ever reads the local
+ * `mem.notes` mirror — populated exclusively by this same browser's own
+ * `saveNote()` calls — so a supervisor opening the Review Queue on their
+ * own device saw an empty queue no matter how many real clinicians had
+ * real notes awaiting countersign, unless they personally happened to be
+ * the one who wrote it. RLS already grants clinic-wide staff read on
+ * `session_notes` (`clinic_id = auth_clinic_id() and auth_is_staff()`,
+ * migration 0001), the same policy shape apps/employee's
+ * `listPendingSignoffs()` already relies on for its own clinic-wide queue —
+ * this just actually calls it.
+ */
+export async function getPendingCountersigns(): Promise<PendingCountersign[]> {
+  if (IS_PREVIEW) {
+    return pendingNotes().map((n) => ({
+      id: `preview-${n.sessionId}`,
+      sessionId: n.sessionId,
+      clientId: n.clientId ?? 0,
+      clientName: previewClients.find((c) => c.id === n.clientId)?.name ?? `Client ${n.clientId}`,
+      clinicianId: null,
+      clinicianName: "You (preview)",
+      createdAt: new Date().toISOString(),
+      note: n,
+    }));
+  }
+  const { data, error } = await sb()
+    .from("session_notes")
+    .select("id, session_id, client_id, clinician_id, body, billable_code, status, created_at, clients(name), profiles!clinician_id(full_name)")
+    .eq("status", "awaiting_countersign")
+    .order("created_at");
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => {
+    const body = (row.body as Record<string, unknown>) ?? {};
+    const note: SessionNoteDraft = {
+      sessionId: row.session_id as number,
+      clientId: row.client_id as number | null,
+      subjective: (body.subjective as string) ?? "",
+      objective: (body.objective as string) ?? "",
+      assessment: (body.assessment as string) ?? "",
+      plan: (body.plan as string) ?? "",
+      perProgram: (body.perProgram as SessionNoteDraft["perProgram"]) ?? [],
+      abcNarrative: (body.abcNarrative as string) ?? "",
+      billableCode: row.billable_code as SessionNoteDraft["billableCode"],
+      status: row.status as SessionNoteDraft["status"],
+    };
+    return {
+      id: row.id as string,
+      sessionId: row.session_id as number,
+      clientId: row.client_id as number,
+      clientName: ((row.clients as { name?: string } | null)?.name) ?? `Client ${row.client_id}`,
+      clinicianId: row.clinician_id as string | null,
+      clinicianName: ((row.profiles as { full_name?: string } | null)?.full_name) ?? "Unknown clinician",
+      createdAt: row.created_at as string,
+      note,
+    };
+  });
+}
+
+/**
+ * Countersign or return a note by its real `session_notes.id`, regardless of
+ * which browser originally wrote it — unlike `saveNote()`/`lockRunSession()`,
+ * which only ever operate on this browser's own `mem` mirror and would
+ * silently no-op (nothing matches) for a note someone else drafted.
+ */
+export async function countersignNote(
+  item: PendingCountersign,
+  decision: "countersigned" | "returned",
+  returnNote?: string,
+): Promise<void> {
+  if (IS_PREVIEW) {
+    await saveNote({ ...item.note, status: decision });
+    if (decision === "countersigned") await lockRunSession(item.sessionId);
+    return;
+  }
+  const user = (await sb().auth.getUser()).data.user;
+  const patch: Record<string, unknown> = { status: decision };
+  if (decision === "countersigned") {
+    patch.countersigned_by = user?.id ?? null;
+    patch.countersigned_at = new Date().toISOString();
+  } else {
+    patch.return_note = returnNote ?? null;
+  }
+  const { error } = await sb().from("session_notes").update(patch).eq("id", item.id);
+  if (error) throw error;
+
+  if (decision === "countersigned") {
+    // Only from 'completed' -> 'locked': the forbid_locked_session_update
+    // trigger (migration 0004) rejects any other transition, and this
+    // write may be racing a session that never reached 'completed' at all.
+    const { error: lockErr } = await sb()
+      .from("client_sessions")
+      .update({ status: "locked" })
+      .eq("id", item.sessionId)
+      .eq("status", "completed");
+    if (lockErr) throw lockErr;
+  }
 }
 
 /* ---- helpers -------------------------------------------------------------- */
