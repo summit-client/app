@@ -64,12 +64,24 @@ project via `--project-ref`) so a Claude session can query the live schema
 and data directly instead of every migration/mock-data script being handed
 over as SQL for a human to paste into the dashboard's SQL editor. It needs
 `SUPABASE_ACCESS_TOKEN` set in the Claude Code environment's own env vars
-(per-person/per-environment, never committed) — if `ToolSearch` for
-"supabase" comes back empty, that variable isn't set on the environment this
-session is running in, not a problem with `.mcp.json` itself. `--read-only`
+(per-person/per-environment, never committed). `--read-only`
 is the actual enforcement point (not the token, which is account-wide) — do
 not run migrations or writes through this connection; hand those over as SQL
 for a human to run, same as before.
+
+**If `ToolSearch` for "supabase" comes back empty, a missing token is not the
+first thing to check (2026-08-31).** Confirmed live: a correctly-set token
+still produced zero usable tools, because `@supabase/mcp-server-supabase`
+calls `https://api.supabase.com` for everything it does (hardcoded in the
+package, no flag changes it), and this Claude Code environment's network
+access defaults to **Trusted**, which does not include that domain — the
+proxy rejects it with a 403 before the token is ever read. Fix is in the
+environment's own settings, not `.mcp.json`: Network access → **Custom**,
+add `api.supabase.com` and `*.supabase.co` to Allowed domains, keep "also
+include default list of common package managers" checked (needed for
+`npx`/`pnpm`), save, and start a **new** session — changes never reach an
+already-running one. See `docs/context/environments.md`'s Supabase section
+for the full diagnostic trail.
 
 ## Hard constraints
 
@@ -129,10 +141,11 @@ for schedulers. Scheduler still maps to `HubRole.EMPLOYEE` everywhere else
 in that portal (`session.ts`) — self-service hub screens only, never
 blanket supervisor power over other people's records; the Admin console
 grant is the one deliberate exception, not a role promotion. Migration
-`0022` widened `hub_can_manage()` to `auth_role() in ('admin', 'scheduler')`
-so the console's queues actually return data for a scheduler instead of
-rendering empty (the `ACCESS.employee` "renders and shows nothing" trap
-this same section's comment already warns about, for exactly this reason).
+`0022` (applied live 2026-08-31) widened `hub_can_manage()` to
+`auth_role() in ('admin', 'scheduler')` so the console's queues actually
+return data for a scheduler instead of rendering empty (the
+`ACCESS.employee` "renders and shows nothing" trap this same section's
+comment already warns about, for exactly this reason).
 
 Do not confuse `profiles.role` with `staff.role`, a different column on a
 different table holding the clinical credential (`BCBA | BCaBA | RBT |
@@ -182,6 +195,26 @@ reads as an auth bug and is not one. Gate on role in the app and *say* something
 **`profiles.clinic_id` must be set.** Null means `auth_clinic_id()` returns null,
 every policy evaluates false, and the portal is blank. Same symptom, different
 cause. `NO_CLINIC` vs `ROLE_EXCLUDED` distinguishes them.
+
+**Deleting a user from Supabase Auth can fail with a bare "Database error
+deleting user," and the real cause is usually `clients.user_id` or
+`staff.user_id` (2026-08-31).** Those two are the pre-migration-history
+scheduler tables (same ones the `clinic_id` retrofit note above is about) —
+their `user_id` foreign key to `auth.users(id)` has no `ON DELETE CASCADE`,
+so Postgres refuses the delete the instant either table still has a row
+pointing at that user, and Supabase Studio surfaces that as the one generic
+message with no constraint name. Confirmed live on two stuck test accounts:
+introspecting `information_schema` the obvious way (joining
+`constraint_column_usage` on `table_schema`) silently misses every
+cross-schema FK — `public.* → auth.users` never matches, because
+`constraint_column_usage.table_schema` is the *referenced* table's schema,
+not the referencing one — so it looked like nothing was blocking the delete
+when `clients`/`staff` were the whole problem. Diagnose with `pg_constraint`
+directly (`conrelid`/`confrelid`, immune to that mismatch) instead. Fix:
+**unlink, don't delete** — `update clients set user_id = null where ...` /
+same for `staff` — that's what those columns are for (a client/staff record
+can exist before anyone has a portal login), then the `auth.users` delete
+goes through.
 
 **`packages/settings` persists for real now (2026-08-28).** It still starts as
 `localStorage` for preview (`NEXT_PUBLIC_DEV_PREVIEW=1`), but live mode backs
@@ -387,6 +420,19 @@ see "One role vocabulary" above); Edge Function CORS preflight handling
 `IS_PREVIEW` missing its `NODE_ENV` gate (PR #87, see "Traps that have
 already bitten" above); and the cross-portal bar having no working sign-out
 at all (PR #88, see "Traps that have already bitten" above).
+
+Fixed 2026-08-31: the Admin console's "Pending sign-offs" queue only ever
+showed the caller's own onboarding tasks, never the clinic's (PR #91, see
+the "Admin console... scoped to the wrong user" bullet below for what's
+still open there); the platform-default, unbranded invite email (PR #92,
+`supabase/templates/invite.html` — confirmed live, see
+`docs/context/environments.md`'s Supabase Edge Functions section); the
+generic "Edge Function returned a non-2xx status code" message that hid
+the real reason an invite/edit/deactivate call was rejected (PR #93,
+`hr-backend.ts`'s `describeFunctionError()`); and schedulers having no
+access to `apps/employee` at all, now scoped specifically to the Admin
+console (PR #94, migration `0022` — applied live — widened
+`hub_can_manage()`, see "One role vocabulary" above).
 
 - **`invite-teammate` does not check whether the invited email already has a
   `profiles` row before upserting one.** Supabase's `inviteUserByEmail`
