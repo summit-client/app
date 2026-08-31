@@ -167,6 +167,23 @@ export interface SessionNoteDraft {
   status: "draft" | "signed" | "awaiting_countersign" | "countersigned" | "returned";
 }
 
+/**
+ * One clinic-wide row in the supervisor Review Queue. Distinct from
+ * SessionNoteDraft because the queue needs to identify the note (its real
+ * `session_notes.id`, for the countersign/return write) and who wrote it —
+ * neither of which the local draft the clinician was editing carries.
+ */
+export interface PendingCountersign {
+  id: string;              // session_notes.id
+  sessionId: number;       // client_sessions.id / session_notes.session_id
+  clientId: number;
+  clientName: string;
+  clinicianId: string | null;
+  clinicianName: string;
+  createdAt: string;
+  note: SessionNoteDraft;
+}
+
 export const FUNCTION_LABEL: Record<string, string> = {
   escape_avoidance: "Escape / avoidance",
   attention: "Attention",

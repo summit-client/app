@@ -9,9 +9,11 @@ import DesignB, {
   type DashboardProgram,
   type DashboardSoapNote,
 } from "../components/design-b";
+import { positionOf, totalPosition, type BudgetEntry, type ClientBudget } from "../lib/budget";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
 import { clinicTodayDateStr } from "../lib/clinic-date";
+import { sortProgramsForFamily } from "../lib/program-display";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { SelectClient } from "../components/select-client";
 import { AccountProblemNotice } from "../components/account-problem-notice";
@@ -30,6 +32,11 @@ type DashboardProps = {
   programsError: boolean;
   soapNotes: DashboardSoapNote[];
   soapNotesError: boolean;
+  budget: {
+    allocated: number; spent: number; remaining: number; percentUsed: number; currency: string;
+    count: number;
+  } | null;
+  budgetError: boolean;
   isAdminViewingAs: boolean;
 };
 
@@ -198,6 +205,34 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // SOAP notes: RLS (session_notes_client_read) also enforces status in
   // ('signed','countersigned') server-side - a draft is never selectable
   // here even if this query's own filter were ever removed by mistake.
+  // Budgets: funding-source agnostic. RLS (client_budgets_client_read) scopes
+  // these to the signed-in family's own child; the client_id filter is
+  // defense-in-depth, matching the pattern above. Spent-to-date is summed
+  // from entries rather than read off a stored total, so the dashboard and
+  // the statement can never disagree.
+  const { data: budgetRows, error: budgetsError } = await supabase
+    .from("client_budgets")
+    .select("id, client_id, name, funding_source, reference, allocated_amount, currency, period_start, period_end, status, notes")
+    .eq("client_id", viewed.clientId)
+    .neq("status", "CLOSED")
+    .order("period_start", { ascending: false });
+
+  if (budgetsError) {
+    console.error("Failed to load client budgets:", budgetsError.message);
+  }
+
+  const budgetIds = (budgetRows ?? []).map((b) => b.id as string);
+  const { data: entryRows, error: entriesError } = budgetIds.length
+    ? await supabase
+        .from("budget_entries")
+        .select("id, budget_id, entry_date, kind, description, session_id, service_type, quantity, unit_rate, amount, reconciled")
+        .in("budget_id", budgetIds)
+    : { data: [], error: null };
+
+  if (entriesError) {
+    console.error("Failed to load budget entries:", entriesError.message);
+  }
+
   // nullsFirst: false because Postgres's default for `order by ... desc`
   // is NULLS FIRST: a note with no signed_at (if a countersigned note can
   // ever have one) would sort ahead of every actually-signed note
@@ -235,36 +270,59 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       programsError: Boolean(programsError),
       soapNotes: (soapNotes ?? []) as DashboardSoapNote[],
       soapNotesError: Boolean(soapNotesError),
+      budget: summarizeBudgets(budgetRows ?? [], entryRows ?? []),
+      // Either read failing makes the total wrong, not merely incomplete: a
+      // missing entry understates spend, and a missing budget hides the
+      // allocation it was spent against. Both roll into one flag so the card
+      // says it could not load rather than showing a confident wrong number.
+      budgetError: Boolean(budgetsError || entriesError),
       isAdminViewingAs: viewed.isAdminViewingAs,
     },
   };
 };
 
-/**
- * "Progress Snapshot" ordered goals alphabetically by status
- * ("active" < "archived" < "draft" < "maintenance" < "mastered" <
- * "on_hold" < "pending_signoff"), which put discontinued ("archived")
- * goals second - ahead of "maintenance", "mastered" and "on_hold" - for
- * no reason other than the letter A. Sorted by an explicit priority
- * instead: goals actively worked on first, then goals worth celebrating
- * or needing attention, then not-yet-visible internal states, archived
- * goals last since they're the least relevant to a family checking on
- * current progress. Name breaks ties within the same priority.
- */
-const PROGRAM_STATUS_PRIORITY: Record<string, number> = {
-  active: 0,
-  maintenance: 1,
-  on_hold: 2,
-  mastered: 3,
-  pending_signoff: 4,
-  draft: 5,
-  archived: 6,
-};
 
-function sortProgramsForFamily(programs: DashboardProgram[]): DashboardProgram[] {
-  return [...programs].sort((a, b) => {
-    const priorityA = PROGRAM_STATUS_PRIORITY[a.status] ?? PROGRAM_STATUS_PRIORITY.draft;
-    const priorityB = PROGRAM_STATUS_PRIORITY[b.status] ?? PROGRAM_STATUS_PRIORITY.draft;
-    return priorityA !== priorityB ? priorityA - priorityB : a.name.localeCompare(b.name);
-  });
+/** Database rows to the shapes the budget library works in. */
+function toBudget(r: Record<string, unknown>): ClientBudget {
+  return {
+    id: r.id as string,
+    clientId: Number(r.client_id),
+    name: r.name as string,
+    fundingSource: r.funding_source as string,
+    reference: (r.reference as string) ?? null,
+    allocatedAmount: Number(r.allocated_amount),
+    currency: (r.currency as string) ?? "CAD",
+    periodStart: r.period_start as string,
+    periodEnd: (r.period_end as string) ?? null,
+    status: r.status as ClientBudget["status"],
+    notes: (r.notes as string) ?? null,
+  };
+}
+
+function toEntry(r: Record<string, unknown>): BudgetEntry {
+  return {
+    id: r.id as string,
+    budgetId: r.budget_id as string,
+    entryDate: r.entry_date as string,
+    kind: r.kind as BudgetEntry["kind"],
+    description: r.description as string,
+    sessionId: r.session_id == null ? null : Number(r.session_id),
+    serviceType: (r.service_type as string) ?? null,
+    quantity: r.quantity == null ? null : Number(r.quantity),
+    unitRate: r.unit_rate == null ? null : Number(r.unit_rate),
+    amount: Number(r.amount),
+    reconciled: Boolean(r.reconciled),
+  };
+}
+
+/** The combined position across every open budget, for the dashboard tile. */
+function summarizeBudgets(
+  budgetRows: Record<string, unknown>[],
+  entryRows: Record<string, unknown>[],
+): DashboardProps["budget"] {
+  if (!budgetRows.length) return null;
+  const budgets = budgetRows.map(toBudget);
+  const entries = entryRows.map(toEntry);
+  const total = totalPosition(budgets.map((b) => positionOf(b, entries)));
+  return { ...total, count: budgets.length };
 }

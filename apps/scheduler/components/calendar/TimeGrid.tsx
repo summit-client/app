@@ -199,6 +199,12 @@ function SessionBlock({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={(e) => { e.stopPropagation(); onSessionClick(session); }}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onSessionClick(session); } }}
+      tabIndex={0}
+      role="button"
+      aria-label={`${client?.name || "Unknown client"}, ${session.type}, ${String(session.hour).padStart(2, "0")}:${String(session.minute).padStart(2, "0")}`}
       style={{
         position: "absolute", top, height, left, width, zIndex: 10,
         borderRadius: 5, padding: "2px 5px", background: color + (isDraft ? "14" : "22"),
@@ -259,6 +265,11 @@ function StackedPill({
       onDragStart={(e) => { startDrag(e, first.id); onDragBegin(first.id); }}
       onDragEnd={onDragEnd}
       onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); } }}
+      tabIndex={0}
+      role="button"
+      aria-expanded={open}
+      aria-label={`${cluster.sessions.length} sessions - press Enter to ${open ? "collapse" : "expand"} the list`}
       style={{
         position: "absolute", top: cluster.top, height: cluster.height, left: 2, right: 2, zIndex: 10,
         borderRadius: 5, padding: "2px 5px", background: color + "22", borderLeft: `2.5px solid ${color}`,
@@ -283,6 +294,10 @@ function StackedPill({
                 onDragStart={(e) => { e.stopPropagation(); startDrag(e, s.id); onDragBegin(s.id); }}
                 onDragEnd={onDragEnd}
                 onClick={(e) => { e.stopPropagation(); onSessionClick(s); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onSessionClick(s); } }}
+                tabIndex={0}
+                role="button"
+                aria-label={`${client?.name || "Unknown client"}, ${s.type}, ${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}`}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", borderRadius: 6, cursor: "pointer", opacity: draft ? 0.7 : 1 }}
               >
                 <SessionTypeDot size={8} color={c} />
@@ -323,12 +338,32 @@ function DayColumn({
 }) {
   const colRef = React.useRef<HTMLDivElement>(null);
   const dateStr = toDateStr(date);
+  const totalMinutes = (workEndHour - workStartHour) * 60;
 
-  function timeFromY(clientY: number): { hour: number; minute: number } {
+  // Keyboard path into click-to-create - previously the target time only
+  // ever came from e.clientY, a continuous pixel position with no discrete
+  // focusable element per slot, so there was no way to reach a specific
+  // time here (or trigger click-to-create at all) from the keyboard. This
+  // column is now itself one tab stop: arrow keys move a focused minute-
+  // offset in snapMinutes steps (a vertical ARIA slider is the closest
+  // native pattern to "adjust a value with arrows" - Enter/Space then acts
+  // on it, which plain role="slider" doesn't do on its own, so the label
+  // spells that out), Home/End jump to the start/end of the work day, and
+  // Enter/Space calls onSlotClick at the focused time - exactly what a
+  // click already does. The focus indicator reuses the same visual
+  // language as the drag-hover indicator below (a highlighted line plus an
+  // exact time label) rather than inventing a second one.
+  const [focusedMinute, setFocusedMinute] = React.useState<number | null>(null);
+  const [hasKeyboardFocus, setHasKeyboardFocus] = React.useState(false);
+
+  function snappedOffsetFromY(clientY: number): number {
     const rect = colRef.current!.getBoundingClientRect();
     const rawMin = (clientY - rect.top) / pxPerMin;
-    const snapped = Math.round(rawMin / snapMinutes) * snapMinutes;
-    const totalMin = workStartHour * 60 + Math.max(0, snapped);
+    return Math.max(0, Math.round(rawMin / snapMinutes) * snapMinutes);
+  }
+
+  function timeFromMinuteOffset(m: number): { hour: number; minute: number } {
+    const totalMin = workStartHour * 60 + m;
     return { hour: Math.floor(totalMin / 60), minute: totalMin % 60 };
   }
 
@@ -340,24 +375,51 @@ function DayColumn({
   // this element, and silently swallow every empty-slot click. (Confirmed:
   // that guard meant onSlotClick never fired at all - click-to-create was
   // dead on arrival until this fix.)
-  // ACCESSIBILITY GAP, not fixed this session - see BLOCKED-scheduler.md.
-  // Click-to-create derives the target time from e.clientY, a continuous
-  // pixel position with no discrete, focusable element per slot - there is
-  // currently no way to reach a specific time in this column, or trigger
-  // click-to-create at all, from the keyboard. Fixing that properly means
-  // giving this column real per-slot focus targets (or an equivalent
-  // keyboard path into the same onSlotClick), which changes how the whole
-  // grid renders and needs verifying in a browser - this sandbox still has
-  // no Supabase credentials to render the app live, the same limitation the
-  // last calendar-v2 pass hit (see CLAUDE.md).
   function handleColClick(e: React.MouseEvent) {
-    const { hour, minute } = timeFromY(e.clientY);
+    const offset = snappedOffsetFromY(e.clientY);
+    // Keep the keyboard focus indicator in sync with where a mouse user
+    // just clicked, so Tab/arrow-key navigation afterward continues from
+    // that time instead of wherever it last was (or the work-day start).
+    setFocusedMinute(offset);
+    const { hour, minute } = timeFromMinuteOffset(offset);
     onSlotClick(dateStr, hour, minute);
+  }
+
+  function handleColFocus() {
+    setHasKeyboardFocus(true);
+    if (focusedMinute == null) setFocusedMinute(0);
+  }
+
+  function handleColBlur(e: React.FocusEvent) {
+    if (colRef.current?.contains(e.relatedTarget as Node)) return;
+    setHasKeyboardFocus(false);
+  }
+
+  function handleColKeyDown(e: React.KeyboardEvent) {
+    const current = focusedMinute ?? 0;
+    const maxMinute = Math.max(0, totalMinutes - snapMinutes);
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedMinute(Math.min(maxMinute, current + snapMinutes));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedMinute(Math.max(0, current - snapMinutes));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setFocusedMinute(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setFocusedMinute(maxMinute);
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      const { hour, minute } = timeFromMinuteOffset(current);
+      onSlotClick(dateStr, hour, minute);
+    }
   }
 
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
-    const { hour, minute } = timeFromY(e.clientY);
+    const { hour, minute } = timeFromMinuteOffset(snappedOffsetFromY(e.clientY));
     onDragHover({ dateStr, hour, minute });
   }
 
@@ -365,11 +427,13 @@ function DayColumn({
     e.preventDefault();
     const raw = e.dataTransfer.getData(DRAG_MIME);
     if (!raw) return;
-    const { hour, minute } = timeFromY(e.clientY);
+    const { hour, minute } = timeFromMinuteOffset(snappedOffsetFromY(e.clientY));
     onDropSession(Number(raw), dateStr, hour, minute);
   }
 
-  const height = (workEndHour - workStartHour) * 60 * pxPerMin;
+  const height = totalMinutes * pxPerMin;
+  const focusTop = hasKeyboardFocus && focusedMinute != null ? focusedMinute * pxPerMin : null;
+  const focusedTime = focusedMinute != null ? timeFromMinuteOffset(focusedMinute) : null;
 
   const columns: { employeeId: number | null; sessions: CalSession[] }[] = splitEmployeeIds
     ? splitEmployeeIds.map((id) => ({ employeeId: id, sessions: sessions.filter((s) => s.employee_id === id) }))
@@ -398,6 +462,17 @@ function DayColumn({
       onClick={handleColClick}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onFocus={handleColFocus}
+      onBlur={handleColBlur}
+      onKeyDown={handleColKeyDown}
+      tabIndex={0}
+      role="slider"
+      aria-orientation="vertical"
+      aria-valuemin={0}
+      aria-valuemax={Math.max(0, totalMinutes - snapMinutes)}
+      aria-valuenow={focusedMinute ?? 0}
+      aria-valuetext={focusedTime ? `${String(focusedTime.hour).padStart(2, "0")}:${String(focusedTime.minute).padStart(2, "0")}` : undefined}
+      aria-label={`Create a session on ${dateStr}. Arrow keys choose a time, Enter creates it.`}
       style={{ position: "relative", height, borderLeft: "0.5px solid var(--color-border-tertiary)", display: "flex", background: isToday ? "#5DCAA508" : "transparent" }}
     >
       {availabilityBands.map((b, i) => (
@@ -425,6 +500,21 @@ function DayColumn({
             background: "#3f9c78", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap",
           }}>
             {String(dragHoverSlot!.hour % 24).padStart(2, "0")}:{String(dragHoverSlot!.minute).padStart(2, "0")}
+          </div>
+        </div>
+      )}
+      {/* Keyboard click-to-create's focus indicator - same visual language
+          as the drag-hover indicator above (a highlighted line plus an
+          exact time label), shown only while this column actually has
+          keyboard focus so it doesn't linger after Tab moves elsewhere. */}
+      {focusTop != null && focusedTime != null && (
+        <div style={{ position: "absolute", left: 0, right: 0, top: focusTop, zIndex: 31, pointerEvents: "none" }}>
+          <div style={{ height: 2, background: "#378ADD", boxShadow: "0 0 0 1px rgba(55,138,221,0.5)" }} />
+          <div style={{
+            position: "absolute", top: -9, left: 4, fontSize: 10.5, fontWeight: 600, color: "#fff",
+            background: "#2568B0", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap",
+          }}>
+            {String(focusedTime.hour % 24).padStart(2, "0")}:{String(focusedTime.minute).padStart(2, "0")} · Enter to create
           </div>
         </div>
       )}

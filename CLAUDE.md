@@ -99,7 +99,11 @@ These are never violated regardless of what a task seems to ask for:
   `client_availability` and `staff_availability` are the original scheduler
   tables that predate this repo's migration history and, until 0013, had
   neither: any admin or scheduler account had unconditional, clinic-wide
-  access to all of them. If you add a table, it needs `clinic_id` and a
+  access to all of them. Their DDL was also missing entirely until migration
+  `0000`, which reconstructs it from application code so a fresh database can
+  be built from this repo at all. That reconstruction is unverified against a
+  production dump — see the file's own header before treating a rebuilt
+  database as a restore target. If you add a table, it needs `clinic_id` and a
   `clinic_id = auth_clinic_id()`-shaped policy from the start — the
   8-table retrofit is exactly the kind of gap that's expensive to notice
   later and cheap to avoid at creation.
@@ -123,9 +127,18 @@ These are never violated regardless of what a task seems to ask for:
 
 ## One role vocabulary
 
-`profiles.role` is `admin | supervisor | clinician | scheduler | client`. That
-is what migration `0001` documents on the column and what `auth_role()` /
-`auth_is_staff()` read.
+`profiles.role` is `admin | supervisor | clinician | scheduler | client`, plus
+`hr_admin` and `payroll_admin` added by migration `0024`. That is what migration
+`0001` documents on the column and what `auth_role()` / `auth_is_staff()` read.
+
+**Roles are no longer the unit of permission.** Migration `0024` added
+`auth_can('domain.object.verb')`, resolved from a per-clinic role/action matrix
+with per-user exceptions. New tables gate on actions, not on role names; the
+existing policies still compare role names and are being moved over one table
+at a time, which is why both forms are in the schema right now.
+
+The `0024` seed reproduces every existing role's access exactly, so the two
+forms agree today. If you change the seed, you are changing who can do what.
 
 **There is no `staff` role.** The scheduler used to declare one; it was retired
 in `9554f20` because nothing in the database ever issued it, and the sign-in

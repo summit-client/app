@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { eventsForSession, getNote, incidentsFor, runSessionsFor, summariesFor } from "@/lib/data";
+import { eventsForSession, getNote, hydrateClientHistory, incidentsFor, runSessionsFor, summariesFor } from "@/lib/data";
 
 interface TimelineItem { date: string; kind: string; pill: string; text: string }
 
@@ -11,8 +11,9 @@ export default function TimelinePage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
   const [items, setItems] = React.useState<TimelineItem[]>([]);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
+  const build = React.useCallback(() => {
     const out: TimelineItem[] = [];
     for (const s of runSessionsFor(clientId)) {
       const when = (s.endTime ?? s.startTime ?? s.createdAt).slice(0, 10);
@@ -37,9 +38,22 @@ export default function TimelinePage() {
     setItems(out);
   }, [clientId]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    hydrateClientHistory(clientId)
+      .catch((e) => { if (!cancelled) setLoadError(e instanceof Error ? e.message : "Could not load this client's full history."); })
+      .finally(() => { if (!cancelled) build(); });
+    return () => { cancelled = true; };
+  }, [clientId, build]);
+
   return (
     <div>
-      <p className="sub" style={{ marginTop: 0 }}>Sessions, documentation and behaviour events from this device, newest first.</p>
+      <p className="sub" style={{ marginTop: 0 }}>Sessions, documentation and behaviour events, newest first.</p>
+      {loadError ? (
+        <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--warn)" }}>
+          <p className="sub" style={{ color: "var(--ink)" }}>{loadError} Showing what this device already has locally.</p>
+        </div>
+      ) : null}
       <div className="timeline" style={{ marginTop: 14 }}>
         {items.map((it, i) => (
           <div key={i} className="timeline-item">

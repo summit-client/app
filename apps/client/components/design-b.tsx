@@ -2,7 +2,10 @@ import Head from "next/head";
 import Link from "next/link";
 import Sidebar from "./Sidebar";
 import { MobileNavChrome } from "./mobile-nav-chrome";
+import { ProgramStatusBadge } from "./program-status-badge";
 import { formatClinicDate } from "../lib/clinic-date";
+import { formatStatus } from "../lib/format-status";
+import type { Program } from "../lib/program-display";
 import styles from "../styles/design-b.module.css";
 
 type IconName =
@@ -34,12 +37,10 @@ export type DashboardSession = {
   status: string | null;
 };
 
-export type DashboardProgram = {
-  id: string;
-  name: string;
-  domain: string | null;
-  status: string;
-};
+/** Kept under its original exported name so existing importers
+ *  (pages/index.tsx) don't need to change - the type itself now lives in
+ *  lib/program-display.ts, shared with pages/progress.tsx. */
+export type DashboardProgram = Program;
 
 /** `body` mirrors session_notes.body's shape (migration 0001) - only
  *  familyUpdate is ever shown here. perProgram/abcNarrative/planNext are
@@ -53,6 +54,15 @@ export type DashboardSoapNote = {
   body: { familyUpdate?: string | null } | null;
 };
 
+export type DashboardBudget = {
+  allocated: number;
+  spent: number;
+  remaining: number;
+  percentUsed: number;
+  currency: string;
+  count: number;
+};
+
 type DesignBProps = {
   familyName: string;
   clientName: string;
@@ -63,7 +73,13 @@ type DesignBProps = {
   programsError: boolean;
   soapNotes: DashboardSoapNote[];
   soapNotesError: boolean;
+  budget: DashboardBudget | null;
+  budgetError: boolean;
 };
+
+function formatMoney(amount: number, currency = "CAD"): string {
+  return new Intl.NumberFormat("en-CA", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+}
 
 function Icon({
   name,
@@ -193,6 +209,8 @@ export default function DesignB({
   programsError,
   soapNotes,
   soapNotesError,
+  budget,
+  budgetError,
 }: DesignBProps) {
   const masteredCount = programs.filter((p) => p.status === "mastered").length;
   const activeGoalsCount = programs.filter((p) => p.status !== "mastered" && p.status !== "archived").length;
@@ -309,6 +327,80 @@ export default function DesignB({
           </section>
 
           <section className={styles.dashboardGrid}>
+            {/* A failed budget read must not look like "you have no budget".
+                Money is the one figure on this page a family will act on, and
+                a silent zero is worse here than anywhere else — this follows
+                the same error-before-empty order the sessions, programs and
+                notes cards use. */}
+            {budgetError ? (
+              <article className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <div>
+                    <h2>Funding</h2>
+                  </div>
+                </div>
+                <div style={{ padding: "20px 0", color: "#607987" }}>
+                  Couldn&apos;t load your funding details. Try refreshing the page.
+                </div>
+              </article>
+            ) : budget ? (
+              <article className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <div>
+                    <h2>Funding</h2>
+                    <p>
+                      {budget.count === 1 ? "Your budget" : `Across ${budget.count} budgets`}
+                    </p>
+                  </div>
+                  <Link className={styles.textButton} href="/statement">
+                    Statement
+                  </Link>
+                </div>
+
+                <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginTop: 4 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Total budget</div>
+                    <div style={{ fontSize: 26, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                      {formatMoney(budget.allocated, budget.currency)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Spent to date</div>
+                    <div style={{ fontSize: 26, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                      {formatMoney(budget.spent, budget.currency)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Remaining</div>
+                    <div style={{
+                      fontSize: 26, fontWeight: 600, fontVariantNumeric: "tabular-nums",
+                      color: budget.remaining <= 0 ? "var(--danger, #a63a2a)" : "var(--good, #2f7a45)",
+                    }}>
+                      {formatMoney(budget.remaining, budget.currency)}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  role="img"
+                  aria-label={`${budget.percentUsed} percent of the budget used`}
+                  style={{
+                    height: 8, borderRadius: 999, background: "var(--surface-2, #e4eff1)",
+                    overflow: "hidden", marginTop: 18,
+                  }}
+                >
+                  <div style={{
+                    width: `${Math.min(100, Math.max(0, budget.percentUsed))}%`,
+                    height: "100%", borderRadius: 999,
+                    background: budget.percentUsed >= 90 ? "var(--danger, #a63a2a)" : "var(--accent, #1b5a6e)",
+                  }} />
+                </div>
+                <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+                  {budget.percentUsed}% used. Every charge appears on your statement.
+                </p>
+              </article>
+            ) : null}
+
             <article className={styles.card}>
               <div className={styles.cardHeader}>
                 <div>
@@ -418,6 +510,13 @@ export default function DesignB({
                   <h2>Progress Snapshot</h2>
                   <p>{clientName}&apos;s current goals</p>
                 </div>
+
+                {/* Matches "Upcoming Sessions" -> /appointments - this card
+                    had no way to see the full goal list at all before
+                    pages/progress.tsx existed. */}
+                <Link className={styles.textButton} href="/progress">
+                  View all
+                </Link>
               </div>
 
               {programsError ? (
@@ -459,6 +558,12 @@ export default function DesignB({
                   <h2>Recent Updates</h2>
                   <p>Notes from your clinical team</p>
                 </div>
+
+                {/* Same parity fix as Progress Snapshot above - this card
+                    was capped at 5 with no way to see older updates. */}
+                <Link className={styles.textButton} href="/updates">
+                  View all
+                </Link>
               </div>
 
               {soapNotesError ? (
@@ -626,47 +731,6 @@ function statusClass(status: string | null) {
     default:
       return "confirmed";
   }
-}
-
-function formatStatus(status: string | null) {
-  if (!status) {
-    return "Scheduled";
-  }
-
-  return status
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (character) =>
-      character.toUpperCase()
-    );
-}
-
-function ProgramStatusBadge({ status }: { status: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    mastered: { bg: "#E6F6EF", text: "#1A7F4B" },
-    active: { bg: "#EAF2FE", text: "#1D5FAE" },
-    maintenance: { bg: "#EAF2FE", text: "#1D5FAE" },
-    on_hold: { bg: "#FEF3E6", text: "#B4690E" },
-    draft: { bg: "#F1F2F4", text: "#607987" },
-    pending_signoff: { bg: "#F1F2F4", text: "#607987" },
-    archived: { bg: "#F1F2F4", text: "#607987" },
-  };
-  const color = colors[status] ?? colors.draft;
-
-  return (
-    <span
-      style={{
-        padding: "3px 10px",
-        borderRadius: 999,
-        fontSize: 12.5,
-        fontWeight: 600,
-        whiteSpace: "nowrap",
-        background: color.bg,
-        color: color.text,
-      }}
-    >
-      {formatStatus(status)}
-    </span>
-  );
 }
 
 function formatUpdateDate(iso: string | null) {

@@ -1,8 +1,9 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import type { ClinicalEvidencePacket, ReportBlock } from "@summit/clinical-ai";
 import type {
-  AbcIncident, ClientRow, Program, RunSession, ScheduledSession,
+  AbcIncident, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
   SessionNoteDraft, SessionPlanDraft, SessionProgramSummary, TrialEvent,
 } from "./types";
 import { deriveProgramSummary } from "./mastery";
@@ -117,6 +118,171 @@ export function getRunSession(sessionId: number): RunSession | undefined {
 /** The client's session still in flight (planning/active/documentation), if any. */
 export function openSessionFor(clientId: number): RunSession | undefined {
   return runSessionsFor(clientId).find((s) => ["planning", "active", "documentation"].includes(s.status));
+}
+
+/**
+ * Pull this client's real session history from `client_sessions` and merge
+ * it into the local `mem.sessions` mirror that `runSessionsFor()`/
+ * `getRunSession()`/`openSessionFor()` above serve from. Without this,
+ * those three only ever returned sessions THIS BROWSER created — populated
+ * exclusively by `createRunSession()`'s own push onto `mem.sessions` — so
+ * the Sessions/Timeline/Graphs tabs, the client overview's session count,
+ * and the "Resume session"/"last completed" badges in the client layout
+ * all silently showed only a fraction of a client's real history (or none,
+ * on a browser that never happened to run one), not an error a screen
+ * could report — the same "RLS returns empty sets, not errors" shape of
+ * trap as everywhere else in this app, just from a query that was never
+ * actually made rather than one RLS filtered.
+ *
+ * Deliberately a merge into the existing synchronous cache rather than
+ * converting `runSessionsFor`/`getRunSession`/`openSessionFor` themselves
+ * to async: `app/clients/[id]/run/page.tsx` calls them many times over the
+ * course of one active session (every tap can touch `getRunSession`
+ * indirectly through `updateRunSession`), and needs that fast and
+ * synchronous. Every caller that reads client history for display instead
+ * of live in-session state awaits this once per client-id change, then
+ * reads the (now-hydrated) synchronous accessors — see the callers for the
+ * exact pattern.
+ */
+async function hydrateSessionRows(clientId: number): Promise<number[]> {
+  const { data, error } = await sb()
+    .from("client_sessions")
+    .select(
+      "id, client_id, clinician_id, status, start_time, end_time, planned_duration_min, " +
+      "actual_duration_min, location, service_type, focus, plan, program_version_snapshot, created_at",
+    )
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const byId = new Map(mem.sessions.map((s) => [s.id, s]));
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    byId.set(row.id as number, {
+      id: row.id as number, clientId: row.client_id as number, clinicianId: (row.clinician_id as string | null) ?? null,
+      status: row.status as RunSession["status"],
+      startTime: (row.start_time as string | null) ?? null, endTime: (row.end_time as string | null) ?? null,
+      plannedDurationMin: (row.planned_duration_min as number | null) ?? null,
+      actualDurationMin: (row.actual_duration_min as number | null) ?? null,
+      location: (row.location as string | null) ?? null, serviceType: (row.service_type as string | null) ?? null,
+      focus: (row.focus as string | null) ?? null,
+      plan: (row.plan as RunSession["plan"]) ?? null,
+      programVersionSnapshot: (row.program_version_snapshot as RunSession["programVersionSnapshot"]) ?? [],
+      createdAt: row.created_at as string,
+    });
+  }
+  mem.sessions = [...byId.values()];
+  return (data ?? []).map((r) => (r as unknown as { id: number }).id);
+}
+
+async function hydrateNoteRows(clientId: number): Promise<void> {
+  const { data, error } = await sb()
+    .from("session_notes")
+    .select("session_id, client_id, body, billable_code, status")
+    .eq("client_id", clientId);
+  if (error) throw error;
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    const body = (row.body as Record<string, unknown>) ?? {};
+    mem.notes.set(row.session_id as number, {
+      sessionId: row.session_id as number,
+      clientId: row.client_id as number | null,
+      subjective: (body.subjective as string) ?? "",
+      objective: (body.objective as string) ?? "",
+      assessment: (body.assessment as string) ?? "",
+      plan: (body.plan as string) ?? "",
+      perProgram: (body.perProgram as SessionNoteDraft["perProgram"]) ?? [],
+      abcNarrative: (body.abcNarrative as string) ?? "",
+      billableCode: row.billable_code as SessionNoteDraft["billableCode"],
+      status: row.status as SessionNoteDraft["status"],
+    });
+  }
+}
+
+async function hydrateIncidentRows(clientId: number): Promise<void> {
+  const { data, error } = await sb()
+    .from("behaviour_incidents")
+    .select("id, client_id, occurred_at, antecedent, behaviour, consequence, suspected_function")
+    .eq("client_id", clientId)
+    .order("occurred_at", { ascending: false });
+  if (error) throw error;
+  // Upsert by id (not "skip if already present") so a server-side edit to
+  // an incident this device already knows about actually refreshes it,
+  // matching how hydrateSessionRows/hydrateNoteRows treat their own rows.
+  const byId = new Map(mem.incidents.map((i) => [i.id, i]));
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    const id = row.id as string;
+    byId.set(id, {
+      id, clientId: row.client_id as number, occurredAt: row.occurred_at as string,
+      antecedent: row.antecedent as string, behaviour: row.behaviour as string, consequence: row.consequence as string,
+      suspectedFunction: (row.suspected_function as AbcIncident["suspectedFunction"]) ?? null,
+    });
+  }
+  mem.incidents = [...byId.values()];
+}
+
+async function hydrateSummaryRows(sessionIds: number[]): Promise<void> {
+  if (!sessionIds.length) return;
+  const { data, error } = await sb()
+    .from("session_program_summaries")
+    .select("client_session_id, program_id, raw_observation_count, numerator, denominator, calculated_value, metric_type")
+    .in("client_session_id", sessionIds);
+  if (error) throw error;
+  // Upsert by (sessionId, programId) rather than "skip if already present",
+  // for the same reason as hydrateIncidentRows above.
+  const byKey = new Map(mem.summaries.map((s) => [`${s.sessionId}:${s.programId}`, s]));
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    const key = `${row.client_session_id}:${row.program_id}`;
+    byKey.set(key, {
+      sessionId: row.client_session_id as number, programId: row.program_id as string,
+      rawObservationCount: (row.raw_observation_count as number) ?? 0,
+      numerator: (row.numerator as number | null) ?? null, denominator: (row.denominator as number | null) ?? null,
+      calculatedValue: (row.calculated_value as number | null) ?? null,
+      metricType: row.metric_type as SessionProgramSummary["metricType"],
+    });
+  }
+  mem.summaries = [...byKey.values()];
+}
+
+/**
+ * Pull this client's real history — sessions, their SOAP notes, behaviour
+ * incidents, and per-session program summaries — from Supabase and merge
+ * it into the local `mem` mirror that `runSessionsFor()`/`getRunSession()`/
+ * `openSessionFor()`/`getNote()`/`incidentsFor()`/`summariesFor()` above all
+ * serve from. Without this, every one of those only ever returned what
+ * THIS BROWSER had written — populated exclusively by this file's own
+ * create/save calls — so the Sessions/Timeline/Graphs tabs, the client
+ * overview's session count, and the "Resume session"/"last completed"
+ * badges in the client layout all silently showed only a fraction of a
+ * client's real history (or none, on a browser that never happened to run
+ * one), not an error a screen could report — the same "RLS returns empty
+ * sets, not errors" shape of trap as everywhere else in this app, just
+ * from a query that was never actually made rather than one RLS filtered.
+ *
+ * Deliberately a merge into the existing synchronous mem cache rather than
+ * converting every reader above to async: `app/clients/[id]/run/page.tsx`
+ * calls them many times over the course of one active session and needs
+ * that fast and synchronous. Every caller that reads client history for
+ * display instead of live in-session state awaits this once per
+ * client-id/route change, then reads the (now-hydrated) synchronous
+ * accessors — see the callers for the exact pattern.
+ *
+ * Deliberately does NOT hydrate `trial_events` (`eventsForSession()`/
+ * `eventsFor()`) — that table is one row per atomic observation, the
+ * highest-volume table this app writes, and every current caller only
+ * ever needs a count or a same-session live feed. Bulk-fetching a
+ * client's entire raw observation history into the browser just to
+ * display a number is a worse trade than the gap it would close; left as
+ * a known, narrower remaining limitation (an observation count reads 0
+ * for a session this browser didn't run) rather than attempted here.
+ */
+export async function hydrateClientHistory(clientId: number): Promise<void> {
+  if (IS_PREVIEW) return; // preview fixtures already model "this device's" full history
+  const sessionIds = await hydrateSessionRows(clientId);
+  await Promise.all([
+    hydrateNoteRows(clientId),
+    hydrateIncidentRows(clientId),
+    hydrateSummaryRows(sessionIds),
+  ]);
+  persistMem();
 }
 
 export async function createRunSession(
@@ -350,6 +516,183 @@ export async function getSession(sessionId: number): Promise<ScheduledSession | 
   return all.find((s) => s.id === sessionId) ?? null;
 }
 
+/**
+ * Create a new goal. Previously "Save goal (pending supervisor sign-off)"
+ * (app/clients/[id]/programs/page.tsx's NewGoalForm) built a plain local
+ * object and never called Supabase at all — the whole "pending supervisor
+ * sign-off" claim was cosmetic, since nothing was ever saved anywhere a
+ * supervisor could see it. Now writes a real `programs` row with
+ * `status: 'pending_signoff'`.
+ */
+export async function createProgram(input: {
+  clientId: number; name: string; domain: string | null; mode: Program["mode"];
+  operationalDefinition: string; masteryPct: number; promptLevel: Program["promptLevel"];
+  reinforcementSchedule: string; sd: string | null; targetDirection: Program["targetDirection"];
+}): Promise<Program> {
+  const masteryCriteria = `${input.masteryPct}% across 3 consecutive sessions, 2 settings, 2 people`;
+  if (IS_PREVIEW) {
+    return {
+      id: `p-${Date.now()}`, clientId: input.clientId, name: input.name, domain: input.domain,
+      mode: input.mode, operationalDefinition: input.operationalDefinition, masteryCriteria,
+      masteryPct: input.masteryPct, masteryConsecutive: 3, promptLevel: input.promptLevel,
+      reinforcementSchedule: input.reinforcementSchedule, sd: input.sd,
+      targetDirection: input.targetDirection, status: "pending_signoff",
+      intervalSeconds: 30, dailyTargetMinutes: null, steps: [], targets: [], last5: [],
+    };
+  }
+  const user = (await sb().auth.getUser()).data.user;
+  const { data, error } = await sb()
+    .from("programs")
+    .insert({
+      clinic_id: await myClinicId(), client_id: input.clientId, name: input.name, domain: input.domain,
+      measurement_mode: input.mode, operational_definition: input.operationalDefinition,
+      mastery_criteria: masteryCriteria, mastery_pct: input.masteryPct,
+      prompt_level: input.promptLevel, reinforcement_schedule: input.reinforcementSchedule,
+      sd: input.sd, target_direction: input.targetDirection, status: "pending_signoff",
+      created_by: user?.id,
+    })
+    .select("*, program_steps(*), program_targets(*)")
+    .single();
+  if (error) throw error;
+  return mapProgram(data);
+}
+
+/**
+ * The supervisor sign-off action: pending_signoff -> active. App-layer gated
+ * only (see ProgramsPage) — `programs`' RLS update policy
+ * (`clinic_id = auth_clinic_id() and auth_is_staff()`, migration 0001) admits
+ * clinician, supervisor and admin identically, the same shape of gap as
+ * `session_notes`' countersign policy. Logged in BLOCKED-data.md; the
+ * `.eq("status", "pending_signoff")` at least keeps this call a no-op
+ * against a program that already moved on.
+ */
+export async function activateProgram(programId: string): Promise<void> {
+  if (IS_PREVIEW) return; // nothing server-side to flip; the caller updates its own local list
+  const { error } = await sb().from("programs").update({ status: "active" }).eq("id", programId).eq("status", "pending_signoff");
+  if (error) throw error;
+}
+
+/* ---- clinical reports (progress-report sign/lock persistence) ------------- */
+/**
+ * `app/clients/[id]/report/page.tsx`'s draft → reviewed → approved → signed
+ * flow used to be pure React state: `useState<Status>("draft")` with no
+ * write to Supabase anywhere. The `clinical_reports` table already exists
+ * with exactly this status flow and its own immutability trigger
+ * (`forbid_signed_report_update`, migration 0003 — a signed/locked row can
+ * only ever move to 'superseded', never be edited further), built for
+ * precisely this workflow. A "signed, locked, immutable" report that isn't
+ * persisted anywhere satisfies none of that — it's just a page that
+ * happens to say "locked" until the next reload wipes it. This wires the
+ * page onto the real table, including resuming an in-progress or already
+ * signed report on load instead of always starting from a blank draft.
+ */
+
+export type ClinicalReportStatus = "draft" | "reviewed" | "approved" | "signed" | "locked" | "superseded";
+
+export interface ClinicalReportRecord {
+  reportGroup: string;
+  version: number;
+  status: ClinicalReportStatus;
+  periodStart: string;
+  periodEnd: string;
+  packetId: string | null;
+  blocks: ReportBlock[];
+  modelNote: string | null;
+  packet: ClinicalEvidencePacket | null;
+}
+
+/** The latest non-superseded version of this client's progress report, if any. */
+export async function getLatestClinicalReport(
+  clientId: number,
+  reportType = "progress_report",
+): Promise<ClinicalReportRecord | null> {
+  if (IS_PREVIEW) return null; // preview keeps its existing from-scratch-each-visit behaviour
+  const { data, error } = await sb()
+    .from("clinical_reports")
+    .select("report_group, version, status, period_start, period_end, packet_id, blocks, model_note")
+    .eq("client_id", clientId)
+    .eq("report_type", reportType)
+    .neq("status", "superseded")
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  let packet: ClinicalEvidencePacket | null = null;
+  if (data.packet_id) {
+    const { data: pkt } = await sb().from("evidence_packets").select("packet").eq("id", data.packet_id).maybeSingle();
+    packet = (pkt?.packet as ClinicalEvidencePacket) ?? null;
+  }
+
+  return {
+    reportGroup: data.report_group as string,
+    version: data.version as number,
+    status: data.status as ClinicalReportStatus,
+    periodStart: data.period_start as string,
+    periodEnd: data.period_end as string,
+    packetId: (data.packet_id as string | null) ?? null,
+    blocks: (data.blocks as ReportBlock[]) ?? [],
+    modelNote: (data.model_note as string | null) ?? null,
+    packet,
+  };
+}
+
+/**
+ * Upsert the current version's status and blocks. Called after generation
+ * (status: 'draft') and after every review-flow transition. Upserting the
+ * same (report_group, version) is what keeps this idempotent through
+ * "Mark reviewed" -> "Approve" -> "Sign & lock" without creating extra rows;
+ * once a row is actually 'signed'/'locked', the table's own trigger rejects
+ * any further update here that isn't a move to 'superseded' — this
+ * function doesn't need to duplicate that check, the write will just fail
+ * with a clear Postgres error if a stale client tries it.
+ */
+export async function saveClinicalReportProgress(input: {
+  reportGroup: string;
+  version: number;
+  clientId: number;
+  reportType?: string;
+  periodStart: string;
+  periodEnd: string;
+  packetId: string | null;
+  blocks: ReportBlock[];
+  modelNote: string | null;
+  status: ClinicalReportStatus;
+}): Promise<void> {
+  if (IS_PREVIEW) return;
+  const user = (await sb().auth.getUser()).data.user;
+  const row: Record<string, unknown> = {
+    clinic_id: await myClinicId(), client_id: input.clientId,
+    report_group: input.reportGroup, version: input.version,
+    report_type: input.reportType ?? "progress_report",
+    period_start: input.periodStart, period_end: input.periodEnd,
+    packet_id: input.packetId, blocks: input.blocks, model_note: input.modelNote,
+    status: input.status, created_by: user?.id,
+  };
+  if (input.status === "signed") row.signed_by = user?.id;
+  if (input.status === "signed") row.signed_at = new Date().toISOString();
+  const { error } = await sb().from("clinical_reports").upsert(row, { onConflict: "report_group,version" });
+  if (error) throw error;
+}
+
+/**
+ * "Create revision": supersede the current signed/locked version (the only
+ * transition the immutability trigger allows on it) and hand back the next
+ * version number for the caller's next `saveClinicalReportProgress()` call,
+ * which inserts a brand-new row rather than updating the old one.
+ */
+export async function reviseClinicalReport(reportGroup: string, currentVersion: number): Promise<number> {
+  if (IS_PREVIEW) return currentVersion + 1;
+  const { error } = await sb()
+    .from("clinical_reports")
+    .update({ status: "superseded" })
+    .eq("report_group", reportGroup)
+    .eq("version", currentVersion);
+  if (error) throw error;
+  return currentVersion + 1;
+}
+
 /* ---- writes --------------------------------------------------------------- */
 /**
  * Every tap creates one of these — the atomic observation, immediately, with
@@ -473,6 +816,106 @@ export function getNote(sessionId: number): SessionNoteDraft | undefined {
 
 export function pendingNotes(): SessionNoteDraft[] {
   return [...mem.notes.values()].filter((n) => n.status === "awaiting_countersign");
+}
+
+/**
+ * The supervisor Review Queue, for real: every session note awaiting
+ * countersign across the WHOLE CLINIC, not just the ones this browser
+ * happened to write. `pendingNotes()` above only ever reads the local
+ * `mem.notes` mirror — populated exclusively by this same browser's own
+ * `saveNote()` calls — so a supervisor opening the Review Queue on their
+ * own device saw an empty queue no matter how many real clinicians had
+ * real notes awaiting countersign, unless they personally happened to be
+ * the one who wrote it. RLS already grants clinic-wide staff read on
+ * `session_notes` (`clinic_id = auth_clinic_id() and auth_is_staff()`,
+ * migration 0001), the same policy shape apps/employee's
+ * `listPendingSignoffs()` already relies on for its own clinic-wide queue —
+ * this just actually calls it.
+ */
+export async function getPendingCountersigns(): Promise<PendingCountersign[]> {
+  if (IS_PREVIEW) {
+    return pendingNotes().map((n) => ({
+      id: `preview-${n.sessionId}`,
+      sessionId: n.sessionId,
+      clientId: n.clientId ?? 0,
+      clientName: previewClients.find((c) => c.id === n.clientId)?.name ?? `Client ${n.clientId}`,
+      clinicianId: null,
+      clinicianName: "You (preview)",
+      createdAt: new Date().toISOString(),
+      note: n,
+    }));
+  }
+  const { data, error } = await sb()
+    .from("session_notes")
+    .select("id, session_id, client_id, clinician_id, body, billable_code, status, created_at, clients(name), profiles!clinician_id(full_name)")
+    .eq("status", "awaiting_countersign")
+    .order("created_at");
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => {
+    const body = (row.body as Record<string, unknown>) ?? {};
+    const note: SessionNoteDraft = {
+      sessionId: row.session_id as number,
+      clientId: row.client_id as number | null,
+      subjective: (body.subjective as string) ?? "",
+      objective: (body.objective as string) ?? "",
+      assessment: (body.assessment as string) ?? "",
+      plan: (body.plan as string) ?? "",
+      perProgram: (body.perProgram as SessionNoteDraft["perProgram"]) ?? [],
+      abcNarrative: (body.abcNarrative as string) ?? "",
+      billableCode: row.billable_code as SessionNoteDraft["billableCode"],
+      status: row.status as SessionNoteDraft["status"],
+    };
+    return {
+      id: row.id as string,
+      sessionId: row.session_id as number,
+      clientId: row.client_id as number,
+      clientName: ((row.clients as { name?: string } | null)?.name) ?? `Client ${row.client_id}`,
+      clinicianId: row.clinician_id as string | null,
+      clinicianName: ((row.profiles as { full_name?: string } | null)?.full_name) ?? "Unknown clinician",
+      createdAt: row.created_at as string,
+      note,
+    };
+  });
+}
+
+/**
+ * Countersign or return a note by its real `session_notes.id`, regardless of
+ * which browser originally wrote it — unlike `saveNote()`/`lockRunSession()`,
+ * which only ever operate on this browser's own `mem` mirror and would
+ * silently no-op (nothing matches) for a note someone else drafted.
+ */
+export async function countersignNote(
+  item: PendingCountersign,
+  decision: "countersigned" | "returned",
+  returnNote?: string,
+): Promise<void> {
+  if (IS_PREVIEW) {
+    await saveNote({ ...item.note, status: decision });
+    if (decision === "countersigned") await lockRunSession(item.sessionId);
+    return;
+  }
+  const user = (await sb().auth.getUser()).data.user;
+  const patch: Record<string, unknown> = { status: decision };
+  if (decision === "countersigned") {
+    patch.countersigned_by = user?.id ?? null;
+    patch.countersigned_at = new Date().toISOString();
+  } else {
+    patch.return_note = returnNote ?? null;
+  }
+  const { error } = await sb().from("session_notes").update(patch).eq("id", item.id);
+  if (error) throw error;
+
+  if (decision === "countersigned") {
+    // Only from 'completed' -> 'locked': the forbid_locked_session_update
+    // trigger (migration 0004) rejects any other transition, and this
+    // write may be racing a session that never reached 'completed' at all.
+    const { error: lockErr } = await sb()
+      .from("client_sessions")
+      .update({ status: "locked" })
+      .eq("id", item.sessionId)
+      .eq("status", "completed");
+    if (lockErr) throw lockErr;
+  }
 }
 
 /* ---- helpers -------------------------------------------------------------- */

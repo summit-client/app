@@ -131,3 +131,103 @@ no second functional issue found beyond what's fixed in this round's
 commits (the clinic-timezone date bug, the three query-error-vs-empty
 sites, goal ordering, SOAP-note null ordering, the date-format hydration
 mismatch, and the dashboard session-count tile).
+
+---
+
+## Round 3 (feature-depth pass)
+
+Built two of the Sidebar's five permanently-stubbed nav destinations out
+into real pages backed by data this app already had proven access to
+(`pages/progress.tsx`, `pages/updates.tsx` - see their commits for detail).
+The remaining three stay stubbed, and a fourth thing (a nav slot for
+`/updates`) was deliberately not added. Recorded here so the reasoning survives past this session:
+
+- **Messages** — not built. This is a two-way communication feature (a
+  family messaging their clinical team), which needs its own backing data
+  model (a `messages`/`conversations`-shaped table), likely real-time
+  delivery, and probably moderation/staff-routing decisions - none of
+  which this session could safely invent. Building against a guessed
+  schema risks shipping something that references tables/columns that
+  don't exist, which wouldn't fail at build time (Supabase queries are
+  only checked at runtime) - it would fail silently or loudly in
+  production instead. Needs a real design decision plus schema work,
+  which is out of scope for an app-only session with no migration access.
+- **Documents** — not built, same reasoning. A family-facing document
+  library needs actual file storage (Supabase Storage or similar) and a
+  documents table this session has no evidence exists. Note:
+  `session_notes` (now fully surfaced via `/updates`) *is* arguably
+  "clinical documentation shared with the family," so there's a
+  legitimate argument that `/updates` substantially covers what
+  "Documents" was meant to be - but repurposing the Sidebar's actual
+  "Documents" label for it is a product-facing decision, not something to
+  decide unilaterally on an engineering pass. Flagging the overlap rather
+  than acting on it.
+- **Consents** — not built. Consent tracking (recording that a parent
+  authorized something specific, with a timestamp and scope) is exactly
+  the kind of PHI-adjacent feature `docs/context/compliance.md` says needs
+  real compliance sign-off before it exists at all, not just a schema
+  guess.
+- **Settings** — not built. `apps/client` doesn't depend on
+  `@summit/settings` today (the package that would actually back a real
+  settings screen, already consumed by `apps/data`/`apps/employee`).
+  Adding it means adding a new workspace dependency to
+  `apps/client/package.json`, which this session's instructions
+  explicitly say not to do without logging it here instead: **request** —
+  add `@summit/settings` as a dependency of `apps/client` so a real
+  Settings screen (notification prefs, language, etc.) can be built
+  against it, the same way the other two portals already do.
+- **No new Sidebar entry for `/updates`.** `/progress` maps cleanly onto
+  the Sidebar's existing "Progress" label (unambiguous, so it was wired up
+  directly). `/updates` doesn't have an equally obvious existing slot:
+  reusing "Documents" risks conflicting with whatever the actual planned
+  Documents feature turns out to be (see above), and adding it as a brand
+  new sixth nav item would grow the Sidebar's five-item roadmap without
+  being asked to. Reachable via the dashboard's new "View all" link
+  instead, the same way `/appointments` and `/progress` both are.
+
+All three real pages (`/`, `/appointments`, `/progress`, `/updates`) now
+share one auth/account-problem/error pattern
+(`resolveViewedClient()` + `AccountProblemNotice`/`LoadErrorNotice`), one
+empty/error-state box (`.emptyBox`), and the same three breakpoints - the
+two new pages don't introduce a second design language, they extend the
+one this app already had.
+
+---
+
+## Round 4 (deeper feature work) — two new appointment-adjacent features
+
+Built a calendar export and a month-view calendar for `/appointments`,
+staying inside the same "no new schema, no live-DB guessing" boundary as
+round 3 - both are pure additions over the exact `sessions` columns this
+app already queries, no new table or column assumed. Full reasoning is in
+each commit; two decisions worth surfacing here too:
+
+- **Not a subscribable calendar feed.** `pages/api/calendar.ics.ts` is a
+  one-time authenticated download, not a `webcal://` subscription a
+  calendar app could poll on its own. A real subscription needs a
+  shareable secret token in the URL (calendar apps have no way to send
+  the session cookie this app's auth otherwise relies on), and
+  minting/storing/expiring that token needs its own DB table - this
+  session can't create one. **Logging as a request**: a
+  `calendar_feed_tokens`-shaped table (user id, token, created/revoked
+  timestamps) would let a future pass build a real subscription link
+  without changing the trust model of anything else in this app.
+- **Assumed a 60-minute session duration for calendar events**, since no
+  query this app has ever run (including this round's) has access to an
+  actual duration - no `session_types` join, no duration column.
+  `@summit/settings` has the real per-org default
+  (`org.defaultSessionDuration`, 120 minutes) but apps/client still
+  doesn't depend on that package (see the Settings item above - same
+  blocker, `lib/ics.ts` hits it independently). Said so explicitly in
+  each exported event's description rather than asserting a duration
+  this app doesn't know, but the real fix is the same as Settings':
+  add `@summit/settings` as a dependency of `apps/client`.
+
+Both features were verified without a live Supabase project the same way
+- by compiling the pure logic in isolation and running it against hand-
+built cases: the timezone-conversion helper (`clinicWallTimeToUtc`)
+against 8 cases spanning both of 2026's DST transitions, the ICS builder
+against sessions with special characters and a title long enough to force
+RFC 5545 line folding, and the calendar-grid math against 6 months
+including a leap-year February and a 6-week grid case. See each commit
+for the actual verification output.

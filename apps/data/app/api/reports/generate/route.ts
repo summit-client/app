@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import {
   buildEvidencePacket, ClinicalAIUnavailableError, MockProvider, PROMPT_TEMPLATE_VERSION,
   readConfig, resolveProvider, runReportPipeline,
   type EvidenceRetriever, type ReportGenerationOptions,
 } from "@summit/clinical-ai";
+import { requireStaff, routeServerClient } from "@/lib/server/authz";
 
 /**
  * POST /api/reports/generate — the evidence-first pipeline, server-side.
@@ -33,15 +33,11 @@ export async function POST(request: NextRequest) {
   // Auth (live mode): verified staff only.
   let userId: string | null = null;
   let clinicId: string | null = null;
-  const sb = !IS_PREVIEW ? serverClient(request) : null;
+  const sb = !IS_PREVIEW ? routeServerClient(request) : null;
   if (sb) {
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ ok: false, error: "Sign in required." }, { status: 401 });
-    const { data: profile } = await sb.from("profiles").select("role, clinic_id").eq("id", user.id).single();
-    if (!profile || !["admin", "supervisor", "clinician"].includes(profile.role)) {
-      return NextResponse.json({ ok: false, error: "Staff access required." }, { status: 403 });
-    }
-    userId = user.id; clinicId = profile.clinic_id ?? null;
+    const auth = await requireStaff(sb);
+    if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+    userId = auth.userId; clinicId = auth.clinicId;
   }
 
   const retriever: EvidenceRetriever = IS_PREVIEW ? previewRetriever() : (await import("@/lib/server/retriever")).liveRetriever(sb!);
@@ -89,13 +85,5 @@ function previewRetriever(): EvidenceRetriever {
       return getPreviewRetrieval(clientId);
     },
   };
-}
-
-function serverClient(request: NextRequest) {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-    { cookies: { getAll: () => request.cookies.getAll(), setAll: () => { /* read-only */ } } },
-  );
 }
 

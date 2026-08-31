@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { eventsForSession, getNote, incidentsFor, runSessionsFor, summariesFor } from "@/lib/data";
+import { eventsForSession, getNote, hydrateClientHistory, incidentsFor, runSessionsFor, summariesFor } from "@/lib/data";
 import { PdfExport, PrintSection } from "@/components/pdf-export";
 import type { RunSession } from "@/lib/types";
 
@@ -16,9 +16,14 @@ export default function SessionsPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
   const [sessions, setSessions] = React.useState<RunSession[]>([]);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    setSessions(runSessionsFor(clientId));
+    let cancelled = false;
+    hydrateClientHistory(clientId)
+      .catch((e) => { if (!cancelled) setLoadError(e instanceof Error ? e.message : "Could not load this client's full session history."); })
+      .finally(() => { if (!cancelled) setSessions(runSessionsFor(clientId)); });
+    return () => { cancelled = true; };
   }, [clientId]);
 
   return (
@@ -26,6 +31,11 @@ export default function SessionsPage() {
       <p className="sub" style={{ marginTop: 0 }}>
         planning → active → documentation → completed → locked. A session locks when its note is countersigned; locked sessions are immutable.
       </p>
+      {loadError ? (
+        <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--warn)" }}>
+          <p className="sub" style={{ color: "var(--ink)" }}>{loadError} Showing what this device already has locally.</p>
+        </div>
+      ) : null}
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
         {sessions.map((s) => {
           const sums = summariesFor(s.id);
@@ -75,7 +85,7 @@ export default function SessionsPage() {
         })}
         {!sessions.length ? (
           <div className="card card-pad">
-            <p className="sub">No sessions on this device yet.</p>
+            <p className="sub">No sessions yet.</p>
             <Link href={`/clients/${clientId}/run`} className="btn" style={{ textDecoration: "none", marginTop: 10, display: "inline-block" }}>▶ Run Session</Link>
           </div>
         ) : null}

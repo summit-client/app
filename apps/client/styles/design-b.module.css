@@ -386,7 +386,9 @@
   gap: 12px;
 }
 
-.apptEmpty {
+/* Shared empty/error-state box - appointments, progress and updates all
+   need the exact same "nothing here" / "couldn't load this" treatment. */
+.emptyBox {
   padding: 24px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -419,6 +421,260 @@
   gap: 12px;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* pages/progress.tsx - goals grouped by domain, each domain its own
+   section heading over a list of goal cards. Reuses .filters/.filterButton
+   (defined above for the appointments filter tabs) for its status filter -
+   same chip pattern, not a second one. */
+.domainSection {
+  margin-bottom: 26px;
+}
+
+.domainSection:last-child {
+  margin-bottom: 0;
+}
+
+.domainHeading {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.goalList {
+  display: grid;
+  gap: 10px;
+}
+
+.goalCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.goalName {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* pages/updates.tsx - full session-notes history, reverse chronological.
+   Each entry is a full-width card rather than a compact row, since the
+   body text (the clinical team's family-facing summary) is the point. */
+.updateList {
+  display: grid;
+  gap: 14px;
+}
+
+.updateCard {
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.updateCardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.updateDate {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.updateBody {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.noteBadge {
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.noteBadgeSigned {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.noteBadgeCountersigned {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+/* components/calendar-month.tsx - the Calendar view toggle on
+   pages/appointments.tsx. Reuses .filterButton/.filterButtonActive
+   (defined above) for the List/Calendar toggle itself, so this only
+   needs to style the grid. */
+.calendar {
+  margin-bottom: 20px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.calendarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 14px;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.calendarNavButton {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.calendarNavButton:hover {
+  background: var(--accent-tint);
+}
+
+.calendarWeekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 6px;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.calendarGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendarWeek {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendarDay {
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendarDay:hover {
+  border-color: var(--line-strong);
+}
+
+.calendarDayOutside {
+  color: var(--faint);
+  background: transparent;
+}
+
+.calendarDayToday .calendarDayNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.calendarDaySelected {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.calendarDayNumber {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.calendarDayEntries {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.calendarChip {
+  overflow: hidden;
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.calendarChipScheduled {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+.calendarChipCompleted {
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.calendarChipCancelled {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.calendarChipMore {
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 700;
 }
 
 @media (max-width: 1100px) {
@@ -529,6 +785,11 @@
   .clientSelect {
     flex: 1;
   }
+
+  .calendarDay {
+    min-height: 60px;
+    padding: 4px;
+  }
 }
 
 @media (max-width: 520px) {
@@ -551,5 +812,33 @@
 
   .apptCard .status {
     justify-self: start;
+  }
+
+  /* Seven text-labeled columns stop being readable at this width - the
+     day cells collapse to date number + status-coloured dots instead of
+     truncated text chips. The chip's accessible text isn't removed
+     (font-size: 0 hides it visually, not from assistive tech); the day
+     button's own aria-label already carries the appointment count. */
+  .calendarDay {
+    min-height: 46px;
+    gap: 2px;
+  }
+
+  .calendarDayEntries {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+
+  .calendarChip {
+    width: 6px;
+    height: 6px;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 0;
+  }
+
+  .calendarChipMore {
+    font-size: 8px;
   }
 }

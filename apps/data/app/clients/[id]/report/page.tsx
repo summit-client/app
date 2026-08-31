@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { ClinicalEvidencePacket, GeneratedClinicalReport, ReportBlock } from "@summit/clinical-ai";
 import { PdfExport, PrintSection } from "@/components/pdf-export";
+import { getLatestClinicalReport, reviseClinicalReport, saveClinicalReportProgress } from "@/lib/data";
 
 type Status = "draft" | "reviewed" | "approved" | "signed";
 const STATUS_FLOW: Status[] = ["draft", "reviewed", "approved", "signed"];
@@ -25,6 +26,64 @@ export default function ReportWorkspacePage() {
   const [aiMessage, setAiMessage] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<Status>("draft");
   const [version, setVersion] = React.useState(1);
+  // Identifies this document (stable across revisions) in `clinical_reports`.
+  // Null until the first generate() or an existing report is resumed below.
+  const [reportGroup, setReportGroup] = React.useState<string | null>(null);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [resuming, setResuming] = React.useState(true);
+  // Set right before a resume-from-DB load applies state, so the very next
+  // autosave effect run (which would otherwise immediately re-upsert the
+  // exact row we just read - a no-op the immutability trigger would still
+  // reject once it's signed) is skipped instead.
+  const suppressNextSave = React.useRef(false);
+
+  // Resume an in-progress or already-signed report instead of always
+  // starting from a blank draft — previously this workspace had no memory
+  // at all: every reload (or every visit to a client whose report was
+  // already signed) started over from "draft" with nothing generated.
+  React.useEffect(() => {
+    let cancelled = false;
+    setResuming(true);
+    getLatestClinicalReport(clientId)
+      .then((rec) => {
+        if (cancelled || !rec) return;
+        suppressNextSave.current = true;
+        setReportGroup(rec.reportGroup);
+        setVersion(rec.version);
+        // "locked" is a further step this workspace's own flow never
+        // produces, but could exist from another surface — treat it the
+        // same as "signed": fully reviewed, no more edits.
+        setStatus(rec.status === "locked" ? "signed" : (rec.status as Status));
+        setStart(rec.periodStart);
+        setEnd(rec.periodEnd);
+        setPacket(rec.packet);
+        setReport({
+          reportId: `${rec.reportGroup}-v${rec.version}`,
+          packetId: rec.packetId ?? "", blocks: rec.blocks, modelNote: rec.modelNote ?? "",
+        });
+      })
+      .catch((e) => setAiMessage(e instanceof Error ? e.message : "Could not load an existing report for this client."))
+      .finally(() => { if (!cancelled) setResuming(false); });
+    return () => { cancelled = true; };
+  }, [clientId]);
+
+  // Debounced autosave: any time the report's content or status changes
+  // while it isn't yet signed, persist it. This is what actually makes
+  // "Sign & lock" durable — without it, the whole review flow was React
+  // state only and a reload silently discarded a "locked" report.
+  React.useEffect(() => {
+    if (!report || !reportGroup) return;
+    if (suppressNextSave.current) { suppressNextSave.current = false; return; }
+    const t = setTimeout(() => {
+      setSaveError(null);
+      void saveClinicalReportProgress({
+        reportGroup, version, clientId, periodStart: start, periodEnd: end,
+        packetId: report.packetId || null, blocks: report.blocks, modelNote: report.modelNote || null,
+        status,
+      }).catch((e) => setSaveError(e instanceof Error ? e.message : "Could not save this report's progress."));
+    }, 800);
+    return () => clearTimeout(t);
+  }, [report, status, reportGroup, version, clientId, start, end]);
 
   const generate = async (opts?: { tone?: typeof tone; length?: "standard" | "short" }) => {
     setBusy(true); setAiMessage(null);
@@ -38,6 +97,7 @@ export default function ReportWorkspacePage() {
         setPacket(data.packet ?? null);
         setReport(data.report ?? null);
         setStatus("draft");
+        setReportGroup((rg) => rg ?? crypto.randomUUID());
         if (data.aiUnavailable) setAiMessage(data.message ?? "AI assistance is temporarily unavailable. Your clinical data and calculated results remain available.");
       } else {
         setAiMessage(data.error ?? "Report generation failed.");
@@ -57,7 +117,16 @@ export default function ReportWorkspacePage() {
     const i = STATUS_FLOW.indexOf(status);
     if (i < STATUS_FLOW.length - 1) setStatus(STATUS_FLOW[i + 1]);
   };
-  const revise = () => { setStatus("draft"); setVersion((v) => v + 1); };
+  const revise = async () => {
+    if (!reportGroup) { setStatus("draft"); setVersion((v) => v + 1); return; }
+    try {
+      const newVersion = await reviseClinicalReport(reportGroup, version);
+      setVersion(newVersion);
+      setStatus("draft");
+    } catch (e) {
+      setAiMessage(e instanceof Error ? e.message : "Could not create a new revision.");
+    }
+  };
 
   return (
     <div>
@@ -90,7 +159,7 @@ export default function ReportWorkspacePage() {
             <option value="parent_friendly">Parent-friendly</option>
             <option value="funder_friendly">Funder-friendly</option>
           </select></div>
-        <button className="btn lg" onClick={() => generate()} disabled={busy || status === "signed"}>
+        <button className="btn lg" onClick={() => generate()} disabled={busy || resuming || status === "signed"}>
           {busy ? "Assembling evidence…" : report ? "Regenerate report" : "Generate progress report"}
         </button>
         <span className={`pill ${status === "signed" ? "good" : "accent"}`}>v{version} · {STATUS_LABEL[status]}</span>
@@ -102,9 +171,16 @@ export default function ReportWorkspacePage() {
         ) : null}
       </div>
 
+      {resuming ? <p className="sub" style={{ marginTop: 12 }}>Checking for an existing report…</p> : null}
+
       {aiMessage ? (
         <div className="card card-pad" role="status" style={{ marginTop: 12, borderLeft: "3px solid var(--warn)" }}>
           <p className="sub" style={{ color: "var(--ink)" }}>{aiMessage}</p>
+        </div>
+      ) : null}
+      {saveError ? (
+        <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--danger)" }}>
+          <p className="sub" style={{ color: "var(--ink)" }}>{saveError}</p>
         </div>
       ) : null}
 

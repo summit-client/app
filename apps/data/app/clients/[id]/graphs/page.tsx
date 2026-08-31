@@ -3,21 +3,22 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { eventsForSession, getNote, getPrograms, runSessionsFor, summariesFor } from "@/lib/data";
+import { eventsForSession, getNote, getPrograms, hydrateClientHistory, runSessionsFor, summariesFor } from "@/lib/data";
 import { getSetting } from "@summit/settings";
 import { MODE_LABEL, type Program, type RunSession, type SessionProgramSummary } from "@/lib/types";
 
 /**
  * Graphs — the aggregated longitudinal view of completed session data. Graphs
  * are never populated by hand: every point is a derived session metric, and
- * points backed by a session on this device open the full lineage — session →
- * raw observations → program version → SOAP note.
+ * points backed by a session with an atomic record (this device or hydrated
+ * from the server) open the full lineage — session → raw observations →
+ * program version → SOAP note.
  */
 
 interface GraphPoint {
   date: string;
   value: number;
-  session: RunSession | null;             // null = historical summary (no atomic record on this device)
+  session: RunSession | null;             // null = historical summary (no atomic record available)
   summary: SessionProgramSummary | null;
 }
 
@@ -27,15 +28,26 @@ export default function GraphsPage() {
   const [programs, setPrograms] = React.useState<Program[]>([]);
   const [selected, setSelected] = React.useState<{ program: Program; point: GraphPoint } | null>(null);
   const [view, setView] = React.useState<"program" | "target">("program");
+  // mem.sessions/mem.summaries are a plain module-level cache, not React
+  // state — bump this after hydrateClientHistory() resolves to force a
+  // re-render that picks up the freshly-merged rows.
+  const [, forceRerender] = React.useReducer((n: number) => n + 1, 0);
 
   React.useEffect(() => {
     void getPrograms(clientId).then(setPrograms);
   }, [clientId]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    hydrateClientHistory(clientId).catch(() => { /* best-effort — falls back to this device's own history */ })
+      .finally(() => { if (!cancelled) forceRerender(); });
+    return () => { cancelled = true; };
+  }, [clientId]);
+
   const completed = runSessionsFor(clientId).filter((s) => s.status === "completed" || s.status === "locked");
 
   const pointsFor = (p: Program): GraphPoint[] => {
-    // Session-backed points: completed sessions on this device with a summary for this program.
+    // Session-backed points: completed sessions (hydrated from the whole clinic, not just this device) with a summary for this program.
     const backed: GraphPoint[] = completed
       .flatMap((s) => summariesFor(s.id).filter((m) => m.programId === p.id).map((m) => ({ s, m })))
       .filter(({ m }) => m.calculatedValue != null && (m.metricType.startsWith("percent") || m.metricType === "count"))
@@ -144,7 +156,7 @@ function Chart({ points, isPercent, masteryPct, onSelect, selectedDate }: {
       </svg>
       <div className="trend" style={{ display: "flex", justifyContent: "space-between" }}>
         <span>{points[0]?.date}</span>
-        <span>◦ historical summary · ● session on this device (click for lineage)</span>
+        <span>◦ historical summary · ● session record available (click for lineage)</span>
         <span>{points.at(-1)?.date}</span>
       </div>
     </div>
@@ -211,10 +223,17 @@ function LineagePanel({ clientId, program, point, onClose }: {
             {m.numerator != null && m.denominator != null ? <> — {m.numerator} independent of {m.denominator} opportunities</> : null}.
             The raw observations remain authoritative; this value is recomputable from them.
           </p>
-          <p className="sub" style={{ marginTop: 0 }}>
-            Observation tally: {ev.filter((e) => e.code === "Y").length}× Y · {ev.filter((e) => e.code === "P").length}× P · {ev.filter((e) => e.code === "N").length}× N
-            {ev.some((e) => e.target) ? <> · targets: {[...new Set(ev.filter((e) => e.target).map((e) => e.target))].join(", ")}</> : null}
-          </p>
+          {ev.length ? (
+            <p className="sub" style={{ marginTop: 0 }}>
+              Observation tally: {ev.filter((e) => e.code === "Y").length}× Y · {ev.filter((e) => e.code === "P").length}× P · {ev.filter((e) => e.code === "N").length}× N
+              {ev.some((e) => e.target) ? <> · targets: {[...new Set(ev.filter((e) => e.target).map((e) => e.target))].join(", ")}</> : null}
+            </p>
+          ) : m.rawObservationCount > 0 ? (
+            <p className="sub" style={{ marginTop: 0 }}>
+              This session&rsquo;s {m.rawObservationCount} raw observations aren&rsquo;t available on this device — open it from the
+              device that ran it for the per-trial tally.
+            </p>
+          ) : null}
           {byActivity.size > 1 ? (
             <p className="sub" style={{ marginTop: 0 }}>
               By activity: {[...byActivity.entries()].map(([a, n]) => `${a} (${n})`).join(" · ")}
@@ -226,7 +245,7 @@ function LineagePanel({ clientId, program, point, onClose }: {
             </p>
           ) : null}
           <p className="sub" style={{ marginTop: 0 }}>
-            SOAP note: {note ? <>status <b>{note.status}</b> — see <Link href={`/clients/${clientId}/sessions`} style={{ color: "var(--accent)" }}>session history</Link></> : "not drafted on this device"}
+            SOAP note: {note ? <>status <b>{note.status}</b> — see <Link href={`/clients/${clientId}/sessions`} style={{ color: "var(--accent)" }}>session history</Link></> : "not drafted"}
           </p>
         </div>
       ) : (

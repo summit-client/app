@@ -7,7 +7,23 @@ import { useFocusTrap } from '../lib/useFocusTrap';
 
 type Tab = 'staff' | 'clients';
 
-const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+// Data-format bug, found and fixed this pass: this used to be
+// ['monday', 'tuesday', ...] (full lowercase names), seeding new staff/
+// client availability rows with a `day` value that matches nothing
+// anywhere else in this app. Every OTHER place that reads or writes
+// staff_availability/client_availability's `day` column - pages/index.jsx's
+// AVAIL_DAYS, dateUtils.ts's WEEKDAY_ABBR (used throughout CalendarView,
+// TimeGrid, RescheduleModal, suggestions.ts) - uses the three-letter,
+// capitalized form ("Mon", "Tue", ...). A row seeded with day: "monday"
+// never matched any of those comparisons, so it was invisible to the
+// availability grid and to every availability check elsewhere in the app
+// until someone opened and saved that entity's availability in the UI
+// (which deletes and fully re-inserts in the correct format). Currently
+// harmless in practice only because these seed rows are inserted with
+// start_time/end_time both null, which already contributes zero selected
+// slots regardless of day-format matching - but it's a real data-integrity
+// bug waiting for the day something reads these rows directly.
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const ROLES = ['BCBA', 'BCaBA', 'RBT', 'Supervisor'];
 // Fallback only, for a clinic that has not configured any session_types row
 // yet (migration 0019 seeds a default set for every clinic, so this should

@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import {
   MockProvider, resolveProvider, type ClinicalAIProvider,
 } from "@summit/clinical-ai";
+import { requireStaff, routeServerClient } from "@/lib/server/authz";
 
 /**
  * POST /api/clinical-query — natural-language caseload querying.
@@ -30,13 +30,8 @@ export async function POST(request: NextRequest) {
   if (question.length > 500) return NextResponse.json({ ok: false, error: "Question too long." }, { status: 413 });
 
   if (!IS_PREVIEW) {
-    const sb = serverClient(request);
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ ok: false, error: "Sign in required." }, { status: 401 });
-    const { data: profile } = await sb.from("profiles").select("role").eq("id", user.id).single();
-    if (!profile || !["admin", "supervisor", "clinician"].includes(profile.role)) {
-      return NextResponse.json({ ok: false, error: "Staff access required." }, { status: 403 });
-    }
+    const auth = await requireStaff(routeServerClient(request));
+    if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
   }
 
   let provider: ClinicalAIProvider;
@@ -54,12 +49,4 @@ export async function POST(request: NextRequest) {
     const out = await new MockProvider().answerClinicalQuery({ question }, { packets: [] });
     return NextResponse.json({ ok: true, ...out, degraded: true });
   }
-}
-
-function serverClient(request: NextRequest) {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-    { cookies: { getAll: () => request.cookies.getAll(), setAll: () => { /* read-only */ } } },
-  );
 }

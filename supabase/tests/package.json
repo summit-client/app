@@ -1,0 +1,14 @@
+{
+  "name": "@summit/db-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "apply": "node apply.mjs ../migrations",
+    "behaviour": "node behaviour.mjs ../migrations",
+    "rls": "node rls.mjs ../migrations",
+    "test": "npm run apply && npm run behaviour && npm run rls"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  }
+}
