@@ -36,8 +36,8 @@
   --brand-error: #B3261E;
   --brand-error-bg: #FDECEC;
   --brand-error-border: #F5C6C6;
-  --font-display: 'Bricolage Grotesque', sans-serif;
-  --font-body: 'Hanken Grotesk', sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Source Sans 3', sans-serif;
 }
 
 html,
@@ -260,7 +260,7 @@ html { scroll-behavior: smooth; }
 .testi-bg::before {
   content: '"';
   position: absolute;
-  font-family: 'Bricolage Grotesque', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 18rem;
   font-weight: 800;
   color: rgba(255,255,255,.025);
@@ -355,7 +355,7 @@ html { scroll-behavior: smooth; }
   width: 100%; display: flex; align-items: center; justify-content: center; gap: .55rem;
   padding: .85rem 1rem; border: none; border-radius: 8px;
   background: #0C5350;
-  color: #fff; font-family: var(--font-display); font-weight: 700; font-size: .95rem;
+  color: #fff; font-family: var(--font-display); font-weight: 600; font-size: .95rem;
   cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
 }
 .auth-submit:hover:not(:disabled) {

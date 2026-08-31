@@ -113,8 +113,8 @@ export default function Home() {
   const g500  = '#57748A'
   const g700  = '#3D5A6A'
   const off   = '#F7FAFB'
-  const display = "'Bricolage Grotesque',sans-serif"
-  const body    = "'Hanken Grotesk',sans-serif"
+  const display = "'Outfit',sans-serif"
+  const body    = "'Source Sans 3',sans-serif"
 
   // This hero is a pinned-scroll ("scrollytelling") sequence: a 320vh-tall
   // container holds the viewport via position:sticky while scrollYProgress
@@ -224,7 +224,7 @@ export default function Home() {
                   <div className="an1" style={{
                     display: 'inline-flex', alignItems: 'center', gap: '.4rem',
                     background: 'rgba(40,180,166,.12)', color: teal,
-                    fontSize: '.78rem', fontWeight: 700,
+                    fontSize: '.78rem', fontWeight: 600,
                     padding: '.35rem .8rem', borderRadius: 100,
                     marginBottom: '1.25rem',
                     fontFamily: display, letterSpacing: '.02em',
@@ -237,7 +237,8 @@ export default function Home() {
                   <h1 className="an2" style={{
                     fontFamily: display,
                     fontSize: 'clamp(2.1rem,3.8vw,3.1rem)',
-                    fontWeight: 800, lineHeight: 1.15,
+                    letterSpacing: '-0.02em',
+                    fontWeight: 600, lineHeight: 1.15,
                     color: navy, marginBottom: '1.25rem',
                   }}>
                     Your clinic.<br />
@@ -273,7 +274,7 @@ export default function Home() {
               <div className="an4" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '2.5rem' }}>
                 <a href="/signup" className="btn-primary" style={{
                   background: ink, color: '#fff',
-                  fontFamily: display, fontSize: '1rem', fontWeight: 700,
+                  fontFamily: display, fontSize: '1rem', fontWeight: 600,
                   padding: '.875rem 2rem', borderRadius: 10,
                   boxShadow: '0 4px 22px rgba(26,63,92,.28)',
                   display: 'inline-block', position: 'relative', zIndex: 3,
@@ -299,7 +300,7 @@ export default function Home() {
                       statement and the timesheet all come from that record. */}
                   {[['1','record, end to end'],['','portals, one login'],['0','double entry']].map(([v,l], i) => (
                     <div key={l}>
-                      <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 800, color: navy }}>
+                      <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 600, color: navy }}>
                         {i === 1 ? portalCount : v}
                       </div>
                       <div style={{ fontSize: '.78rem', color: g500, fontWeight: 500 }}>{l}</div>
@@ -384,7 +385,7 @@ export default function Home() {
                   color: '#fff', fontSize: '1rem',
                 }}>✓</div>
                 <div>
-                  <div style={{ fontFamily: display, fontSize: '.78rem', fontWeight: 700, color: navy }}>12 sessions booked</div>
+                  <div style={{ fontFamily: display, fontSize: '.78rem', fontWeight: 600, color: navy }}>12 sessions booked</div>
                   <div style={{ fontSize: '.68rem', color: g500 }}>Conflicts resolved automatically</div>
                 </div>
               </motion.div>
@@ -406,13 +407,14 @@ export default function Home() {
       <section id="features" className="landing-section" style={{ background: '#fff', fontFamily: body }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
-            fontFamily: display, fontSize: '.72rem', fontWeight: 700,
+            fontFamily: display, fontSize: '.72rem', fontWeight: 600,
             letterSpacing: '.1em', textTransform: 'uppercase', color: teal, marginBottom: '.7rem',
           }}>Features</div>
           <h2 style={{
             fontFamily: display,
             fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
-            fontWeight: 800, color: navy, marginBottom: '.9rem', maxWidth: 580,
+            letterSpacing: '-0.015em',
+            fontWeight: 600, color: navy, marginBottom: '.9rem', maxWidth: 580,
           }}>
             One platform, from the first booking to the last payroll line
           </h2>
@@ -438,7 +440,7 @@ export default function Home() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '1.1rem', fontSize: '1.25rem',
                 }}>{f.icon}</div>
-                <h3 style={{ fontFamily: display, fontSize: '1rem', fontWeight: 700, color: navy, marginBottom: '.45rem' }}>{f.title}</h3>
+                <h3 style={{ fontFamily: display, fontSize: '1rem', fontWeight: 600, color: navy, marginBottom: '.45rem' }}>{f.title}</h3>
                 <p style={{ fontSize: '.875rem', color: g700, lineHeight: 1.7 }}>{f.desc}</p>
               </div>
             ))}
@@ -450,13 +452,14 @@ export default function Home() {
       <section id="how" className="landing-section" style={{ background: off, fontFamily: body }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
-            fontFamily: display, fontSize: '.72rem', fontWeight: 700,
+            fontFamily: display, fontSize: '.72rem', fontWeight: 600,
             letterSpacing: '.1em', textTransform: 'uppercase', color: teal, marginBottom: '.7rem',
           }}>How it works</div>
           <h2 style={{
             fontFamily: display,
             fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
-            fontWeight: 800, color: navy, marginBottom: '.9rem', maxWidth: 580,
+            letterSpacing: '-0.015em',
+            fontWeight: 600, color: navy, marginBottom: '.9rem', maxWidth: 580,
           }}>
             Record it once. Everything downstream follows.
           </h2>
@@ -473,12 +476,12 @@ export default function Home() {
                 <div style={{
                   width: 54, height: 54, borderRadius: '50%',
                   background: ink, color: '#fff',
-                  fontFamily: display, fontSize: '1.2rem', fontWeight: 800,
+                  fontFamily: display, fontSize: '1.2rem', fontWeight: 600,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '1.2rem',
                   boxShadow: '0 4px 18px rgba(26,63,92,.28)',
                 }}>{s.n}</div>
-                <h3 style={{ fontFamily: display, fontSize: '1rem', fontWeight: 700, color: navy, marginBottom: '.45rem' }}>{s.title}</h3>
+                <h3 style={{ fontFamily: display, fontSize: '1rem', fontWeight: 600, color: navy, marginBottom: '.45rem' }}>{s.title}</h3>
                 <p style={{ fontSize: '.875rem', color: g700, lineHeight: 1.7 }}>{s.desc}</p>
               </div>
             ))}
@@ -503,13 +506,14 @@ export default function Home() {
       }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
-            fontFamily: display, fontSize: '.72rem', fontWeight: 700,
+            fontFamily: display, fontSize: '.72rem', fontWeight: 600,
             letterSpacing: '.1em', textTransform: 'uppercase',
             color: 'rgba(255,255,255,.55)', marginBottom: '.7rem',
           }}>How your data is held</div>
           <h2 style={{
             fontFamily: display, fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
-            fontWeight: 800, color: '#fff', marginBottom: '.9rem', maxWidth: 620,
+            letterSpacing: '-0.015em',
+            fontWeight: 600, color: '#fff', marginBottom: '.9rem', maxWidth: 620,
           }}>
             Built for organizations that answer for their records
           </h2>
@@ -542,7 +546,7 @@ export default function Home() {
                   width: 30, height: 2, background: '#6BC7BD', marginBottom: '1rem',
                 }} />
                 <div style={{
-                  fontFamily: display, fontSize: '1rem', fontWeight: 700,
+                  fontFamily: display, fontSize: '1rem', fontWeight: 600,
                   color: '#fff', marginBottom: '.5rem', lineHeight: 1.35,
                 }}>{title}</div>
                 <p style={{
@@ -564,7 +568,8 @@ export default function Home() {
           <h2 style={{
             fontFamily: display,
             fontSize: 'clamp(2rem,3.8vw,2.9rem)',
-            fontWeight: 800, color: '#fff', marginBottom: '1rem', lineHeight: 1.2,
+            letterSpacing: '-0.02em',
+            fontWeight: 600, color: '#fff', marginBottom: '1rem', lineHeight: 1.2,
           }}>
             See what your clinic looks like connected.
           </h2>
@@ -573,7 +578,7 @@ export default function Home() {
           </p>
           <a href="/signup" className="btn-primary" style={{
             background: '#fff', color: navy,
-            fontFamily: display, fontSize: '1rem', fontWeight: 700,
+            fontFamily: display, fontSize: '1rem', fontWeight: 600,
             padding: '.9rem 2.25rem', borderRadius: 10,
             display: 'inline-block',
             boxShadow: '0 4px 20px rgba(0,0,0,.14)',
@@ -595,7 +600,7 @@ export default function Home() {
           flexWrap: 'wrap', gap: '1rem',
         }}>
           <span style={{
-            fontFamily: display, fontWeight: 800,
+            fontFamily: display, fontWeight: 600,
             color: 'rgba(255,255,255,.6)', fontSize: '1rem', letterSpacing: '-.01em',
           }}>SUMMIT</span>
           <div style={{ display: 'flex', gap: '2rem' }}>
@@ -664,7 +669,7 @@ function FeaturePill({ progress, index, glyph, title, sub }: {
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.05rem',
         }}>{glyph}</div>
         <div>
-          <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: '.95rem', fontWeight: 700, color: '#1A3F5C' }}>{title}</div>
+          <div style={{ fontFamily: "'Outfit',sans-serif", fontSize: '.95rem', fontWeight: 600, color: '#1A3F5C' }}>{title}</div>
           <div style={{ fontSize: '.75rem', color: '#7A9AAD' }}>{sub}</div>
         </div>
       </div>
@@ -715,8 +720,8 @@ function SessionCell({ progress, seq, type, lines }: {
     }}>
       <div style={{
         height: '100%', borderRadius: 6, padding: '3px 5px',
-        fontSize: '.6rem', fontWeight: 700, color: '#fff',
-        fontFamily: "'Bricolage Grotesque',sans-serif", lineHeight: 1.3,
+        fontSize: '.6rem', fontWeight: 600, color: '#fff',
+        fontFamily: "'Outfit',sans-serif", lineHeight: 1.3,
         display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
         background: bg,
       }}>

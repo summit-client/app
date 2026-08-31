@@ -24,7 +24,7 @@ export default function PublicNav() {
       borderBottom: '1px solid #e5e7eb',
       boxShadow: scrolled ? '0 4px 20px rgba(26,63,92,.08)' : 'none',
       transition: 'box-shadow .25s ease, background .25s ease',
-      fontFamily: "'Hanken Grotesk',sans-serif"
+      fontFamily: "'Source Sans 3',sans-serif"
     }}>
       <div className="pubnav-inner" style={{
         maxWidth: 1200, margin: '0 auto',
@@ -34,7 +34,7 @@ export default function PublicNav() {
 
         {/* Logo */}
         <a href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: 20, fontWeight: 800, color: '#1A3F5C', letterSpacing: '-0.5px', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: "'Outfit',sans-serif", fontSize: 20, fontWeight: 600, color: '#0B2B31', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
             Summit Client
           </span>
         </a>
@@ -54,14 +54,14 @@ export default function PublicNav() {
         {/* CTAs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <a href="/login" style={{
-            fontFamily: "'Bricolage Grotesque',sans-serif",
+            fontFamily: "'Outfit',sans-serif",
             fontSize: 15, fontWeight: 500, color: '#1A3F5C',
             textDecoration: 'none', padding: '8px 16px', whiteSpace: 'nowrap'
           }}>
             Log in
           </a>
           <a href="/signup" className="btn-primary" style={{
-            fontFamily: "'Bricolage Grotesque',sans-serif",
+            fontFamily: "'Outfit',sans-serif",
             fontSize: 15, fontWeight: 600, color: '#fff',
             background: '#0C5350',
             textDecoration: 'none',
