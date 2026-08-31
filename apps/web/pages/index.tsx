@@ -249,7 +249,7 @@ export default function Home() {
 
               <div className="an4" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '2.5rem' }}>
                 <a href="/signup" className="btn-primary" style={{
-                  background: grad, color: '#fff',
+                  color: '#fff',
                   fontFamily: display, fontSize: '1rem', fontWeight: 700,
                   padding: '.875rem 2rem', borderRadius: 10,
                   boxShadow: '0 4px 22px rgba(26,63,92,.28)',
@@ -303,7 +303,7 @@ export default function Home() {
                     <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
                   ))}
                   <div style={{ margin: '0 auto', color: 'rgba(255,255,255,.6)', fontSize: '.72rem', fontFamily: display }}>
-                    Summit Scheduler — Week of May 26
+                    Summit Scheduler · Week of May 26
                   </div>
                 </div>
 
@@ -417,10 +417,10 @@ export default function Home() {
           </p>
           <div className="grid-3" style={{ display: 'grid', gap: '1.25rem' }}>
             {[
-              { icon: '🤖', title: 'AI-Powered Staff Matching',       desc: 'Automatically matches each client to the best-qualified, available staff — factoring session type, availability, and location in seconds.' },
-              { icon: '📅', title: 'Smart Recurring Schedules',        desc: 'Set it once and Summit builds the full recurring calendar — weekly, biweekly, or custom — with zero manual entry required.' },
+              { icon: '🤖', title: 'AI-Powered Staff Matching',       desc: 'Automatically matches each client to the best-qualified, available staff, factoring session type, availability, and location in seconds.' },
+              { icon: '📅', title: 'Smart Recurring Schedules',        desc: 'Set it once and Summit builds the full recurring calendar (weekly, biweekly, or custom) with zero manual entry required.' },
               { icon: '🗓️', title: 'Visual Drag-and-Drop Calendar',   desc: 'See your full week at a glance. Drag sessions to reposition them, with real-time conflict detection keeping everything clean.' },
-              { icon: '👥', title: 'Multi-Portal Access',              desc: 'Dedicated views for admins, clinicians, and families. Everyone sees exactly what they need — nothing more.' },
+              { icon: '👥', title: 'Multi-Portal Access',              desc: 'Dedicated views for admins, clinicians, and families. Everyone sees exactly what they need, nothing more.' },
               { icon: '🔒', title: 'HIPAA-Ready Infrastructure',       desc: 'Built on enterprise-grade infrastructure with role-based access control and encrypted data at rest and in transit.' },
               { icon: '📍', title: 'Multi-Location Support',           desc: 'Manage sessions across all your clinic locations from one dashboard. Staff, clients, and rooms all in one place.' },
             ].map((f, i) => (
@@ -461,7 +461,7 @@ export default function Home() {
           </p>
           <div className="grid-3" style={{ display: 'grid', gap: '2rem' }}>
             {[
-              { n: '1', title: 'Add your clients & staff',  desc: 'Enter client profiles and staff availability. Summit learns who can see who, and when — automatically.' },
+              { n: '1', title: 'Add your clients & staff',  desc: 'Enter client profiles and staff availability. Summit automatically learns who can see who, and when.' },
               { n: '2', title: 'Run AI matching',            desc: 'Tell Summit the session type and parameters. It surfaces the best matches instantly, colour-coded by availability.' },
               { n: '3', title: 'Confirm & go',               desc: 'Review the proposed schedule, drag to adjust if needed, then confirm. Recurring sessions booked in bulk automatically.' },
             ].map((s, i) => (
@@ -494,7 +494,7 @@ export default function Home() {
             fontSize: 'clamp(1.25rem,2.2vw,1.7rem)',
             fontWeight: 600, color: '#fff', lineHeight: 1.55, marginBottom: '2rem',
           }}>
-            &ldquo;We used to spend 4 hours a week building the schedule. With Summit, it&rsquo;s done in 20 minutes — and there are zero double bookings.&rdquo;
+            &ldquo;We used to spend 4 hours a week building the schedule. With Summit, it&rsquo;s done in 20 minutes, and there are zero double bookings.&rdquo;
           </blockquote>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
             <div style={{

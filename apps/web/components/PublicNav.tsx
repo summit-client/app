@@ -63,7 +63,6 @@ export default function PublicNav() {
           <a href="/signup" className="btn-primary" style={{
             fontFamily: "'Bricolage Grotesque',sans-serif",
             fontSize: 15, fontWeight: 600, color: '#fff',
-            background: 'linear-gradient(135deg,#28B4A6 0%,#1A3F5C 100%)',
             textDecoration: 'none',
             padding: '8px 20px', borderRadius: 6
           }}>

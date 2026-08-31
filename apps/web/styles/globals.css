@@ -38,6 +38,16 @@
   --brand-error-border: #F5C6C6;
   --font-display: 'Bricolage Grotesque', sans-serif;
   --font-body: 'Hanken Grotesk', sans-serif;
+
+  /* Solid button fill (no gradient) plus a darker hover step - the same
+     flat-colour, darken-on-hover pattern packages/design/tokens.css uses
+     for its own `--accent`/`--accent-strong` (read as reference, not
+     imported - apps/web keeps its own tokens rather than depending on that
+     package). `--brand-teal-2` on white already clears AA (5.0:1); the
+     lighter decorative `--brand-teal` does not (2.6:1) and was never a
+     candidate for text-bearing buttons for that reason, not just style. */
+  --brand-button: var(--brand-teal-2);
+  --brand-button-hover: var(--brand-navy);
 }
 
 html,
@@ -165,10 +175,21 @@ html { scroll-behavior: smooth; }
 @media (max-width: 760px)  { .landing-section-lg { padding: 60px 1.5rem; } }
 @media (max-width: 520px)  { .landing-section-lg { padding: 48px 1.25rem; } }
 
-.btn-primary { transition: transform .2s ease, box-shadow .2s ease; }
+/* Solid fill, not the decorative gradient - matches the flat-colour button
+   the shared module design system (packages/design) uses everywhere else
+   in the product; the gradient stays for illustrative surfaces (icon
+   badges, the calendar mockup) but never for something a user clicks. */
+.btn-primary {
+  background: var(--brand-button);
+  transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
 .btn-primary:hover {
+  background: var(--brand-button-hover);
   transform: translateY(-2px);
   box-shadow: 0 10px 28px rgba(26,63,92,.32);
+}
+.btn-primary:active {
+  transform: translateY(0) scale(0.98);
 }
 
 /* Gentle float on the hero's "sessions booked" badge */
@@ -368,6 +389,7 @@ html { scroll-behavior: smooth; }
   color: var(--brand-gray-500);
 }
 .auth-toggle-visibility:hover { color: var(--brand-navy); background: var(--brand-gray-100); }
+.auth-toggle-visibility:active { transform: translateY(-50%) scale(0.92); }
 .auth-toggle-visibility:focus-visible {
   outline: 2px solid var(--brand-teal); outline-offset: 1px;
 }
@@ -375,13 +397,16 @@ html { scroll-behavior: smooth; }
 .auth-submit {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: .55rem;
   padding: .85rem 1rem; border: none; border-radius: 8px;
-  background: linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%);
+  background: var(--brand-button);
   color: #fff; font-family: var(--font-display); font-weight: 700; font-size: .95rem;
-  cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease, background-color .15s ease;
 }
 .auth-submit:hover:not(:disabled) {
+  background: var(--brand-button-hover);
   transform: translateY(-1px); box-shadow: 0 8px 20px rgba(26,63,92,.25);
 }
+.auth-submit:active:not(:disabled) { transform: translateY(0) scale(0.99); }
 .auth-submit:focus-visible { outline: 2px solid var(--brand-navy); outline-offset: 2px; }
 .auth-submit:disabled { cursor: not-allowed; opacity: .72; }
 

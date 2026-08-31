@@ -204,7 +204,7 @@ export default function Signup() {
   return (
     <AuthCard
       title="Get early access"
-      subtitle="Launching Q4 2026 — sign up for updates and we'll reach out when your clinic can get started."
+      subtitle="Launching Q4 2026. Sign up for updates and we'll reach out when your clinic can get started."
     >
       <form className="auth-form" onSubmit={handleSubmit} noValidate>
         {formError && (
