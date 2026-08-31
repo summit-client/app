@@ -32,10 +32,21 @@ export default function PublicNav() {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between'
       }}>
 
-        {/* Logo */}
-        <a href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: "'Outfit',sans-serif", fontSize: 20, fontWeight: 600, color: '#0B2B31', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
-            Summit Client
+        {/* Logo lockup: the real Summit mark, then the wordmark.
+            The supplied asset bakes "SUMMIT" under the peaks, which would set
+            the word twice in a lockup, so the mark is cropped to the peaks and
+            the wordmark is live text — it stays selectable, scales with the
+            type system, and needs no second asset for a dark treatment.
+            width/height are explicit so the nav does not shift as it loads. */}
+        <a href="/" aria-label="SummitClient.io home"
+           style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 9 }}>
+          <img src="/summit-mark-64.png" alt="" width={28} height={28}
+               style={{ display: 'block', flexShrink: 0 }} />
+          <span style={{
+            fontFamily: "'Outfit',sans-serif", fontSize: 20, fontWeight: 600,
+            color: '#0B2B31', letterSpacing: '-0.02em', whiteSpace: 'nowrap',
+          }}>
+            SummitClient<span style={{ color: '#5A787C', fontWeight: 500 }}>.io</span>
           </span>
         </a>
 

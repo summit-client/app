@@ -148,8 +148,33 @@ html { scroll-behavior: smooth; }
 @media (max-width: 760px) {
   .grid-3 { grid-template-columns: 1fr; }
 }
-.feature-card         { transition: transform .2s, box-shadow .2s; }
-.feature-card:hover   { transform: translateY(-5px); box-shadow: 0 16px 44px rgba(26,63,92,.1) !important; }
+/* The feature list. Rows separated by a hairline rather than boxed in cards:
+   the divider does the grouping the border used to, without drawing six
+   rectangles. Column gaps are wider than row gaps so the eye reads down a
+   column before across, which is the order the copy is written in.
+
+   No hover lift. These rows are not interactive — nothing happens when you
+   click one — and a card that rises under the cursor promises an affordance
+   that is not there. */
+.feature-rows {
+  column-gap: 3rem;
+  row-gap: 0;
+}
+.feature-row {
+  padding: 1.6rem 0;
+  border-top: 1px solid var(--brand-gray-100);
+}
+/* The first row of each column needs no rule above it: at 3 columns that is
+   the first three, at 2 the first two, at 1 only the first. */
+.feature-rows > .feature-row:nth-child(-n + 3) { border-top: 0; padding-top: 0; }
+@media (max-width: 1100px) {
+  .feature-rows > .feature-row:nth-child(-n + 3) { border-top: 1px solid var(--brand-gray-100); padding-top: 1.6rem; }
+  .feature-rows > .feature-row:nth-child(-n + 2) { border-top: 0; padding-top: 0; }
+}
+@media (max-width: 760px) {
+  .feature-rows > .feature-row:nth-child(-n + 3) { border-top: 1px solid var(--brand-gray-100); padding-top: 1.6rem; }
+  .feature-rows > .feature-row:first-child { border-top: 0; padding-top: 0; }
+}
 
 /* Shared section padding rhythm - was a flat `88px 2rem` inline on every
    section regardless of viewport, which can't respond to a media query at

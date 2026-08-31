@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { motion, useScroll, useSpring, useTransform, useMotionValue, MotionValue } from 'motion/react'
+import { Icon, type IconName } from '../components/Icon'
 
 type Cell = { type: string; lines: string[] } | null
 
@@ -421,26 +422,33 @@ export default function Home() {
           <p style={{ fontSize: '1rem', color: g700, maxWidth: 540, marginBottom: '2.8rem' }}>
             Most of this is work that usually takes three or four separate systems, plus the reconciliation between them.
           </p>
-          <div className="grid-3" style={{ display: 'grid', gap: '1.25rem' }}>
+          <div className="grid-3 feature-rows" style={{ display: 'grid' }}>
             {[
-              { icon: '🗓️', title: 'Scheduling that matches',      desc: 'Matches each client to qualified, available staff and builds the recurring calendar, with conflict detection as you drag. Across every site you run.' },
-              { icon: '📝', title: 'Session data as it happens',  desc: 'Run the session in the app and record observations as they occur. Graphs and mastery are derived from that data, never typed in a second time.' },
-              { icon: '📈', title: 'Assessments and reports',     desc: 'ABLLS-R, AFLS, ADL and MOTAS scored in place. Reports are built from the evidence actually recorded, and a clinician signs every one.' },
-              { icon: '👪', title: 'A portal families use',       desc: 'Upcoming sessions, progress, signed notes, and a funding statement that reconciles: total budget, spent to date, and every charge behind it.' },
-              { icon: '🎓', title: 'Credentials and training',    desc: 'Onboarding, training records and certificates, with CEU tracking across BACB, CPBAO and IBA that counts one course toward each without inflating the total.' },
-              { icon: '🔒', title: 'Time, pay and privacy',       desc: 'Delivered sessions become hours and charges on their own, with overtime worked out over the declared work week as the ESA requires. Built for PHIPA and PIPEDA, with per clinic access control throughout.' },
+              { icon: 'calendar', title: 'Scheduling that matches',      desc: 'Matches each client to qualified, available staff and builds the recurring calendar, with conflict detection as you drag. Across every site you run.' },
+              { icon: 'pulse', title: 'Session data as it happens',  desc: 'Run the session in the app and record observations as they occur. Graphs and mastery are derived from that data, never typed in a second time.' },
+              { icon: 'chart', title: 'Assessments and reports',     desc: 'ABLLS-R, AFLS, ADL and MOTAS scored in place. Reports are built from the evidence actually recorded, and a clinician signs every one.' },
+              { icon: 'people', title: 'A portal families use',       desc: 'Upcoming sessions, progress, signed notes, and a funding statement that reconciles: total budget, spent to date, and every charge behind it.' },
+              { icon: 'credential', title: 'Credentials and training',    desc: 'Onboarding, training records and certificates, with CEU tracking across BACB, CPBAO and IBA that counts one course toward each without inflating the total.' },
+              { icon: 'shield', title: 'Time, pay and privacy',       desc: 'Delivered sessions become hours and charges on their own, with overtime worked out over the declared work week as the ESA requires. Built for PHIPA and PIPEDA, with per clinic access control throughout.' },
             ].map((f, i) => (
-              <div key={f.title} className="feature-card reveal" style={{
-                background: off, borderRadius: 16,
-                padding: '1.75rem', border: `1px solid ${g100}`,
-                transitionDelay: `${(i % 3) * 90}ms`,
+              /* Not a card. Six short, parallel items in a list a person reads
+                 top to bottom do not each represent a discrete object, so a
+                 border and a fill around every one adds containment nobody
+                 needed and turns the section into a grid of boxes. A hairline
+                 rule and the type scale carry the same grouping with less
+                 furniture, and the icon sits inline with the title rather than
+                 in a 46px dark tile above it. */
+              <div key={f.title} className="feature-row reveal" style={{
+                transitionDelay: `${(i % 3) * 80}ms`,
               }}>
-                <div aria-hidden="true" style={{
-                  width: 46, height: 46, borderRadius: 10, background: ink,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: '1.1rem', fontSize: '1.25rem',
-                }}>{f.icon}</div>
-                <h3 style={{ fontFamily: display, fontSize: '1rem', fontWeight: 600, color: navy, marginBottom: '.45rem' }}>{f.title}</h3>
+                <h3 style={{
+                  fontFamily: display, fontSize: '1rem', fontWeight: 600,
+                  color: navy, marginBottom: '.45rem',
+                  display: 'flex', alignItems: 'center', gap: '.6rem',
+                }}>
+                  <span style={{ color: teal }}><Icon name={f.icon as IconName} size={20} /></span>
+                  {f.title}
+                </h3>
                 <p style={{ fontSize: '.875rem', color: g700, lineHeight: 1.7 }}>{f.desc}</p>
               </div>
             ))}
