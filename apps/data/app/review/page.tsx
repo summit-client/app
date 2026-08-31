@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { lockRunSession, pendingNotes, saveNote } from "@/lib/data";
+import { countersignNote, getPendingCountersigns } from "@/lib/data";
 import { useIdentity } from "@/components/session-provider";
-import type { SessionNoteDraft } from "@/lib/types";
+import type { PendingCountersign } from "@/lib/types";
 
 /**
- * Supervisor review queue — session notes awaiting countersign. Mirrors the
- * MEGBA approval-queue pattern: approve (countersign) or return with a note.
+ * Supervisor review queue — session notes awaiting countersign, clinic-wide.
+ * Mirrors the MEGBA approval-queue pattern: approve (countersign) or return
+ * with a note.
  *
  * The portal-level gate (SessionGate, layout.tsx) admits admin, supervisor
  * AND clinician — it only checks "may this person use the clinician
@@ -23,18 +24,43 @@ import type { SessionNoteDraft } from "@/lib/types";
  * still call the same Supabase update directly (devtools, a script) and
  * have it succeed under RLS. That needs a migration — out of scope for this
  * app-only branch — and is logged in BLOCKED-data.md.
+ *
+ * This queue reads real, clinic-wide data via `getPendingCountersigns()` —
+ * previously `pendingNotes()` only ever read this same browser's own local
+ * mirror, so a supervisor's queue was empty unless they personally happened
+ * to be the browser that wrote the note.
  */
 export default function ReviewQueuePage() {
   const identity = useIdentity();
-  const [notes, setNotes] = React.useState<SessionNoteDraft[]>([]);
-  const [returnText, setReturnText] = React.useState<Record<number, string>>({});
-  const refresh = () => setNotes([...pendingNotes()]);
-  React.useEffect(refresh, []);
+  const [notes, setNotes] = React.useState<PendingCountersign[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [returnText, setReturnText] = React.useState<Record<string, string>>({});
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
 
-  const act = async (n: SessionNoteDraft, decision: "countersigned" | "returned") => {
-    await saveNote({ ...n, status: decision });
-    if (decision === "countersigned") await lockRunSession(n.sessionId); // completed → locked
-    refresh();
+  const refresh = React.useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    getPendingCountersigns()
+      .then(setNotes)
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "Could not load the review queue."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  React.useEffect(refresh, [refresh]);
+
+  const act = async (item: PendingCountersign, decision: "countersigned" | "returned") => {
+    setBusyId(item.id);
+    setActionError(null);
+    try {
+      await countersignNote(item, decision, decision === "returned" ? returnText[item.id] : undefined);
+      refresh();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : `Could not ${decision === "countersigned" ? "countersign" : "return"} this note.`);
+    } finally {
+      setBusyId(null);
+    }
   };
 
   if (identity.appRole === "clinician") {
@@ -52,38 +78,63 @@ export default function ReviewQueuePage() {
   return (
     <div>
       <h1 className="h-page">Review Queue</h1>
-      <p className="sub">Session notes from your supervised clinicians, awaiting countersign.</p>
+      <p className="sub">Session notes from your clinic, awaiting countersign.</p>
+
+      {loadError ? (
+        <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--danger)" }}>
+          <p className="sub" style={{ color: "var(--ink)" }}>{loadError}</p>
+          <button className="btn secondary" style={{ marginTop: 8 }} onClick={refresh}>Try again</button>
+        </div>
+      ) : null}
+      {actionError ? (
+        <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--danger)" }}>
+          <p className="sub" style={{ color: "var(--ink)" }}>{actionError}</p>
+        </div>
+      ) : null}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 18 }}>
-        {notes.map((n) => (
-          <div key={n.sessionId} className="card card-pad">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <b>Session #{n.sessionId} · code {n.billableCode}</b>
-              <span className="pill warn">Awaiting countersign</span>
+        {loading ? <p className="sub">Loading the review queue…</p> : null}
+        {!loading && !loadError ? notes.map((item) => {
+          const n = item.note;
+          const busy = busyId === item.id;
+          return (
+            <div key={item.id} className="card card-pad">
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <b>{item.clientName} · code {n.billableCode}</b>
+                <span className="pill warn">Awaiting countersign</span>
+              </div>
+              <p className="sub" style={{ marginTop: 4 }}>
+                Written by <b>{item.clinicianName}</b> · {new Date(item.createdAt).toLocaleString()}
+              </p>
+              {n.subjective ? <p className="sub" style={{ marginTop: 8 }}><b>S:</b> {n.subjective}</p> : null}
+              <p className="sub" style={{ marginTop: 8 }}><b>O:</b> {n.objective}</p>
+              {n.perProgram.map((p) => (
+                <p key={p.programName} className="sub" style={{ marginTop: 6 }}>· {p.narrative}</p>
+              ))}
+              {n.abcNarrative ? <p className="sub" style={{ marginTop: 6, color: "var(--warn)" }}>{n.abcNarrative}</p> : null}
+              <p className="sub" style={{ marginTop: 6 }}><b>A:</b> {n.assessment}</p>
+              <p className="sub" style={{ marginTop: 6 }}><b>P:</b> {n.plan}</p>
+              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+                <button className="btn" disabled={busy} onClick={() => act(item, "countersigned")}>
+                  {busy ? "Working…" : "Countersign"}
+                </button>
+                <input
+                  className="input" style={{ maxWidth: 320 }} placeholder="Return note (what to fix)…"
+                  aria-label={`Return note for ${item.clientName}'s session (what to fix)`}
+                  value={returnText[item.id] ?? ""}
+                  onChange={(e) => setReturnText({ ...returnText, [item.id]: e.target.value })}
+                />
+                <button
+                  className="btn secondary" disabled={busy || !returnText[item.id]}
+                  onClick={() => act(item, "returned")}
+                >
+                  Return to clinician
+                </button>
+              </div>
             </div>
-            {n.subjective ? <p className="sub" style={{ marginTop: 8 }}><b>S:</b> {n.subjective}</p> : null}
-            <p className="sub" style={{ marginTop: 8 }}><b>O:</b> {n.objective}</p>
-            {n.perProgram.map((p) => (
-              <p key={p.programName} className="sub" style={{ marginTop: 6 }}>· {p.narrative}</p>
-            ))}
-            {n.abcNarrative ? <p className="sub" style={{ marginTop: 6, color: "var(--warn)" }}>{n.abcNarrative}</p> : null}
-            <p className="sub" style={{ marginTop: 6 }}><b>A:</b> {n.assessment}</p>
-            <p className="sub" style={{ marginTop: 6 }}><b>P:</b> {n.plan}</p>
-            <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
-              <button className="btn" onClick={() => act(n, "countersigned")}>Countersign</button>
-              <input
-                className="input" style={{ maxWidth: 320 }} placeholder="Return note (what to fix)…"
-                aria-label="Return note (what to fix)"
-                value={returnText[n.sessionId] ?? ""}
-                onChange={(e) => setReturnText({ ...returnText, [n.sessionId]: e.target.value })}
-              />
-              <button className="btn secondary" onClick={() => act(n, "returned")} disabled={!returnText[n.sessionId]}>
-                Return to clinician
-              </button>
-            </div>
-          </div>
-        ))}
-        {!notes.length ? (
+          );
+        }) : null}
+        {!loading && !loadError && !notes.length ? (
           <div className="card card-pad"><p className="sub">Nothing waiting. Signed notes from your team will appear here.</p></div>
         ) : null}
       </div>
