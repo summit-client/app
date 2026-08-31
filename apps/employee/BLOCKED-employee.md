@@ -121,7 +121,43 @@ block, and after checking, that is correct rather than a gap:
 Adding three empty media queries to match another app's file would be
 cargo-culting. No change made.
 
-### 8. PHI in logs, URLs and error messages
+### 8. `pd_credit_allocations` is the one query with no app-layer filter
+
+Round 2. Every other read in `lib/hr-backend.ts` is scoped by `user_id` or
+`clinic_id`. This one is a bare `select("*")` and relies entirely on the RLS
+policy from migration `0007`:
+
+```sql
+create policy allocations_own_select on pd_credit_allocations for select
+  using (exists (select 1 from pd_activities a
+                  where a.id = activity_id and a.user_id = auth.uid()));
+```
+
+That policy is correct, so this is not a live leak. It is the only place in
+the app with no defence in depth, though — if the policy ever regressed,
+nothing in the client would stop another employee's CEU allocations arriving.
+
+**Why it isn't filtered:** the table has no `user_id` of its own; it reaches
+the user through `activity_id → pd_activities.user_id`. The activities are
+fetched in the same `Promise.all`, so their ids aren't available yet to filter
+on without adding a round trip.
+
+**The fix I'd want**, left for someone who can verify it against a live
+database (this session had no Supabase access — see CLAUDE.md's MCP section):
+a PostgREST inner-join filter, which keeps it to one request —
+
+```ts
+db.from("pd_credit_allocations")
+  .select("*, pd_activities!inner(user_id)")
+  .eq("pd_activities.user_id", uid)
+```
+
+Not applied blind, because it changes the returned row shape (every row gains a
+nested `pd_activities` object) and the mapper below it would need to strip that.
+Getting the embed name wrong fails at runtime, not at typecheck, and this
+session cannot run the query to confirm the relationship resolves.
+
+### 9. PHI in logs, URLs and error messages
 
 Two `console.warn` calls, both in audit-write failure paths
 (`lib/hub-backend.ts`, `lib/hr-backend.ts`), and both log a Supabase

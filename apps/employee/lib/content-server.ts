@@ -47,5 +47,14 @@ const COURSE_LINKS: Record<string, string> = {
 };
 
 export function resolveCourseLink(key: string): string | null {
-  return COURSE_LINKS[key] ?? null;
+  // Object.hasOwn, not `COURSE_LINKS[key] ?? null`. The key comes off the URL,
+  // and a plain object literal inherits from Object.prototype: "toString",
+  // "constructor" and "valueOf" all return a FUNCTION from the prototype
+  // chain, which `?? null` does not catch because a function is neither null
+  // nor undefined. That function then reached NextResponse.redirect(), where
+  // `new URL(fn)` throws — so /api/course-link/toString answered with an
+  // unhandled 500 instead of the 404 the route means to give.
+  if (!Object.hasOwn(COURSE_LINKS, key)) return null;
+  const url = COURSE_LINKS[key];
+  return typeof url === "string" ? url : null;
 }
