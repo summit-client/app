@@ -458,6 +458,15 @@
     border-radius: 1px;
   }
 
+  /* The real interactive control is the hidden checkbox itself (Space
+     toggles it), not this label - so a keyboard user tabbing to it needs a
+     visible focus indicator on the label that stands in for it, since the
+     checkbox itself is opacity: 0 and shows nothing when focused. */
+  .navToggleInput:focus-visible ~ .mobileTopbar .navToggleBtn {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   .mobileTopbar {
     display: flex;
     align-items: center;
