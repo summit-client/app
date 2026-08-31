@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { getSetting, onSettingsChange, term, terms } from "@summit/settings";
+import { useSession } from "@/components/session-provider";
 
 /**
  * Client-side chrome that reads the central settings service: the sidebar nav
@@ -13,6 +14,7 @@ import { getSetting, onSettingsChange, term, terms } from "@summit/settings";
 export function PortalNav() {
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [hidden, setHidden] = React.useState<string[]>([]);
+  const { identity } = useSession();
 
   React.useEffect(() => {
     const read = () => {
@@ -24,11 +26,16 @@ export function PortalNav() {
     return () => { off(); clearInterval(t); };
   }, []);
 
+  // Review Queue is a supervisor/admin action (countersigning) — see
+  // app/review/page.tsx's own gate. Hiding the link for clinicians here is
+  // just so they aren't invited to click into a dead end; it is not the
+  // enforcement (the page-level check is), same distinction as the rest of
+  // this app's role gating.
   const NAV = [
     { href: "/", label: "Today", id: "Today", icon: "▦" },
     { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙" },
     { href: "/attention", label: "Attention", id: "Attention", icon: "◈" },
-    { href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" },
+    ...(identity?.appRole === "clinician" ? [] : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" }]),
   ];
 
   return (
