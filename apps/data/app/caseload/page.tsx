@@ -21,7 +21,7 @@ export default function CaseloadPage() {
       <div className="card table-wrap" style={{ marginTop: 20 }}>
         <table className="data">
           <thead>
-            <tr><th>Client</th><th>Age</th><th>Funding</th><th>Service</th><th>Goals</th><th>Status</th><th aria-label="Actions" /></tr>
+            <tr><th scope="col">Client</th><th scope="col">Age</th><th scope="col">Funding</th><th scope="col">Service</th><th scope="col">Goals</th><th scope="col">Status</th><th aria-label="Actions" /></tr>
           </thead>
           <tbody>
             {clients.map((c) => (

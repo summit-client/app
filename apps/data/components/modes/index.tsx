@@ -7,6 +7,13 @@ import { FUNCTION_LABEL, PROMPT_ORDER, type Program } from "@/lib/types";
 
 /* Shared bits ---------------------------------------------------------------- */
 
+/** The Task Analysis step buttons show only a single letter ("I"/"P"/"N") -
+ *  fine for a sighted user who knows the ABA shorthand, but a screen reader
+ *  announcing just "P" gives no context. Used for aria-label only. */
+const STEP_CODE_LABEL: Record<"Y" | "P" | "N", string> = {
+  Y: "Independent", P: "Prompted", N: "No response",
+};
+
 function useBump(): [number, () => void] {
   const [n, setN] = React.useState(0);
   return [n, () => setN((x) => x + 1)];
@@ -107,6 +114,7 @@ export function TaskAnalysisPanel({ program }: { program: Program }) {
                     className={`tap ${c.toLowerCase()}`}
                     style={{ minWidth: 52, minHeight: 44, fontSize: "var(--text-md)", flex: "none" }}
                     aria-pressed={code === c}
+                    aria-label={`${STEP_CODE_LABEL[c]} — step ${s.position}: ${s.description}`}
                     onClick={() => log(program, c, { stepPosition: s.position }).then(bump)}
                   >
                     {c === "Y" ? "I" : c}

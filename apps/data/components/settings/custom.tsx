@@ -165,7 +165,7 @@ export function LanguageSection() {
       </p>
       <div className="card table-wrap" style={{ marginTop: 10 }}>
         <table className="data">
-          <thead><tr><th>Summit default</th><th>Your organization uses</th></tr></thead>
+          <thead><tr><th scope="col">Summit default</th><th scope="col">Your organization uses</th></tr></thead>
           <tbody>
             {Object.keys(TERMINOLOGY_DEFAULTS).map((k) => <TermRow key={k} name={k} />)}
           </tbody>
@@ -315,7 +315,7 @@ export function NotificationsSection() {
           <h3 className="set-h">{group}</h3>
           <div className="card table-wrap">
             <table className="data">
-              <thead><tr><th>Event</th>{CHANNELS.map((c) => <th key={c} style={{ textAlign: "center" }}>{c}</th>)}</tr></thead>
+              <thead><tr><th scope="col">Event</th>{CHANNELS.map((c) => <th key={c} scope="col" style={{ textAlign: "center" }}>{c}</th>)}</tr></thead>
               <tbody>
                 {events.map((ev) => (
                   <tr key={ev}>
@@ -377,7 +377,7 @@ export function RolesSection() {
       </div>
       <div className="card table-wrap">
         <table className="data">
-          <thead><tr><th>Module</th>{PERMS.map((p) => <th key={p} style={{ textAlign: "center" }}>{p}</th>)}</tr></thead>
+          <thead><tr><th scope="col">Module</th>{PERMS.map((p) => <th key={p} scope="col" style={{ textAlign: "center" }}>{p}</th>)}</tr></thead>
           <tbody>
             {PERM_MODULES.map((m) => (
               <tr key={m}>
@@ -507,7 +507,7 @@ export function PrivacySection() {
       <p className="sub">Every settings change: who, what, previous → new value. Clinical records are never silently overwritten anywhere in Summit.</p>
       <div className="card table-wrap">
         <table className="data">
-          <thead><tr><th>Setting</th><th>Change</th><th>Level</th><th>Who</th><th>When</th><th aria-label="Restore" /></tr></thead>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Change</th><th scope="col">Level</th><th scope="col">Who</th><th scope="col">When</th><th aria-label="Restore" /></tr></thead>
           <tbody>
             {audit.slice(0, 15).map((e, i) => (
               <tr key={i}>
