@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   completeRunSession, createRunSession, currentTarget, endRunSession, eventsFor, eventsForSession,
-  getClients, getPrograms, incidentsFor, openSessionFor, runSessionsFor, saveNote, saveSessionPlan,
-  setActiveSession, setActivityContext, setCurrentTarget, startRunSession, summariesFor,
+  getClients, getPrograms, hydrateClientHistory, incidentsFor, openSessionFor, runSessionsFor, saveNote,
+  saveSessionPlan, setActiveSession, setActivityContext, setCurrentTarget, startRunSession, summariesFor,
 } from "@/lib/data";
 import {
   AbcPanel, DttPanel, DurationPanel, FrequencyPanel, IntervalPanel, NetPanel, TaskAnalysisPanel, YniPanel,
@@ -40,6 +40,18 @@ export default function RunSessionPage() {
   React.useEffect(() => {
     void getClients().then((cs) => setClient(cs.find((c) => c.id === clientId) ?? null));
     void getPrograms(clientId).then(setPrograms);
+  }, [clientId]);
+
+  // Hydrate this client's real session history once on load, so a session
+  // left "in progress" by a different device is picked up as Resume instead
+  // of this device silently offering to start a second, conflicting one.
+  // Only on mount/client change — never mid-session, so it can't clobber
+  // this device's own in-flight edits with a stale read partway through.
+  React.useEffect(() => {
+    let cancelled = false;
+    hydrateClientHistory(clientId).catch(() => { /* best-effort — falls back to this device's own history */ })
+      .finally(() => { if (!cancelled) force(); });
+    return () => { cancelled = true; };
   }, [clientId]);
 
   const session = openSessionFor(clientId);

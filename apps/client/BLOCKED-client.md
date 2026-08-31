@@ -191,3 +191,43 @@ share one auth/account-problem/error pattern
 empty/error-state box (`.emptyBox`), and the same three breakpoints - the
 two new pages don't introduce a second design language, they extend the
 one this app already had.
+
+---
+
+## Round 4 (deeper feature work) — two new appointment-adjacent features
+
+Built a calendar export and a month-view calendar for `/appointments`,
+staying inside the same "no new schema, no live-DB guessing" boundary as
+round 3 - both are pure additions over the exact `sessions` columns this
+app already queries, no new table or column assumed. Full reasoning is in
+each commit; two decisions worth surfacing here too:
+
+- **Not a subscribable calendar feed.** `pages/api/calendar.ics.ts` is a
+  one-time authenticated download, not a `webcal://` subscription a
+  calendar app could poll on its own. A real subscription needs a
+  shareable secret token in the URL (calendar apps have no way to send
+  the session cookie this app's auth otherwise relies on), and
+  minting/storing/expiring that token needs its own DB table - this
+  session can't create one. **Logging as a request**: a
+  `calendar_feed_tokens`-shaped table (user id, token, created/revoked
+  timestamps) would let a future pass build a real subscription link
+  without changing the trust model of anything else in this app.
+- **Assumed a 60-minute session duration for calendar events**, since no
+  query this app has ever run (including this round's) has access to an
+  actual duration - no `session_types` join, no duration column.
+  `@summit/settings` has the real per-org default
+  (`org.defaultSessionDuration`, 120 minutes) but apps/client still
+  doesn't depend on that package (see the Settings item above - same
+  blocker, `lib/ics.ts` hits it independently). Said so explicitly in
+  each exported event's description rather than asserting a duration
+  this app doesn't know, but the real fix is the same as Settings':
+  add `@summit/settings` as a dependency of `apps/client`.
+
+Both features were verified without a live Supabase project the same way
+- by compiling the pure logic in isolation and running it against hand-
+built cases: the timezone-conversion helper (`clinicWallTimeToUtc`)
+against 8 cases spanning both of 2026's DST transitions, the ICS builder
+against sessions with special characters and a title long enough to force
+RFC 5545 line folding, and the calendar-grid math against 6 months
+including a leap-year February and a 6-week grid case. See each commit
+for the actual verification output.

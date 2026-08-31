@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
-import { getClients, getPrograms, openSessionFor, runSessionsFor } from "@/lib/data";
+import { getClients, getPrograms, hydrateClientHistory, openSessionFor, runSessionsFor } from "@/lib/data";
 import { useTerm } from "@/components/portal-chrome";
 import type { ClientRow, Program } from "@/lib/types";
 
@@ -49,8 +49,16 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     void getPrograms(clientId).then(setPrograms);
   }, [clientId, pathname]);
 
-  // Session state lives in the mirror; re-read when the route (or a child action) changes.
-  React.useEffect(() => { setTick((t) => t + 1); }, [pathname]);
+  // Session state lives in the mirror; re-hydrate it from the client's real
+  // session history (not just this browser's own) and re-read whenever the
+  // route (or a child action) changes.
+  React.useEffect(() => {
+    let cancelled = false;
+    hydrateClientHistory(clientId)
+      .catch(() => { /* best-effort — the mirror still shows at least this device's own sessions */ })
+      .finally(() => { if (!cancelled) setTick((t) => t + 1); });
+    return () => { cancelled = true; };
+  }, [clientId, pathname]);
 
   const open = openSessionFor(clientId);
   const lastCompleted = runSessionsFor(clientId).find((s) => s.status === "completed" || s.status === "locked");

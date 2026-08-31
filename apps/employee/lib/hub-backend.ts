@@ -62,6 +62,32 @@ export class HubWriteError extends Error {
   }
 }
 
+/**
+ * The read-side counterpart to hubOk().
+ *
+ * Every read in load() used `result.data ?? []` and never looked at
+ * `result.error`, so a failed query became an empty array. On this store that
+ * is worse than a blank screen: hub_task_progress and hub_employee_training
+ * failing silently means the onboarding board reports NOTHING completed. An
+ * employee could redo compliance training they had already finished, or a
+ * manager could read it as someone who never did it.
+ *
+ * hub-provider.tsx already renders a failure state with the message and a
+ * retry when load() rejects; it could not fire, because load() never rejected.
+ */
+export class HubReadError extends Error {
+  constructor(readonly what: string, cause: unknown) {
+    super(`Could not load ${what}: ${describe(cause)}`);
+    this.name = "HubReadError";
+  }
+}
+
+function firstReadError(results: [string, { error: unknown }][]): void {
+  for (const [what, res] of results) {
+    if (res.error) throw new HubReadError(what, res.error);
+  }
+}
+
 function describe(cause: unknown): string {
   if (typeof cause === "object" && cause && "message" in cause) return String((cause as { message: unknown }).message);
   return String(cause);
@@ -202,6 +228,18 @@ export function supabaseBackend(session: Session): HubBackend {
         db.from("hub_certificates").select("*").eq("user_id", uid).order("issued_date", { ascending: false }),
         db.from("hub_time_off_requests").select("*").eq("user_id", uid).order("start_date", { ascending: false }),
         db.from("hub_audit_events").select("*").eq("subject", uid).order("at", { ascending: false }).limit(100),
+      ]);
+
+      // Before anything is read off .data, so a failed query stops the load
+      // rather than reporting an empty onboarding board as a complete one.
+      firstReadError([
+        ["your profile", prof],
+        ["your onboarding progress", prog],
+        ["your training records", train],
+        ["your professional development", pd],
+        ["your certificates", certs],
+        ["your time-off requests", timeOff],
+        ["your activity history", audit],
       ]);
 
       const p = prof.data;

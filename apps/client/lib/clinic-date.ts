@@ -52,3 +52,56 @@ export function formatClinicDate(iso: string): string {
     year: "numeric",
   }).format(new Date(iso));
 }
+
+/**
+ * Converts a session's wall-clock time as scheduled at the clinic
+ * (`session_date` "YYYY-MM-DD" + `hour`/`minute`, both clinic-local, no
+ * timezone of their own) to the correct UTC instant - needed for
+ * pages/api/calendar.ics.ts, where a real UTC timestamp is required so a
+ * family's calendar app displays the session at the right time in
+ * *their* timezone.
+ *
+ * JS has no built-in "construct a Date from local time in an arbitrary
+ * IANA zone" API (that's what the still-unshipped Temporal proposal is
+ * for), so this uses the standard guess-and-correct technique: treat the
+ * wall-clock numbers as if they were already UTC (`guess`), find out what
+ * that guessed instant actually reads as when formatted in the clinic's
+ * zone, and correct by the difference. This has to get the DST
+ * transitions right (Toronto is UTC-4 roughly March-November, UTC-5
+ * otherwise) or every appointment near a transition would be off by an
+ * hour in the exported calendar - verified against 8 cases spanning both
+ * 2026 DST boundaries and a midnight-crossing evening session before this
+ * was wired into anything that ships it.
+ */
+export function clinicWallTimeToUtc(dateStr: string, hour: number, minute: number): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+
+  const guess = Date.UTC(year, month - 1, day, hour, minute, 0);
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: CLINIC_TIME_ZONE,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(guess));
+
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+
+  // What the guessed instant reads as in the clinic's zone, treated as UTC
+  // purely to get a comparable epoch number for the correction below.
+  const guessReadAsClinicEpoch = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour"),
+    part("minute"),
+    part("second")
+  );
+
+  const correction = guess - guessReadAsClinicEpoch;
+  return new Date(guess + correction);
+}

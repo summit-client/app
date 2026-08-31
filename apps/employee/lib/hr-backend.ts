@@ -87,6 +87,36 @@ function ok(op: string, res: { error: unknown }): void {
   if (res.error) throw new HrWriteError(op, res.error);
 }
 
+/**
+ * The read-side counterpart to ok().
+ *
+ * Every read in loadHr() used `result.data ?? []` and ignored `result.error`,
+ * so a failed query became an empty array indistinguishable from "you have
+ * none of these". That is the trap CLAUDE.md names in as many words — RLS
+ * returns empty sets rather than errors, and a portal that renders fully with
+ * nothing in it reads as an auth bug when it is not.
+ *
+ * The failure path already existed and was already good: hr-provider.tsx
+ * renders "Could not load your HR records" with the message and a Try again
+ * button whenever loadHr() rejects. It simply never fired, because loadHr()
+ * could not reject. This is what makes it fire.
+ *
+ * Named per table so the message says which read failed, rather than making
+ * someone open devtools to find out.
+ */
+export class HrReadError extends Error {
+  constructor(readonly what: string, cause: unknown) {
+    super(`Could not load ${what}: ${describe(cause)}`);
+    this.name = "HrReadError";
+  }
+}
+
+function firstReadError(results: [string, { error: unknown }][]): void {
+  for (const [what, res] of results) {
+    if (res.error) throw new HrReadError(what, res.error);
+  }
+}
+
 function sb() {
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -320,6 +350,23 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
           db.from("hr_audit_log").select("*").order("at", { ascending: false }).limit(200),
         ]);
 
+      // Checked before anything is mapped, so a failed read stops the load
+      // instead of quietly becoming an empty section of the portal.
+      firstReadError([
+        ["your team", people],
+        ["your development goals", goals],
+        ["your credentials", creds],
+        ["your professional development", acts],
+        ["your credit allocations", allocs],
+        ["the policy library", pols],
+        ["your policy acknowledgements", acks],
+        ["team posts", posts],
+        ["post comments", comments],
+        ["recognition", recog],
+        ["your scorecard cycles", cycles],
+        ["the HR audit log", audit],
+      ]);
+
       const directory: Person[] = (people.data ?? []).map((r) => ({
         id: r.id as string,
         name: (r.full_name as string | null) ?? "Unnamed",
@@ -336,6 +383,7 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
       let responses: MetricResponse[] = [];
       if (cycleId) {
         const rows = await db.from("scorecard_responses").select("*").eq("cycle_id", cycleId);
+        firstReadError([["your scorecard responses", rows]]);
         responses = (rows.data ?? []).map((r) => ({
           metricKey: r.metric_key as string,
           source: r.source as MetricResponse["source"],
