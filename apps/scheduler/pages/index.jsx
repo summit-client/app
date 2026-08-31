@@ -8,6 +8,7 @@ import { CalendarView } from "../components/calendar/CalendarView";
 import { gapsOverlap, parseTimeSetting } from "../components/calendar/dateUtils";
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
+import { refreshUrl } from "@summit/portals";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -1715,6 +1716,16 @@ Respond ONLY with valid JSON — no extra text:
     try {
       const res = await fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }) });
       const data = await res.json();
+      if (res.status === 401 && data?.code === "SESSION_STALE") {
+        // Same race /api/match's handler guards against server-side: this
+        // browser's session is due to refresh. Send it through the one place
+        // allowed to redeem a refresh token instead of surfacing a confusing
+        // "AI match failed" for what is really a stale-session redirect.
+        const refresh = new URL(refreshUrl());
+        refresh.searchParams.set("return_to", window.location.href);
+        window.location.href = refresh.toString();
+        return;
+      }
       const raw = data.content?.map(b => b.text || "").join("");
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       const result = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
