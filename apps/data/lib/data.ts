@@ -120,6 +120,171 @@ export function openSessionFor(clientId: number): RunSession | undefined {
   return runSessionsFor(clientId).find((s) => ["planning", "active", "documentation"].includes(s.status));
 }
 
+/**
+ * Pull this client's real session history from `client_sessions` and merge
+ * it into the local `mem.sessions` mirror that `runSessionsFor()`/
+ * `getRunSession()`/`openSessionFor()` above serve from. Without this,
+ * those three only ever returned sessions THIS BROWSER created — populated
+ * exclusively by `createRunSession()`'s own push onto `mem.sessions` — so
+ * the Sessions/Timeline/Graphs tabs, the client overview's session count,
+ * and the "Resume session"/"last completed" badges in the client layout
+ * all silently showed only a fraction of a client's real history (or none,
+ * on a browser that never happened to run one), not an error a screen
+ * could report — the same "RLS returns empty sets, not errors" shape of
+ * trap as everywhere else in this app, just from a query that was never
+ * actually made rather than one RLS filtered.
+ *
+ * Deliberately a merge into the existing synchronous cache rather than
+ * converting `runSessionsFor`/`getRunSession`/`openSessionFor` themselves
+ * to async: `app/clients/[id]/run/page.tsx` calls them many times over the
+ * course of one active session (every tap can touch `getRunSession`
+ * indirectly through `updateRunSession`), and needs that fast and
+ * synchronous. Every caller that reads client history for display instead
+ * of live in-session state awaits this once per client-id change, then
+ * reads the (now-hydrated) synchronous accessors — see the callers for the
+ * exact pattern.
+ */
+async function hydrateSessionRows(clientId: number): Promise<number[]> {
+  const { data, error } = await sb()
+    .from("client_sessions")
+    .select(
+      "id, client_id, clinician_id, status, start_time, end_time, planned_duration_min, " +
+      "actual_duration_min, location, service_type, focus, plan, program_version_snapshot, created_at",
+    )
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const byId = new Map(mem.sessions.map((s) => [s.id, s]));
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    byId.set(row.id as number, {
+      id: row.id as number, clientId: row.client_id as number, clinicianId: (row.clinician_id as string | null) ?? null,
+      status: row.status as RunSession["status"],
+      startTime: (row.start_time as string | null) ?? null, endTime: (row.end_time as string | null) ?? null,
+      plannedDurationMin: (row.planned_duration_min as number | null) ?? null,
+      actualDurationMin: (row.actual_duration_min as number | null) ?? null,
+      location: (row.location as string | null) ?? null, serviceType: (row.service_type as string | null) ?? null,
+      focus: (row.focus as string | null) ?? null,
+      plan: (row.plan as RunSession["plan"]) ?? null,
+      programVersionSnapshot: (row.program_version_snapshot as RunSession["programVersionSnapshot"]) ?? [],
+      createdAt: row.created_at as string,
+    });
+  }
+  mem.sessions = [...byId.values()];
+  return (data ?? []).map((r) => (r as unknown as { id: number }).id);
+}
+
+async function hydrateNoteRows(clientId: number): Promise<void> {
+  const { data, error } = await sb()
+    .from("session_notes")
+    .select("session_id, client_id, body, billable_code, status")
+    .eq("client_id", clientId);
+  if (error) throw error;
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    const body = (row.body as Record<string, unknown>) ?? {};
+    mem.notes.set(row.session_id as number, {
+      sessionId: row.session_id as number,
+      clientId: row.client_id as number | null,
+      subjective: (body.subjective as string) ?? "",
+      objective: (body.objective as string) ?? "",
+      assessment: (body.assessment as string) ?? "",
+      plan: (body.plan as string) ?? "",
+      perProgram: (body.perProgram as SessionNoteDraft["perProgram"]) ?? [],
+      abcNarrative: (body.abcNarrative as string) ?? "",
+      billableCode: row.billable_code as SessionNoteDraft["billableCode"],
+      status: row.status as SessionNoteDraft["status"],
+    });
+  }
+}
+
+async function hydrateIncidentRows(clientId: number): Promise<void> {
+  const { data, error } = await sb()
+    .from("behaviour_incidents")
+    .select("id, client_id, occurred_at, antecedent, behaviour, consequence, suspected_function")
+    .eq("client_id", clientId)
+    .order("occurred_at", { ascending: false });
+  if (error) throw error;
+  // Upsert by id (not "skip if already present") so a server-side edit to
+  // an incident this device already knows about actually refreshes it,
+  // matching how hydrateSessionRows/hydrateNoteRows treat their own rows.
+  const byId = new Map(mem.incidents.map((i) => [i.id, i]));
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    const id = row.id as string;
+    byId.set(id, {
+      id, clientId: row.client_id as number, occurredAt: row.occurred_at as string,
+      antecedent: row.antecedent as string, behaviour: row.behaviour as string, consequence: row.consequence as string,
+      suspectedFunction: (row.suspected_function as AbcIncident["suspectedFunction"]) ?? null,
+    });
+  }
+  mem.incidents = [...byId.values()];
+}
+
+async function hydrateSummaryRows(sessionIds: number[]): Promise<void> {
+  if (!sessionIds.length) return;
+  const { data, error } = await sb()
+    .from("session_program_summaries")
+    .select("client_session_id, program_id, raw_observation_count, numerator, denominator, calculated_value, metric_type")
+    .in("client_session_id", sessionIds);
+  if (error) throw error;
+  // Upsert by (sessionId, programId) rather than "skip if already present",
+  // for the same reason as hydrateIncidentRows above.
+  const byKey = new Map(mem.summaries.map((s) => [`${s.sessionId}:${s.programId}`, s]));
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    const key = `${row.client_session_id}:${row.program_id}`;
+    byKey.set(key, {
+      sessionId: row.client_session_id as number, programId: row.program_id as string,
+      rawObservationCount: (row.raw_observation_count as number) ?? 0,
+      numerator: (row.numerator as number | null) ?? null, denominator: (row.denominator as number | null) ?? null,
+      calculatedValue: (row.calculated_value as number | null) ?? null,
+      metricType: row.metric_type as SessionProgramSummary["metricType"],
+    });
+  }
+  mem.summaries = [...byKey.values()];
+}
+
+/**
+ * Pull this client's real history — sessions, their SOAP notes, behaviour
+ * incidents, and per-session program summaries — from Supabase and merge
+ * it into the local `mem` mirror that `runSessionsFor()`/`getRunSession()`/
+ * `openSessionFor()`/`getNote()`/`incidentsFor()`/`summariesFor()` above all
+ * serve from. Without this, every one of those only ever returned what
+ * THIS BROWSER had written — populated exclusively by this file's own
+ * create/save calls — so the Sessions/Timeline/Graphs tabs, the client
+ * overview's session count, and the "Resume session"/"last completed"
+ * badges in the client layout all silently showed only a fraction of a
+ * client's real history (or none, on a browser that never happened to run
+ * one), not an error a screen could report — the same "RLS returns empty
+ * sets, not errors" shape of trap as everywhere else in this app, just
+ * from a query that was never actually made rather than one RLS filtered.
+ *
+ * Deliberately a merge into the existing synchronous mem cache rather than
+ * converting every reader above to async: `app/clients/[id]/run/page.tsx`
+ * calls them many times over the course of one active session and needs
+ * that fast and synchronous. Every caller that reads client history for
+ * display instead of live in-session state awaits this once per
+ * client-id/route change, then reads the (now-hydrated) synchronous
+ * accessors — see the callers for the exact pattern.
+ *
+ * Deliberately does NOT hydrate `trial_events` (`eventsForSession()`/
+ * `eventsFor()`) — that table is one row per atomic observation, the
+ * highest-volume table this app writes, and every current caller only
+ * ever needs a count or a same-session live feed. Bulk-fetching a
+ * client's entire raw observation history into the browser just to
+ * display a number is a worse trade than the gap it would close; left as
+ * a known, narrower remaining limitation (an observation count reads 0
+ * for a session this browser didn't run) rather than attempted here.
+ */
+export async function hydrateClientHistory(clientId: number): Promise<void> {
+  if (IS_PREVIEW) return; // preview fixtures already model "this device's" full history
+  const sessionIds = await hydrateSessionRows(clientId);
+  await Promise.all([
+    hydrateNoteRows(clientId),
+    hydrateIncidentRows(clientId),
+    hydrateSummaryRows(sessionIds),
+  ]);
+  persistMem();
+}
+
 export async function createRunSession(
   clientId: number,
   init: { plannedDurationMin: number; location: string; serviceType: string; focus: string | null },
