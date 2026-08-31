@@ -118,8 +118,19 @@ export function useUser() {
         if (!cancelled) await applySession(session);
       } catch (err) {
         console.error("[useUser] initial auth load failed", err);
+        // This branch (getSession() itself throwing or timing out - a
+        // network blip, not a role/clinic problem) previously left `problem`
+        // at its initial `null` while also leaving `user` null. _app.tsx
+        // treats "no problem" as "render the app normally," so this fell
+        // straight through to the full shell with UserContext set to null -
+        // the exact RLS-empty-set trap this hook exists to prevent, just
+        // reached through a different door (a failed identity load instead
+        // of a real role/clinic gap). Setting NO_PROFILE here gives the same
+        // explanation the inner catch below already gives for the
+        // equivalent failure one step later in the same flow.
         if (!cancelled) {
           setUser(null);
+          setProblem("NO_PROFILE");
           setLoading(false);
         }
       }

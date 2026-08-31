@@ -1,15 +1,17 @@
 import { useRouter } from "next/router";
 
-// Roles are `profiles.role` values — see UserRole in lib/useUser.ts. "staff"
-// used to stand in for clinical accounts here; it was never a role the database
-// issued, so supervisors and clinicians matched nothing and got an empty
-// sidebar. They are named directly now.
-const CLINICAL = ["supervisor", "clinician"];
-
+// Roles are `profiles.role` values — see UserRole in lib/useUser.ts. This
+// list used to also admit "staff" (never a real role), then later
+// supervisor/clinician/client alongside admin/scheduler for the first three
+// items - all now unreachable dead configuration: @summit/portals'
+// ACCESS.scheduler is ["admin", "scheduler"] only, and pages/_app.tsx gates
+// the entire app on that before Sidebar ever renders (see
+// lib/explainProblem.ts's ROLE_EXCLUDED case). Every item here is
+// admin/scheduler by definition now; only "settings" narrows further.
 const NAV = [
-  { id: "dashboard", label: "Dashboard", icon: "▦", roles: ["admin", "scheduler", ...CLINICAL, "client"] },
-  { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler", ...CLINICAL, "client"] },
-  { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler", ...CLINICAL, "client"] },
+  { id: "dashboard", label: "Dashboard", icon: "▦", roles: ["admin", "scheduler"] },
+  { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler"] },
+  { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler"] },
   { id: "clients",   label: "Clients",   icon: "⊙", roles: ["admin", "scheduler"] },
   { id: "employees", label: "Staff",     icon: "◎", roles: ["admin", "scheduler"] },
   { id: "sessiontypes", label: "Session Types", icon: "◈", roles: ["admin", "scheduler"] },
