@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { sessionFreshness } from "@summit/proxy-auth";
+import { sessionFreshness, hasLoopGuard, LOOP_GUARD_COOKIE, LOOP_GUARD_MAX_AGE_SECONDS } from "@summit/proxy-auth";
 import { refreshUrl, urlFor } from "@summit/portals";
 
 // Scheduler's sign-in page is same-origin (/login), unlike the other three
@@ -38,9 +38,23 @@ export async function proxy(req: NextRequest) {
   }
 
   if (freshness === "stale") {
+    // Already bounced through refresh once and came back still stale - see
+    // @summit/proxy-auth's LOOP_GUARD_COOKIE doc. Don't try again; a real
+    // login is a better failure mode than a silent redirect loop.
+    if (hasLoopGuard(req.cookies.getAll())) {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
     const refresh = new URL(REFRESH_URL);
     refresh.searchParams.set("return_to", PUBLIC_ORIGIN + req.nextUrl.pathname + req.nextUrl.search);
-    return NextResponse.redirect(refresh);
+    const redirect = NextResponse.redirect(refresh);
+    redirect.cookies.set(LOOP_GUARD_COOKIE, "1", {
+      maxAge: LOOP_GUARD_MAX_AGE_SECONDS,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+    return redirect;
   }
 
   const res = NextResponse.next();

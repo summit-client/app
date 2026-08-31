@@ -67,6 +67,40 @@ export interface RequestCookie {
   value: string;
 }
 
+/**
+ * The "stale" branch above is supposed to be self-correcting: redirect to
+ * apps/web's refresh endpoint, which redeems the token and sends the browser
+ * back. It has no bound on how many times that can happen, though - if a
+ * portal's own freshness read disagrees with reality (confirmed live
+ * 2026-08-31: a Firefox profile carrying a legacy, narrowly-scoped duplicate
+ * of the session cookie - almost certainly left over from before the
+ * cross-portal sign-out fix - kept reading "stale" on every pass even though
+ * refresh.js's own getUser() succeeded every single time and sent the
+ * browser straight back), the portal bounces to refresh and back forever.
+ * refresh.js's own MAX_ATTEMPTS only guards ITS internal retry against
+ * itself (the refresh_token_already_used race); it does nothing for this
+ * loop, because each bounce back from refresh arrives as a plain request
+ * carrying no memory of the previous attempt. Firefox's own redirect-loop
+ * detector eventually kills it (~20 hops) with a dead, undebuggable
+ * NS_ERROR_REDIRECT_LOOP page - worse than the "bounced to login" failure
+ * mode this whole mechanism was built to avoid.
+ *
+ * This cookie is that memory. A portal's proxy.ts sets it (short-lived,
+ * host-only - it only needs to survive the round trip through refresh and
+ * back to the SAME portal, never needs to be read anywhere else) on the
+ * redirect to refresh; if the very next stale read still finds it present,
+ * one bounce already happened and didn't fix anything, so stop and send the
+ * user to a real login instead of trying again.
+ */
+export const LOOP_GUARD_COOKIE = "sf-refresh-loop-guard";
+export const LOOP_GUARD_MAX_AGE_SECONDS = 15;
+
+/** True if this request already bounced through the refresh endpoint once
+ *  and came back still stale - see LOOP_GUARD_COOKIE above. */
+export function hasLoopGuard(cookies: RequestCookie[]): boolean {
+  return cookies.some((c) => c.name === LOOP_GUARD_COOKIE && c.value === "1");
+}
+
 interface StoredSession {
   access_token?: string;
   expires_at?: number;
