@@ -154,7 +154,7 @@ for schedulers. Scheduler still maps to `HubRole.EMPLOYEE` everywhere else
 in that portal (`session.ts`) — self-service hub screens only, never
 blanket supervisor power over other people's records; the Admin console
 grant is the one deliberate exception, not a role promotion. Migration
-`0023` (applied live 2026-08-31) widened `hub_can_manage()` to
+`0022` (applied live 2026-08-31) widened `hub_can_manage()` to
 `auth_role() in ('admin', 'scheduler')` so the console's queues actually
 return data for a scheduler instead of rendering empty (the
 `ACCESS.employee` "renders and shows nothing" trap this same section's
@@ -444,7 +444,7 @@ generic "Edge Function returned a non-2xx status code" message that hid
 the real reason an invite/edit/deactivate call was rejected (PR #93,
 `hr-backend.ts`'s `describeFunctionError()`); and schedulers having no
 access to `apps/employee` at all, now scoped specifically to the Admin
-console (PR #94, migration `0023` — applied live — widened
+console (PR #94, migration `0022` — applied live — widened
 `hub_can_manage()`, see "One role vocabulary" above).
 
 - **`invite-teammate` does not check whether the invited email already has a
