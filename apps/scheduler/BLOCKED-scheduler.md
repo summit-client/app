@@ -52,45 +52,58 @@ this session can write per the task's constraints - logging it here instead.
 
 ## 2. Recurring drag-to-reschedule only conflict-checks the anchor slot
 
-**Pre-existing, not introduced this session, but adjacent to item 1 above
-and worth flagging together.** When a recurring session is dragged with
-scope `"following"` or `"all"` (`CalendarView.tsx`'s `applyReschedule`),
-every shifted occurrence is written without any conflict check of its own -
-only the dragged session's own anchor date/time was ever checked (both
-before and after this pass's fresh-recheck addition, which was scoped to
-match that same existing behavior rather than expand it). A multi-week
-recurring shift can silently double-book a later occurrence that the single
-anchor-slot check never looked at. Fixing this cleanly needs the same
-`fetchFreshConflictKeys` batch helper this pass added, called over every
-shifted target's employee/date/hour/minute before the `Promise.all` write -
-not done here to keep this pass's diff focused on the exact-slot race the
-task called out; flagging it as the natural next step alongside item 1's
-migration.
+**FIXED in the follow-up pass.** `applyReschedule`'s `"following"`/`"all"`
+branch now calls `fetchFreshConflictKeys` over every shifted occurrence's
+employee/date/hour/minute before writing any of them, all-or-nothing (the
+whole series move is refused, not silently partially applied, if any
+occurrence would collide - see the comment at the call site for why
+all-or-nothing is the right shape here rather than the per-date skip
+pattern batch-booking uses). One accepted, documented limitation remains:
+`fetchFreshConflictKeys` has no per-candidate exclusion the way
+`fetchFreshConflict`'s `excludeSessionId` does, so two occurrences of the
+same series swapping into each other's still-unmoved slot can produce a
+rare false-positive collision - fails safe (blocks the move) rather than
+corrupting the series, which is the right tradeoff for something this
+narrow. Item 1's actual DB constraint is still the only thing that closes
+the underlying race outright.
 
 ## 3. The Create wizard's preview/availability grids hardcode a 7am-8pm day
 
-**Multi-tenant hardening finding.** `pages/index.jsx`'s `generateTimeSlots()`
-and `buildPreviewSlots()` (feeding `TIME_SLOTS`/`PREVIEW_SLOTS`, used by the
-Create wizard's `PreviewGrid` multi-client matching view and the staff/
-client `AvailabilityGrid` editor) hardcode every clinic's operating day to
-7:00-20:00. This is now inconsistent with the *other* calendar in this same
-app: `CalendarView.tsx`'s real day/week grid already reads
-`calendar.workStart`/`calendar.workEnd` from `@summit/settings` per clinic
-(landed alongside the calendar v2 rebuild - see CLAUDE.md). A clinic that
-sets different hours in Settings gets a real calendar honoring them and a
-Create-wizard preview/availability grid that silently doesn't.
+**FIXED in the follow-up pass.** `generateTimeSlots()`/`buildPreviewSlots()`
+now take `(startHour, endHour)` instead of closing over a hardcoded 7-20
+range, and every consumer - `PreviewGrid`, `AvailabilityGrid`, and
+`CreateView`'s `runMatch` multi-client matching loop - now derives them
+from the `workStart`/`workEnd` props already threaded down from
+`Scheduler()` (which already subscribes to `onSettingsChange` for exactly
+this reason; `CalendarView.tsx`'s real calendar reads the same underlying
+setting independently). `AvailabilityGrid` picked up the same treatment for
+its day columns too - it previously always rendered all six of Mon-Sat
+regardless of `calendar.workDays`, unlike `PreviewGrid`, which already
+filtered correctly; both now agree.
 
-Marked with a `TEMPORARY` comment at the definition rather than fixed this
-session: `TIME_SLOTS`/`PREVIEW_SLOTS` are module-level constants computed
-once at import time, before `@summit/settings` has resolved anything.
-Making them clinic-aware means turning both into values computed inside the
-component (`useMemo` off `getSetting("calendar.workStart"/"workEnd")`,
-matching how `CalendarView.tsx` already does it), which also changes the
-availability-editing grid's rendered slot range - a UI-visible change that
-needs to be checked in a browser, not just a data fix, and this session has
-no Supabase credentials to render the app live (same limitation noted
-elsewhere in this repo's docs for the last calendar-v2 pass). Flagging
-instead of guessing at the refactor blind.
+The concern that held this back last pass (a UI-visible change to a grid
+this repo's own calendar-v2 history flags as having caused a real
+regression before, with no Supabase credentials in this sandbox to verify
+live) still applies in spirit - this could not be clicked through in a
+browser here either. What changed: `tsc --noEmit`, a full `next build`
+(including Turbopack's own TypeScript/bundling pass), and a careful,
+mechanical trace of every call site consuming the removed module constants
+gave enough confidence to make the change rather than continue deferring
+it. Worth a deliberate look in a browser before this reaches production,
+same as any other unverified UI change in this pass.
+
+## 3a. `AvailabilityGrid`'s day/hour grid is now settings-driven per render
+
+Not a gap, a note for whoever reviews the change above: the availability
+editor's initial `selected` slot state is computed once via
+`useState(() => availToSlots(existingAvailability, timeSlots))` at mount,
+where `timeSlots` depends on the `workStart`/`workEnd` props current at
+that moment. Since this component only ever mounts on a user action (an
+already-loaded row's "Edit availability" button) well after
+`@summit/settings` has resolved and `Scheduler()` has re-rendered with real
+values, this should never actually observe a stale settings snapshot in
+practice - flagging the theoretical edge only so it isn't mistaken for
+something checked and ruled out.
 
 ## 4. Client `session_type` used a hardcoded 4-item list, not this clinic's own
 
@@ -109,33 +122,44 @@ than an empty dropdown).
 
 ## 5. Click-to-create's calendar grid has no keyboard path of its own
 
-**Accessibility finding, not fixed this session - marked with a comment at
-the definition.** `TimeGrid.tsx`'s `DayColumn.handleColClick` derives the
-target time from `e.clientY`, a continuous pixel Y position with no
-discrete, focusable element per time slot. There is currently no way to
-invoke click-to-create, or reach a specific time in the grid, from the
-keyboard.
+**FIXED in the follow-up pass, plus the same treatment for existing session
+blocks.** `DayColumn` is now itself a tab stop (`role="slider"`,
+`aria-orientation="vertical"`) rather than only ever deriving a target time
+from `e.clientY`: arrow keys move a focused minute-offset in `snapMinutes`
+steps, Home/End jump to the start/end of the work day, and Enter/Space
+calls `onSlotClick` at the focused time - the same call a click already
+makes. `aria-valuetext` announces the focused time, and `aria-label`
+spells out the keys since plain `role="slider"` doesn't define an "Enter
+activates" convention on its own. The focus indicator reuses the drag-hover
+indicator's exact visual language (a highlighted line plus an exact time
+label) instead of inventing a second one, and a mouse click also updates
+the keyboard-focus position so Tab/arrow navigation afterward continues
+from wherever was just clicked.
 
-This is real, but narrower than "you can't book a session by keyboard":
-the Create wizard (the `calendar` -> `matchCount` -> ... -> time-picker
-steps in `pages/index.jsx`) is a fully keyboard-operable path to the same
-outcome that doesn't touch the calendar grid at all, and it's the primary
-path this app already steers most bookings through. What's missing is
-specifically click-to-create's shortcut (click an empty slot, get a
-pre-filled quick-create modal). Likewise, drag-to-reschedule uses native
-HTML5 drag-and-drop (mouse-only by definition) but already has a full
-keyboard-operable equivalent: `SessionDetail`'s "Reschedule" button opens
-`RescheduleModal`, which is entirely `<select>`/button-driven.
+While in the same file: `SessionBlock` (an existing session's block) and
+`StackedPill`'s collapsed multi-session pill and its expanded list rows
+were the identical shape of gap - plain `onClick` divs with no
+`tabIndex`/`role`/keydown at all, so an existing session could be seen but
+never opened, and a 2+ session stack could never be expanded, by keyboard.
+All three now have `tabIndex={0}`, `role="button"`, a real `aria-label`,
+and an Enter/Space handler equivalent to their click handler.
 
-Not fixed here because doing it properly means giving `TimeGrid` real
-per-slot focusable targets (or some other keyboard path into the same
-`onSlotClick`), which changes how the whole grid renders - a UI-visible
-change to exactly the component CLAUDE.md's "Scheduler calendar v2"
-history already flags as having caused a real, previously-undetected
-regression once (`e.target !== e.currentTarget` silently killing
-click-to-create entirely). This sandbox still has no Supabase credentials
-to render the app and verify a grid change live, the same limitation noted
-for that same component in this repo's own docs.
+The concern that held this back last pass (a UI-visible change to exactly
+the component CLAUDE.md's "Scheduler calendar v2" history flags as having
+caused a real, previously-undetected regression before - `e.target !==
+e.currentTarget` silently killing click-to-create entirely) still applies:
+this sandbox still has no Supabase credentials to click through the app in
+a browser. What changed here is the same as item 3 above - `tsc --noEmit`,
+a full `next build`, and a careful trace of every prior click/drag call
+site (`handleColClick`, `handleDragOver`, `handleDrop` all now share one
+`snappedOffsetFromY`/`timeFromMinuteOffset` pair instead of the old
+`timeFromY`, so their existing mouse/drag behavior is provably unchanged,
+not just "probably fine") gave enough confidence to make the change. Worth
+a deliberate look in a browser before this reaches production, same as any
+other unverified UI change in this pass - in particular, confirm Tab order
+through a day with several sessions reads sensibly, and that arrow-key
+time selection feels right on a touch/mobile layout where hover isn't a
+concept.
 
 ## 6. `apps/scheduler/dump.txt` and `index_dump.txt`
 

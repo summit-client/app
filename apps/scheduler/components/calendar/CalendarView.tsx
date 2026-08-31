@@ -33,7 +33,7 @@ import { RecurringIcon } from "./icons";
 import { RescheduleModal } from "./RescheduleModal";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { sessionGridIncrement, sessionDuration } from "./types";
-import { fetchFreshConflict } from "../../lib/checkSlotConflict";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../../lib/checkSlotConflict";
 import { useFocusTrap } from "../../lib/useFocusTrap";
 
 const SPLIT_THRESHOLD = 8;
@@ -283,10 +283,43 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       const newDate = parseDateStr(dateStr);
       const dayDelta = Math.round((newDate.getTime() - oldDate.getTime()) / 86400000);
       const targets = (rows || []).filter((r: any) => scope === "all" || r.session_date >= session.session_date);
-      const results = await Promise.all(targets.map((r: any) => {
-        const shifted = addDays(parseDateStr(r.session_date), dayDelta);
-        return supabase.from("sessions").update({ session_date: toDateStr(shifted), hour, minute }).eq("id", r.id);
+      const shiftedTargets = targets.map((r: any) => ({
+        row: r,
+        shiftedDateStr: toDateStr(addDays(parseDateStr(r.session_date), dayDelta)),
       }));
+
+      // BLOCKED-scheduler.md previously logged this as a real, unfixed gap:
+      // only the dragged session's own anchor slot was ever conflict-checked
+      // above - every OTHER occurrence in a "following"/"all" shift wrote
+      // with no check at all, so a multi-week series move could silently
+      // double-book a later occurrence nothing here ever looked at.
+      // All-or-nothing rather than the per-date skip pattern batch-booking
+      // uses elsewhere: these rows are one series moving together, so
+      // partially applying the shift (some occurrences moved, some silently
+      // left behind at the old time) would leave the series split across
+      // two times, which is worse than refusing the whole move. Known,
+      // accepted limitation: fetchFreshConflictKeys has no per-candidate
+      // exclusion (unlike fetchFreshConflict's excludeSessionId), so if two
+      // occurrences of this same series happen to swap into each other's
+      // still-unmoved pre-shift slot, this can report a false-positive
+      // collision - fails safe (blocks the move) rather than silently
+      // corrupting the series, which is the right tradeoff for something
+      // this rare.
+      const freshKeys = await fetchFreshConflictKeys(
+        shiftedTargets.map(({ shiftedDateStr }) => ({ employeeId: session.employee_id, dateStr: shiftedDateStr, hour, minute })),
+      );
+      const collision = shiftedTargets.find(({ shiftedDateStr }) =>
+        freshKeys.has(slotKeyOf({ employeeId: session.employee_id, dateStr: shiftedDateStr, hour, minute })),
+      );
+      if (collision) {
+        showToast(`Can't move the series - ${collision.shiftedDateStr} already has a session at that time.`);
+        await loadRange();
+        return;
+      }
+
+      const results = await Promise.all(shiftedTargets.map(({ row, shiftedDateStr }) =>
+        supabase.from("sessions").update({ session_date: shiftedDateStr, hour, minute }).eq("id", row.id),
+      ));
       failed = results.some((r) => r.error);
     }
     await loadRange();
