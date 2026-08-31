@@ -21,6 +21,8 @@ import { isAvailable, hasSessionConflict } from "./suggestions";
 import type { AvailabilityRow, ExistingSession } from "./suggestions";
 import { sessionDuration } from "./types";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../../lib/checkSlotConflict";
+import { useFocusTrap } from "../../lib/useFocusTrap";
 
 interface ClientAvailabilityRow { client_id: number; day: string; start_time: string; end_time: string }
 
@@ -52,6 +54,7 @@ export function RescheduleModal({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const [employeeId, setEmployeeId] = React.useState(session.employee_id);
   const [locationId, setLocationId] = React.useState(session.location_id);
   const [isHome, setIsHome] = React.useState(session.is_home_visit);
@@ -137,6 +140,19 @@ export function RescheduleModal({
       return;
     }
 
+    // Re-check against the database right before writing - `existing`
+    // (liveSessions) is a prop that can be stale for as long as this modal
+    // has been open. See lib/checkSlotConflict.ts.
+    const fresh = await fetchFreshConflict(
+      { employeeId, dateStr: selectedDate, hour: selectedSlot.hour, minute: selectedSlot.minute },
+      session.id,
+    );
+    if (fresh) {
+      setSaving(false);
+      setError("That slot was just booked by someone else - pick another time.");
+      return;
+    }
+
     // Only actually assign a new recurrence_id when the future occurrences
     // are really about to be created below - otherwise a checked "repeat
     // weekly" box with no end condition chosen yet would leave this session
@@ -166,7 +182,14 @@ export function RescheduleModal({
       // week after the date just saved above - this session's own row is
       // never touched again here.
       const futureDates = generateWeeklyDatesFrom(selectedDate, endType, endDate, endCount).slice(1);
-      const conflictFree = futureDates.filter((d) => !existing.some((b) => b.employee_id === employeeId && b.session_date === d && b.hour === selectedSlot.hour && b.minute === selectedSlot.minute));
+      const staleFree = futureDates.filter((d) => !existing.some((b) => b.employee_id === employeeId && b.session_date === d && b.hour === selectedSlot.hour && b.minute === selectedSlot.minute));
+      // Re-check the batch fresh, same reasoning as the single-slot check
+      // above - `existing` can be stale for the whole time this modal has
+      // been open.
+      const freshKeys = await fetchFreshConflictKeys(
+        staleFree.map((d) => ({ employeeId, dateStr: d, hour: selectedSlot.hour, minute: selectedSlot.minute })),
+      );
+      const conflictFree = staleFree.filter((d) => !freshKeys.has(slotKeyOf({ employeeId, dateStr: d, hour: selectedSlot.hour, minute: selectedSlot.minute })));
       const skipped = futureDates.length - conflictFree.length;
       const inserts = conflictFree.map((d) => ({
         recurrence_id: recurrenceId,
@@ -195,7 +218,7 @@ export function RescheduleModal({
 
   return (
     <div style={overlayStyle} onClick={onClose}>
-      <div style={{ ...modalStyle, width: "min(480px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" style={{ ...modalStyle, width: "min(480px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Reschedule</div>
         <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 12 }}>{client?.name || "Unknown client"}</div>
 
@@ -228,9 +251,9 @@ export function RescheduleModal({
         </Field>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "10px 0 6px" }}>
-          <button onClick={() => setWeekStart((w) => addDays(w, -7))} style={navBtnSmall}>‹</button>
+          <button aria-label="Previous week" onClick={() => setWeekStart((w) => addDays(w, -7))} style={navBtnSmall}>‹</button>
           <button onClick={() => { const t = parseDateStr(todayDateStr()); const day = t.getDay(); setWeekStart(addDays(t, day === 0 ? -6 : 1 - day)); }} style={navBtnSmall}>This week</button>
-          <button onClick={() => setWeekStart((w) => addDays(w, 7))} style={navBtnSmall}>›</button>
+          <button aria-label="Next week" onClick={() => setWeekStart((w) => addDays(w, 7))} style={navBtnSmall}>›</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
           {weekDays.map((d) => {

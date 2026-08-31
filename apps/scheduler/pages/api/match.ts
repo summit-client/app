@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createServerClient } from "@supabase/ssr";
+import { sessionFreshness } from "@summit/proxy-auth";
 
 /**
  * AI match proxy — hardened. Previously this forwarded any caller's body to the
@@ -7,6 +8,14 @@ import { createServerClient } from "@supabase/ssr";
  * found the route could spend against the key with any model and token budget.
  * Now: the caller must be a signed-in staff user; the model and max_tokens are
  * pinned server-side; only the prompt text is accepted, size-capped.
+ *
+ * proxy.ts's matcher excludes /api routes, so this route never went through
+ * the sessionFreshness() check every page navigation gets - it called
+ * getUser() directly on a cookie that could be within 90s of expiry, which is
+ * exactly the cross-portal refresh-token race CLAUDE.md documents (this
+ * request racing another portal's proxy.ts for the same refresh token, and
+ * losing with a hard refresh_token_already_used error masquerading as
+ * "not signed in"). Checked first, same as every proxy.ts.
  */
 
 const MODEL = "claude-haiku-4-5-20251001";
@@ -38,6 +47,19 @@ function isRateLimited(userId: string): boolean {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
+
+  // 0. Same freshness check every proxy.ts does before ever calling
+  // getUser() - this route needs its own copy since middleware never runs
+  // for /api. "stale" is reported distinctly (not folded into the generic
+  // 401 below) so the caller can send the browser through the central
+  // refresh endpoint instead of just retrying the same doomed getUser() call.
+  const freshness = await sessionFreshness(
+    Object.entries(req.cookies).map(([name, value]) => ({ name, value: value as string })),
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+  );
+  if (freshness === "stale") {
+    return res.status(401).json({ error: "Your session needs to refresh.", code: "SESSION_STALE" });
+  }
 
   // 1. Verified session (getUser validates the JWT against the auth server).
   const supabase = createServerClient(

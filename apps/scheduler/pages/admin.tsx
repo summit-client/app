@@ -3,12 +3,20 @@ import { supabase } from '@summit/db';
 import { useContext } from 'react';
 import { UserContext } from '../lib/UserContext';
 import Sidebar from '../components/Sidebar';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 type Tab = 'staff' | 'clients';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const ROLES = ['BCBA', 'BCaBA', 'RBT', 'Supervisor'];
-const SESSION_TYPES = ['Assessment', 'RBA Supervision', 'Direct Therapy', 'Group Therapy'];
+// Fallback only, for a clinic that has not configured any session_types row
+// yet (migration 0019 seeds a default set for every clinic, so this should
+// not normally be reached). Every clinic's real, editable list lives in the
+// session_types table (see SessionTypeEditModal / CalendarView) - this used
+// to be the only list a client's `session_type` field could ever be set to,
+// hardcoded and identical for every clinic regardless of what session types
+// that clinic actually configured. See BLOCKED-scheduler.md.
+const DEFAULT_SESSION_TYPES = ['Assessment', 'RBA Supervision', 'Direct Therapy', 'Group Therapy'];
 const SPECIALTIES_OPTIONS = ['Autism', 'Behavioral Intervention', 'Parent Training', 'Social Skills', 'VB', 'DTT', 'NET'];
 const STATUSES = ['active', 'inactive', 'waitlist'];
 
@@ -56,6 +64,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('staff');
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [clientList, setClientList] = useState<Client[]>([]);
+  const [sessionTypeNames, setSessionTypeNames] = useState<string[]>(DEFAULT_SESSION_TYPES);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,18 +77,35 @@ export default function AdminPage() {
 
   useEffect(() => { fetchAll(); }, []);
 
+  // This modal had neither Escape-to-close nor any keyboard focus
+  // containment - closing only worked via the outside-click handler already
+  // on the overlay div below, or the Cancel button, so Tab could walk focus
+  // straight out into the page underneath while it was open.
+  useEffect(() => {
+    if (!showModal) return;
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') handleModalClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showModal]);
+  const modalTrapRef = useFocusTrap<HTMLDivElement>(showModal);
+
 async function fetchAll() {
   setLoading(true);
-  const [{ data: staff }, { data: clients }, { data: bk }, { data: cal }] = await Promise.all([
+  const [{ data: staff }, { data: clients }, { data: bk }, { data: cal }, { data: types }] = await Promise.all([
     supabase.from('staff').select('*').order('name'),
     supabase.from('clients').select('*').order('name'),
     supabase.from('sessions').select('*'),
     supabase.from('calendars').select('*'),
+    supabase.from('session_types').select('name').order('name'),
   ]);
   setStaffList(staff || []);
   setClientList(clients || []);
   setBookings(bk || []);
   setCalendars(cal || []);
+  // This clinic's own configured session types (SessionTypeEditModal,
+  // migration 0019), not the fixed four-item list every clinic used to be
+  // stuck with here regardless of what it actually configured.
+  setSessionTypeNames(types?.length ? types.map((t: { name: string }) => t.name) : DEFAULT_SESSION_TYPES);
   setLoading(false);
 }
 
@@ -542,7 +568,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       {/* Modal */}
       {showModal && (
         <div style={s.overlay} onClick={e => e.target === e.currentTarget && handleModalClose()}>
-          <div style={s.modal}>
+          <div ref={modalTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={tab === 'staff' ? 'Add Staff Member' : 'Add Client'} style={s.modal}>
             <h2 style={s.modalTitle}>
               {tab === 'staff' ? 'Add Staff Member' : 'Add Client'}
             </h2>
@@ -614,7 +640,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
                   value={clientForm.session_type}
                   onChange={e => setClientForm(f => ({ ...f, session_type: e.target.value }))}
                 >
-                  {SESSION_TYPES.map(t => <option key={t}>{t}</option>)}
+                  {sessionTypeNames.map(t => <option key={t}>{t}</option>)}
                 </select>
 
                 <label style={s.label}>Status</label>
