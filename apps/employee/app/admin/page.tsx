@@ -8,8 +8,8 @@ import { HUB_TASKS } from "@/lib/content";
 import { directory, hr } from "@/lib/hr-store";
 import {
   decideTimeOff, getAudit, getPd, getProfile, getProgress, getTimeOff, getTraining,
-  issueOnboardingCertificate, onboardingProgress, pendingOnboardingCertificates,
-  signOffTask, verifyPd,
+  issueOnboardingCertificate, listPendingSignoffs, onboardingProgress, pendingOnboardingCertificates,
+  signOffTask, verifyPd, type PendingSignoff,
 } from "@/lib/hub";
 import { deactivateTeammate, editTeammate, inviteTeammate, ProvisioningError } from "@/lib/hr-backend";
 import { SessionGate, useIdentity } from "@/components/session-provider";
@@ -18,17 +18,40 @@ import { SessionGate, useIdentity } from "@/components/session-provider";
  * Admin: the supervisor and admin console with team directory, pending sign-off
  * queue, time-off decisions, PD verification and the audit feed. Admins see
  * the whole clinic; supervisors see their linked team (enforced by RLS in
- * live mode; the preview store holds one employee).
+ * live mode; the preview store holds one employee). Schedulers also reach
+ * this console (2026-08-31), scoped clinic-wide the same as admin - see
+ * migration 0022's widened hub_can_manage().
  */
 export default function AdminPage() {
+  // No HrGate `requires` here: scheduler maps to EMPLOYEE in this portal's
+  // three-tier HubRole ladder (session.ts) everywhere else, on purpose - it
+  // isn't promoted to SUPERVISOR app-wide just to reach this one screen.
+  // AdminAccessGate below checks the raw appRole instead, so the exception
+  // stays scoped to the Admin console specifically.
+  return (
+    <HrGate>
+      <AdminAccessGate>
+        <AdminConsole />
+      </AdminAccessGate>
+    </HrGate>
+  );
+}
+
+function AdminAccessGate({ children }: { children: React.ReactNode }) {
   // Gate on profiles.role via RLS-backed identity, not on a role the browser
   // holds. The previous check read a role out of localStorage that My Profile
   // let anyone set, so any signed-in employee could open this console.
-  return (
-    <HrGate requires={["SUPERVISOR", "ADMIN"]}>
-      <AdminConsole />
-    </HrGate>
-  );
+  const identity = useIdentity();
+  const allowed = identity.role === "ADMIN" || identity.role === "SUPERVISOR" || identity.appRole === "scheduler";
+  if (!allowed) {
+    return (
+      <div className="card card-pad" style={{ marginTop: 16, maxWidth: 640 }}>
+        <h1 className="h-page">Not available to you</h1>
+        <p className="sub" style={{ marginTop: 8 }}>This area is for admin, supervisor and scheduler accounts.</p>
+      </div>
+    );
+  }
+  return <>{children}</>;
 }
 
 function AdminConsole() {
@@ -36,6 +59,18 @@ function AdminConsole() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [tab, setTab] = React.useState<"queues" | "staff" | "settings">("queues");
+  // Team/clinic-wide, unlike everything else on this screen: it names other
+  // people's tasks, so it cannot come from the caller's own loaded hub
+  // snapshot the way getProgress()/getPd()/getTimeOff() do. Fetched
+  // separately and re-fetched after every sign-off decision.
+  const [signoffs, setSignoffs] = React.useState<PendingSignoff[] | null>(null);
+  const [signoffsError, setSignoffsError] = React.useState<string | null>(null);
+  const reloadSignoffs = React.useCallback(() => {
+    listPendingSignoffs()
+      .then((rows) => { setSignoffs(rows); setSignoffsError(null); })
+      .catch((e: unknown) => setSignoffsError(e instanceof Error ? e.message : String(e)));
+  }, []);
+  React.useEffect(() => { reloadSignoffs(); }, [reloadSignoffs]);
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading admin…</p>;
 
@@ -54,9 +89,10 @@ function AdminConsole() {
 
   const progress = getProgress();
   const ob = onboardingProgress(progress);
-  const pendingSignoffs = progress
-    .filter((p) => p.status === "AWAITING_SIGNOFF")
-    .map((p) => ({ ...p, task: HUB_TASKS.find((t) => t.key === p.taskKey) }));
+  const peopleById = new Map(directory().map((p) => [p.id, p]));
+  const pendingSignoffs = (signoffs ?? []).map((p) => ({
+    ...p, task: HUB_TASKS.find((t) => t.key === p.taskKey), person: peopleById.get(p.userId),
+  }));
   const pendingTimeOff = getTimeOff().filter((r) => r.status === "REQUESTED");
   const unverifiedPd = getPd().filter((r) => !r.verified);
   // Onboarding certificates are no longer minted in the browser: nothing there
@@ -73,7 +109,10 @@ function AdminConsole() {
     <div>
       <AdminTabs tab={tab} setTab={setTab} role={profile.role} />
       <p className="sub">
-        {profile.role === "ADMIN" ? "Whole-clinic view." : "Your linked team."} Pending approvals first; everything you decide is audited.
+        {/* Scheduler's hub_can_manage() grant (migration 0022) is
+            unconditional, same as admin's - clinic-wide, not team-linked -
+            so it reads the copy the same way admin does. */}
+        {profile.role === "ADMIN" || identity.appRole === "scheduler" ? "Whole-clinic view." : "Your linked team."} Pending approvals first; everything you decide is audited.
       </p>
 
       <h2 className="section-title">Team directory</h2>
@@ -101,16 +140,29 @@ function AdminConsole() {
 
       <h2 className="section-title">Pending sign-offs {pendingSignoffs.length ? <span className="pill warn">{pendingSignoffs.length}</span> : null}</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {pendingSignoffs.map((p) => (
-          <div key={p.taskKey} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 0 }}>
-              <b style={{ fontSize: "var(--text-sm)" }}>{p.task?.title ?? p.taskKey}</b>
-              <p className="trend" style={{ marginTop: 4 }}>{profile.name} · Week {p.task?.week} · {p.task?.section}{p.notes ? ` · note: ${p.notes}` : ""}</p>
-            </div>
-            <button className="btn" onClick={() => void signOffTask(p.taskKey).then(force)}>Sign off as completed</button>
+        {signoffsError ? (
+          <div className="card card-pad" role="alert" style={{ borderColor: "var(--danger, #b3261e)" }}>
+            <b>Could not load pending sign-offs.</b> <span className="sub">{signoffsError}</span>
+            <button className="btn ghost" style={{ marginLeft: 8, padding: "4px 10px" }} onClick={reloadSignoffs}>Try again</button>
           </div>
-        ))}
-        {!pendingSignoffs.length ? <div className="card card-pad"><p className="sub">Nothing awaiting sign-off.</p></div> : null}
+        ) : signoffs === null ? (
+          <div className="card card-pad"><p className="sub">Loading pending sign-offs…</p></div>
+        ) : (
+          <>
+            {pendingSignoffs.map((p) => (
+              <div key={`${p.userId}-${p.taskKey}`} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0 }}>
+                  <b style={{ fontSize: "var(--text-sm)" }}>{p.task?.title ?? p.taskKey}</b>
+                  <p className="trend" style={{ marginTop: 4 }}>
+                    {p.person?.name ?? "Unknown employee"} · Week {p.task?.week} · {p.task?.section}{p.notes ? ` · note: ${p.notes}` : ""}
+                  </p>
+                </div>
+                <button className="btn" onClick={() => void signOffTask(p.taskKey, p.userId).then(reloadSignoffs)}>Sign off as completed</button>
+              </div>
+            ))}
+            {!pendingSignoffs.length ? <div className="card card-pad"><p className="sub">Nothing awaiting sign-off.</p></div> : null}
+          </>
+        )}
       </div>
 
       <h2 className="section-title">Certificates to issue {pendingCerts.length ? <span className="pill warn">{pendingCerts.length}</span> : null}</h2>

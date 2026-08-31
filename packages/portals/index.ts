@@ -114,16 +114,45 @@ export function refreshUrl(): string {
 }
 
 /**
+ * The one place allowed to end a session, for the same reason refreshUrl()
+ * is the one place allowed to redeem a refresh token: every portal's browser
+ * Supabase client is built with createBrowserClient() and no cookie
+ * overrides, so its default cookie writer clears a cookie scoped to the
+ * *current* host only. The actual shared session cookie was written with an
+ * explicit `Domain=.summitclient.io` (apps/web/lib/supabase.ts, the only
+ * client-side writer configured that way), and a browser will not remove a
+ * cookie via a delete that doesn't repeat that same Domain - so a portal
+ * calling `supabase.auth.signOut()` on its own client looks like it worked
+ * locally (that tab's in-memory state clears, the redirect to /login fires)
+ * while leaving the real cross-portal cookie valid, ready to sign the same
+ * browser straight back in the moment it visits another portal or reloads.
+ * Routing every sign-out through apps/web's own domain-scoped server client
+ * (apps/web/lib/supabase-server.ts) is what actually clears it once, for
+ * every portal at once, matching the refresh endpoint's precedent exactly.
+ */
+export function signOutUrl(): string {
+  return `${webUrl()}/api/auth/signout`;
+}
+
+/**
  * Who may use which portal.
  *
- * `clinician` and `employee` mirror auth_is_staff() deliberately: both read
- * clinic data under policies that call it, so admitting a role here that the
- * function rejects produces a portal that renders and then shows nothing.
+ * `clinician` mirrors auth_is_staff() deliberately: it reads clinic data
+ * under policies that call it, so admitting a role here that the function
+ * rejects produces a portal that renders and then shows nothing.
+ *
+ * `employee` does NOT mirror auth_is_staff() - it deliberately admits
+ * scheduler too (2026-08-31, for the Admin console link), same call
+ * auth_is_scheduling_staff() (migration 0013) already made for the
+ * scheduling tables: scheduler is its own staff category here, not folded
+ * into the clinical admin/supervisor/clinician one. hub_can_manage()
+ * (migration 0022) was widened to match, so this doesn't produce that same
+ * renders-then-empty portal the comment above warns about.
  */
 const ACCESS: Record<PortalKey, readonly AppRole[]> = {
   scheduler: ["admin", "scheduler"],
   clinician: ["admin", "supervisor", "clinician"],
-  employee: ["admin", "supervisor", "clinician"],
+  employee: ["admin", "supervisor", "clinician", "scheduler"],
   // "admin" added 2026-08-28 so admins can reach the family portal from the
   // nav bar for QA. Note this only makes the link visible - apps/client's
   // own data fetch (pages/index.tsx) looks up `clients` by `user_id =

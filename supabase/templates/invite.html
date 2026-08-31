@@ -1,0 +1,83 @@
+<!--
+  Supabase "invite" email template. Replaces the platform default (bare
+  "You have been invited" / "Accept the invite" text, no branding, no
+  greeting) which read as spam to anyone who received it and had no
+  personalization even though invite-teammate now passes full_name/role as
+  user metadata for exactly this template to use.
+
+  Table-based layout, inline styles only, no external stylesheet or web
+  fonts: this renders inside Gmail/Outlook/Apple Mail, none of which reliably
+  support <style> blocks, flexbox, or @font-face. Colors are Summit's actual
+  --accent ramp from packages/design/tokens.css (already plain hex there,
+  not oklch, for exactly this kind of reuse).
+
+  Variables available here come from Supabase Auth's Go template context for
+  the invite email: .SiteURL, .ConfirmationURL, .Email are always present;
+  .Data.full_name / .Data.role are optional custom metadata passed by
+  invite-teammate's inviteUserByEmail(email, { data: {...} }) call - every
+  reference to them is behind an `if` so the email still reads correctly if
+  a caller/version does not supply them.
+-->
+<!doctype html>
+<html lang="en">
+  <body style="margin:0; padding:0; background-color:#f0f7f8; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <span style="display:none; max-height:0; overflow:hidden; opacity:0;">
+      {{ if .Data.full_name }}{{ .Data.full_name }}, y{{ else }}Y{{ end }}ou've been invited to Summit — accept your invite to get started.
+    </span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f7f8; padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e7f1f3;">
+            <tr>
+              <td style="background-color:#1b5a6e; padding:24px 32px;">
+                <img src="https://summitclient.io/summit-logo.jpg" width="36" height="36" alt="Summit" style="display:block; border-radius:8px;" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px 32px 8px;">
+                <p style="margin:0 0 4px; font-size:13px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; color:#1b5a6e;">You're invited</p>
+                <h1 style="margin:0 0 16px; font-size:22px; line-height:1.3; color:#0f2a33;">
+                  {{ if .Data.full_name }}Hi {{ .Data.full_name }},{{ else }}Hi,{{ end }}
+                </h1>
+                <p style="margin:0 0 20px; font-size:15px; line-height:1.6; color:#3a4b50;">
+                  You've been invited to join Summit
+                  {{ if eq .Data.role "admin" }}as an <strong>administrator</strong>{{ end }}
+                  {{ if eq .Data.role "supervisor" }}as a <strong>supervisor</strong>{{ end }}
+                  {{ if eq .Data.role "clinician" }}as a <strong>clinician</strong>{{ end }}
+                  {{ if eq .Data.role "scheduler" }}as a <strong>scheduler</strong>{{ end }}
+                  {{ if eq .Data.role "client" }}on the <strong>family portal</strong>{{ end }}. Accept the invite below to set your password and sign in.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 32px 28px;" align="center">
+                <a href="{{ .ConfirmationURL }}"
+                  style="display:inline-block; width:100%; box-sizing:border-box; background-color:#1b5a6e; color:#ffffff; font-size:15px; font-weight:600; text-decoration:none; text-align:center; padding:14px 24px; border-radius:8px;">
+                  Accept the invite
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 32px 28px;">
+                <p style="margin:0 0 6px; font-size:13px; color:#7a8b8f;">Or paste this link into your browser:</p>
+                <p style="margin:0; font-size:13px; word-break:break-all;">
+                  <a href="{{ .ConfirmationURL }}" style="color:#1b5a6e;">{{ .ConfirmationURL }}</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 32px; background-color:#f0f7f8; border-top:1px solid #e7f1f3;">
+                <p style="margin:0 0 6px; font-size:12px; line-height:1.6; color:#7a8b8f;">
+                  This invite was sent to {{ .Email }} for {{ .SiteURL }}. If you weren't expecting this, you can safely ignore it — no account will be created unless the invite is accepted.
+                </p>
+                <p style="margin:0; font-size:12px; line-height:1.6; color:#7a8b8f;">
+                  Questions? Contact us at <a href="mailto:info@summitclient.io" style="color:#1b5a6e;">info@summitclient.io</a>.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { signOutUrl } from "@summit/portals";
 import { supabase } from "./supabase";
 
 /**
@@ -110,9 +111,15 @@ export function useUser() {
     };
   }, []);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/login";
+  // Navigates to apps/web's own signout endpoint rather than calling
+  // supabase.auth.signOut() on this app's own client: this client's default
+  // cookie writer can only clear a cookie scoped to this host, not the
+  // shared `.summitclient.io` cookie every portal reads - see
+  // @summit/portals's signOutUrl() for the full reasoning. Calling signOut()
+  // here used to look like it worked (this tab cleared, redirected to
+  // login) while leaving that shared cookie valid for every other portal.
+  const signOut = () => {
+    window.location.href = signOutUrl();
   };
 
   return { user, loading, signOut };

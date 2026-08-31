@@ -10,6 +10,7 @@
 
 import * as React from "react";
 import { AppNav } from "@summit/nav";
+import { signOutUrl } from "@summit/portals";
 import { getIdentity, type AppRole } from "@summit/session";
 
 export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
@@ -23,5 +24,14 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
     return () => { cancelled = true; };
   }, []);
 
-  return <AppNav {...props} role={role} />;
+  // Mirrors AdminAccessGate's check in app/admin/page.tsx exactly - admin,
+  // supervisor, or scheduler (scheduler's Admin console access is a scoped
+  // exception, not a portal-wide role promotion; see that gate's own
+  // comment). Keep the two in sync if either changes: this only controls
+  // whether the link is offered, that gate is what actually enforces it.
+  const showAdminLink = role === "admin" || role === "supervisor" || role === "scheduler";
+
+  return (
+    <AppNav {...props} role={role} adminHref={showAdminLink ? "/admin" : undefined} signOutHref={signOutUrl()} />
+  );
 }

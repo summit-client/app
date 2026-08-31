@@ -16,7 +16,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { Session } from "./session";
 import type {
-  AuditEvent, Certificate, EmployeeProfile, PdRecord, TaskProgress,
+  AuditEvent, Certificate, EmployeeProfile, PdRecord, PendingSignoff, TaskProgress,
   TaskStatus, TimeOffRequest, TrainingRecord,
 } from "./hub-types";
 
@@ -35,6 +35,10 @@ export interface HubBackend {
   saveProfile(patch: Partial<EmployeeProfile>, next: EmployeeProfile): Promise<void>;
   upsertTask(row: TaskProgress): Promise<void>;
   signOffTask(taskKey: string, subjectId: string): Promise<void>;
+  /** Tasks AWAITING_SIGNOFF across the caller's manageable scope (their linked
+   *  team for a supervisor, the whole clinic for an admin) - never just the
+   *  caller's own. See migration 0006's hub_progress_manage_select. */
+  listPendingSignoffs(): Promise<PendingSignoff[]>;
   upsertTraining(rec: TrainingRecord): Promise<void>;
   addPd(entry: Omit<PdRecord, "id" | "verified">): Promise<PdRecord>;
   verifyPd(id: string): Promise<void>;
@@ -116,6 +120,11 @@ export function previewBackend(session: Session): HubBackend {
       persist();
     },
     async signOffTask() { persist(); },
+    async listPendingSignoffs() {
+      return snap.progress
+        .filter((p) => p.status === "AWAITING_SIGNOFF")
+        .map((p) => ({ userId: snap.profile.id, taskKey: p.taskKey, notes: p.notes }));
+    },
     async upsertTraining(rec) {
       const i = snap.training.findIndex((t) => t.courseKey === rec.courseKey);
       if (i >= 0) snap.training[i] = rec; else snap.training.push(rec);
@@ -276,15 +285,37 @@ export function supabaseBackend(session: Session): HubBackend {
       // Scoped to the SUBJECT, not the caller. The old query filtered on
       // task_key alone, which under a supervisor's policy would have signed off
       // that task for everyone on their team at once.
+      //
+      // Also scoped to status = AWAITING_SIGNOFF: without it, a stale queue
+      // (someone already signed this off, or the employee reverted it) turns a
+      // duplicate click into an update that matches on nothing but user+task
+      // and completes the row regardless of its current state.
       ok("sign-off", await sb().from("hub_task_progress")
         .update({ status: "COMPLETED", signed_off_by: uid, signed_off_at: new Date().toISOString() })
-        .eq("task_key", taskKey).eq("user_id", subjectId));
+        .eq("task_key", taskKey).eq("user_id", subjectId).eq("status", "AWAITING_SIGNOFF"));
     },
 
     async upsertTraining(rec) {
       ok("training", await sb().from("hub_employee_training").upsert(scoped({
         course_key: rec.courseKey, status: rec.status, completed_at: rec.completedAt,
       }), { onConflict: "user_id,course_key" }));
+    },
+
+    async listPendingSignoffs() {
+      // Deliberately no .eq("user_id", uid): hub_progress_manage_select already
+      // scopes this to what the caller may manage (their linked team, or the
+      // whole clinic for an admin) - the same rows hub_can_manage() would let
+      // them sign off. Filtering by user_id here is exactly the bug this
+      // replaces: it silently limited every queue in this console to the
+      // caller's own records.
+      const res = await sb().from("hub_task_progress")
+        .select("user_id, task_key, notes")
+        .eq("clinic_id", clinic)
+        .eq("status", "AWAITING_SIGNOFF");
+      ok("pending sign-offs", res);
+      return (res.data ?? []).map((r) => ({
+        userId: r.user_id as string, taskKey: r.task_key as string, notes: (r.notes as string) ?? "",
+      }));
     },
 
     async addPd(entry) {

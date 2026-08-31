@@ -107,7 +107,14 @@ Deno.serve(async (req) => {
     if (sup && sup.clinic_id === caller.clinic_id) supervisorId = sup.id;
   }
 
-  const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email);
+  // Passed through as .Data in the invite email template (supabase/templates/
+  // invite.html) so the email can greet the person by name and say what
+  // they're being invited to, instead of the generic default. Template
+  // guards every field with an `if`, so this stays optional - it degrades to
+  // the generic copy if either is ever blank.
+  const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+    data: { full_name: body.full_name?.trim() || null, role },
+  });
   if (inviteErr || !invited?.user) {
     return json(500, { error: inviteErr?.message ?? "Could not send invite" });
   }
