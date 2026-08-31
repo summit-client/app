@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, Fragment } from "react";
+import { useState, useEffect, useRef, useMemo, useContext, Fragment } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabase";
 import { UserContext } from "../lib/UserContext";
@@ -34,60 +34,57 @@ function dayFromDate(dateStr) {
   return DAY_MAP[new Date(dateStr + "T12:00:00").getDay()];
 }
 
-// TEMPORARY - hardcoded 7am-8pm, unlike CalendarView.tsx's real calendar
-// grid, which already reads calendar.workStart/workEnd from @summit/settings
-// per clinic. This wizard's own preview/availability-editing grids
-// (PreviewGrid, AvailabilityGrid below) still assume every clinic's day
-// runs 7-20, evaluated once at module load rather than per clinic. Not
-// fixed this session - TIME_SLOTS/PREVIEW_SLOTS are module-level constants
-// computed before any settings are loaded, so making them clinic-aware
-// means turning them into values computed inside the component (useMemo
-// off getSetting()), which also changes the availability-grid's slot
-// granularity and needs a UI pass to verify, not just a data change. See
-// BLOCKED-scheduler.md.
-function generateTimeSlots() {
+// Previously hardcoded 7am-8pm regardless of clinic - CalendarView.tsx's
+// real calendar grid already reads calendar.workStart/workEnd from
+// @summit/settings per clinic, but this wizard's own preview/availability-
+// editing grids (PreviewGrid, AvailabilityGrid below) didn't. Fixed by
+// parametrizing on startHour/endHour instead of a module-level constant -
+// every caller now derives these from the workStart/workEnd props already
+// threaded down from Scheduler() (the top-level component, which already
+// subscribes to onSettingsChange for exactly this reason - see its own
+// comment), matching how PreviewGrid already filters its day columns by the
+// workDays prop rather than assuming a fixed set.
+function generateTimeSlots(startHour, endHour) {
   const s = [];
-  for (let h = 7; h < 20; h++) {
+  for (let h = startHour; h < endHour; h++) {
     s.push(`${String(h).padStart(2, "0")}:00`);
     s.push(`${String(h).padStart(2, "0")}:30`);
   }
   return s;
 }
-const TIME_SLOTS = generateTimeSlots();
 
-function buildPreviewSlots() {
+function buildPreviewSlots(startHour, endHour) {
   const s = [];
-  for (let h = 7; h < 20; h++) {
+  for (let h = startHour; h < endHour; h++) {
     s.push({ h, m: 0, label: `${h}:00`, key: `${String(h).padStart(2, "0")}:00` });
     s.push({ h, m: 30, label: "", key: `${String(h).padStart(2, "0")}:30` });
   }
   return s;
 }
-const PREVIEW_SLOTS = buildPreviewSlots();
 
-function availToSlots(avail) {
+function availToSlots(avail, timeSlots) {
   const sel = new Set();
   (avail || []).forEach(({ day, start_time, end_time }) => {
     const s = String(start_time).substring(0, 5);
     const e = String(end_time).substring(0, 5);
-    TIME_SLOTS.forEach(t => { if (t >= s && t < e) sel.add(`${day}-${t}`); });
+    timeSlots.forEach(t => { if (t >= s && t < e) sel.add(`${day}-${t}`); });
   });
   return sel;
 }
 
-function slotsToRanges(selected, entityId, entityType = "staff") {
+function slotsToRanges(selected, entityId, entityType, availDays, timeSlots, endOfDayTime) {
   const idField = entityType === "staff" ? "staff_id" : "client_id";
   const result = [];
-  AVAIL_DAYS.forEach(day => {
-    const daySlots = TIME_SLOTS.filter(t => selected.has(`${day}-${t}`));
+  availDays.forEach(day => {
+    const daySlots = timeSlots.filter(t => selected.has(`${day}-${t}`));
     if (!daySlots.length) return;
     let start = daySlots[0], prev = daySlots[0];
     for (let i = 1; i <= daySlots.length; i++) {
       const curr = daySlots[i];
-      const pi = TIME_SLOTS.indexOf(prev), ci = curr ? TIME_SLOTS.indexOf(curr) : -1;
+      const pi = timeSlots.indexOf(prev), ci = curr ? timeSlots.indexOf(curr) : -1;
       if (ci === pi + 1) { prev = curr; } else {
-        const ei = TIME_SLOTS.indexOf(prev) + 1;
-        result.push({ [idField]: entityId, day, start_time: start, end_time: ei < TIME_SLOTS.length ? TIME_SLOTS[ei] : "20:00" });
+        const ei = timeSlots.indexOf(prev) + 1;
+        result.push({ [idField]: entityId, day, start_time: start, end_time: ei < timeSlots.length ? timeSlots[ei] : endOfDayTime });
         if (curr) { start = curr; prev = curr; }
       }
     }
@@ -178,8 +175,17 @@ function clientAvailAt(clientId, day, timeKey, clientAvailability) {
 
 // ─── Generic availability drag grid ──────────────────────────────────────────
 
-function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, onCancel }) {
-  const [selected, setSelected] = useState(() => availToSlots(existingAvailability));
+function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, onCancel, workStart, workEnd, workDays }) {
+  // Previously always rendered a fixed Mon-Sat/7am-8pm grid, unrelated to
+  // what the clinic actually configured in Settings - CalendarView.tsx's
+  // real calendar has honored calendar.workDays/workStart/workEnd for a
+  // while; this editor didn't, so it was possible to mark availability on a
+  // day/hour the clinic never schedules against at all. availDays mirrors
+  // PreviewGrid's own workDays-filter of the same Mon-Sat ordering.
+  const availDays = AVAIL_DAYS.filter(d => workDays.includes(d));
+  const timeSlots = useMemo(() => generateTimeSlots(workStart, workEnd), [workStart, workEnd]);
+  const endOfDayTime = `${String(workEnd).padStart(2, "0")}:00`;
+  const [selected, setSelected] = useState(() => availToSlots(existingAvailability, timeSlots));
   const [saving, setSaving] = useState(false);
   const dragRef = useRef({ active: false, mode: null });
   const appUser = useContext(UserContext);
@@ -209,7 +215,7 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
 
   async function handleSave() {
     setSaving(true);
-    const ranges = slotsToRanges(selected, entityId, entityType).map(r => ({ ...r, clinic_id: appUser.clinic_id }));
+    const ranges = slotsToRanges(selected, entityId, entityType, availDays, timeSlots, endOfDayTime).map(r => ({ ...r, clinic_id: appUser.clinic_id }));
     await supabase.from(tableName).delete().eq(idField, entityId);
     if (ranges.length) await supabase.from(tableName).insert(ranges);
     setSaving(false);
@@ -222,17 +228,17 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
       <div style={{ fontSize: 13, fontWeight: 500, color: COLORS.textS, marginBottom: 10 }}>
         Drag to set availability · {selected.size} × 30-min slots
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "40px repeat(6, 1fr)", gap: 2, marginBottom: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: `40px repeat(${availDays.length}, 1fr)`, gap: 2, marginBottom: 4 }}>
         <div />
-        {AVAIL_DAYS.map(d => <div key={d} style={{ fontSize: 12, fontWeight: 500, color: COLORS.textS, textAlign: "center" }}>{d}</div>)}
+        {availDays.map(d => <div key={d} style={{ fontSize: 12, fontWeight: 500, color: COLORS.textS, textAlign: "center" }}>{d}</div>)}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "40px repeat(6, 1fr)", gap: 2 }}>
-        {TIME_SLOTS.map(t => (
+      <div style={{ display: "grid", gridTemplateColumns: `40px repeat(${availDays.length}, 1fr)`, gap: 2 }}>
+        {timeSlots.map(t => (
           <>
             <div key={`l-${t}`} style={{ fontSize: 10, color: COLORS.textT, textAlign: "right", paddingRight: 6, height: 14, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
               {t.endsWith(":00") ? t : ""}
             </div>
-            {AVAIL_DAYS.map(day => {
+            {availDays.map(day => {
               const key = `${day}-${t}`, on = selected.has(key);
               return <div key={key} onMouseDown={() => handleMouseDown(key)} onMouseEnter={() => handleMouseEnter(key)}
                 role="checkbox" aria-checked={on} aria-label={`${day} ${t}`} tabIndex={0}
@@ -254,7 +260,12 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
 
 // ─── Preview Grid ─────────────────────────────────────────────────────────────
 
-function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, staffAvailability, clientAvailability, employees, clients, locations, sessionTypes, unmatchedClients, typeColors, workDays }) {
+function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, staffAvailability, clientAvailability, employees, clients, locations, sessionTypes, unmatchedClients, typeColors, workDays, workStart, workEnd }) {
+  // Already correctly filtered its day columns by workDays; the hour range
+  // was still the hardcoded 7am-8pm PREVIEW_SLOTS constant regardless of
+  // what the clinic actually configured. Now derives from the same
+  // workStart/workEnd props CalendarView.tsx's real calendar already reads.
+  const previewSlots = useMemo(() => buildPreviewSlots(workStart, workEnd), [workStart, workEnd]);
   const [filterLocId, setFilterLocId] = useState(null);
   const [filterStaffIds, setFilterStaffIds] = useState([]);
   const [tooltip, setTooltip] = useState(null);
@@ -359,7 +370,7 @@ function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, 
             <div />
             {DAYS.map(d => <div key={d} style={{ padding: "6px 0", textAlign: "center", fontSize: 13, fontWeight: 500, color: COLORS.textS, borderLeft: `0.5px solid ${COLORS.border}` }}>{d}</div>)}
           </div>
-          {PREVIEW_SLOTS.map(({ h, m, label, key: tKey }) => (
+          {previewSlots.map(({ h, m, label, key: tKey }) => (
             <div key={tKey} style={{ display: "grid", gridTemplateColumns: "44px repeat(6, 1fr)", borderBottom: `0.5px solid ${m === 0 ? COLORS.border : COLORS.border + "55"}` }}>
               <div style={{ height: CELL_H, background: COLORS.bgS, fontSize: 10, color: COLORS.textT, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 5 }}>{label}</div>
               {DAYS.filter(d => workDays.includes(d)).map(day => {
@@ -788,7 +799,7 @@ function Dashboard({ clients, employees, bookings, typeColors }) {
 
 // ─── Clients view ─────────────────────────────────────────────────────────────
 
-function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast }) {
+function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast, workStart, workEnd, workDays }) {
   const [expandedId, setExpandedId] = useState(null);
   const [search, setSearch] = useState("");
   const filtered = clients.filter(c => JSON.stringify(c).toLowerCase().includes(search.toLowerCase()));
@@ -842,7 +853,7 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
                 </button>
               </div>
               {isExp && <div style={{ padding: "0 16px 16px" }}>
-                <AvailabilityGrid entityId={client.id} entityType="client" existingAvailability={cAvail} onSave={handleSave} onCancel={() => setExpandedId(null)} />
+                <AvailabilityGrid entityId={client.id} entityType="client" existingAvailability={cAvail} onSave={handleSave} onCancel={() => setExpandedId(null)} workStart={workStart} workEnd={workEnd} workDays={workDays} />
               </div>}
             </div>
           );
@@ -854,7 +865,7 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
 
 // ─── Staff view ───────────────────────────────────────────────────────────────
 
-function EmployeesView({ employees, locations, staffAvailability, setStaffAvailability, typeColors, showToast }) {
+function EmployeesView({ employees, locations, staffAvailability, setStaffAvailability, typeColors, showToast, workStart, workEnd, workDays }) {
   const [expandedId, setExpandedId] = useState(null);
   const [search, setSearch] = useState("");
   const filtered = employees.filter(e => JSON.stringify(e).toLowerCase().includes(search.toLowerCase()));
@@ -919,7 +930,7 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
                 </button>
               </div>
               {isExp && <div style={{ padding: "0 16px 16px" }}>
-                <AvailabilityGrid entityId={emp.id} entityType="staff" existingAvailability={empAvail} onSave={handleSave} onCancel={() => setExpandedId(null)} />
+                <AvailabilityGrid entityId={emp.id} entityType="staff" existingAvailability={empAvail} onSave={handleSave} onCancel={() => setExpandedId(null)} workStart={workStart} workEnd={workEnd} workDays={workDays} />
               </div>}
             </div>
           );
@@ -1234,7 +1245,7 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
 
 // ─── Create view ──────────────────────────────────────────────────────────────
 
-function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays, prefill, onConsumedPrefill }) {
+function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays, workStart, workEnd, prefill, onConsumedPrefill }) {
   const appUser = useContext(UserContext);
   const [step, setStep] = useState("calendar");
   const [trail, setTrail] = useState([]);
@@ -1756,6 +1767,12 @@ Respond ONLY with valid JSON — no extra text:
 {"matches":[{"staffName":"...","overlappingSlots":["Mon 9:00"]}],"recommendation":"..."}`;
       maxTokens = 800;
     } else {
+      // Previously scanned the hardcoded module-level AVAIL_DAYS/TIME_SLOTS
+      // (Mon-Sat, 7am-8pm) regardless of this clinic's configured
+      // calendar.workDays/workStart/workEnd - same gap as PreviewGrid and
+      // AvailabilityGrid, fixed the same way.
+      const matchDays = AVAIL_DAYS.filter(d => workDays.includes(d));
+      const matchTimeSlots = generateTimeSlots(workStart, workEnd);
       const clientMatches = multiClients.map(({ client, session_type }) => {
         const eligible = employees
           .filter(e =>
@@ -1767,8 +1784,8 @@ Respond ONLY with valid JSON — no extra text:
 
         const matches = eligible.slice(0, 3).map(emp => {
           const overlappingSlots = [];
-          for (const day of AVAIL_DAYS) {
-            for (const t of TIME_SLOTS) {
+          for (const day of matchDays) {
+            for (const t of matchTimeSlots) {
               if (
                 staffAvailAt(emp.id, day, t, staffAvailability) &&
                 clientAvailAt(client.id, day, t, clientAvailability)
@@ -2248,6 +2265,8 @@ finally { setLoading(false); }
             unmatchedClients={[]}
             typeColors={typeColors}
             workDays={workDays}
+            workStart={workStart}
+            workEnd={workEnd}
           />
         </div>
         <div style={{ borderTop: `0.5px solid ${COLORS.border}`, paddingTop: 20, marginTop: 4 }}>
@@ -2838,6 +2857,8 @@ export default function Scheduler() {
               refreshBookings={refreshBookings}
               typeColors={typeColors}
               workDays={workDays}
+              workStart={workStart}
+              workEnd={workEnd}
               showToast={showToast}
               prefill={calendarPrefill}
               onConsumedPrefill={() => setCalendarPrefill(null)}

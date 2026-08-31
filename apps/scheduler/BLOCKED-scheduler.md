@@ -69,28 +69,41 @@ the underlying race outright.
 
 ## 3. The Create wizard's preview/availability grids hardcode a 7am-8pm day
 
-**Multi-tenant hardening finding.** `pages/index.jsx`'s `generateTimeSlots()`
-and `buildPreviewSlots()` (feeding `TIME_SLOTS`/`PREVIEW_SLOTS`, used by the
-Create wizard's `PreviewGrid` multi-client matching view and the staff/
-client `AvailabilityGrid` editor) hardcode every clinic's operating day to
-7:00-20:00. This is now inconsistent with the *other* calendar in this same
-app: `CalendarView.tsx`'s real day/week grid already reads
-`calendar.workStart`/`calendar.workEnd` from `@summit/settings` per clinic
-(landed alongside the calendar v2 rebuild - see CLAUDE.md). A clinic that
-sets different hours in Settings gets a real calendar honoring them and a
-Create-wizard preview/availability grid that silently doesn't.
+**FIXED in the follow-up pass.** `generateTimeSlots()`/`buildPreviewSlots()`
+now take `(startHour, endHour)` instead of closing over a hardcoded 7-20
+range, and every consumer - `PreviewGrid`, `AvailabilityGrid`, and
+`CreateView`'s `runMatch` multi-client matching loop - now derives them
+from the `workStart`/`workEnd` props already threaded down from
+`Scheduler()` (which already subscribes to `onSettingsChange` for exactly
+this reason; `CalendarView.tsx`'s real calendar reads the same underlying
+setting independently). `AvailabilityGrid` picked up the same treatment for
+its day columns too - it previously always rendered all six of Mon-Sat
+regardless of `calendar.workDays`, unlike `PreviewGrid`, which already
+filtered correctly; both now agree.
 
-Marked with a `TEMPORARY` comment at the definition rather than fixed this
-session: `TIME_SLOTS`/`PREVIEW_SLOTS` are module-level constants computed
-once at import time, before `@summit/settings` has resolved anything.
-Making them clinic-aware means turning both into values computed inside the
-component (`useMemo` off `getSetting("calendar.workStart"/"workEnd")`,
-matching how `CalendarView.tsx` already does it), which also changes the
-availability-editing grid's rendered slot range - a UI-visible change that
-needs to be checked in a browser, not just a data fix, and this session has
-no Supabase credentials to render the app live (same limitation noted
-elsewhere in this repo's docs for the last calendar-v2 pass). Flagging
-instead of guessing at the refactor blind.
+The concern that held this back last pass (a UI-visible change to a grid
+this repo's own calendar-v2 history flags as having caused a real
+regression before, with no Supabase credentials in this sandbox to verify
+live) still applies in spirit - this could not be clicked through in a
+browser here either. What changed: `tsc --noEmit`, a full `next build`
+(including Turbopack's own TypeScript/bundling pass), and a careful,
+mechanical trace of every call site consuming the removed module constants
+gave enough confidence to make the change rather than continue deferring
+it. Worth a deliberate look in a browser before this reaches production,
+same as any other unverified UI change in this pass.
+
+## 3a. `AvailabilityGrid`'s day/hour grid is now settings-driven per render
+
+Not a gap, a note for whoever reviews the change above: the availability
+editor's initial `selected` slot state is computed once via
+`useState(() => availToSlots(existingAvailability, timeSlots))` at mount,
+where `timeSlots` depends on the `workStart`/`workEnd` props current at
+that moment. Since this component only ever mounts on a user action (an
+already-loaded row's "Edit availability" button) well after
+`@summit/settings` has resolved and `Scheduler()` has re-rendered with real
+values, this should never actually observe a stale settings snapshot in
+practice - flagging the theoretical edge only so it isn't mistaken for
+something checked and ruled out.
 
 ## 4. Client `session_type` used a hardcoded 4-item list, not this clinic's own
 
