@@ -52,20 +52,20 @@ this session can write per the task's constraints - logging it here instead.
 
 ## 2. Recurring drag-to-reschedule only conflict-checks the anchor slot
 
-**Pre-existing, not introduced this session, but adjacent to item 1 above
-and worth flagging together.** When a recurring session is dragged with
-scope `"following"` or `"all"` (`CalendarView.tsx`'s `applyReschedule`),
-every shifted occurrence is written without any conflict check of its own -
-only the dragged session's own anchor date/time was ever checked (both
-before and after this pass's fresh-recheck addition, which was scoped to
-match that same existing behavior rather than expand it). A multi-week
-recurring shift can silently double-book a later occurrence that the single
-anchor-slot check never looked at. Fixing this cleanly needs the same
-`fetchFreshConflictKeys` batch helper this pass added, called over every
-shifted target's employee/date/hour/minute before the `Promise.all` write -
-not done here to keep this pass's diff focused on the exact-slot race the
-task called out; flagging it as the natural next step alongside item 1's
-migration.
+**FIXED in the follow-up pass.** `applyReschedule`'s `"following"`/`"all"`
+branch now calls `fetchFreshConflictKeys` over every shifted occurrence's
+employee/date/hour/minute before writing any of them, all-or-nothing (the
+whole series move is refused, not silently partially applied, if any
+occurrence would collide - see the comment at the call site for why
+all-or-nothing is the right shape here rather than the per-date skip
+pattern batch-booking uses). One accepted, documented limitation remains:
+`fetchFreshConflictKeys` has no per-candidate exclusion the way
+`fetchFreshConflict`'s `excludeSessionId` does, so two occurrences of the
+same series swapping into each other's still-unmoved slot can produce a
+rare false-positive collision - fails safe (blocks the move) rather than
+corrupting the series, which is the right tradeoff for something this
+narrow. Item 1's actual DB constraint is still the only thing that closes
+the underlying race outright.
 
 ## 3. The Create wizard's preview/availability grids hardcode a 7am-8pm day
 

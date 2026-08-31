@@ -2324,6 +2324,8 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   const [proposeDay, setProposeDay] = useState("Mon");
   const [proposeHour, setProposeHour] = useState(9);
   const [proposeDate, setProposeDate] = useState("");
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState(null);
 
   const [sortKey, setSortKey] = useState("session_date");
   const [sortDir, setSortDir] = useState("asc");
@@ -2415,16 +2417,33 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   }
 
   async function submitReschedule() {
-    if (isAdminOrScheduler && proposeDate) {
-      await supabase.from("sessions").update({
-        session_date: proposeDate,
-        hour: proposeHour,
-      }).eq("id", rescheduleTarget.id);
-      refreshBookings();
-      showToast("Session rescheduled");
-    } else {
-      showToast("Reschedule request sent to scheduler");
+    if (!proposeDate) return;
+    setRescheduleSaving(true);
+    setRescheduleError(null);
+    // This write previously had no conflict check at all (not even against
+    // stale local state - the other reschedule paths at least had that) and
+    // never checked its own result, so "Session rescheduled" showed
+    // regardless of whether the write actually succeeded or silently
+    // double-booked the clinician. minute is preserved from the existing
+    // row - this modal only ever lets someone change the hour, and the
+    // update below never touches `minute`.
+    const fresh = await fetchFreshConflict(
+      { employeeId: rescheduleTarget.employee_id, dateStr: proposeDate, hour: proposeHour, minute: rescheduleTarget.minute },
+      rescheduleTarget.id,
+    );
+    if (fresh) {
+      setRescheduleSaving(false);
+      setRescheduleError("That slot was just booked by someone else - pick another time.");
+      return;
     }
+    const { error: err } = await supabase.from("sessions").update({
+      session_date: proposeDate,
+      hour: proposeHour,
+    }).eq("id", rescheduleTarget.id);
+    setRescheduleSaving(false);
+    if (err) { setRescheduleError("Reschedule failed. Please try again."); return; }
+    refreshBookings();
+    showToast("Session rescheduled");
     setRescheduleTarget(null);
   }
 
@@ -2540,7 +2559,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                   <>
                     <button title={isAdminOrScheduler ? "Reschedule" : "Propose reschedule"}
                       aria-label={isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"}
-                      onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); }}
+                      onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); setRescheduleError(null); }}
                       style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 14 }}>✎</button>
                     {isAdminOrScheduler && (
                       <button title="Cancel" aria-label="Cancel session" onClick={async () => {
@@ -2563,14 +2582,14 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
         const client = clients.find(c => c.id === rescheduleTarget.client_id);
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div ref={rescheduleTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"} style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 380, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div ref={rescheduleTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 380, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: COLORS.text, marginBottom: 4 }}>
-                {isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"}
+                Reschedule session
               </div>
               <div style={{ fontSize: 13, color: COLORS.textS, marginBottom: 20 }}>
                 {client?.name} · {rescheduleTarget.type}
-                {!isAdminOrScheduler && <div style={{ marginTop: 6, padding: "8px 10px", borderRadius: 8, background: COLORS.bgS, fontSize: 12, color: COLORS.textT }}>Your request will be sent to the scheduler for approval.</div>}
               </div>
+              {rescheduleError && <div style={{ fontSize: 12, color: "#A32D2D", marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: "#FCEBEB" }}>{rescheduleError}</div>}
               <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, color: COLORS.textT, marginBottom: 4 }}>New date</div>
@@ -2586,11 +2605,11 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={submitReschedule}
-                  style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
-                  {isAdminOrScheduler ? "Confirm" : "Send request"}
+                <button onClick={submitReschedule} disabled={rescheduleSaving}
+                  style={{ flex: 1, padding: "8px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: rescheduleSaving ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 500, opacity: rescheduleSaving ? 0.7 : 1 }}>
+                  {rescheduleSaving ? "Saving…" : "Confirm"}
                 </button>
-                <button onClick={() => setRescheduleTarget(null)}
+                <button onClick={() => { setRescheduleTarget(null); setRescheduleError(null); }} disabled={rescheduleSaving}
                   style={{ padding: "8px 16px", borderRadius: 8, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 14 }}>
                   Cancel
                 </button>
