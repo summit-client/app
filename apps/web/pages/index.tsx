@@ -240,7 +240,7 @@ export default function Home() {
                     there's no conditional-render flash to match either;
                     Features further down the page covers the same three
                     claims as plain, static content. */}
-                <div className="hero-pills">
+                <div className="hero-pills" aria-hidden="true">
                   {PILLS.map((p, i) => (
                     <FeaturePill key={p.title} progress={scrollYProgress} index={i} {...p} />
                   ))}
@@ -283,8 +283,10 @@ export default function Home() {
             </div>
 
             {/* Right: calendar rotates in place (desktop only - flat and
-                static on mobile, see the staticScene note above heroRef) */}
-            <motion.div style={{
+                static on mobile, see the staticScene note above heroRef).
+                Purely illustrative - hidden from assistive tech so a screen
+                reader doesn't read out a fake week of mock session names. */}
+            <motion.div aria-hidden="true" style={{
               rotateX: staticScene ? 0 : rotateX,
               rotateY: staticScene ? 0 : rotateY,
               scale: staticScene ? 1 : calScale,
@@ -427,7 +429,7 @@ export default function Home() {
                 padding: '1.75rem', border: `1px solid ${g100}`,
                 transitionDelay: `${(i % 3) * 90}ms`,
               }}>
-                <div style={{
+                <div aria-hidden="true" style={{
                   width: 46, height: 46, borderRadius: 12, background: grad,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '1.1rem', fontSize: '1.25rem',

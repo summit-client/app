@@ -14,6 +14,30 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Summit brand palette - the same literal hex values pages/index.tsx's
+     own consts (`navy`/`teal`/`g100`/`g500`/`g700`/`off`) already use, and
+     the landing page's inline styles still read from those JS consts
+     rather than these tokens - retrofitting that is a larger, separate
+     change. These exist so anything CSS-only (the auth pages below, and
+     any future CSS-based work) has one canonical source instead of a third
+     copy of the same hex codes. Text-use teal (`--brand-teal-ink`) is
+     already darkened from the decorative `--brand-teal` for WCAG AA at
+     small sizes - see the identical note in index.tsx.
+     Colours only, unchanged from what already ships. */
+  --brand-navy: #1A3F5C;
+  --brand-teal: #28B4A6;
+  --brand-teal-2: #21798A;
+  --brand-teal-ink: #1C7A70;
+  --brand-gray-100: #EEF3F6;
+  --brand-gray-500: #57748A;
+  --brand-gray-700: #3D5A6A;
+  --brand-off: #F7FAFB;
+  --brand-error: #B3261E;
+  --brand-error-bg: #FDECEC;
+  --brand-error-border: #F5C6C6;
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'Hanken Grotesk', sans-serif;
 }
 
 html,
@@ -39,6 +63,18 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Site-wide keyboard focus indicator. Nothing here ever removed the
+   browser default outline, so keyboard focus was never literally invisible
+   - but the default varies by browser (a plain blue halo in some, barely
+   visible against light backgrounds in others) and nothing on-brand was
+   defined. More specific rules (`.auth-input:focus-visible` etc.) still win
+   on specificity, so this only fills the gap for plain links/buttons that
+   don't have their own - the public nav's links, the marquee, footer links. */
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--brand-teal);
+  outline-offset: 2px;
 }
 
 /* ── Landing page additions ── */
@@ -249,4 +285,119 @@ html { scroll-behavior: smooth; }
     opacity: 1 !important;
     transform: none !important;
   }
+}
+
+/* ── Auth pages (login / signup / forgot-password / update-password) ──
+   Shared by AuthCard and the four page components. Inline styles can't
+   express :focus-visible, :hover or :disabled, so the actual form controls
+   live here instead of following the landing page's inline-style
+   convention - needed for real focus indicators and touch targets. */
+.auth-shell {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 6rem 1.5rem 3rem; background: var(--brand-off);
+  font-family: var(--font-body);
+}
+.auth-card {
+  width: 100%; max-width: 400px;
+  display: flex; flex-direction: column; gap: 1.5rem;
+  background: #fff; border: 1px solid var(--brand-gray-100); border-radius: 16px;
+  padding: 2.25rem 2rem;
+  box-shadow: 0 24px 64px rgba(26,63,92,.10), 0 4px 16px rgba(26,63,92,.05);
+}
+.auth-title {
+  font-family: var(--font-display); font-size: 1.5rem; font-weight: 800;
+  color: var(--brand-navy); margin: 0 0 .4rem;
+}
+.auth-subtitle { font-size: .9rem; color: var(--brand-gray-500); margin: 0; line-height: 1.5; }
+
+.auth-form { display: flex; flex-direction: column; gap: 1.15rem; }
+.auth-field { display: flex; flex-direction: column; gap: .4rem; }
+.auth-label {
+  font-family: var(--font-display); font-size: .82rem; font-weight: 700;
+  color: var(--brand-gray-700);
+}
+.auth-input-wrap { position: relative; display: flex; }
+.auth-input {
+  width: 100%; padding: .75rem .85rem; font-size: .95rem;
+  border: 1px solid #D7E1E7; border-radius: 8px;
+  font-family: var(--font-body); color: var(--brand-navy); background: #fff;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.auth-input::placeholder { color: var(--brand-gray-500); }
+.auth-input-wrap:has(.auth-toggle-visibility) .auth-input { padding-right: 2.5rem; }
+.auth-input:focus-visible {
+  outline: none; border-color: var(--brand-teal);
+  box-shadow: 0 0 0 3px rgba(40,180,166,.18);
+}
+.auth-input[aria-invalid="true"] { border-color: var(--brand-error); }
+.auth-input[aria-invalid="true"]:focus-visible {
+  border-color: var(--brand-error); box-shadow: 0 0 0 3px rgba(179,38,30,.14);
+}
+.auth-field-error {
+  font-size: .78rem; color: var(--brand-error); margin: 0;
+  display: flex; gap: .35rem; align-items: flex-start; line-height: 1.4;
+}
+.auth-form-error {
+  font-size: .85rem; color: var(--brand-error); background: var(--brand-error-bg);
+  border: 1px solid var(--brand-error-border); border-radius: 8px;
+  padding: .7rem .85rem; margin: 0; line-height: 1.5;
+}
+.auth-form-success {
+  font-size: .85rem; color: #1E6B3E; background: #EAF7EF;
+  border: 1px solid #C8E9D4; border-radius: 8px;
+  padding: .7rem .85rem; margin: 0; line-height: 1.5;
+}
+
+.auth-toggle-visibility {
+  position: absolute; right: .35rem; top: 50%; transform: translateY(-50%);
+  width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; cursor: pointer;
+  color: var(--brand-gray-500);
+}
+.auth-toggle-visibility:hover { color: var(--brand-navy); background: var(--brand-gray-100); }
+.auth-toggle-visibility:focus-visible {
+  outline: 2px solid var(--brand-teal); outline-offset: 1px;
+}
+
+.auth-submit {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: .55rem;
+  padding: .85rem 1rem; border: none; border-radius: 8px;
+  background: linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%);
+  color: #fff; font-family: var(--font-display); font-weight: 700; font-size: .95rem;
+  cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+}
+.auth-submit:hover:not(:disabled) {
+  transform: translateY(-1px); box-shadow: 0 8px 20px rgba(26,63,92,.25);
+}
+.auth-submit:focus-visible { outline: 2px solid var(--brand-navy); outline-offset: 2px; }
+.auth-submit:disabled { cursor: not-allowed; opacity: .72; }
+
+.auth-spinner {
+  width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+  animation: auth-spin .7s linear infinite;
+}
+@keyframes auth-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .auth-spinner { animation-duration: 1.4s; }
+}
+
+.auth-links {
+  display: flex; flex-wrap: wrap; gap: .5rem 1rem; justify-content: space-between;
+  font-size: .82rem; color: var(--brand-gray-500);
+}
+.auth-link { color: var(--brand-teal-ink); font-weight: 600; }
+.auth-link:hover { text-decoration: underline; }
+.auth-link:focus-visible { outline: 2px solid var(--brand-teal); outline-offset: 2px; border-radius: 2px; }
+
+.auth-back-link {
+  font-size: .85rem; color: var(--brand-gray-500); font-weight: 500;
+  display: inline-flex; align-items: center; gap: .35rem; align-self: flex-start;
+}
+.auth-back-link:hover { color: var(--brand-navy); }
+.auth-back-link:focus-visible { outline: 2px solid var(--brand-teal); outline-offset: 2px; border-radius: 2px; }
+
+@media (max-width: 520px) {
+  .auth-shell { padding: 5rem 1rem 2.5rem; }
+  .auth-card { padding: 1.75rem 1.35rem; }
 }
