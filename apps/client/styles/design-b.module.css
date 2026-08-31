@@ -386,7 +386,9 @@
   gap: 12px;
 }
 
-.apptEmpty {
+/* Shared empty/error-state box - appointments, progress and updates all
+   need the exact same "nothing here" / "couldn't load this" treatment. */
+.emptyBox {
   padding: 24px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -419,6 +421,109 @@
   gap: 12px;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* pages/progress.tsx - goals grouped by domain, each domain its own
+   section heading over a list of goal cards. Reuses .filters/.filterButton
+   (defined above for the appointments filter tabs) for its status filter -
+   same chip pattern, not a second one. */
+.domainSection {
+  margin-bottom: 26px;
+}
+
+.domainSection:last-child {
+  margin-bottom: 0;
+}
+
+.domainHeading {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.goalList {
+  display: grid;
+  gap: 10px;
+}
+
+.goalCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.goalName {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* pages/updates.tsx - full session-notes history, reverse chronological.
+   Each entry is a full-width card rather than a compact row, since the
+   body text (the clinical team's family-facing summary) is the point. */
+.updateList {
+  display: grid;
+  gap: 14px;
+}
+
+.updateCard {
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.updateCardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.updateDate {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.updateBody {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.noteBadge {
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.noteBadgeSigned {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.noteBadgeCountersigned {
+  color: var(--good);
+  background: var(--good-soft);
 }
 
 @media (max-width: 1100px) {

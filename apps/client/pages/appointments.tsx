@@ -125,11 +125,11 @@ export default function Appointments(
 
         <section className={styles.apptList}>
           {sessionsError ? (
-            <div className={styles.apptEmpty}>
+            <div className={styles.emptyBox}>
               Couldn&apos;t load your appointments. Try refreshing the page.
             </div>
           ) : filteredSessions.length === 0 ? (
-            <div className={styles.apptEmpty}>No appointments scheduled.</div>
+            <div className={styles.emptyBox}>No appointments scheduled.</div>
           ) : (
             filteredSessions.map((session) => {
               const status = normalizeStatus(session.status, session.session_date, todayDateStr);
