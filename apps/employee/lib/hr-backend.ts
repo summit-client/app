@@ -129,9 +129,35 @@ export class ProvisioningError extends Error {
   }
 }
 
+/**
+ * supabase-js's own FunctionsHttpError hardcodes its .message to "Edge
+ * Function returned a non-2xx status code" regardless of what the function
+ * actually said - the real reason only lives in error.context, the raw
+ * Response, unread. describe() (below) only ever looked at .message, so
+ * every invite-teammate/edit-teammate rejection - wrong role, no clinic,
+ * rate-limited, an inviteUserByEmail failure, whatever it actually was -
+ * reached the screen as that one generic sentence. All three functions
+ * respond with { error: "..." } as JSON (_shared/auth.ts's json() helper),
+ * so read it back the same way.
+ */
+async function describeFunctionError(error: unknown): Promise<string> {
+  const context = (error as { context?: unknown } | null)?.context;
+  if (context instanceof Response) {
+    try {
+      const body: unknown = await context.clone().json();
+      if (body && typeof body === "object" && "error" in body) {
+        return String((body as { error: unknown }).error);
+      }
+    } catch {
+      // not JSON, or already consumed - fall through to the generic message
+    }
+  }
+  return describe(error);
+}
+
 async function invoke(fn: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { data, error } = await sb().functions.invoke(fn, { body });
-  if (error) throw new ProvisioningError(fn, describe(error));
+  if (error) throw new ProvisioningError(fn, await describeFunctionError(error));
   const result = (data ?? {}) as Record<string, unknown>;
   if (result.error) throw new ProvisioningError(fn, String(result.error));
   return result;
