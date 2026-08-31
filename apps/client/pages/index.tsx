@@ -24,6 +24,7 @@ type DashboardProps = {
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
+  sessionsCount: number;
   sessionsError: boolean;
   programs: DashboardProgram[];
   programsError: boolean;
@@ -142,16 +143,27 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // day, not the UTC server's - see lib/clinic-date.ts for why that
   // mattered here specifically.
   const todayDateStr = clinicTodayDateStr();
-  const { data: sessions, error: sessionsError } = await supabase
+  // { count: "exact" } so `sessionsCount` below is the true number of
+  // upcoming sessions, not just how many fit in this capped preview list -
+  // the "Sessions / Upcoming" stat tile used to read `sessions.length`
+  // directly, which is this same query's own .limit(5) result: a family
+  // with 6+ upcoming sessions saw a tile permanently stuck at "5" no
+  // matter how many they actually had booked. PostgREST returns the exact
+  // total alongside the limited page in one round trip, so this doesn't
+  // need a second query.
+  const { data: sessions, error: sessionsError, count: sessionsCount } = await supabase
     .from("sessions")
-    .select(`
+    .select(
+      `
       id,
       hour,
       minute,
       type,
       session_date,
       status
-    `)
+    `,
+      { count: "exact" }
+    )
     .eq("client_id", viewed.clientId)
     .gte("session_date", todayDateStr)
     .neq("status", "cancelled")
@@ -217,6 +229,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       familyName,
       clientName: viewed.clientName || "Client",
       sessions: (sessions ?? []) as DashboardSession[],
+      sessionsCount: sessionsCount ?? (sessions ?? []).length,
       sessionsError: Boolean(sessionsError),
       programs: sortProgramsForFamily((programs ?? []) as DashboardProgram[]),
       programsError: Boolean(programsError),

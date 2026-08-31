@@ -57,6 +57,7 @@ type DesignBProps = {
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
+  sessionsCount: number;
   sessionsError: boolean;
   programs: DashboardProgram[];
   programsError: boolean;
@@ -186,6 +187,7 @@ export default function DesignB({
   familyName,
   clientName,
   sessions,
+  sessionsCount,
   sessionsError,
   programs,
   programsError,
@@ -243,8 +245,11 @@ export default function DesignB({
                   {/* "—" (matching ComingSoonMetric's own convention for
                       "we don't actually have this number") rather than 0 -
                       a failed fetch and a genuinely empty schedule aren't
-                      the same fact and shouldn't render identically. */}
-                  {sessionsError ? "—" : sessions.length}
+                      the same fact and shouldn't render identically.
+                      sessionsCount, not sessions.length - the list below
+                      is capped to a handful for the preview, but the tile
+                      should show the true upcoming count. */}
+                  {sessionsError ? "—" : sessionsCount}
                 </div>
 
                 <div className={styles.metricLabel}>
