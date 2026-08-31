@@ -107,7 +107,7 @@ function NewGoalForm({ clientId, onSaved }: { clientId: number; onSaved: (p: Pro
   };
 
   return (
-    <div className="card card-pad" style={{ marginTop: 16, display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+    <div className="card card-pad two-col-grid" style={{ marginTop: 16 }}>
       <div className="field" style={{ gridColumn: "1 / -1" }}>
         <label htmlFor="g-name">Goal name</label>
         <input id="g-name" className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Mand for break" />
