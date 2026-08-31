@@ -294,7 +294,7 @@ export default function Home() {
               </div>
 
               <FadeOut progress={scrollYProgress} start={0.22} active={!staticScene}>
-                <div className="an5" style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
+                <div className="an5 hero-stats" style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
                   {/* One stat per part of the platform, not three about the
                       calendar. "1" is the actual claim being made: the session
                       is recorded once and the note, the graph, the family

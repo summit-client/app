@@ -426,7 +426,16 @@ html { scroll-behavior: smooth; }
    Deliberately not cards. Thirteen rows of two short values each is exactly
    what a table is for, and boxing every row would triple the height while
    making the columns harder to compare down. */
-.compare-wrap { overflow-x: auto; }
+.compare-wrap {
+  overflow-x: auto;
+  /* max-width pins the scroller to its parent. Without it the table's
+     min-width stretched this wrapper instead of scrolling inside it, and the
+     whole PAGE scrolled sideways at 375px — measured at scrollWidth 512
+     against a 375 viewport, with the table as the confirmed cause.
+     -webkit-overflow-scrolling keeps the momentum scroll on iOS. */
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
 
 .compare {
   width: 100%;
@@ -494,4 +503,15 @@ html { scroll-behavior: smooth; }
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+
+/* Hero stats. Three short figures that read as one row. At 2.5rem apart they
+   wrapped 2-then-1 below ~430px, leaving the third stranded under a gap wide
+   enough to read as a mistake. Tightened so all three hold one line, and the
+   figures step down with it rather than the row breaking. */
+@media (max-width: 520px) {
+  .hero-stats { gap: 1.25rem !important; }
+  .hero-stats > div > div:first-child { font-size: 1.25rem; }
+  .hero-stats > div > div:last-child { font-size: .7rem; }
 }
