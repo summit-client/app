@@ -242,10 +242,15 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Custom invite email (supabase/templates/invite.html) - replaces the
+# platform default's bare, unbranded "You have been invited"/"Accept the
+# invite" text. See that file's header comment and docs/context/
+# environments.md's "Supabase Edge Functions" section for how this actually
+# reaches the live project - `config.toml` alone does not, until CLI's
+# declarative config push has been confirmed working for it.
+[auth.email.template.invite]
+subject = "You're invited to Summit"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
