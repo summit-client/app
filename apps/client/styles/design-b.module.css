@@ -38,15 +38,14 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* Sizes the mark and nothing else. This used to draw a 38px tinted rounded
+   square behind a ▲ character, which the character needed and a logo does not:
+   a mark set on its own tinted tile reads as an icon button rather than as
+   identity, and the other portals set theirs bare. */
 .brandMark {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border-radius: 11px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  font-weight: 900;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
 }
 
 .brand strong {

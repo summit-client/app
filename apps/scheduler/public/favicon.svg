@@ -1,15 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Summit mark: three peaks under an ascending data line (simplified for favicon sizes) -->
-  <polygon points="32,10 54,50 10,50" fill="#31b39c"/>
-  <polygon points="18,27 34,58 2,58" fill="#27a8c8"/>
-  <polygon points="34,22 52,58 16,58" fill="#155e87"/>
-  <polygon points="49,31 62,58 36,58" fill="#1e87b9"/>
-  <g stroke="#0f8fa0" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- The Summit mark: three peaks under an ascending data line, drawn as
+       vector rather than as a downscaled copy of the raster asset. At 16px a
+       purpose-drawn shape stays legible where a resampled photo turns to mush.
+       Colours sampled directly from the real mark so the two match:
+       #26b6c1 left, #3fbdaf back, #113a4c centre front, #145e7b right,
+       #2ab2aa data line. -->
+  <polygon points="32,10 54,50 10,50" fill="#3fbdaf"/>
+  <polygon points="18,27 34,58 2,58" fill="#26b6c1"/>
+  <polygon points="34,22 52,58 16,58" fill="#113a4c"/>
+  <polygon points="49,31 62,58 36,58" fill="#145e7b"/>
+  <g stroke="#2ab2aa" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="5,42 16,27 24,33 33,13"/>
     <polyline points="41,26 48,20 56,32"/>
   </g>
-  <polygon points="33,4 39,15 27,15" fill="#18a4a4"/>
-  <circle cx="5" cy="42" r="3.2" fill="#27a8c8"/>
-  <circle cx="48" cy="20" r="3.2" fill="#1e87b9"/>
-  <circle cx="56" cy="32" r="3.2" fill="#155e87"/>
+  <polygon points="33,4 39,15 27,15" fill="#2ab2aa"/>
+  <circle cx="5" cy="42" r="3.2" fill="#26b6c1"/>
+  <circle cx="24" cy="33" r="3.2" fill="#26b6c1"/>
+  <circle cx="41" cy="26" r="3.2" fill="#145e7b"/>
+  <circle cx="56" cy="32" r="3.2" fill="#113a4c"/>
 </svg>

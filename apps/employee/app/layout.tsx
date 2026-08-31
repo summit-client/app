@@ -77,11 +77,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
-              <svg className="brand-mark" viewBox="0 0 32 28" fill="none" aria-hidden>
-                <polygon points="16,2 26,22 6,22" fill="var(--logo-1)" opacity="0.9" />
-                <polygon points="8,8 16,22 0,22" fill="var(--logo-2)" opacity="0.85" />
-                <polygon points="24,8 32,22 16,22" fill="var(--logo-3)" opacity="0.8" />
-              </svg>
+              {/* The real Summit mark. This was three flat <polygon> triangles
+                  filled with --logo-1/2/3, a placeholder for an asset that did
+                  not exist yet. 6.5 KB, transparent, and the same file the
+                  marketing site's header uses, so the product and the site
+                  finally show the same logo. width/height are explicit so the
+                  sidebar does not shift while it loads. */}
+              <img
+                src="/summit-mark-64.png" alt="" width={28} height={28}
+                className="brand-mark"
+                style={{ display: "block", flexShrink: 0, width: 28, height: 28 }}
+              />
               <div className="brand-text">
                 <div className="brand-name">MySummitHR</div>
                 <div className="brand-sub">Employee</div>
