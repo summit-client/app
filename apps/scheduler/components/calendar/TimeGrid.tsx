@@ -340,6 +340,16 @@ function DayColumn({
   // this element, and silently swallow every empty-slot click. (Confirmed:
   // that guard meant onSlotClick never fired at all - click-to-create was
   // dead on arrival until this fix.)
+  // ACCESSIBILITY GAP, not fixed this session - see BLOCKED-scheduler.md.
+  // Click-to-create derives the target time from e.clientY, a continuous
+  // pixel position with no discrete, focusable element per slot - there is
+  // currently no way to reach a specific time in this column, or trigger
+  // click-to-create at all, from the keyboard. Fixing that properly means
+  // giving this column real per-slot focus targets (or an equivalent
+  // keyboard path into the same onSlotClick), which changes how the whole
+  // grid renders and needs verifying in a browser - this sandbox still has
+  // no Supabase credentials to render the app live, the same limitation the
+  // last calendar-v2 pass hit (see CLAUDE.md).
   function handleColClick(e: React.MouseEvent) {
     const { hour, minute } = timeFromY(e.clientY);
     onSlotClick(dateStr, hour, minute);

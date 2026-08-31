@@ -10,6 +10,7 @@ import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 import { refreshUrl } from "@summit/portals";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../lib/checkSlotConflict";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -196,6 +197,15 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
     setSelected(prev => { const n = new Set(prev); dragRef.current.mode === "remove" ? n.delete(key) : n.add(key); return n; });
   }
   function handleMouseUp() { dragRef.current.active = false; }
+  // Drag-select has no keyboard equivalent, and these cells were plain divs
+  // with no tabIndex/role/keydown handler at all - a keyboard-only user
+  // could not reach or toggle a single slot here. A single-slot toggle (no
+  // drag-range semantics) is the reasonable keyboard equivalent.
+  function handleKeyToggle(e, key) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -225,6 +235,8 @@ function AvailabilityGrid({ entityId, entityType, existingAvailability, onSave, 
             {AVAIL_DAYS.map(day => {
               const key = `${day}-${t}`, on = selected.has(key);
               return <div key={key} onMouseDown={() => handleMouseDown(key)} onMouseEnter={() => handleMouseEnter(key)}
+                role="checkbox" aria-checked={on} aria-label={`${day} ${t}`} tabIndex={0}
+                onKeyDown={(e) => handleKeyToggle(e, key)}
                 style={{ height: 14, borderRadius: 2, cursor: "pointer", background: on ? "#5DCAA5" : COLORS.bgT, border: `0.5px solid ${on ? "#5DCAA544" : COLORS.border}`, transition: "background 0.05s" }} />;
             })}
           </>
@@ -556,8 +568,8 @@ function GroupSessionCard({ items, sessionTypeName, maxClients, accepted, onAcce
           )}
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-          <button onClick={() => onAccept(r.key, r.match, r.item)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isA ? "#5DCAA5" : "#E1F5EE", color: isA ? "#fff" : "#0F6E56" }}>✓</button>
-          <button onClick={() => onReject(r.key)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isR ? "#E24B4A" : "#FCEBEB", color: isR ? "#fff" : "#A32D2D" }}>✕</button>
+          <button aria-label={`Accept ${r.item.clientName} · ${r.match?.staffName || "this match"}`} onClick={() => onAccept(r.key, r.match, r.item)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isA ? "#5DCAA5" : "#E1F5EE", color: isA ? "#fff" : "#0F6E56" }}>✓</button>
+          <button aria-label={`Reject ${r.item.clientName} · ${r.match?.staffName || "this match"}`} onClick={() => onReject(r.key)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isR ? "#E24B4A" : "#FCEBEB", color: isR ? "#fff" : "#A32D2D" }}>✕</button>
         </div>
       </div>
     );
@@ -633,8 +645,8 @@ function ClientMatchCard({ item, accepted, onAccept, onReject, typeColors }) {
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button onClick={() => onAccept(key, m, item)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isA ? "#5DCAA5" : "#E1F5EE", color: isA ? "#fff" : "#0F6E56" }}>✓</button>
-                    <button onClick={() => onReject(key)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isR ? "#E24B4A" : "#FCEBEB", color: isR ? "#fff" : "#A32D2D" }}>✕</button>
+                    <button aria-label={`Accept ${m.staffName}`} onClick={() => onAccept(key, m, item)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isA ? "#5DCAA5" : "#E1F5EE", color: isA ? "#fff" : "#0F6E56" }}>✓</button>
+                    <button aria-label={`Reject ${m.staffName}`} onClick={() => onReject(key)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: isR ? "#E24B4A" : "#FCEBEB", color: isR ? "#fff" : "#A32D2D" }}>✕</button>
                   </div>
                 </div>
               );
@@ -1230,6 +1242,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [editingCalId, setEditingCalId] = useState(null);
   const [editingCalName, setEditingCalName] = useState("");
   const [hoveredCalId, setHoveredCalId] = useState(null);
+  // The Confirm/rename/archive buttons below were only ever revealed on
+  // mouse hover - a keyboard-only user tabbing to a calendar pill had no way
+  // to make them appear at all, so they were unreachable by keyboard.
+  const [focusedCalId, setFocusedCalId] = useState(null);
 
   const [selectedCalendar, setSelectedCalendar] = useState(null);
   const [showNewCal, setShowNewCal] = useState(false);
@@ -1287,6 +1303,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [pendingConflict]);
+  const pendingConflictTrapRef = useFocusTrap(!!pendingConflict);
   useEffect(() => {
     if (!prefill) return;
     // Prefer an active calendar over a draft one - a draft's sessions are
@@ -1920,7 +1937,7 @@ finally { setLoading(false); }
         {pendingConflict && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={e => { if (e.target === e.currentTarget) setPendingConflict(null); }}>
-            <div style={{ width: 380, background: COLORS.bg, borderRadius: 14, padding: "24px 26px", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
+            <div ref={pendingConflictTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Scheduling conflict" style={{ width: 380, background: COLORS.bg, borderRadius: 14, padding: "24px 26px", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.text, marginBottom: 6 }}>Scheduling conflict</div>
               <p style={{ fontSize: 13, color: COLORS.textS, margin: "0 0 14px" }}>{pendingConflict.message}</p>
               {pendingConflict.suggestions.length > 0 && (
@@ -1965,14 +1982,20 @@ finally { setLoading(false); }
           {calendars.filter(c => c.status !== "archived").map(cal => {
             const isSelected = selectedCalendar?.id === cal.id;
             const isEditing = editingCalId === cal.id;
-            const isHovered = hoveredCalId === cal.id;
+            const isHovered = hoveredCalId === cal.id || focusedCalId === cal.id;
             const isDraft = cal.status === "draft";
             const color = cal.status === "active" ? "#5DCAA5" : "#378ADD";
             return (
               <div key={cal.id} style={{ position: "relative", display: "inline-block" }}
                 onMouseEnter={() => setHoveredCalId(cal.id)}
-                onMouseLeave={() => setHoveredCalId(null)}>
+                onMouseLeave={() => setHoveredCalId(null)}
+                onFocus={() => setFocusedCalId(cal.id)}
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusedCalId(null); }}>
                 <div onClick={() => !isEditing && setSelectedCalendar(cal)}
+                  tabIndex={0}
+                  role="button"
+                  aria-pressed={isSelected}
+                  onKeyDown={e => { if (!isEditing && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setSelectedCalendar(cal); } }}
                   style={{ padding: "11px 18px", borderRadius: 10, border: `1.5px solid ${isSelected ? color : COLORS.border}`, background: isSelected ? color + "18" : COLORS.bg, cursor: "pointer", minWidth: 130, transition: "all 0.15s" }}>
                   {isEditing ? (
                     <input autoFocus value={editingCalName} onChange={e => setEditingCalName(e.target.value)}
@@ -1995,9 +2018,9 @@ finally { setLoading(false); }
                         Confirm
                       </button>
                     )}
-                    <button onClick={e => { e.stopPropagation(); setEditingCalId(cal.id); setEditingCalName(cal.name); }}
+                    <button aria-label={`Rename ${cal.name}`} onClick={e => { e.stopPropagation(); setEditingCalId(cal.id); setEditingCalName(cal.name); }}
                       style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✎</button>
-                    <button onClick={e => { e.stopPropagation(); archiveCalendar(cal.id); }}
+                    <button aria-label={`Archive ${cal.name}`} onClick={e => { e.stopPropagation(); archiveCalendar(cal.id); }}
                       style={{ width: 24, height: 24, borderRadius: 6, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)" }}>✕</button>
                   </div>
                 )}
@@ -2289,6 +2312,15 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   const [selected, setSelected] = useState(new Set());
   const [cancelling, setCancelling] = useState(false);
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  // This modal had no Escape-to-close at all (every other modal in this
+  // wizard does) - only its own Cancel button closed it.
+  useEffect(() => {
+    if (!rescheduleTarget) return;
+    const onKey = e => { if (e.key === "Escape") setRescheduleTarget(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [rescheduleTarget]);
+  const rescheduleTrapRef = useFocusTrap(!!rescheduleTarget);
   const [proposeDay, setProposeDay] = useState("Mon");
   const [proposeHour, setProposeHour] = useState(9);
   const [proposeDate, setProposeDate] = useState("");
@@ -2507,10 +2539,11 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                 {!isCancelled && (
                   <>
                     <button title={isAdminOrScheduler ? "Reschedule" : "Propose reschedule"}
+                      aria-label={isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"}
                       onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); }}
                       style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 14 }}>✎</button>
                     {isAdminOrScheduler && (
-                      <button title="Cancel" onClick={async () => {
+                      <button title="Cancel" aria-label="Cancel session" onClick={async () => {
                         if (!confirm(lateCancel ? `Within the ${CANCEL_HOURS}-hour window. Cancel anyway?` : "Cancel this session?")) return;
                         const { error: err } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id);
                         refreshBookings();
@@ -2530,7 +2563,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
         const client = clients.find(c => c.id === rescheduleTarget.client_id);
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 380, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div ref={rescheduleTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"} style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 380, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: COLORS.text, marginBottom: 4 }}>
                 {isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"}
               </div>
@@ -2656,6 +2689,14 @@ export default function Scheduler() {
   // looking at (the calendar) never actually goes anywhere - it's just
   // covered by the popup until this closes.
   const [calendarPrefill, setCalendarPrefill] = useState(null);
+  // Click-to-create's quick-slot wizard modal had no Escape-to-close.
+  useEffect(() => {
+    if (!calendarPrefill) return;
+    const onKey = e => { if (e.key === "Escape") setCalendarPrefill(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [calendarPrefill]);
+  const calendarPrefillTrapRef = useFocusTrap(!!calendarPrefill);
   function requestCreateAt(dateStr, hour, minute) {
     setCalendarPrefill({ dateStr, hour, minute });
   }
@@ -2726,6 +2767,11 @@ export default function Scheduler() {
           }}
         >
           <div
+            ref={calendarPrefillTrapRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Create session"
             onClick={e => e.stopPropagation()}
             style={{
               width: "min(560px, 96vw)", maxHeight: "92vh", overflowY: "auto",

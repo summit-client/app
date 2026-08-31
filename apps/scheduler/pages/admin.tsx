@@ -3,6 +3,7 @@ import { supabase } from '@summit/db';
 import { useContext } from 'react';
 import { UserContext } from '../lib/UserContext';
 import Sidebar from '../components/Sidebar';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 type Tab = 'staff' | 'clients';
 
@@ -75,6 +76,18 @@ export default function AdminPage() {
   const [editForm, setEditForm] = useState<Partial<Staff & Client>>({});
 
   useEffect(() => { fetchAll(); }, []);
+
+  // This modal had neither Escape-to-close nor any keyboard focus
+  // containment - closing only worked via the outside-click handler already
+  // on the overlay div below, or the Cancel button, so Tab could walk focus
+  // straight out into the page underneath while it was open.
+  useEffect(() => {
+    if (!showModal) return;
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') handleModalClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showModal]);
+  const modalTrapRef = useFocusTrap<HTMLDivElement>(showModal);
 
 async function fetchAll() {
   setLoading(true);
@@ -555,7 +568,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       {/* Modal */}
       {showModal && (
         <div style={s.overlay} onClick={e => e.target === e.currentTarget && handleModalClose()}>
-          <div style={s.modal}>
+          <div ref={modalTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={tab === 'staff' ? 'Add Staff Member' : 'Add Client'} style={s.modal}>
             <h2 style={s.modalTitle}>
               {tab === 'staff' ? 'Add Staff Member' : 'Add Client'}
             </h2>

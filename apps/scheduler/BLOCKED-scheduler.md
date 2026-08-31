@@ -107,7 +107,37 @@ has no session types configured yet (shouldn't happen post-`0019`, which
 seeds a default set per clinic, but kept as a defensive fallback rather
 than an empty dropdown).
 
-## 5. `apps/scheduler/dump.txt` and `index_dump.txt`
+## 5. Click-to-create's calendar grid has no keyboard path of its own
+
+**Accessibility finding, not fixed this session - marked with a comment at
+the definition.** `TimeGrid.tsx`'s `DayColumn.handleColClick` derives the
+target time from `e.clientY`, a continuous pixel Y position with no
+discrete, focusable element per time slot. There is currently no way to
+invoke click-to-create, or reach a specific time in the grid, from the
+keyboard.
+
+This is real, but narrower than "you can't book a session by keyboard":
+the Create wizard (the `calendar` -> `matchCount` -> ... -> time-picker
+steps in `pages/index.jsx`) is a fully keyboard-operable path to the same
+outcome that doesn't touch the calendar grid at all, and it's the primary
+path this app already steers most bookings through. What's missing is
+specifically click-to-create's shortcut (click an empty slot, get a
+pre-filled quick-create modal). Likewise, drag-to-reschedule uses native
+HTML5 drag-and-drop (mouse-only by definition) but already has a full
+keyboard-operable equivalent: `SessionDetail`'s "Reschedule" button opens
+`RescheduleModal`, which is entirely `<select>`/button-driven.
+
+Not fixed here because doing it properly means giving `TimeGrid` real
+per-slot focusable targets (or some other keyboard path into the same
+`onSlotClick`), which changes how the whole grid renders - a UI-visible
+change to exactly the component CLAUDE.md's "Scheduler calendar v2"
+history already flags as having caused a real, previously-undetected
+regression once (`e.target !== e.currentTarget` silently killing
+click-to-create entirely). This sandbox still has no Supabase credentials
+to render the app and verify a grid change live, the same limitation noted
+for that same component in this repo's own docs.
+
+## 6. `apps/scheduler/dump.txt` and `index_dump.txt`
 
 Pre-existing, unrelated to this pass. `docs/context/environments.md`
 already flags these as tracked-in-git-despite-being-gitignored and
