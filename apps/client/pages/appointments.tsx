@@ -4,9 +4,10 @@ import type {
   NextApiRequest,
   NextApiResponse,
 } from "next";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
+import { CalendarMonth, type CalendarEntry } from "../components/calendar-month";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient } from "../lib/admin-view-as";
 import { clinicTodayDateStr } from "../lib/clinic-date";
@@ -44,11 +45,14 @@ type PageProps =
   | { mode: "error" };
 
 type Filter = "All" | "Scheduled" | "Completed" | "Cancelled";
+type ViewMode = "list" | "calendar";
 
 export default function Appointments(
   props: InferGetServerSidePropsType<typeof getServerSideProps>
 ) {
   const [filter, setFilter] = useState<Filter>("All");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   if (props.mode === "problem") {
     return <AccountProblemNotice problem={props.problem} />;
@@ -68,6 +72,36 @@ export default function Appointments(
             normalizeStatus(session.status, session.session_date, todayDateStr) ===
             filter.toLowerCase()
         );
+
+  // The calendar grid needs every filtered session's derived status for its
+  // colour-coded chips - normalizeStatus() is the single source of truth
+  // for scheduled/completed/cancelled, computed once here rather than
+  // re-derived inside CalendarMonth (which stays presentation-only, no
+  // knowledge of what "completed" means).
+  const calendarEntries: CalendarEntry[] = useMemo(
+    () =>
+      filteredSessions.map((session) => ({
+        id: session.id,
+        session_date: session.session_date,
+        status: normalizeStatus(session.status, session.session_date, todayDateStr),
+        label: `${formatSessionTime(session.hour, session.minute)} ${session.type || "Session"}`,
+      })),
+    [filteredSessions, todayDateStr]
+  );
+
+  // Calendar mode's day-click narrows the list below to just that date, on
+  // top of whatever the status filter already narrowed it to - switching
+  // back to List mode clears the date so it doesn't silently keep
+  // filtering a view where there's no date picker visible to explain why.
+  const visibleSessions =
+    viewMode === "calendar" && selectedDate
+      ? filteredSessions.filter((session) => session.session_date === selectedDate)
+      : filteredSessions;
+
+  function switchView(mode: ViewMode) {
+    setViewMode(mode);
+    setSelectedDate(null);
+  }
 
   return (
     <>
@@ -127,33 +161,78 @@ export default function Appointments(
           </a>
         </header>
 
-        <div className={styles.filters} role="group" aria-label="Filter appointments by status">
-          {(["All", "Scheduled", "Completed", "Cancelled"] as const).map(
-            (option) => (
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+          <div className={styles.filters} role="group" aria-label="Filter appointments by status">
+            {(["All", "Scheduled", "Completed", "Cancelled"] as const).map(
+              (option) => (
+                <button
+                  key={option}
+                  onClick={() => setFilter(option)}
+                  type="button"
+                  aria-pressed={filter === option}
+                  className={`${styles.filterButton} ${
+                    filter === option ? styles.filterButtonActive : ""
+                  }`}
+                >
+                  {option}
+                </button>
+              )
+            )}
+          </div>
+
+          <div className={styles.filters} role="group" aria-label="Switch between list and calendar view">
+            {(["list", "calendar"] as const).map((mode) => (
               <button
-                key={option}
-                onClick={() => setFilter(option)}
+                key={mode}
                 type="button"
-                aria-pressed={filter === option}
+                onClick={() => switchView(mode)}
+                aria-pressed={viewMode === mode}
                 className={`${styles.filterButton} ${
-                  filter === option ? styles.filterButtonActive : ""
+                  viewMode === mode ? styles.filterButtonActive : ""
                 }`}
               >
-                {option}
+                {mode === "list" ? "List" : "Calendar"}
               </button>
-            )
-          )}
+            ))}
+          </div>
         </div>
+
+        {viewMode === "calendar" && !sessionsError && (
+          <CalendarMonth
+            entries={calendarEntries}
+            todayDateStr={todayDateStr}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+          />
+        )}
+
+        {viewMode === "calendar" && selectedDate && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <span style={{ fontSize: 13, color: "#6c8290" }}>
+              Showing {formatSessionDate(selectedDate)} only
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(null)}
+              className={styles.textButton}
+              style={{ fontSize: 13 }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         <section className={styles.apptList}>
           {sessionsError ? (
             <div className={styles.emptyBox}>
               Couldn&apos;t load your appointments. Try refreshing the page.
             </div>
-          ) : filteredSessions.length === 0 ? (
-            <div className={styles.emptyBox}>No appointments scheduled.</div>
+          ) : visibleSessions.length === 0 ? (
+            <div className={styles.emptyBox}>
+              {selectedDate ? "No appointments on this date." : "No appointments scheduled."}
+            </div>
           ) : (
-            filteredSessions.map((session) => {
+            visibleSessions.map((session) => {
               const status = normalizeStatus(session.status, session.session_date, todayDateStr);
               const clinicianName = session.staff?.[0]?.name;
               // Reuses the dashboard's own status pill classes (same
