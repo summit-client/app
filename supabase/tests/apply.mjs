@@ -12,13 +12,14 @@
  * and the seeds satisfy their own constraints.
  */
 import { PGlite } from "@electric-sql/pglite";
+import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const DIR = process.argv[2];
 const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
 
-const db = await PGlite.create();
+const db = await PGlite.create({ extensions: { btree_gist } });
 
 // --- Supabase stubs -------------------------------------------------------
 // auth.users, auth.uid(), and the three API roles. The migrations reference
@@ -42,21 +43,9 @@ await db.exec(`
 `);
 
 let failed = 0;
-const skippedExclusions = [];
 for (const f of files) {
-  let sql = readFileSync(join(DIR, f), "utf8");
+  const sql = readFileSync(join(DIR, f), "utf8");
 
-  // PGlite ships without btree_gist, so the three exclusion constraints that
-  // need it (uuid/bigint `with =` alongside a range `with &&`) cannot be
-  // created here. They are removed for this run and reported separately —
-  // btree_gist IS available on Supabase, so this is an environment limit, not
-  // a defect. Everything else in those files is still executed.
-  if (/btree_gist/.test(sql)) {
-    sql = sql.replace(/create extension if not exists btree_gist;/g, "");
-    sql = sql.replace(
-      /alter table (\w+)\s+drop constraint if exists (\w+);\s*alter table \1\s+add constraint \2\s+exclude using gist \([^;]*?\);/gs,
-      (m, tbl, con) => { skippedExclusions.push(`${tbl}.${con}`); return ""; });
-  }
   try {
     await db.exec(sql);
     console.log(`ok    ${f}`);
@@ -71,8 +60,7 @@ for (const f of files) {
 }
 
 console.log(`\n${files.length - failed}/${files.length} migrations applied`);
-if (skippedExclusions.length)
-  console.log(`exclusion constraints NOT verified here (need btree_gist): ${skippedExclusions.join(", ")}`);
+
 
 if (!failed) {
   const t = await db.query(

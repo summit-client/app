@@ -76,51 +76,64 @@ out to be wrong is a liability that should be visible.
 
 ### Verified, by execution
 
-**All 31 migrations apply from an empty database.** `supabase/tests/apply.mjs`
-runs them in order against PGlite, a real Postgres 18 compiled to WASM, with no
-install required. Result: 85 tables, 11 views, 35 functions, 265 policies.
+All against PGlite — a real Postgres 18 compiled to WASM, no install required.
+`cd supabase/tests && npm test`.
 
-**45 behavioural tests pass.** `supabase/tests/behaviour.mjs` covers permission
-resolution and expiry, the HR/clinical boundary in both directions, the
-append-only event stream, employment constraints, the ESA overtime split, the
-timesheet state machine including refusal of self-approval, rate resolution,
-minimum-wage reporting, budget arithmetic, and the session derivation.
+| Suite | What it covers | Result |
+|---|---|---|
+| `apply.mjs` | Every migration in order against an empty database | **33/33** |
+| `behaviour.mjs` | Permissions, HR boundary, events, employment, ESA overtime, timesheets, rates, budgets, session derivation, provisional-data guards | **51 pass** |
+| `rls.mjs` | Row security actually enforcing, as `authenticated` with a JWT claim | **33 pass** |
+| `packages/workforce/esa.test.ts` | The ESA rules in TypeScript | **16 pass** |
 
-**16 TypeScript tests pass.** `packages/workforce/esa.test.ts`. The overtime
-cases there and in `behaviour.mjs` are deliberately identical, because one rule
-implemented twice is only safe if both are checked against one specification.
+The overtime cases in `behaviour.mjs` and `esa.test.ts` are deliberately
+identical: one rule implemented twice is only safe if both are checked against
+one specification.
+
+`rls.mjs` runs every query as `authenticated` with `set role`, which is what
+makes RLS apply. Its assertions are mostly ROW COUNTS rather than absence of
+errors, because a SELECT blocked by RLS returns an empty set and a blocked
+UPDATE or DELETE matches zero rows and reports success. Only INSERT raises.
 
 ### What running it found
 
-Four defects that reading it had not:
+Six defects that reading it had not. The last two are the ones that mattered.
 
 1. **`profiles.role` is a Postgres enum, not text.** Migration `0021` proves it.
-   The `0000` baseline had it as `text`, which would have produced a database
-   that looked right and rejected `0021`.
-2. **`clients.user_id` was missing from the baseline.** It is what
-   `auth_client_row_id()` reads, so every client-portal RLS policy in `0020`
-   and `0022` depends on it.
-3. **`hr_admin` and `payroll_admin` were unassignable.** `0023` seeded a
-   permission matrix for two roles the enum could not hold — the same
-   unreachable-role situation `0021` describes for `supervisor`. Fixed by
-   `0029`.
+   The `0000` baseline had `text`, which builds a database that looks right and
+   then rejects `0021`.
+2. **`clients.user_id` was missing from the baseline.** `auth_client_row_id()`
+   reads it, so every client-portal policy in `0020` and `0022` rests on it.
+3. **`hr_admin` and `payroll_admin` were unassignable.** `0023` seeded a matrix
+   for two roles the enum could not hold. Fixed by `0029`.
 4. **`budget_entries.session_id` referenced the wrong table**, and
-   `client_sessions` had no link to `sessions` at all. See the header of
-   `0030`; both are corrected there.
+   `client_sessions` had no link to `sessions` at all. Both corrected in `0030`.
+5. **Thirty-nine policies across eight tables were inert.** Migration `0013`
+   writes every policy for `clients`, `staff`, `sessions`, `calendars`,
+   `locations`, `session_types` and both availability tables, and never runs
+   `alter table ... enable row level security`. A policy on a table without row
+   security is not consulted. Fixed by `0031`.
+6. **`profiles` had no policies and no row security**, making
+   `update profiles set role = 'admin' where id = auth.uid()` a straight
+   privilege escalation. Fixed by `0031`, with a trigger for the part RLS
+   cannot express: `profiles_self_update` has to let a person edit their own
+   row, and without the guard that includes their own role.
+
+On 5 and 6, read `0031`'s header before assuming production is open. Migration
+`0014`'s own account of the "empty caseload" bug is only possible if row
+security IS active on `clients` there, so the likely truth is schema drift —
+the repo does not reproduce production — rather than a live hole. `docs/DEPLOY.md`
+step 1 is the query that settles it.
 
 ### Still unverified
 
-- **RLS enforcement.** PGlite runs as the superuser, who bypasses row security.
-  Policies are verified as creatable and their functions tested directly, but
-  whether a policy filters correctly for a given JWT needs a Supabase instance
-  and the psql path in `supabase/tests/README.md`.
-- **The three overlap-exclusion constraints** on `employment_positions`,
-  `pay_periods` and `pay_rates`. They need `btree_gist`, which PGlite does not
-  bundle. Available on Supabase; unproven here.
 - **The `0000` baseline against production.** Two defects in it were caught by
-  the migrations that follow it. That is evidence the method works, not
-  evidence the file is now complete. `pg_dump --schema-only` the eight tables
-  and reconcile before treating a rebuilt database as a restore target.
+  the migrations that follow. That is evidence the method works, not evidence
+  the file is complete. `pg_dump --schema-only` and diff — `docs/DEPLOY.md`
+  step 1.
+- **Production's actual row-security state.** See above.
+- **The applications against a live database.** Every app typechecks and the
+  schema is exercised, but no portal has been signed into against this schema.
 
 ### Known incomplete, deliberately
 

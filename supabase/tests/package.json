@@ -5,7 +5,8 @@
   "scripts": {
     "apply": "node apply.mjs ../migrations",
     "behaviour": "node behaviour.mjs ../migrations",
-    "test": "npm run apply && npm run behaviour"
+    "rls": "node rls.mjs ../migrations",
+    "test": "npm run apply && npm run behaviour && npm run rls"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8"

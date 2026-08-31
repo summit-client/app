@@ -11,17 +11,19 @@
  * rule twice, and the only way that is safe is if both are checked against
  * the same specification.
  *
- * NOT tested here: RLS enforcement. PGlite runs everything as the superuser,
- * who bypasses row security. Policies are verified as *creatable*, and the
- * functions they call are verified directly; whether a policy actually filters
- * for a given JWT needs a Supabase instance.
+ * NOT tested here: RLS enforcement. Everything in this file runs as the
+ * superuser, who bypasses row security, so what it proves about permissions is
+ * about the FUNCTIONS the policies call rather than the policies themselves.
+ * That is deliberate — it keeps these tests about the rules — and rls.mjs
+ * covers the other half by running as `authenticated` with a JWT claim set.
  */
 import { PGlite } from "@electric-sql/pglite";
+import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const DIR = process.argv[2];
-const db = await PGlite.create();
+const db = await PGlite.create({ extensions: { btree_gist } });
 
 await db.exec(`
   create schema if not exists auth;
@@ -36,12 +38,7 @@ await db.exec(`
 `);
 
 for (const f of readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort()) {
-  let sql = readFileSync(join(DIR, f), "utf8");
-  if (/btree_gist/.test(sql)) {
-    sql = sql.replace(/create extension if not exists btree_gist;/g, "");
-    sql = sql.replace(
-      /alter table (\w+)\s+drop constraint if exists (\w+);\s*alter table \1\s+add constraint \2\s+exclude using gist \([^;]*?\);/gs, "");
-  }
+  const sql = readFileSync(join(DIR, f), "utf8");
   await db.exec(sql);
 }
 
@@ -540,6 +537,84 @@ await check("derivation writes correlated events, and they cannot be edited", as
   if (rows.length < 2) throw new Error(`expected derived events, got ${rows.length}`);
   const paired = rows.filter(r => r.correlation_id === rows[0].correlation_id);
   eq(paired.length, 2, "the delivery and its charge share a correlation id");
+});
+
+// --------------------------------------------------------------------------
+// 0032 · provisional data refuses to be priced
+// --------------------------------------------------------------------------
+await check("a backfilled position is marked provisional, an entered one is not", async () => {
+  // The employment used throughout this file was created with created_by null,
+  // the same shape the 0025 backfill produces, so it is marked provisional.
+  const r = await one(`select provisional from employment_positions
+                        where employment_id='${employment}' order by effective_from limit 1`);
+  eq(r.provisional, true, "backfilled position");
+
+  await db.exec(`update employment_positions set provisional = false, created_by = '${people.admin}'
+                  where employment_id='${employment}'`);
+  const after = await one(`select provisional from employment_positions
+                            where employment_id='${employment}' limit 1`);
+  eq(after.provisional, false, "confirmed position");
+});
+
+await check("hours are reported for provisional terms; cost is not", async () => {
+  // An earlier test left one entry on an APPROVED timesheet, and the approval
+  // guard rightly refuses to delete it. Only the loose entries are cleared.
+  await db.exec(`delete from time_entries where timesheet_id is null`);
+  await db.exec(`update employment_positions set provisional = true where employment_id='${employment}'`);
+  // A week of its own. The entry left on the approved timesheet above sits in
+  // the week of 8 March and would otherwise be counted here too.
+  for (const d of ["23", "24", "25", "26", "27"]) await addTime(`2026-03-${d}`, 10, DIRECT, client);
+
+  const w = await one(`select * from employee_work_weeks
+                        where employment_id='${employment}' and work_week_start = '2026-03-22'`);
+  eq(w.worked_hours, 50, "hours still reported");
+  eq(w.overtime_hours, 6, "overtime still reported");
+  eq(w.terms_provisional, true, "flagged provisional");
+
+  const e = await one(`select cost, revenue from employee_week_economics
+                        where employment_id='${employment}' and work_week_start = '2026-03-22'`);
+  if (e.cost !== null) throw new Error(`cost should be null for provisional terms, got ${e.cost}`);
+  // Revenue does not depend on the employee's terms, so it is still produced.
+  if (e.revenue === null) throw new Error("revenue should still be reported");
+});
+
+await check("confirming the terms makes cost computable again", async () => {
+  await db.exec(`update employment_positions set provisional = false where employment_id='${employment}'`);
+  const e = await one(`select cost from employee_week_economics
+                        where employment_id='${employment}' and work_week_start = '2026-03-22'`);
+  if (e.cost === null) throw new Error("cost still null after confirming the terms");
+});
+
+await check("utilization refuses a made-up denominator", async () => {
+  await db.exec(`update employment_positions set provisional = true where employment_id='${employment}'`);
+  const u = await one(`select utilization_percent from employee_utilization
+                        where employment_id='${employment}' and work_week_start = '2026-03-22'`);
+  if (u.utilization_percent !== null) throw new Error("utilization computed against assumed FTE");
+  await db.exec(`update employment_positions set provisional = false where employment_id='${employment}'`);
+});
+
+await check("payroll_readiness names the first reason someone cannot be paid", async () => {
+  const rows = (await db.query(
+    `select employment_id, blocker from payroll_readiness where clinic_id='${clinic}'`)).rows;
+  if (!rows.length) throw new Error("no readiness rows");
+  const mine = rows.find((r) => r.employment_id === employment);
+  if (!mine) throw new Error("the test employment is missing from readiness");
+  if (mine.blocker !== "ready") throw new Error(`expected ready, got: ${mine.blocker}`);
+
+  // The fixture's third employment was created with a rate but no position,
+  // and that is the first thing the view should name for it.
+  const noPosition = rows.find((r) => /No current position/.test(r.blocker));
+  if (!noPosition) throw new Error("an employment without a position was not flagged");
+});
+
+await check("deployment_readiness reports the checks that are outstanding", async () => {
+  const rows = (await db.query(`select check_name, outstanding, passing, why from deployment_readiness`)).rows;
+  if (rows.length < 6) throw new Error(`expected the full checklist, got ${rows.length} rows`);
+  const rls = rows.find((r) => r.check_name === "Row security active");
+  eq(rls.outstanding, 0, "inert policies after 0031");
+  eq(rls.passing, true, "row security check");
+  // Every row explains itself; a checklist of bare booleans is not a checklist.
+  if (rows.some((r) => !r.why || r.why.length < 20)) throw new Error("a check has no explanation");
 });
 
 console.log(results.join("\n"));
