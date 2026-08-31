@@ -40,17 +40,63 @@ const DEADLINE_OFFSET_DAYS: Record<DeadlineBucket, number | null> = {
   WEEK_1: 14, WEEK_2: 14, WITHIN_14_DAYS: 14, WITHIN_30_DAYS: 30, CUSTOM: null,
 };
 
+/**
+ * Parse a YYYY-MM-DD calendar date as local midnight.
+ *
+ * `new Date("2026-01-05")` is parsed by the spec as UTC midnight, but every
+ * getter on the result (`getDate()`, `getMonth()`, `getFullYear()`) reads it
+ * back in LOCAL time. West of UTC those disagree: in Toronto that instant is
+ * 2026-01-04 19:00, so `getDate()` returns 4 for a date that says 5.
+ *
+ * These are calendar dates — a hire date, the first day of a leave — not
+ * instants. Nobody was hired at midnight UTC. Parsing them as local midnight
+ * makes the getters agree with what the string says, in every timezone.
+ *
+ * The certificate screen already had this right, using a `T12:00:00` suffix to
+ * park the instant far from either midnight. This is the same idea said once,
+ * in the place the arithmetic actually happens.
+ */
+export function parseCalendarDate(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
+/** The inverse: a local Date back to YYYY-MM-DD without a UTC round trip. */
+export function toCalendarDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function dueDate(startDate: string | null, bucket: DeadlineBucket): string | null {
   if (!startDate) return null;
   const offset = DEADLINE_OFFSET_DAYS[bucket];
   if (offset == null) return null;
-  return new Date(new Date(startDate).getTime() + offset * 86_400_000).toISOString().slice(0, 10);
+  // The previous version — parse as UTC, add `offset * 86_400_000` ms, take
+  // toISOString().slice(0,10) — was CORRECT: UTC has no DST, so the day
+  // arithmetic never drifted. It is rewritten only so this file has one way of
+  // handling calendar dates rather than two, since the next reader fixing a
+  // real bug in one of the others should not have to work out that this one
+  // was fine. setDate() advances calendar fields, so it is DST-safe too.
+  const due = parseCalendarDate(startDate);
+  due.setDate(due.getDate() + offset);
+  return toCalendarDate(due);
 }
 
 export type CertLifecycle = "ACTIVE" | "EXPIRING_SOON" | "EXPIRED";
+
+/**
+ * A certificate is valid THROUGH its expiry date, not up to the start of it.
+ *
+ * The previous version compared `now` against the expiry parsed as UTC
+ * midnight, so a certificate dated 30 June read EXPIRED from 19:00 on the 29th
+ * in Toronto — before the day it expires had begun. Someone checking their
+ * compliance the evening before renewal was told they were already lapsed.
+ */
 export function certLifecycle(expiryDate: string | null, now = new Date()): CertLifecycle {
   if (!expiryDate) return "ACTIVE";
-  const days = (new Date(expiryDate).getTime() - now.getTime()) / 86_400_000;
+  const endOfExpiryDay = parseCalendarDate(expiryDate);
+  endOfExpiryDay.setHours(23, 59, 59, 999);
+  const days = (endOfExpiryDay.getTime() - now.getTime()) / 86_400_000;
   if (days < 0) return "EXPIRED";
   if (days <= 30) return "EXPIRING_SOON";
   return "ACTIVE";
@@ -63,7 +109,7 @@ export interface Balance { entitled: number; used: number; pending: number; rema
 export interface Entitlements { serviceYears: number; nextReset: string; vacation: Balance; sick: Balance }
 
 export function computeEntitlements(startIso: string, requests: TimeOffRequest[], now = new Date()): Entitlements {
-  const hire = new Date(startIso);
+  const hire = parseCalendarDate(startIso);
   const anniv = (y: number) => new Date(y, hire.getMonth(), hire.getDate());
   let yearStart = anniv(now.getFullYear());
   if (now < yearStart) yearStart = anniv(now.getFullYear() - 1);
@@ -75,7 +121,7 @@ export function computeEntitlements(startIso: string, requests: TimeOffRequest[]
   const tally = (type: TimeOffRequest["type"]) => {
     let used = 0, pending = 0;
     for (const r of requests) {
-      const s = new Date(r.startDate);
+      const s = parseCalendarDate(r.startDate);
       if (r.type !== type || s < yearStart || s >= yearEnd) continue;
       if (r.status === "APPROVED") used += r.days;
       else if (r.status === "REQUESTED") pending += r.days;
@@ -88,7 +134,7 @@ export function computeEntitlements(startIso: string, requests: TimeOffRequest[]
   const vEnt = years >= TIME_OFF_POLICY.seniorityYears ? TIME_OFF_POLICY.vacationSeniorDays : TIME_OFF_POLICY.vacationBaseDays;
   return {
     serviceYears: years,
-    nextReset: yearEnd.toISOString().slice(0, 10),
+    nextReset: toCalendarDate(yearEnd),
     vacation: mk(vEnt, tally("VACATION")),
     sick: mk(TIME_OFF_POLICY.sickDays, tally("SICK")),
   };
