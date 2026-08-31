@@ -62,6 +62,8 @@ export interface HrBackend {
   openPolicy(policyId: string, version: string): Promise<PolicyAck>;
   acknowledgePolicy(policyId: string, version: string): Promise<void>;
   addActivity(a: PdActivity, allocations: CreditAllocation[]): Promise<PdActivity>;
+  saveCredential(c: EmployeeCredential): Promise<EmployeeCredential>;
+  removeCredential(id: string): Promise<void>;
   rate(r: MetricResponse): Promise<void>;
   submitPeerFeedback(subjectPersonId: string, rows: MetricResponse[]): Promise<void>;
   addForumPost(p: ForumPost): Promise<ForumPost>;
@@ -266,6 +268,17 @@ export function previewBackend(session: Session, seedPolicies: PolicyDoc[]): HrB
     async acknowledgePolicy(policyId, version) {
       const a = snap.acks.find((x) => x.policyId === policyId && x.version === version);
       if (a && !a.acknowledgedAt) { a.acknowledgedAt = new Date().toISOString(); persist(); }
+    },
+    async saveCredential(c) {
+      const i = snap.credentials.findIndex((x) => x.id === c.id);
+      if (i >= 0) snap.credentials[i] = c;
+      else snap.credentials.push(c);
+      persist();
+      return c;
+    },
+    async removeCredential(id) {
+      snap.credentials = snap.credentials.filter((x) => x.id !== id);
+      persist();
     },
     async addActivity(a, allocations) {
       snap.activities.unshift(a);
@@ -506,6 +519,23 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
         .eq("policy_id", policyId).eq("user_id", uid).eq("version", version));
     },
 
+    async saveCredential(c) {
+      const row = scoped({
+        user_id: uid, credential: c.credential, credential_number: c.number,
+        cycle_start: c.cycleStart, cycle_end: c.cycleEnd, status: c.status,
+      });
+      // A blank id means a new credential; otherwise update in place.
+      if (c.id && !c.id.startsWith("new-")) {
+        ok("credential", await sb().from("employee_credentials").update(row).eq("id", c.id));
+        return c;
+      }
+      const res = await sb().from("employee_credentials").insert(row).select("id").single();
+      ok("credential", res);
+      return { ...c, id: res.data!.id as string };
+    },
+    async removeCredential(id) {
+      ok("credential removal", await sb().from("employee_credentials").delete().eq("id", id));
+    },
     async addActivity(a, allocations) {
       const res = await sb().from("pd_activities").insert(scoped({
         user_id: uid, title: a.title, provider: a.provider, instructor: a.instructor,

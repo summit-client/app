@@ -1,0 +1,23 @@
+{
+  "name": "@summit/workforce",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./index.ts",
+  "module": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": {
+      "default": "./index.ts"
+    },
+    "./esa": {
+      "default": "./esa.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test esa.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "6.0.2"
+  }
+}

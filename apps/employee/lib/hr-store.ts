@@ -153,6 +153,31 @@ export async function addActivity(a: PdActivity, allocations: CreditAllocation[]
   changed();
 }
 
+/**
+ * Record or update one of the employee's credentials, including the
+ * registration number the college or certifying body issued. The number is
+ * what appears on reports and what an auditor checks, so it is stored on the
+ * credential itself rather than typed into a note.
+ */
+export async function saveCredential(c: EmployeeCredential): Promise<void> {
+  const s = hr();
+  const saved = await be().saveCredential(c);
+  const i = s.credentials.findIndex((x) => x.id === c.id);
+  if (i >= 0) s.credentials[i] = saved;
+  else s.credentials.push(saved);
+  await hrAudit("credential.saved", `${saved.credential}${saved.number ? ` (${saved.number})` : ""}`);
+  changed();
+}
+
+export async function removeCredential(id: string): Promise<void> {
+  const s = hr();
+  const c = s.credentials.find((x) => x.id === id);
+  await be().removeCredential(id);
+  s.credentials = s.credentials.filter((x) => x.id !== id);
+  if (c) await hrAudit("credential.removed", `${c.credential}${c.number ? ` (${c.number})` : ""}`);
+  changed();
+}
+
 export async function rate(metricKey: string, source: MetricResponse["source"], rating: MetricResponse["rating"], comment = ""): Promise<void> {
   const s = hr();
   const ex = s.responses.find((r) => r.metricKey === metricKey && r.source === source && !r.subject);

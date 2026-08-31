@@ -8,6 +8,7 @@ import {
   AppearanceSection, AutomationsSection, DashboardSection, EmailSection, IntegrationsSection,
   LanguageSection, NavigationSection, NotificationsSection, PrivacySection, RolesSection,
 } from "@/components/settings/custom";
+import { WorkforceSection } from "@/components/settings/workforce";
 
 /** One route, every section: custom surfaces where interaction demands it, the
  * registry-driven renderer everywhere else. All of it reads and writes the same
@@ -38,6 +39,7 @@ function SectionBody({ slug }: { slug: string }) {
     case "notifications": return <NotificationsSection />;
     case "email": return <EmailSection />;
     case "roles": return <RolesSection />;
+    case "workforce": return <WorkforceSection />;
     case "integrations": return <IntegrationsSection />;
     case "tasks-automations": return <AutomationsSection />;
     case "privacy": return <PrivacySection />;

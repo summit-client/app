@@ -1,0 +1,31 @@
+-- 0030 · Add 'hr_admin' and 'payroll_admin' to the user_role enum
+--
+-- Found by executing the migration history rather than by reading it.
+--
+-- Migration 0024 seeds a permission matrix for two new roles, and
+-- role_permissions.role is a text column, so those seeds insert happily. What
+-- they do not do is make the roles assignable: profiles.role is the user_role
+-- enum, and an enum will not accept a value it does not have. Without this
+-- migration, 0024's hr_admin and payroll_admin rows are a matrix for roles
+-- nobody can hold — every one of them unreachable, in exactly the way 0021
+-- describes 'supervisor' having been unreachable for months.
+--
+-- RUN THIS ALONE. `alter type ... add value` cannot be combined, in the same
+-- transaction or script, with anything that USES the new value. 0021 carries
+-- the same warning for the same reason. `if not exists` makes it safe to
+-- re-run.
+--
+-- The permissions these roles carry are defined in 0024, not here:
+--
+--   hr_admin       employment records, credentials, performance, timesheet
+--                  and time-off approval, staff administration. No clinical
+--                  actions at all, and no pay rates.
+--   payroll_admin  timesheet approval, payroll read and run, rate management.
+--                  No clinical actions, and no HR performance records.
+--
+-- Both are seeded with every clinical action explicitly denied rather than
+-- merely absent, so that a later "grant everything" mistake has something to
+-- conflict with.
+
+alter type user_role add value if not exists 'hr_admin';
+alter type user_role add value if not exists 'payroll_admin';

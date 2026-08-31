@@ -54,6 +54,15 @@ export type DashboardSoapNote = {
   body: { familyUpdate?: string | null } | null;
 };
 
+export type DashboardBudget = {
+  allocated: number;
+  spent: number;
+  remaining: number;
+  percentUsed: number;
+  currency: string;
+  count: number;
+};
+
 type DesignBProps = {
   familyName: string;
   clientName: string;
@@ -64,7 +73,13 @@ type DesignBProps = {
   programsError: boolean;
   soapNotes: DashboardSoapNote[];
   soapNotesError: boolean;
+  budget: DashboardBudget | null;
+  budgetError: boolean;
 };
+
+function formatMoney(amount: number, currency = "CAD"): string {
+  return new Intl.NumberFormat("en-CA", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+}
 
 function Icon({
   name,
@@ -194,6 +209,8 @@ export default function DesignB({
   programsError,
   soapNotes,
   soapNotesError,
+  budget,
+  budgetError,
 }: DesignBProps) {
   const masteredCount = programs.filter((p) => p.status === "mastered").length;
   const activeGoalsCount = programs.filter((p) => p.status !== "mastered" && p.status !== "archived").length;
@@ -310,6 +327,80 @@ export default function DesignB({
           </section>
 
           <section className={styles.dashboardGrid}>
+            {/* A failed budget read must not look like "you have no budget".
+                Money is the one figure on this page a family will act on, and
+                a silent zero is worse here than anywhere else — this follows
+                the same error-before-empty order the sessions, programs and
+                notes cards use. */}
+            {budgetError ? (
+              <article className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <div>
+                    <h2>Funding</h2>
+                  </div>
+                </div>
+                <div style={{ padding: "20px 0", color: "#607987" }}>
+                  Couldn&apos;t load your funding details. Try refreshing the page.
+                </div>
+              </article>
+            ) : budget ? (
+              <article className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <div>
+                    <h2>Funding</h2>
+                    <p>
+                      {budget.count === 1 ? "Your budget" : `Across ${budget.count} budgets`}
+                    </p>
+                  </div>
+                  <Link className={styles.textButton} href="/statement">
+                    Statement
+                  </Link>
+                </div>
+
+                <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginTop: 4 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Total budget</div>
+                    <div style={{ fontSize: 26, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                      {formatMoney(budget.allocated, budget.currency)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Spent to date</div>
+                    <div style={{ fontSize: 26, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                      {formatMoney(budget.spent, budget.currency)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Remaining</div>
+                    <div style={{
+                      fontSize: 26, fontWeight: 600, fontVariantNumeric: "tabular-nums",
+                      color: budget.remaining <= 0 ? "var(--danger, #a63a2a)" : "var(--good, #2f7a45)",
+                    }}>
+                      {formatMoney(budget.remaining, budget.currency)}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  role="img"
+                  aria-label={`${budget.percentUsed} percent of the budget used`}
+                  style={{
+                    height: 8, borderRadius: 999, background: "var(--surface-2, #e4eff1)",
+                    overflow: "hidden", marginTop: 18,
+                  }}
+                >
+                  <div style={{
+                    width: `${Math.min(100, Math.max(0, budget.percentUsed))}%`,
+                    height: "100%", borderRadius: 999,
+                    background: budget.percentUsed >= 90 ? "var(--danger, #a63a2a)" : "var(--accent, #1b5a6e)",
+                  }} />
+                </div>
+                <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+                  {budget.percentUsed}% used. Every charge appears on your statement.
+                </p>
+              </article>
+            ) : null}
+
             <article className={styles.card}>
               <div className={styles.cardHeader}>
                 <div>

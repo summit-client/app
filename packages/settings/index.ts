@@ -71,6 +71,7 @@ export const SECTIONS: SettingsSection[] = [
   { slug: "forms", title: "Forms & Intake", blurb: "Intake workflow, required forms and consent automation." },
   { slug: "tasks-automations", title: "Tasks & Automations", blurb: "Task defaults and WHEN → IF → THEN rules. No coding required." },
   { slug: "roles", title: "Roles & Permissions", blurb: "Granular module permissions per role." },
+  { slug: "workforce", title: "Workforce", blurb: "Link scheduler records to people, and record delivered sessions as time and charges." },
   { slug: "integrations", title: "Integrations", blurb: "Connected services and exactly what each can access." },
   { slug: "privacy", title: "Privacy & Security", blurb: "Sign-in security, organization policy and the audit log." },
   { slug: "data-export", title: "Data & Export", blurb: "Export client records, data and reports — with elevated permission for bulk export." },
