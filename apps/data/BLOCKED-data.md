@@ -114,3 +114,52 @@ disables org-scope controls in the UI for non-admins to avoid the confusing
 RLS boundary that was already correct, not a new gate.
 
 ---
+
+## Item 5 — multi-tenant hardcoded-values audit results
+
+Grepped `apps/data` for hardcoded clinic-specific UUIDs, "Mount Etna"/similar
+literals, and single-clinic assumptions. Found and fixed one real bug (not a
+literal, but the same class of problem — see below); nothing else found that
+needed a code change.
+
+**Fixed:** `lib/data.ts`'s `endRunSession()` wrote `clinic_id: null` into
+every `session_program_summaries` row instead of calling `myClinicId()` like
+every other write in the same file. `session_program_summaries`' RLS
+policies (migration 0004) are `clinic_id = auth_clinic_id() and
+auth_is_staff()` with no `clinic_id is null` fallback (unlike
+`scorecard_metrics`/`credential_rule_versions`, which deliberately allow a
+null clinic_id for shared/system-default rows) — `null = auth_clinic_id()`
+is never true in SQL, so the insert's own `with check` would fail and the
+whole upsert would throw. In live mode, ending a session with any computed
+program summary would have thrown here every time. Not a cross-tenant leak
+(the row would be unreadable to everyone, not readable to everyone), but a
+real functional break. Fixed to pass the caller's real `clinic_id`.
+
+**Found, not fixed (already tracked in `docs/context/product.md`, item 8 of
+"Multi-tenant readiness"):** `app/layout.tsx` hardcodes "Summit Clinician" as
+both the page `<title>` and the mobile topbar title, instead of reading
+`org.name` from `@summit/settings`. Per the standing instruction not to
+re-litigate what's already recorded, this branch does not touch it — noting
+why: "Summit Clinician" is Summit's own product name (the same way any SaaS
+product shows its own name unless white-labeled), and the desktop sidebar
+already hardcodes "Summit" / "Clinician" as two static elements right next
+to where the mobile topbar's single line would need to change. Swapping only
+the mobile-topbar line for `org.name` would make the portal show two
+different names depending on screen width, which is worse than the current
+uniform (if non-parameterized) branding — the product.md item bundles this
+with the logo-upload and accent-recolor work (items 9–10 in the same list)
+for a reason; it wants one coordinated white-label pass, not a partial one.
+
+Also worth noting for whoever picks up that pass: `packages/settings`'s
+`org.name` setting default is itself `"Mount Etna Child & Family Services"`
+(`packages/settings/index.ts`) — a real clinic-specific value baked in as
+the fallback every new clinic sees until they set their own. Out of scope
+here (packages/), but flagged since it's the literal thing CLAUDE.md's
+"treat clinic-specific values as temporary and say so" instruction is about.
+
+No hardcoded clinic UUIDs, clinic names, or single-clinic-assumption logic
+were found anywhere else in `apps/data` — every other clinic-scoped write
+already resolves the caller's own `clinic_id` dynamically via
+`myClinicId()` / `profiles.clinic_id`.
+
+---
