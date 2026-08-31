@@ -10,6 +10,24 @@ import { PortalBar } from "@/components/portal-bar";
 import { SupportButton } from "@/components/support";
 import { SessionProvider } from "@/components/session-provider";
 
+/**
+ * Preview mode, double-gated — the flag AND a non-production build.
+ *
+ * This badge used to read `NEXT_PUBLIC_DEV_PREVIEW === "1"` on its own, which
+ * is the exact shape CLAUDE.md warns about: a `NEXT_PUBLIC_` var bakes into the
+ * bundle regardless of build mode, so one stray value in a production env file
+ * put a "Preview data" badge on a portal that was showing real records. The
+ * badge would have been lying in the more alarming direction — everything else
+ * reads `@summit/session`'s IS_PREVIEW, which got its NODE_ENV check in
+ * PR #87, so the data was real while the badge said otherwise.
+ *
+ * Duplicated here rather than imported because this is a Server Component and
+ * `@summit/session` is `"use client"`. The condition is the one line, and it
+ * matches that package's export exactly.
+ */
+const IS_PREVIEW =
+  process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
+
 export const metadata: Metadata = {
   title: "MySummitHR",
   description: "Performance, professional development, credentials, documents and team collaboration.",
@@ -81,7 +99,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
             <div className="sidebar-foot">
               <SupportButton />
-              {process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" ? <span className="pill warn" style={{ marginTop: 8, display: "inline-block" }}>Preview data</span> : null}
+              {IS_PREVIEW ? <span className="pill warn" style={{ marginTop: 8, display: "inline-block" }}>Preview data</span> : null}
             </div>
           </aside>
           <div className="main">
