@@ -190,15 +190,15 @@ export default function Home() {
   // Three pills, one per portal the platform actually gives someone, rather
   // than three scheduler features. PILL_COUNT above must stay at 3.
   //
-  // The privacy pill previously read "HIPAA-ready". HIPAA is a US regime and
-  // does not bind this product: the anchor client is Canadian, so PHIPA
-  // (Ontario) and PIPEDA (federal) are what apply. See CLAUDE.md. Claiming the
-  // wrong regime on a public page is the kind of thing a buyer's compliance
-  // reviewer reads as not knowing which rules you are under.
+  // The privacy pill has read "HIPAA-ready" and then "PHIPA and PIPEDA". Both
+  // scope the product to one country. Health data law differs by jurisdiction
+  // and none of it is satisfied by a badge on a marketing page, so this
+  // describes the architecture instead: tenant isolation enforced by the
+  // database. That claim holds in every market and can be checked.
   const PILLS = [
     { glyph: '🗓️', title: 'Schedule and deliver', sub: 'Matched, booked, recorded in the app' },
     { glyph: '📈', title: 'Data to reports',      sub: 'Graphs and notes from what was recorded' },
-    { glyph: '🔒', title: 'PHIPA and PIPEDA',     sub: 'Per clinic access control throughout' },
+    { glyph: '🔒', title: 'Isolation by design',  sub: 'Enforced in the database, not the app' },
   ]
 
   return (
@@ -426,10 +426,10 @@ export default function Home() {
             {[
               { icon: 'calendar', title: 'Scheduling that matches',      desc: 'Matches each client to qualified, available staff and builds the recurring calendar, with conflict detection as you drag. Across every site you run.' },
               { icon: 'pulse', title: 'Session data as it happens',  desc: 'Run the session in the app and record observations as they occur. Graphs and mastery are derived from that data, never typed in a second time.' },
-              { icon: 'chart', title: 'Assessments and reports',     desc: 'ABLLS-R, AFLS, ADL and MOTAS scored in place. Reports are built from the evidence actually recorded, and a clinician signs every one.' },
+              { icon: 'chart', title: 'Assessments and reports',     desc: 'Structured assessments scored in place, with ABLLS-R, AFLS, ADL and MOTAS among the instruments supported. Reports build from the evidence recorded, and a clinician signs every one.' },
               { icon: 'people', title: 'A portal families use',       desc: 'Upcoming sessions, progress, signed notes, and a funding statement that reconciles: total budget, spent to date, and every charge behind it.' },
-              { icon: 'credential', title: 'Credentials and training',    desc: 'Onboarding, training records and certificates, with CEU tracking across BACB, CPBAO and IBA that counts one course toward each without inflating the total.' },
-              { icon: 'shield', title: 'Time, pay and privacy',       desc: 'Delivered sessions become hours and charges on their own, with overtime worked out over the declared work week as the ESA requires. Built for PHIPA and PIPEDA, with per clinic access control throughout.' },
+              { icon: 'credential', title: 'Credentials and training',    desc: 'Onboarding, training records and certificates, with a credential framework that tracks continuing education against whichever bodies your staff are registered with, counting one course toward each without inflating the total.' },
+              { icon: 'shield', title: 'Time, pay and privacy',       desc: 'Delivered sessions become hours and charges on their own. Overtime follows the work week your organization declares, and pay rules are configured per region rather than hard-coded to one.' },
             ].map((f, i) => (
               /* Not a card. Six short, parallel items in a list a person reads
                  top to bottom do not each represent a discrete object, so a
@@ -453,6 +453,87 @@ export default function Home() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── WHAT IT REPLACES ──
+          Rows are capabilities; the middle column is the kind of system that
+          capability usually lives in. No competitor is named and none is said
+          to lack anything: the comparison is against the stack, which is what
+          a clinic is actually choosing between, and every Summit cell is
+          backed by something in the product rather than by a marketing claim. */}
+      <section id="compare" className="landing-section" style={{ background: '#fff', fontFamily: body }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <div style={{
+            fontFamily: display, fontSize: '.72rem', fontWeight: 600,
+            letterSpacing: '.1em', textTransform: 'uppercase', color: teal, marginBottom: '.7rem',
+          }}>What it replaces</div>
+          <h2 style={{
+            fontFamily: display, fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
+            letterSpacing: '-0.015em',
+            fontWeight: 600, color: navy, marginBottom: '.9rem', maxWidth: 620,
+          }}>
+            Most clinics run four or five systems. Here is what each one is for.
+          </h2>
+          <p style={{ fontSize: '1rem', color: g700, maxWidth: 560, marginBottom: '2.4rem', lineHeight: 1.7 }}>
+            The cost is rarely the licences. It is the reconciliation: the same client,
+            the same session and the same hour entered more than once, then compared by
+            hand at month end.
+          </p>
+
+          <div className="compare-wrap">
+            <table className="compare">
+              <caption className="visually-hidden">
+                Clinic capabilities, the kind of system each usually requires, and whether Summit covers it
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Capability</th>
+                  <th scope="col">Usually lives in</th>
+                  <th scope="col" className="compare-us">Summit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['Scheduling, matching and recurring calendars', 'Practice management'],
+                  ['Client records, contacts and service history', 'Practice management'],
+                  ['Session data captured as it happens', 'A separate data tool'],
+                  ['Programs, goals and progress graphs', 'A separate data tool'],
+                  ['Structured assessments and scoring', 'A separate data tool'],
+                  ['Clinical notes, signature and countersignature', 'Practice management'],
+                  ['Caseload review and documentation oversight', 'Spreadsheets'],
+                  ['Family portal with progress and statements', 'A separate portal, or email'],
+                  ['Funding allocations, spend and reconciliation', 'Accounting, plus spreadsheets'],
+                  ['Staff records, onboarding and training', 'An HR system'],
+                  ['Credentials and continuing education tracking', 'Spreadsheets'],
+                  ['Timesheets, approvals and overtime rules', 'A payroll system'],
+                  ['Hours, utilization and cost by service', 'Spreadsheets'],
+                ].map(([capability, lives]) => (
+                  <tr key={capability}>
+                    <th scope="row">{capability}</th>
+                    <td>{lives}</td>
+                    <td className="compare-us">
+                      <Icon name="check" size={18} />
+                      <span className="visually-hidden">Included in Summit</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row">Systems to run</th>
+                  <td>Four to five</td>
+                  <td className="compare-us"><b>One</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <p style={{ fontSize: '.8rem', color: g500, marginTop: '1.5rem', maxWidth: 620, lineHeight: 1.65 }}>
+            The middle column describes the category of product a capability normally
+            requires, not any particular vendor. Several suites cover more than one row,
+            and which rows they cover changes release to release.
+          </p>
         </div>
       </section>
 
@@ -529,9 +610,9 @@ export default function Home() {
             fontSize: '1rem', color: 'rgba(255,255,255,.72)',
             maxWidth: 560, marginBottom: '2.8rem', lineHeight: 1.7,
           }}>
-            Summit is built for PHIPA and PIPEDA, the regimes that apply to Canadian
-            health and human-service organizations. These are architectural facts, not
-            certifications.
+            Health data law differs by jurisdiction, and no badge on a marketing page
+            satisfies any of it. What follows is how the system is built, which is the
+            part a reviewer in any market can check.
           </p>
 
           <div className="grid-3" style={{ display: 'grid', gap: '1.75rem' }}>

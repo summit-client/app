@@ -28,6 +28,7 @@ export type IconName =
   | 'people'
   | 'credential'
   | 'shield'
+  | 'check'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   // Scheduling: a month grid with the binding rings.
@@ -65,6 +66,13 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="9" r="5.5" />
       <path d="M8.5 13.5L7 21l5-2.5 5 2.5-1.5-7.5" />
+    </>
+  ),
+  // Included. The only tick on the page, used in one table where a column of
+  // them is the whole point; nothing else gets a decorative checkmark.
+  check: (
+    <>
+      <path d="M4.5 12.5l5 5 10-11" />
     </>
   ),
   // Privacy and access control.
