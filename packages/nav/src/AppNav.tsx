@@ -3,6 +3,14 @@ import { type AppRole, portals, portalsFor } from './portals.config';
 
 interface AppNavProps {
   activeKey: string;
+  /**
+   * When set, an "Admin" pill sits at the far right of the bar, before the
+   * settings cogwheel and sign-out control. Whether to pass it at all is the
+   * caller's call, same as settingsHref/signOutHref below - AppNav is shared
+   * across every portal and has no idea which of them even has an /admin
+   * route, let alone who on that portal may see it.
+   */
+  adminHref?: string;
   /** When set, a settings cogwheel sits at the right of the bar. */
   settingsHref?: string;
   /**
@@ -43,7 +51,7 @@ interface AppNavProps {
  * Client so staff move between them from any screen. Colours come from the
  * shared tokens, so it follows the theme and accent like everything else.
  */
-export function AppNav({ activeKey, settingsHref, signOutHref, role }: AppNavProps) {
+export function AppNav({ activeKey, adminHref, settingsHref, signOutHref, role }: AppNavProps) {
   const visible = role == null
     ? portals.filter((p) => p.key === activeKey)
     : portalsFor(role);
@@ -101,13 +109,33 @@ export function AppNav({ activeKey, settingsHref, signOutHref, role }: AppNavPro
           </a>
         );
       })}
+      {adminHref ? (
+        <a
+          href={adminHref}
+          style={{
+            marginLeft: 'auto',
+            fontFamily: 'var(--font-body, system-ui)',
+            fontSize: 'var(--text-sm, 13px)',
+            fontWeight: 500,
+            color: 'oklch(100% 0 0 / 0.66)',
+            textDecoration: 'none',
+            padding: '5px 13px',
+            borderRadius: 'var(--radius-full, 999px)',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+            transition: 'all var(--duration-fast, 110ms) var(--ease-out-quart, ease)',
+          }}
+        >
+          Admin
+        </a>
+      ) : null}
       {settingsHref ? (
         <a
           href={settingsHref}
           aria-label="Settings"
           title="Settings"
           style={{
-            marginLeft: 'auto',
+            marginLeft: adminHref ? 4 : 'auto',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -135,7 +163,7 @@ export function AppNav({ activeKey, settingsHref, signOutHref, role }: AppNavPro
           aria-label="Sign out"
           title="Sign out"
           style={{
-            marginLeft: settingsHref ? 4 : 'auto',
+            marginLeft: adminHref || settingsHref ? 4 : 'auto',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',

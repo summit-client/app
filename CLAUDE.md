@@ -120,6 +120,20 @@ in `9554f20` because nothing in the database ever issued it, and the sign-in
 redirect that pointed it at the employee portal sent people to a portal that
 turned them away.
 
+**`scheduler` deliberately reaches the employee portal now, 2026-08-31 —
+this is not that old bug back.** `@summit/portals`' `ACCESS.employee` admits
+`scheduler` (previously admin/supervisor/clinician only), and
+`apps/employee`'s Admin console has a scoped exception (`AdminAccessGate` in
+`app/admin/page.tsx`) that also admits it, so an Admin nav link can appear
+for schedulers. Scheduler still maps to `HubRole.EMPLOYEE` everywhere else
+in that portal (`session.ts`) — self-service hub screens only, never
+blanket supervisor power over other people's records; the Admin console
+grant is the one deliberate exception, not a role promotion. Migration
+`0022` widened `hub_can_manage()` to `auth_role() in ('admin', 'scheduler')`
+so the console's queues actually return data for a scheduler instead of
+rendering empty (the `ACCESS.employee` "renders and shows nothing" trap
+this same section's comment already warns about, for exactly this reason).
+
 Do not confuse `profiles.role` with `staff.role`, a different column on a
 different table holding the clinical credential (`BCBA | BCaBA | RBT |
 Supervisor`), written by the scheduler's admin page.
