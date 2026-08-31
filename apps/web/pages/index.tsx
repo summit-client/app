@@ -397,7 +397,7 @@ export default function Home() {
       </div>
 
       {/* ── FEATURES ── */}
-      <section id="features" style={{ padding: '88px 2rem', background: '#fff', fontFamily: body }}>
+      <section id="features" className="landing-section" style={{ background: '#fff', fontFamily: body }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
             fontFamily: display, fontSize: '.72rem', fontWeight: 700,
@@ -441,7 +441,7 @@ export default function Home() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section id="how" style={{ padding: '88px 2rem', background: off, fontFamily: body }}>
+      <section id="how" className="landing-section" style={{ background: off, fontFamily: body }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
             fontFamily: display, fontSize: '.72rem', fontWeight: 700,
@@ -481,8 +481,8 @@ export default function Home() {
       </section>
 
       {/* ── TESTIMONIAL ── */}
-      <section id="testimonials" className="testi-bg" style={{
-        padding: '88px 2rem', background: '#0F2E3D',
+      <section id="testimonials" className="testi-bg landing-section" style={{
+        background: '#0F2E3D',
         position: 'relative', overflow: 'hidden',
         fontFamily: body,
       }}>
@@ -509,8 +509,8 @@ export default function Home() {
       </section>
 
       {/* ── FINAL CTA ── */}
-      <section id="trial" style={{
-        padding: '100px 2rem', background: grad,
+      <section id="trial" className="landing-section-lg" style={{
+        background: grad,
         textAlign: 'center', position: 'relative', overflow: 'hidden',
         fontFamily: body,
       }}>
