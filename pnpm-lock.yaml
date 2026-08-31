@@ -352,6 +352,15 @@ importers:
         specifier: ^0.10.3
         version: 0.10.3(@supabase/supabase-js@2.106.1)
 
+  packages/workforce:
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.1
+      typescript:
+        specifier: 6.0.2
+        version: 6.0.2
+
 packages:
 
   '@babel/code-frame@7.29.0':
