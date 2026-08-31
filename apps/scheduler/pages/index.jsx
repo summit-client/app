@@ -5,7 +5,7 @@ import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
 import SessionTypeEditModal from "../components/SessionTypeEditModal";
 import { CalendarView } from "../components/calendar/CalendarView";
-import { gapsOverlap, parseTimeSetting } from "../components/calendar/dateUtils";
+import { gapsOverlap, parseTimeSetting, toDateStr, todayDateStr } from "../components/calendar/dateUtils";
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 import { refreshUrl } from "@summit/portals";
@@ -113,7 +113,12 @@ function generateRecurringDates(calStart, calEnd, dayOfWeek, endType, endDate, e
   cur.setDate(cur.getDate() + (target - cur.getDay() + 7) % 7);
   const dates = [], max = endType === "count" ? Number(endCount) : 9999;
   while (cur <= absEnd && dates.length < max) {
-    dates.push(cur.toISOString().split("T")[0]);
+    // toDateStr (local Y/M/D), not toISOString - the latter converts to UTC
+    // first, which can land on the wrong calendar day depending on the
+    // browser's timezone offset even though `cur` is deliberately noon-
+    // anchored to dodge exactly that. Matches the one convention this app
+    // already uses everywhere else (see dateUtils.ts's file header).
+    dates.push(toDateStr(cur));
     cur.setDate(cur.getDate() + 7);
   }
   return dates;
@@ -132,7 +137,8 @@ function generateDatesFrom(startDateStr, endType, endDate, endCount) {
   const absEnd = endType === "date" && endDate ? new Date(endDate + "T12:00:00") : new Date("2999-12-31T12:00:00");
   const max = endType === "count" ? Number(endCount) : 9999;
   while (cur <= absEnd && dates.length < max) {
-    dates.push(cur.toISOString().split("T")[0]);
+    // See generateRecurringDates above for why toDateStr, not toISOString.
+    dates.push(toDateStr(cur));
     cur.setDate(cur.getDate() + 7);
   }
   return dates;
@@ -1319,7 +1325,13 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   async function createCalendar(asDraft = false) {
     if (!newCalName) return;
     setCalCreating(true);
-    const today = new Date().toISOString().split("T")[0];
+    // toDateStr(new Date()) (local Y/M/D), not new Date().toISOString() -
+    // the latter converts "now" to UTC before extracting the date, which is
+    // already the next calendar day in any timezone behind UTC for several
+    // hours every evening (e.g. Eastern time from ~8pm-midnight). A calendar
+    // created that evening would silently get a date_start of tomorrow,
+    // excluding today from its term. See dateUtils.ts's file header.
+    const today = todayDateStr();
     const farFuture = `${new Date().getFullYear() + 3}-12-31`;
     const { data } = await supabase
       .from("calendars")
