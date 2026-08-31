@@ -7,7 +7,16 @@ import type { SelectableClient } from "../lib/admin-view-as";
  * /admin route) so it's the first thing an admin sees when they follow the
  * cross-portal nav link.
  */
-export function SelectClient({ clients }: { clients: SelectableClient[] }) {
+export function SelectClient({
+  clients,
+  error,
+}: {
+  clients: SelectableClient[];
+  /** True when the client list itself failed to load - distinct from the
+   *  clinic genuinely having zero clients, which renders the same "no
+   *  clients" copy either way otherwise. */
+  error?: boolean;
+}) {
   return (
     <main style={{ maxWidth: 480, margin: "0 auto", padding: "48px 20px", fontFamily: "system-ui, sans-serif" }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>View as a client</h1>
@@ -15,7 +24,11 @@ export function SelectClient({ clients }: { clients: SelectableClient[] }) {
         Pick a family to see exactly what their dashboard shows - for diagnosing a reported issue.
         Read-only; nothing you do here is saved as them.
       </p>
-      {clients.length === 0 ? (
+      {error ? (
+        <p style={{ color: "#6B7280" }}>
+          Couldn&apos;t load your clinic&apos;s client list. Try refreshing the page.
+        </p>
+      ) : clients.length === 0 ? (
         <p style={{ color: "#6B7280" }}>No clients in your clinic yet.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

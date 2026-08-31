@@ -11,9 +11,11 @@ import DesignB, {
 } from "../components/design-b";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
+import { clinicTodayDateStr } from "../lib/clinic-date";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { SelectClient } from "../components/select-client";
 import { AccountProblemNotice } from "../components/account-problem-notice";
+import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
 
@@ -22,14 +24,18 @@ type DashboardProps = {
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
+  sessionsError: boolean;
   programs: DashboardProgram[];
+  programsError: boolean;
   soapNotes: DashboardSoapNote[];
+  soapNotesError: boolean;
   isAdminViewingAs: boolean;
 };
 
 type SelectProps = {
   mode: "select";
   clients: SelectableClient[];
+  clientsError: boolean;
 };
 
 type ProblemProps = {
@@ -37,17 +43,25 @@ type ProblemProps = {
   problem: AccountProblem;
 };
 
-type PageProps = DashboardProps | SelectProps | ProblemProps;
+type ErrorProps = {
+  mode: "error";
+};
+
+type PageProps = DashboardProps | SelectProps | ProblemProps | ErrorProps;
 
 export default function ClientDashboard(
   props: InferGetServerSidePropsType<typeof getServerSideProps>
 ) {
   if (props.mode === "select") {
-    return <SelectClient clients={props.clients} />;
+    return <SelectClient clients={props.clients} error={props.clientsError} />;
   }
 
   if (props.mode === "problem") {
     return <AccountProblemNotice problem={props.problem} />;
+  }
+
+  if (props.mode === "error") {
+    return <LoadErrorNotice />;
   }
 
   return (
@@ -85,11 +99,14 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   const resolved = await resolveViewedClient(supabase, req as NextApiRequest, user.id);
 
+  if (resolved.kind === "error") {
+    return { props: { mode: "error" } };
+  }
   if (resolved.kind === "needs-selection") {
     // The admin picker lives right here on the landing page, not a separate
     // route - the first thing an admin sees after following the nav link.
-    const clients = await listClinicClients(supabase, resolved.clinicId);
-    return { props: { mode: "select", clients } };
+    const { clients, error: clientsError } = await listClinicClients(supabase, resolved.clinicId);
+    return { props: { mode: "select", clients, clientsError } };
   }
   if (resolved.kind === "account-problem") {
     return { props: { mode: "problem", problem: resolved.problem } };
@@ -120,8 +137,11 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // happened session first, not what's actually coming up. Scoped to today
   // forward and capped to a handful for the dashboard snapshot; the full
   // history (including past sessions) is still one click away via
-  // "View all" -> /appointments.
-  const todayDateStr = new Date().toISOString().slice(0, 10);
+  // "View all" -> /appointments. clinicTodayDateStr() (not
+  // new Date().toISOString()) so this cutoff is the clinic's own calendar
+  // day, not the UTC server's - see lib/clinic-date.ts for why that
+  // mattered here specifically.
+  const todayDateStr = clinicTodayDateStr();
   const { data: sessions, error: sessionsError } = await supabase
     .from("sessions")
     .select(`
@@ -191,8 +211,11 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       familyName,
       clientName: viewed.clientName || "Client",
       sessions: (sessions ?? []) as DashboardSession[],
+      sessionsError: Boolean(sessionsError),
       programs: (programs ?? []) as DashboardProgram[],
+      programsError: Boolean(programsError),
       soapNotes: (soapNotes ?? []) as DashboardSoapNote[],
+      soapNotesError: Boolean(soapNotesError),
       isAdminViewingAs: viewed.isAdminViewingAs,
     },
   };
