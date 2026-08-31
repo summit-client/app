@@ -35,7 +35,7 @@ export default function TodayPage() {
       <div className="card table-wrap">
         <table className="data">
           <thead>
-            <tr><th>Time</th><th>Client</th><th>Type</th><th>Location</th><th>Status</th><th aria-label="Actions" /></tr>
+            <tr><th scope="col">Time</th><th scope="col">Client</th><th scope="col">Type</th><th scope="col">Location</th><th scope="col">Status</th><th aria-label="Actions" /></tr>
           </thead>
           <tbody>
             {sessions.map((s) => (

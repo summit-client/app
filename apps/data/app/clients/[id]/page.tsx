@@ -50,7 +50,7 @@ export default function ClientOverviewPage() {
       <h2 className="section-title">Goal snapshot</h2>
       <div className="card table-wrap">
         <table className="data">
-          <thead><tr><th>Goal</th><th>Domain</th><th>Latest</th><th>Trend</th><th>Status</th></tr></thead>
+          <thead><tr><th scope="col">Goal</th><th scope="col">Domain</th><th scope="col">Latest</th><th scope="col">Trend</th><th scope="col">Status</th></tr></thead>
           <tbody>
             {programs.map((p) => (
               <tr key={p.id}>

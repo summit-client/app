@@ -120,7 +120,7 @@ export default function ClinicalDocPage() {
           </div>
         ))}
 
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", maxWidth: 560 }}>
+        <div className="two-col-grid" style={{ maxWidth: 560 }}>
           <div className="field"><label htmlFor="doc-writer">Written by</label>
             <input id="doc-writer" className="input" value={doc.writtenBy} disabled={doc.status === "final"}
               onChange={(e) => setDoc({ ...doc, writtenBy: e.target.value })} /></div>

@@ -75,7 +75,7 @@ export default function AssessmentsPage() {
           <h2 className="section-title">Administrations</h2>
           <div className="card table-wrap">
             <table className="data">
-              <thead><tr><th>Instrument</th><th>Date</th><th>% Mastery</th><th>Band</th><th>Sign-off</th><th aria-label="Open" /></tr></thead>
+              <thead><tr><th scope="col">Instrument</th><th scope="col">Date</th><th scope="col">% Mastery</th><th scope="col">Band</th><th scope="col">Sign-off</th><th aria-label="Open" /></tr></thead>
               <tbody>
                 {done.map((a) => {
                   const ins = instrumentById(a.instrumentId)!;
@@ -230,7 +230,7 @@ function Dashboard({ a, all }: { a: Administration; all: Administration[] }) {
         <b>{ins.shortName} · {a.date.slice(0, 10)} — domain dashboard</b>
         <PdfExport title={ins.name} subtitle={`Administered ${a.date.slice(0, 10)} · overall ${overallPct(ins, a)}% mastery${a.supervisorSignoff ? ` · sign-off ${a.supervisorSignoff}` : ""}`}>
           <table>
-            <thead><tr><th>Domain</th><th>Score</th><th>Max</th><th>%</th><th>Band</th></tr></thead>
+            <thead><tr><th scope="col">Domain</th><th scope="col">Score</th><th scope="col">Max</th><th scope="col">%</th><th scope="col">Band</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.domain.code}>

@@ -89,8 +89,11 @@ function PlanStage({ client, programs, session, lastDone, onChange }: {
       });
       const res = await fetch("/api/session-plan", {
         method: "POST", headers: { "content-type": "application/json" },
+        // The client's name never leaves the browser for this call — the
+        // endpoint builds an AI-bound evidence packet, and compliance.md
+        // requires de-identification before any AI call.
         body: JSON.stringify({
-          clientId: client.id, clientName: client.name, plannedDurationMin: duration,
+          clientId: client.id, plannedDurationMin: duration,
           location, focus: focus || null, goals, clientInterests: client.interests,
         }),
       });
@@ -241,6 +244,28 @@ function SessionTab({ client, programs, session, onChange }: {
   const [activity, setActivity] = React.useState<string>("");
   const [added, setAdded] = React.useState<string[]>([]);
   const [confirmEnd, setConfirmEnd] = React.useState(false);
+  const endDialogRef = React.useRef<HTMLDivElement>(null);
+  const endSessionBtnRef = React.useRef<HTMLButtonElement>(null);
+
+  // The "End the session?" alertdialog previously had no keyboard support at
+  // all: no Escape to dismiss, no focus moved into it on open, and no trap -
+  // Tab would carry focus straight out into the rest of the page underneath.
+  React.useEffect(() => {
+    if (!confirmEnd) return;
+    endSessionBtnRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setConfirmEnd(false); return; }
+      if (e.key !== "Tab") return;
+      const focusable = endDialogRef.current?.querySelectorAll<HTMLElement>("button, [href], input, select, textarea");
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [confirmEnd]);
 
   // Bind synchronously every render, not just in an effect: an observation must
   // never be stamped with a stale session id from a previous page instance.
@@ -302,14 +327,17 @@ function SessionTab({ client, programs, session, onChange }: {
       </div>
 
       {confirmEnd ? (
-        <div className="card card-pad" style={{ marginTop: 12, borderColor: "var(--warn)" }} role="alertdialog" aria-label="End session check">
+        <div
+          ref={endDialogRef} className="card card-pad" style={{ marginTop: 12, borderColor: "var(--warn)" }}
+          role="alertdialog" aria-modal="true" aria-label="End session check"
+        >
           <b>End the session?</b>
           <p className="sub" style={{ marginTop: 6 }}>
             {withData.length} of {runnable.length} programs have data this session.
             {unfinishedTimers.length ? ` Unfinished timer on: ${unfinishedTimers.map((p) => p.name).join(", ")} — stop it first or its interval is discarded.` : ""}
           </p>
           <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-            <button className="btn" onClick={end}>End &amp; review summary</button>
+            <button ref={endSessionBtnRef} className="btn" onClick={end}>End &amp; review summary</button>
             <button className="btn secondary" onClick={() => setConfirmEnd(false)}>Keep collecting</button>
           </div>
         </div>
@@ -517,7 +545,7 @@ function DocumentationStage({ client, programs, session, onChange }: {
         </p>
         <div className="table-wrap" style={{ marginTop: 10 }}>
           <table className="data">
-            <thead><tr><th>Program</th><th>Session metric</th><th>Raw observations</th></tr></thead>
+            <thead><tr><th scope="col">Program</th><th scope="col">Session metric</th><th scope="col">Raw observations</th></tr></thead>
             <tbody>
               {summaries.map((m) => (
                 <tr key={m.programId}>

@@ -8,6 +8,7 @@ import {
   type CaseReview, type ClinicalDecisionTree, type ClinicalEvidencePacket, type ReviewCategory, type SupervisionBrief,
 } from "@summit/clinical-ai";
 import { getSetting } from "@summit/settings";
+import { getClients } from "@/lib/data";
 
 const CAT_PILL: Record<ReviewCategory, string> = {
   possible_regression: "danger", possible_plateau: "warn", implementation_concern: "danger",
@@ -25,6 +26,15 @@ export default function SupervisionPage() {
   const [brief, setBrief] = React.useState<SupervisionBrief | null>(null);
   const [packet, setPacket] = React.useState<ClinicalEvidencePacket | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  // The evidence packet's own client.displayName is deliberately a stable,
+  // non-identifying label (never the real name — see lib/server/retriever.ts):
+  // it is what gets sent into the AI-bound evidence, and compliance.md
+  // requires de-identification before any AI call. The real name for this
+  // screen's heading comes from this app's own direct (non-AI) client read.
+  const [clientName, setClientName] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    void getClients().then((cs) => setClientName(cs.find((c) => c.id === clientId)?.name ?? null));
+  }, [clientId]);
 
   const prepare = async () => {
     setBusy(true); setError(null);
@@ -86,7 +96,7 @@ export default function SupervisionPage() {
           {/* SUPERVISION BRIEF: the thesis format, per goal */}
           {brief ? (
             <>
-              <h2 className="section-title">Supervision brief · {brief.client.displayName}</h2>
+              <h2 className="section-title">Supervision brief · {clientName ?? brief.client.displayName}</h2>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {brief.goals.map((g, i) => (
                   <div key={g.goalName} className="card card-pad">

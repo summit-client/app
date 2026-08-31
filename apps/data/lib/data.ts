@@ -204,10 +204,18 @@ export async function endRunSession(sessionId: number, programs: Program[]): Pro
   const updated = await updateRunSession(sessionId, { status: "documentation", endTime: end, actualDurationMin: mins });
 
   if (!IS_PREVIEW) {
+    // session_program_summaries' RLS policies (migration 0004) are
+    // `clinic_id = auth_clinic_id() and auth_is_staff()` with no `clinic_id
+    // is null` fallback, unlike the shared-metric tables that deliberately
+    // allow a null clinic_id (scorecard_metrics, credential_rule_versions).
+    // A null clinic_id here doesn't leak cross-clinic - `null = auth_clinic_id()`
+    // is never true in SQL - it makes the insert's own WITH CHECK fail, so
+    // every session-end with a computed summary would have thrown here.
+    const clinicId = await myClinicId();
     const rows = mem.summaries.filter((x) => x.sessionId === sessionId).map((x) => ({
       client_session_id: sessionId, program_id: x.programId,
       raw_observation_count: x.rawObservationCount, numerator: x.numerator, denominator: x.denominator,
-      calculated_value: x.calculatedValue, metric_type: x.metricType, clinic_id: null,
+      calculated_value: x.calculatedValue, metric_type: x.metricType, clinic_id: clinicId,
     }));
     if (rows.length) {
       const { error } = await sb().from("session_program_summaries").upsert(rows, { onConflict: "client_session_id,program_id" });
