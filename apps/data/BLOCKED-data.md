@@ -10,6 +10,60 @@ of scope" are now wired to real Supabase persistence where the existing
 schema already supports it (no migration needed) — see the PR description
 for the full list. What's below is what remains genuinely blocked.
 
+Carried over from the merged round-1 pass (`#99`) — still true, nothing in
+`packages/` or `supabase/migrations/` changed since:
+
+---
+
+## Carried over — cross-portal refresh-token race: client-side `getUser()` calls are not freshness-checked
+
+`proxy.ts` correctly uses `getUser()` and routes through `@summit/proxy-auth`'s
+`sessionFreshness()` before ever calling it. `lib/data.ts` and
+`@summit/session`'s `resolve()`, though, call `sb().auth.getUser()` directly
+from the browser in several places (`createRunSession`, `ensureSessionRecord`,
+`recordIncident`, `saveNote`, `myClinicId()`, and now this round's
+`getPendingCountersigns()`/`countersignNote()`/`createProgram()`/
+`activateProgram()`/`saveClinicalReportProgress()` too — every new write this
+round follows the same existing pattern). None of these go through
+`sessionFreshness()` first, because that function is explicitly documented
+as server/edge-only (`packages/proxy-auth/index.ts`: "never import this from
+a React component or anything client-rendered"). A client-safe freshness
+check would be a `packages/proxy-auth` or `packages/session` change, out of
+scope for `apps/data`-only work.
+
+---
+
+## Carried over, HIGH — `session_notes`/`client_sessions`/`programs` RLS grants clinician the same write rights as supervisor
+
+The root cause behind two things this round actually made functional (the
+Review Queue and the Programs sign-off action): `auth_is_staff()`-shaped
+RLS policies (`clinic_id = auth_clinic_id() and auth_is_staff()`) admit
+`admin`, `supervisor` and `clinician` identically on every table this
+applies to, with no primitive anywhere in the schema for "staff at or above
+supervisor." Both new features now work correctly cross-user for the first
+time, but the actual countersign/activate writes are still gated by app
+code only (`identity.appRole` checks in `review/page.tsx` and
+`programs/page.tsx`), not by the database. A clinician who knows the API
+surface could still call the same Supabase update directly and have RLS
+allow it. The real fix is a migration — either a new
+`auth_is_supervisor_or_admin()` helper function plus a `with check` on the
+specific status transitions that matter, or an equivalent — applied to
+`session_notes`, `client_sessions` and `programs` together, since it's one
+root cause showing up in three places, not three separate bugs.
+
+---
+
+## Carried over — "Summit Clinician" branding still hardcoded
+
+`app/layout.tsx` still hardcodes "Summit Clinician" as both the page
+`<title>` and the mobile topbar title instead of reading `org.name` from
+`@summit/settings`. Already tracked in `docs/context/product.md`'s
+multi-tenant-readiness list (item 8), bundled there with the logo-upload
+and accent-recolor work — a partial (e.g. mobile-only) fix would make the
+portal show two different names at two breakpoints, worse than the
+current uniform branding. Left alone, per the standing instruction not to
+re-litigate what's already recorded elsewhere.
+
 ---
 
 ## Noted, not fixed — the rest of the session-history views are still local-only
