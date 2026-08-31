@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import {
   buildEvidencePacket, MockProvider, PROMPT_TEMPLATE_VERSION, resolveProvider,
   type ClinicalAIProvider, type EvidenceRetriever,
 } from "@summit/clinical-ai";
+import { requireStaff, routeServerClient } from "@/lib/server/authz";
 
 /**
  * POST /api/decision-tree — AI-assisted clinical decision support for one
@@ -30,15 +30,11 @@ export async function POST(request: NextRequest) {
 
   let userId: string | null = null;
   let clinicId: string | null = null;
-  const sb = !IS_PREVIEW ? serverClient(request) : null;
+  const sb = !IS_PREVIEW ? routeServerClient(request) : null;
   if (sb) {
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ ok: false, error: "Sign in required." }, { status: 401 });
-    const { data: profile } = await sb.from("profiles").select("role, clinic_id").eq("id", user.id).single();
-    if (!profile || !["admin", "supervisor", "clinician"].includes(profile.role)) {
-      return NextResponse.json({ ok: false, error: "Staff access required." }, { status: 403 });
-    }
-    userId = user.id; clinicId = profile.clinic_id ?? null;
+    const auth = await requireStaff(sb);
+    if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+    userId = auth.userId; clinicId = auth.clinicId;
   }
 
   const startDate = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
@@ -99,12 +95,4 @@ export async function POST(request: NextRequest) {
     ok: true, goalName: goal.goalName, patternEvidence: goal.masteryEvidence, tree, history,
     aiUnavailable: tree == null,
   });
-}
-
-function serverClient(request: NextRequest) {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-    { cookies: { getAll: () => request.cookies.getAll(), setAll: () => { /* read-only */ } } },
-  );
 }

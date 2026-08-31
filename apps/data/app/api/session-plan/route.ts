@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import {
   ClinicalAIUnavailableError, MockProvider, PROMPT_TEMPLATE_VERSION, resolveProvider, stableHash,
   type ClinicalAIProvider, type SessionPlanEvidence, type SuggestedSessionPlan,
 } from "@summit/clinical-ai";
+import { requireStaff, routeServerClient } from "@/lib/server/authz";
 
 /**
  * POST /api/session-plan — Suggest Session Plan for ONE client's session.
@@ -39,15 +39,11 @@ export async function POST(request: NextRequest) {
 
   let userId: string | null = null;
   let clinicId: string | null = null;
-  if (!IS_PREVIEW) {
-    const sb = serverClient(request);
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ ok: false, error: "Sign in required." }, { status: 401 });
-    const { data: profile } = await sb.from("profiles").select("role, clinic_id").eq("id", user.id).single();
-    if (!profile || !["admin", "supervisor", "clinician"].includes(profile.role)) {
-      return NextResponse.json({ ok: false, error: "Staff access required." }, { status: 403 });
-    }
-    userId = user.id; clinicId = profile.clinic_id ?? null;
+  const sb = !IS_PREVIEW ? routeServerClient(request) : null;
+  if (sb) {
+    const auth = await requireStaff(sb);
+    if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+    userId = auth.userId; clinicId = auth.clinicId;
   }
 
   // Evidence is scoped to this one client; nothing outside their record enters.
@@ -93,8 +89,7 @@ export async function POST(request: NextRequest) {
   plan.maintenanceProgramIds = plan.maintenanceProgramIds.filter((id) => known.has(id));
   plan.activities = plan.activities.map((a) => ({ ...a, programIds: a.programIds.filter((id) => known.has(id)) }));
 
-  if (!IS_PREVIEW) {
-    const sb = serverClient(request);
+  if (sb) {
     await sb.from("ai_requests").insert({
       clinic_id: clinicId, requesting_user: userId, client_id: body.clientId,
       feature: "session_plan", provider: provider.name, model: "session plan",
@@ -106,12 +101,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, plan });
-}
-
-function serverClient(request: NextRequest) {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-    { cookies: { getAll: () => request.cookies.getAll(), setAll: () => { /* read-only */ } } },
-  );
 }
