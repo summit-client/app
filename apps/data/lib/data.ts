@@ -1,6 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import type { ClinicalEvidencePacket, ReportBlock } from "@summit/clinical-ai";
 import type {
   AbcIncident, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
   SessionNoteDraft, SessionPlanDraft, SessionProgramSummary, TrialEvent,
@@ -404,6 +405,127 @@ export async function activateProgram(programId: string): Promise<void> {
   if (IS_PREVIEW) return; // nothing server-side to flip; the caller updates its own local list
   const { error } = await sb().from("programs").update({ status: "active" }).eq("id", programId).eq("status", "pending_signoff");
   if (error) throw error;
+}
+
+/* ---- clinical reports (progress-report sign/lock persistence) ------------- */
+/**
+ * `app/clients/[id]/report/page.tsx`'s draft → reviewed → approved → signed
+ * flow used to be pure React state: `useState<Status>("draft")` with no
+ * write to Supabase anywhere. The `clinical_reports` table already exists
+ * with exactly this status flow and its own immutability trigger
+ * (`forbid_signed_report_update`, migration 0003 — a signed/locked row can
+ * only ever move to 'superseded', never be edited further), built for
+ * precisely this workflow. A "signed, locked, immutable" report that isn't
+ * persisted anywhere satisfies none of that — it's just a page that
+ * happens to say "locked" until the next reload wipes it. This wires the
+ * page onto the real table, including resuming an in-progress or already
+ * signed report on load instead of always starting from a blank draft.
+ */
+
+export type ClinicalReportStatus = "draft" | "reviewed" | "approved" | "signed" | "locked" | "superseded";
+
+export interface ClinicalReportRecord {
+  reportGroup: string;
+  version: number;
+  status: ClinicalReportStatus;
+  periodStart: string;
+  periodEnd: string;
+  packetId: string | null;
+  blocks: ReportBlock[];
+  modelNote: string | null;
+  packet: ClinicalEvidencePacket | null;
+}
+
+/** The latest non-superseded version of this client's progress report, if any. */
+export async function getLatestClinicalReport(
+  clientId: number,
+  reportType = "progress_report",
+): Promise<ClinicalReportRecord | null> {
+  if (IS_PREVIEW) return null; // preview keeps its existing from-scratch-each-visit behaviour
+  const { data, error } = await sb()
+    .from("clinical_reports")
+    .select("report_group, version, status, period_start, period_end, packet_id, blocks, model_note")
+    .eq("client_id", clientId)
+    .eq("report_type", reportType)
+    .neq("status", "superseded")
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  let packet: ClinicalEvidencePacket | null = null;
+  if (data.packet_id) {
+    const { data: pkt } = await sb().from("evidence_packets").select("packet").eq("id", data.packet_id).maybeSingle();
+    packet = (pkt?.packet as ClinicalEvidencePacket) ?? null;
+  }
+
+  return {
+    reportGroup: data.report_group as string,
+    version: data.version as number,
+    status: data.status as ClinicalReportStatus,
+    periodStart: data.period_start as string,
+    periodEnd: data.period_end as string,
+    packetId: (data.packet_id as string | null) ?? null,
+    blocks: (data.blocks as ReportBlock[]) ?? [],
+    modelNote: (data.model_note as string | null) ?? null,
+    packet,
+  };
+}
+
+/**
+ * Upsert the current version's status and blocks. Called after generation
+ * (status: 'draft') and after every review-flow transition. Upserting the
+ * same (report_group, version) is what keeps this idempotent through
+ * "Mark reviewed" -> "Approve" -> "Sign & lock" without creating extra rows;
+ * once a row is actually 'signed'/'locked', the table's own trigger rejects
+ * any further update here that isn't a move to 'superseded' — this
+ * function doesn't need to duplicate that check, the write will just fail
+ * with a clear Postgres error if a stale client tries it.
+ */
+export async function saveClinicalReportProgress(input: {
+  reportGroup: string;
+  version: number;
+  clientId: number;
+  reportType?: string;
+  periodStart: string;
+  periodEnd: string;
+  packetId: string | null;
+  blocks: ReportBlock[];
+  modelNote: string | null;
+  status: ClinicalReportStatus;
+}): Promise<void> {
+  if (IS_PREVIEW) return;
+  const user = (await sb().auth.getUser()).data.user;
+  const row: Record<string, unknown> = {
+    clinic_id: await myClinicId(), client_id: input.clientId,
+    report_group: input.reportGroup, version: input.version,
+    report_type: input.reportType ?? "progress_report",
+    period_start: input.periodStart, period_end: input.periodEnd,
+    packet_id: input.packetId, blocks: input.blocks, model_note: input.modelNote,
+    status: input.status, created_by: user?.id,
+  };
+  if (input.status === "signed") row.signed_by = user?.id;
+  if (input.status === "signed") row.signed_at = new Date().toISOString();
+  const { error } = await sb().from("clinical_reports").upsert(row, { onConflict: "report_group,version" });
+  if (error) throw error;
+}
+
+/**
+ * "Create revision": supersede the current signed/locked version (the only
+ * transition the immutability trigger allows on it) and hand back the next
+ * version number for the caller's next `saveClinicalReportProgress()` call,
+ * which inserts a brand-new row rather than updating the old one.
+ */
+export async function reviseClinicalReport(reportGroup: string, currentVersion: number): Promise<number> {
+  if (IS_PREVIEW) return currentVersion + 1;
+  const { error } = await sb()
+    .from("clinical_reports")
+    .update({ status: "superseded" })
+    .eq("report_group", reportGroup)
+    .eq("version", currentVersion);
+  if (error) throw error;
+  return currentVersion + 1;
 }
 
 /* ---- writes --------------------------------------------------------------- */
