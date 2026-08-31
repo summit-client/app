@@ -9,6 +9,7 @@ import { gapsOverlap, parseTimeSetting } from "../components/calendar/dateUtils"
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 import { refreshUrl } from "@summit/portals";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../lib/checkSlotConflict";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -1457,7 +1458,21 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         return;
       }
 
-      const { error: err } = await supabase.from("sessions").insert(inserts);
+      // Re-check the whole batch against the database right before writing -
+      // `bookings` state above can be stale for as long as this wizard has
+      // been open. See lib/checkSlotConflict.ts.
+      const freshKeys = await fetchFreshConflictKeys(
+        inserts.map(i => ({ employeeId: i.employee_id, dateStr: i.session_date, hour: i.hour, minute: i.minute })),
+      );
+      const freshInserts = inserts.filter(i => !freshKeys.has(slotKeyOf({ employeeId: i.employee_id, dateStr: i.session_date, hour: i.hour, minute: i.minute })));
+      const freshlySkipped = inserts.length - freshInserts.length;
+      if (freshInserts.length === 0) {
+        setError("Nothing to book — every proposed slot was just booked by someone else.");
+        setBooking(false);
+        return;
+      }
+
+      const { error: err } = await supabase.from("sessions").insert(freshInserts);
       if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
 
       // Auto-promote waitlist clients booked for Assessment
@@ -1478,7 +1493,8 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
 
       setBooking(false);
       refreshBookings();
-      const baseMsg = skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked";
+      const totalSkipped = skipped.length + freshlySkipped;
+      const baseMsg = totalSkipped ? `${freshInserts.length} booked · ${totalSkipped} skipped (conflicts)` : "Sessions booked";
       showToast(promoted > 0 ? `${baseMsg} · ${promoted} client${promoted !== 1 ? "s" : ""} promoted to active` : baseMsg);
       advance("booked", "Booked");
    } catch {
@@ -1497,6 +1513,17 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     setBooking(true);
     setError(null);
     try {
+      // Re-check against the database right before writing - every path
+      // that reaches here (no-conflict quick-book, "book anyway", accepting
+      // a conflict-resolution suggestion) only checked `bookings` state,
+      // which can be stale for as long as this wizard has been open. See
+      // lib/checkSlotConflict.ts for why this is a real, if partial, fix.
+      const fresh = await fetchFreshConflict({ employeeId: staff.id, dateStr, hour, minute });
+      if (fresh) {
+        setBooking(false);
+        setError("That slot was just booked by someone else - pick another time.");
+        return;
+      }
       const { error: err } = await supabase.from("sessions").insert({
         recurrence_id: null,
         client_id: quickClient.id,
@@ -1590,12 +1617,26 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
           }
         }
 
-        const { error: err } = await supabase.from("sessions").insert(inserts);
+        // Re-check the whole batch against the database right before writing
+        // - `bookings` state above can be stale. See lib/checkSlotConflict.ts.
+        const freshKeys = await fetchFreshConflictKeys(
+          inserts.map(i => ({ employeeId: i.employee_id, dateStr: i.session_date, hour: i.hour, minute: i.minute })),
+        );
+        const freshInserts = inserts.filter(i => !freshKeys.has(slotKeyOf({ employeeId: i.employee_id, dateStr: i.session_date, hour: i.hour, minute: i.minute })));
+        const freshlySkipped = inserts.length - freshInserts.length;
+        if (freshInserts.length === 0) {
+          setError("Nothing to book — every proposed date was just booked by someone else.");
+          setBooking(false);
+          return;
+        }
+
+        const { error: err } = await supabase.from("sessions").insert(freshInserts);
         if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
 
         setBooking(false);
         refreshBookings();
-        showToast(skipped.length ? `${inserts.length} booked · ${skipped.length} skipped (conflicts)` : "Sessions booked");
+        const totalSkipped = skipped.length + freshlySkipped;
+        showToast(totalSkipped ? `${freshInserts.length} booked · ${totalSkipped} skipped (conflicts)` : "Sessions booked");
         onConsumedPrefill?.();
         advance("booked", "Booked");
       } catch {
@@ -2284,11 +2325,13 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
       : `Cancel ${ids.length} session(s)?`;
     if (!confirm(msg)) return;
     setCancelling(true);
-    await supabase.from("sessions").update({ status: "cancelled" }).in("id", ids);
+    const { error: err } = await supabase.from("sessions").update({ status: "cancelled" }).in("id", ids);
     setCancelling(false);
     setSelected(new Set());
     refreshBookings();
-    showToast(`${ids.length} session${ids.length !== 1 ? "s" : ""} cancelled`);
+    // Previously showed "N cancelled" regardless of whether the write
+    // actually succeeded - optimistic UI with no failure path at all.
+    showToast(err ? "Cancel failed. Please try again." : `${ids.length} session${ids.length !== 1 ? "s" : ""} cancelled`);
   }
 
   function exportICS() {
@@ -2446,9 +2489,9 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                     {isAdminOrScheduler && (
                       <button title="Cancel" onClick={async () => {
                         if (!confirm(lateCancel ? `Within the ${CANCEL_HOURS}-hour window. Cancel anyway?` : "Cancel this session?")) return;
-                        await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id);
+                        const { error: err } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id);
                         refreshBookings();
-                        showToast("Session cancelled");
+                        showToast(err ? "Cancel failed. Please try again." : "Session cancelled");
                       }} style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 14 }}>✕</button>
                     )}
                   </>

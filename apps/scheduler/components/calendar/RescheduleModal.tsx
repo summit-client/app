@@ -21,6 +21,7 @@ import { isAvailable, hasSessionConflict } from "./suggestions";
 import type { AvailabilityRow, ExistingSession } from "./suggestions";
 import { sessionDuration } from "./types";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../../lib/checkSlotConflict";
 
 interface ClientAvailabilityRow { client_id: number; day: string; start_time: string; end_time: string }
 
@@ -137,6 +138,19 @@ export function RescheduleModal({
       return;
     }
 
+    // Re-check against the database right before writing - `existing`
+    // (liveSessions) is a prop that can be stale for as long as this modal
+    // has been open. See lib/checkSlotConflict.ts.
+    const fresh = await fetchFreshConflict(
+      { employeeId, dateStr: selectedDate, hour: selectedSlot.hour, minute: selectedSlot.minute },
+      session.id,
+    );
+    if (fresh) {
+      setSaving(false);
+      setError("That slot was just booked by someone else - pick another time.");
+      return;
+    }
+
     // Only actually assign a new recurrence_id when the future occurrences
     // are really about to be created below - otherwise a checked "repeat
     // weekly" box with no end condition chosen yet would leave this session
@@ -166,7 +180,14 @@ export function RescheduleModal({
       // week after the date just saved above - this session's own row is
       // never touched again here.
       const futureDates = generateWeeklyDatesFrom(selectedDate, endType, endDate, endCount).slice(1);
-      const conflictFree = futureDates.filter((d) => !existing.some((b) => b.employee_id === employeeId && b.session_date === d && b.hour === selectedSlot.hour && b.minute === selectedSlot.minute));
+      const staleFree = futureDates.filter((d) => !existing.some((b) => b.employee_id === employeeId && b.session_date === d && b.hour === selectedSlot.hour && b.minute === selectedSlot.minute));
+      // Re-check the batch fresh, same reasoning as the single-slot check
+      // above - `existing` can be stale for the whole time this modal has
+      // been open.
+      const freshKeys = await fetchFreshConflictKeys(
+        staleFree.map((d) => ({ employeeId, dateStr: d, hour: selectedSlot.hour, minute: selectedSlot.minute })),
+      );
+      const conflictFree = staleFree.filter((d) => !freshKeys.has(slotKeyOf({ employeeId, dateStr: d, hour: selectedSlot.hour, minute: selectedSlot.minute })));
       const skipped = futureDates.length - conflictFree.length;
       const inserts = conflictFree.map((d) => ({
         recurrence_id: recurrenceId,
