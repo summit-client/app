@@ -107,12 +107,11 @@ html { scroll-behavior: smooth; }
   transform: translateY(0);
 }
 
-/* Gradient text — needs nested <span>, can't be inline */
+/* Emphasis colour for the second half of a headline. Was a background-clip
+   gradient; now a solid, which is what the brand system actually specifies and
+   what survives being screenshotted, printed, or read in forced-colours mode. */
 .grad-text {
-  background: linear-gradient(135deg, #28B4A6 0%, #21798A 55%, #1A3F5C 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #0C5350;
 }
 
 /* Hover states */
@@ -183,8 +182,6 @@ html { scroll-behavior: smooth; }
 .marquee {
   width: 100%;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
 }
 .marquee-track {
   display: flex;
@@ -252,31 +249,13 @@ html { scroll-behavior: smooth; }
 }
 
 /* Pseudo-elements */
-.hero-bg::after {
-  content: '';
-  position: absolute;
-  top: -80px; right: -80px;
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(40,180,166,.09) 0%, transparent 70%);
-  pointer-events: none;
-  animation: floatBlob 9s ease-in-out infinite;
-}
-@keyframes floatBlob {
-  0%, 100% { transform: translate(0,0) scale(1); }
-  50%      { transform: translate(-24px,28px) scale(1.06); }
-}
-/* Final CTA: white text over the brand gradient failed AA at the gradient's
-   lighter (teal) end - measured 2.57:1 for the heading and 2.04:1 for the
-   paragraph against #28B4A6, both well under the 3:1/4.5:1 AA needs. A flat
-   30% black scrim (not a new hue - same gradient underneath, just darkened)
-   brings the worst case to 4.9:1 for white text everywhere the gradient can
-   land, checked against all three of its stops. */
-#trial::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: rgba(0,0,0,.3);
-  pointer-events: none;
-}
+/* The hero's floating radial blob and its floatBlob keyframes are gone: a
+   blurred coloured circle is a gradient wearing a different hat, and it moved
+   forever behind the copy.
+
+   The final CTA's 30% black scrim is gone too. It existed only because white
+   text failed AA at the light end of the old brand gradient; the section is a
+   flat ink fill now, where white measures 15.4:1. */
 
 .testi-bg::before {
   content: '"';
@@ -375,7 +354,7 @@ html { scroll-behavior: smooth; }
 .auth-submit {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: .55rem;
   padding: .85rem 1rem; border: none; border-radius: 8px;
-  background: linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%);
+  background: #0C5350;
   color: #fff; font-family: var(--font-display); font-weight: 700; font-size: .95rem;
   cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
 }

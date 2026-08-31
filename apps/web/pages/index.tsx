@@ -89,14 +89,26 @@ export default function Home() {
     return () => cancelAnimationFrame(raf)
   }, [])
 
-  // Brand colours — Summit palette
-  const grad  = 'linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%)'
-  const navy  = '#1A3F5C'
+  // Brand colours, from the SummitClient colour system.
+  //
+  // No gradients anywhere on this page. Every surface is a flat fill: the
+  // hierarchy comes from ink weight, spacing, borders and the product UI
+  // itself, which is how clinic software that people use all day tends to
+  // look, and how it stays legible when screenshotted or printed.
+  //
+  // `ink` replaces what used to be a three-stop brand gradient. Where a
+  // surface previously carried that gradient it now carries ink, and white
+  // text on ink measures 15.4:1, so the black scrim that used to rescue
+  // contrast at the gradient's light end is gone too.
+  const ink   = '#0B2B31'   // deepest: solid sections, headings
+  const navy  = '#254449'   // secondary ink
+  const brand = '#0C5350'   // primary action. 8.2:1 on white
+  const brandHover = '#0F6A67'
   // Darkened from the brand's #28B4A6/#7A9AAD for text use only - both failed
   // WCAG AA (2.57:1 and 2.98:1 on white) at the small sizes they're set in
   // here. Decorative uses of the brand teal (icon fills, gradients, the
   // SessionCell mockup) stay on the literal hex elsewhere in this file.
-  const teal  = '#1C7A70'
+  const teal  = '#0C5350'
   const g100  = '#EEF3F6'
   const g500  = '#57748A'
   const g700  = '#3D5A6A'
@@ -193,7 +205,7 @@ export default function Home() {
 
 {/* ── HERO / SCROLL SCENE ── */}
       <div ref={heroRef} className="hero-bg" style={{
-        background: 'linear-gradient(180deg,#EDF6F9 0%,#fff 100%)',
+        background: '#F1F7F4',
       }}>
         <motion.div className="hero-sticky" style={{
           opacity: staticScene ? 1 : sceneOpacity,
@@ -217,7 +229,7 @@ export default function Home() {
                     marginBottom: '1.25rem',
                     fontFamily: display, letterSpacing: '.02em',
                   }}>
-                    ✦ Built for ABA Clinics
+                    Clinic management, end to end
                   </div>
                 </FadeOut>
 
@@ -228,9 +240,9 @@ export default function Home() {
                     fontWeight: 800, lineHeight: 1.15,
                     color: navy, marginBottom: '1.25rem',
                   }}>
-                    Run the whole clinic,<br />
-                    not just{' '}
-                    <span className="grad-text">the calendar.</span>
+                    Your clinic.<br />
+                    One{' '}
+                    <span className="grad-text">operating system.</span>
                   </h1>
                 </FadeOut>
 
@@ -239,7 +251,7 @@ export default function Home() {
                     fontSize: '1.05rem', color: g700,
                     marginBottom: '2rem', maxWidth: 460, lineHeight: 1.75,
                   }}>
-                    Scheduling, session data, assessments, reports, the family portal, credentials and payroll, all on one record. Book a session and everything downstream follows from it.
+                    Clients, clinical work, documentation, scheduling, staff and operations in one connected workspace. Instead of five systems that each hold part of the picture.
                   </p>
                 </FadeOut>
 
@@ -260,7 +272,7 @@ export default function Home() {
 
               <div className="an4" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '2.5rem' }}>
                 <a href="/signup" className="btn-primary" style={{
-                  background: grad, color: '#fff',
+                  background: ink, color: '#fff',
                   fontFamily: display, fontSize: '1rem', fontWeight: 700,
                   padding: '.875rem 2rem', borderRadius: 10,
                   boxShadow: '0 4px 22px rgba(26,63,92,.28)',
@@ -367,7 +379,7 @@ export default function Home() {
               }}>
                 <div style={{
                   width: 34, height: 34, borderRadius: '50%',
-                  background: grad, display: 'flex',
+                  background: ink, display: 'flex',
                   alignItems: 'center', justifyContent: 'center',
                   color: '#fff', fontSize: '1rem',
                 }}>✓</div>
@@ -382,36 +394,13 @@ export default function Home() {
         </motion.div>
       </div>
 
-      {/* ── LOGOS MARQUEE ── */}
-      <div style={{
-        padding: '28px 0',
-        borderTop: `1px solid ${g100}`,
-        borderBottom: `1px solid ${g100}`,
-        fontFamily: body,
-        overflow: 'hidden',
-      }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto 1.1rem', textAlign: 'center', padding: '0 2rem' }}>
-          <div style={{
-            fontSize: '.75rem', color: g500, fontWeight: 600,
-            textTransform: 'uppercase', letterSpacing: '.09em',
-          }}>
-            Trusted by growing ABA clinics across North America
-          </div>
-        </div>
-        <div className="marquee">
-          <div className="marquee-track">
-            {[...Array(2)].flatMap(() =>
-              ['Beacon ABA','Clarity Clinic','Pathways','Summit Therapy','Bright Futures ABA','Maple Grove ABA','Harbourview Clinic']
-            ).map((name, i) => (
-              <span key={i} style={{
-                fontFamily: display, fontSize: '.95rem',
-                fontWeight: 700, color: '#C4D3DC', letterSpacing: '-.01em',
-                padding: '0 1.5rem', whiteSpace: 'nowrap',
-              }}>{name}</span>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* The fabricated "trusted by" logo marquee that used to sit here is gone.
+          Every name in it was invented (Beacon ABA, Clarity Clinic, Pathways,
+          Bright Futures ABA...), presented under "Trusted by growing ABA
+          clinics across North America". Invented customer names on a live page
+          are a claim, not decoration, and this product has real clinics it can
+          name once they agree to be named. Nothing replaces it until then: an
+          honest gap reads better than fake proof. */}
 
       {/* ── FEATURES ── */}
       <section id="features" className="landing-section" style={{ background: '#fff', fontFamily: body }}>
@@ -445,7 +434,7 @@ export default function Home() {
                 transitionDelay: `${(i % 3) * 90}ms`,
               }}>
                 <div aria-hidden="true" style={{
-                  width: 46, height: 46, borderRadius: 12, background: grad,
+                  width: 46, height: 46, borderRadius: 10, background: ink,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '1.1rem', fontSize: '1.25rem',
                 }}>{f.icon}</div>
@@ -483,7 +472,7 @@ export default function Home() {
               <div key={s.n} className="reveal" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', transitionDelay: `${i * 120}ms` }}>
                 <div style={{
                   width: 54, height: 54, borderRadius: '50%',
-                  background: grad, color: '#fff',
+                  background: ink, color: '#fff',
                   fontFamily: display, fontSize: '1.2rem', fontWeight: 800,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: '1.2rem',
@@ -497,37 +486,77 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── TESTIMONIAL ── */}
-      <section id="testimonials" className="testi-bg landing-section" style={{
-        background: '#0F2E3D',
-        position: 'relative', overflow: 'hidden',
-        fontFamily: body,
+      {/* ── TRUST ──
+          This replaces a fabricated testimonial: "Sarah Chen, BCBA-D, Clinical
+          Director, Clarity ABA Clinic" was not a real person and not a real
+          clinic, quoted on a live public page as a customer endorsement.
+
+          What sits here instead is only what can be substantiated. Note what
+          is deliberately NOT claimed: no HIPAA badge (a US regime that does not
+          bind this product), no SOC 2, no "compliant" of any kind. Those are
+          audit outcomes, not design decisions, and a clinic's compliance
+          reviewer treats an unearned badge as a reason to distrust everything
+          next to it. Each line below describes something the schema actually
+          does. */}
+      <section id="trust" className="landing-section" style={{
+        background: ink, position: 'relative', fontFamily: body,
       }}>
-        <div className="reveal" style={{ maxWidth: 780, margin: '0 auto', textAlign: 'center' }}>
-          <blockquote style={{
-            fontFamily: display,
-            fontSize: 'clamp(1.25rem,2.2vw,1.7rem)',
-            fontWeight: 600, color: '#fff', lineHeight: 1.55, marginBottom: '2rem',
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{
+            fontFamily: display, fontSize: '.72rem', fontWeight: 700,
+            letterSpacing: '.1em', textTransform: 'uppercase',
+            color: 'rgba(255,255,255,.55)', marginBottom: '.7rem',
+          }}>How your data is held</div>
+          <h2 style={{
+            fontFamily: display, fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
+            fontWeight: 800, color: '#fff', marginBottom: '.9rem', maxWidth: 620,
           }}>
-            &ldquo;We used to spend 4 hours a week building the schedule. With Summit, it&rsquo;s done in 20 minutes — and there are zero double bookings.&rdquo;
-          </blockquote>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
-            <div style={{
-              width: 46, height: 46, borderRadius: '50%', background: grad,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: display, fontWeight: 700, color: '#fff', fontSize: '.95rem',
-            }}>SC</div>
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontFamily: display, fontWeight: 700, color: '#fff', fontSize: '.9rem' }}>Sarah Chen, BCBA-D</div>
-              <div style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.6)' }}>Clinical Director, Clarity ABA Clinic</div>
-            </div>
+            Built for organizations that answer for their records
+          </h2>
+          <p style={{
+            fontSize: '1rem', color: 'rgba(255,255,255,.72)',
+            maxWidth: 560, marginBottom: '2.8rem', lineHeight: 1.7,
+          }}>
+            Summit is built for PHIPA and PIPEDA, the regimes that apply to Canadian
+            health and human-service organizations. These are architectural facts, not
+            certifications.
+          </p>
+
+          <div className="grid-3" style={{ display: 'grid', gap: '1.75rem' }}>
+            {[
+              ['Every record belongs to one organization',
+               'Client, staff and clinical data are separated at the database level, not by a filter the application remembers to apply. A query from one organization cannot return another\u2019s rows.'],
+              ['People see what their role allows',
+               'Permissions are granted per action rather than per job title, so a scheduler can book without reading clinical notes, and whoever administers HR does not thereby see health information.'],
+              ['Findings trace back to their evidence',
+               'Where Summit summarizes or interprets, the underlying observations stay linked to the output. A clinician can follow any statement back to what it came from, and signs before it counts.'],
+              ['Clinical and HR stay apart',
+               'A supervisor reads their own supervisee\u2019s development plan, not a colleague\u2019s. Pay rates are narrower still: your own, or payroll\u2019s.'],
+              ['Corrections are recorded, not overwritten',
+               'Reconciled charges, approved time and issued documents are amended by adding a correcting entry. The original stays, so a figure can always be explained.'],
+              ['Signatures belong to the signer',
+               'Only the person a signature belongs to can record one. There is no path by which an administrator can sign on someone else\u2019s behalf.'],
+            ].map(([title, desc], i) => (
+              <div key={title} className="reveal" style={{ transitionDelay: `${i * 90}ms` }}>
+                <div style={{
+                  width: 30, height: 2, background: '#6BC7BD', marginBottom: '1rem',
+                }} />
+                <div style={{
+                  fontFamily: display, fontSize: '1rem', fontWeight: 700,
+                  color: '#fff', marginBottom: '.5rem', lineHeight: 1.35,
+                }}>{title}</div>
+                <p style={{
+                  fontSize: '.875rem', color: 'rgba(255,255,255,.66)', lineHeight: 1.7,
+                }}>{desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* ── FINAL CTA ── */}
       <section id="trial" className="landing-section-lg" style={{
-        background: grad,
+        background: ink,
         textAlign: 'center', position: 'relative', overflow: 'hidden',
         fontFamily: body,
       }}>
@@ -537,10 +566,10 @@ export default function Home() {
             fontSize: 'clamp(2rem,3.8vw,2.9rem)',
             fontWeight: 800, color: '#fff', marginBottom: '1rem', lineHeight: 1.2,
           }}>
-            Ready to take your scheduling to the summit?
+            See what your clinic looks like connected.
           </h2>
           <p style={{ color: 'rgba(255,255,255,.75)', fontSize: '1.05rem', marginBottom: '2.5rem' }}>
-            Start your free trial today. Set up in under 10 minutes.
+            We will show you your own workflows in Summit, not a generic demo.
           </p>
           <a href="/signup" className="btn-primary" style={{
             background: '#fff', color: navy,
@@ -573,7 +602,7 @@ export default function Home() {
             {([
               ['Features','#features'],
               ['How it works','#how'],
-              ['Reviews','#testimonials'],
+              ['Security','#trust'],
               ['Contact','mailto:yanko@summitclient.io'],
               ['Privacy','/privacy'],
               ['Terms','/terms'],
@@ -631,7 +660,7 @@ function FeaturePill({ progress, index, glyph, title, sub }: {
       }}>
         <div style={{
           width: 38, height: 38, borderRadius: 11, flexShrink: 0,
-          background: 'linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%)',
+          background: '#0B2B31',
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.05rem',
         }}>{glyph}</div>
         <div>
@@ -671,10 +700,12 @@ function SessionCell({ progress, seq, type, lines }: {
   const scale = useTransform(progress, [start, mid, end], [1, 1.09, 1])
   const glow = useTransform(progress, [start, mid, end], [0, 1, 0])
 
+  // Flat fills. These encode service category, so they stay distinguishable
+  // by hue, and each is dark enough to carry white label text at AA.
   const bg =
-    type === 'teal' ? 'linear-gradient(135deg,#28B4A6,#219A8E)' :
-    type === 'blue' ? 'linear-gradient(135deg,#21798A,#1D6478)' :
-                      'linear-gradient(135deg,#e09c00,#c98d00)'
+    type === 'teal' ? '#0C5350' :
+    type === 'blue' ? '#254449' :
+                      '#8A5A12'
 
   return (
     <motion.div style={{
