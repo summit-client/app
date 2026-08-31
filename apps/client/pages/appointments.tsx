@@ -83,26 +83,48 @@ export default function Appointments(
           minHeight: "100vh",
         }}
       >
-        <header style={{ marginBottom: 24 }}>
-          <p className={styles.eyebrow}>CLIENT PORTAL</p>
+        <header
+          style={{
+            marginBottom: 24,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p className={styles.eyebrow}>CLIENT PORTAL</p>
 
-          <h1
-            style={{
-              margin: "0 0 6px",
-              color: "#173f5f",
-            }}
-          >
-            Appointments
-          </h1>
+            <h1
+              style={{
+                margin: "0 0 6px",
+                color: "#173f5f",
+              }}
+            >
+              Appointments
+            </h1>
 
-          <p
-            style={{
-              margin: 0,
-              color: "#6c8290",
-            }}
+            <p
+              style={{
+                margin: 0,
+                color: "#6c8290",
+              }}
+            >
+              View your scheduled and past sessions.
+            </p>
+          </div>
+
+          {/* One-time file download (not a subscribable feed - see
+              pages/api/calendar.ics.ts's header comment for why), so a
+              plain link is enough: no JS needed to trigger it. */}
+          <a
+            href="/api/calendar.ics"
+            className={styles.textButton}
+            style={{ whiteSpace: "nowrap" }}
           >
-            View your scheduled and past sessions.
-          </p>
+            Download calendar (.ics)
+          </a>
         </header>
 
         <div className={styles.filters} role="group" aria-label="Filter appointments by status">
