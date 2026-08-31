@@ -12,6 +12,7 @@ import DesignB, {
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
 import { clinicTodayDateStr } from "../lib/clinic-date";
+import { sortProgramsForFamily } from "../lib/program-display";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { SelectClient } from "../components/select-client";
 import { AccountProblemNotice } from "../components/account-problem-notice";
@@ -239,32 +240,3 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     },
   };
 };
-
-/**
- * "Progress Snapshot" ordered goals alphabetically by status
- * ("active" < "archived" < "draft" < "maintenance" < "mastered" <
- * "on_hold" < "pending_signoff"), which put discontinued ("archived")
- * goals second - ahead of "maintenance", "mastered" and "on_hold" - for
- * no reason other than the letter A. Sorted by an explicit priority
- * instead: goals actively worked on first, then goals worth celebrating
- * or needing attention, then not-yet-visible internal states, archived
- * goals last since they're the least relevant to a family checking on
- * current progress. Name breaks ties within the same priority.
- */
-const PROGRAM_STATUS_PRIORITY: Record<string, number> = {
-  active: 0,
-  maintenance: 1,
-  on_hold: 2,
-  mastered: 3,
-  pending_signoff: 4,
-  draft: 5,
-  archived: 6,
-};
-
-function sortProgramsForFamily(programs: DashboardProgram[]): DashboardProgram[] {
-  return [...programs].sort((a, b) => {
-    const priorityA = PROGRAM_STATUS_PRIORITY[a.status] ?? PROGRAM_STATUS_PRIORITY.draft;
-    const priorityB = PROGRAM_STATUS_PRIORITY[b.status] ?? PROGRAM_STATUS_PRIORITY.draft;
-    return priorityA !== priorityB ? priorityA - priorityB : a.name.localeCompare(b.name);
-  });
-}

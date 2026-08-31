@@ -2,7 +2,10 @@ import Head from "next/head";
 import Link from "next/link";
 import Sidebar from "./Sidebar";
 import { MobileNavChrome } from "./mobile-nav-chrome";
+import { ProgramStatusBadge } from "./program-status-badge";
 import { formatClinicDate } from "../lib/clinic-date";
+import { formatStatus } from "../lib/format-status";
+import type { Program } from "../lib/program-display";
 import styles from "../styles/design-b.module.css";
 
 type IconName =
@@ -34,12 +37,10 @@ export type DashboardSession = {
   status: string | null;
 };
 
-export type DashboardProgram = {
-  id: string;
-  name: string;
-  domain: string | null;
-  status: string;
-};
+/** Kept under its original exported name so existing importers
+ *  (pages/index.tsx) don't need to change - the type itself now lives in
+ *  lib/program-display.ts, shared with pages/progress.tsx. */
+export type DashboardProgram = Program;
 
 /** `body` mirrors session_notes.body's shape (migration 0001) - only
  *  familyUpdate is ever shown here. perProgram/abcNarrative/planNext are
@@ -418,6 +419,13 @@ export default function DesignB({
                   <h2>Progress Snapshot</h2>
                   <p>{clientName}&apos;s current goals</p>
                 </div>
+
+                {/* Matches "Upcoming Sessions" -> /appointments - this card
+                    had no way to see the full goal list at all before
+                    pages/progress.tsx existed. */}
+                <Link className={styles.textButton} href="/progress">
+                  View all
+                </Link>
               </div>
 
               {programsError ? (
@@ -459,6 +467,12 @@ export default function DesignB({
                   <h2>Recent Updates</h2>
                   <p>Notes from your clinical team</p>
                 </div>
+
+                {/* Same parity fix as Progress Snapshot above - this card
+                    was capped at 5 with no way to see older updates. */}
+                <Link className={styles.textButton} href="/updates">
+                  View all
+                </Link>
               </div>
 
               {soapNotesError ? (
@@ -626,47 +640,6 @@ function statusClass(status: string | null) {
     default:
       return "confirmed";
   }
-}
-
-function formatStatus(status: string | null) {
-  if (!status) {
-    return "Scheduled";
-  }
-
-  return status
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (character) =>
-      character.toUpperCase()
-    );
-}
-
-function ProgramStatusBadge({ status }: { status: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    mastered: { bg: "#E6F6EF", text: "#1A7F4B" },
-    active: { bg: "#EAF2FE", text: "#1D5FAE" },
-    maintenance: { bg: "#EAF2FE", text: "#1D5FAE" },
-    on_hold: { bg: "#FEF3E6", text: "#B4690E" },
-    draft: { bg: "#F1F2F4", text: "#607987" },
-    pending_signoff: { bg: "#F1F2F4", text: "#607987" },
-    archived: { bg: "#F1F2F4", text: "#607987" },
-  };
-  const color = colors[status] ?? colors.draft;
-
-  return (
-    <span
-      style={{
-        padding: "3px 10px",
-        borderRadius: 999,
-        fontSize: 12.5,
-        fontWeight: 600,
-        whiteSpace: "nowrap",
-        background: color.bg,
-        color: color.text,
-      }}
-    >
-      {formatStatus(status)}
-    </span>
-  );
 }
 
 function formatUpdateDate(iso: string | null) {

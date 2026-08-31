@@ -97,7 +97,7 @@ function SidebarIcon({
 const navItems: NavItem[] = [
   { label: "Dashboard", icon: "home", href: "/" },
   { label: "Appointments", icon: "calendar", href: "/appointments" },
-  { label: "Progress", icon: "progress", comingSoon: true },
+  { label: "Progress", icon: "progress", href: "/progress" },
   { label: "Messages", icon: "message", comingSoon: true },
   { label: "Documents", icon: "document", comingSoon: true },
   { label: "Consents", icon: "consent", comingSoon: true },
