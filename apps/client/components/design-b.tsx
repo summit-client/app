@@ -2,6 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import Sidebar from "./Sidebar";
 import { MobileNavChrome } from "./mobile-nav-chrome";
+import { formatClinicDate } from "../lib/clinic-date";
 import styles from "../styles/design-b.module.css";
 
 type IconName =
@@ -56,8 +57,12 @@ type DesignBProps = {
   familyName: string;
   clientName: string;
   sessions: DashboardSession[];
+  sessionsCount: number;
+  sessionsError: boolean;
   programs: DashboardProgram[];
+  programsError: boolean;
   soapNotes: DashboardSoapNote[];
+  soapNotesError: boolean;
 };
 
 function Icon({
@@ -182,8 +187,12 @@ export default function DesignB({
   familyName,
   clientName,
   sessions,
+  sessionsCount,
+  sessionsError,
   programs,
+  programsError,
   soapNotes,
+  soapNotesError,
 }: DesignBProps) {
   const masteredCount = programs.filter((p) => p.status === "mastered").length;
   const activeGoalsCount = programs.filter((p) => p.status !== "mastered" && p.status !== "archived").length;
@@ -233,7 +242,14 @@ export default function DesignB({
 
               <div>
                 <div className={styles.metricValue}>
-                  {sessions.length}
+                  {/* "—" (matching ComingSoonMetric's own convention for
+                      "we don't actually have this number") rather than 0 -
+                      a failed fetch and a genuinely empty schedule aren't
+                      the same fact and shouldn't render identically.
+                      sessionsCount, not sessions.length - the list below
+                      is capped to a handful for the preview, but the tile
+                      should show the true upcoming count. */}
+                  {sessionsError ? "—" : sessionsCount}
                 </div>
 
                 <div className={styles.metricLabel}>
@@ -253,7 +269,7 @@ export default function DesignB({
 
               <div>
                 <div className={styles.metricValue}>
-                  {masteredCount}
+                  {programsError ? "—" : masteredCount}
                 </div>
 
                 <div className={styles.metricLabel}>
@@ -273,7 +289,7 @@ export default function DesignB({
 
               <div>
                 <div className={styles.metricValue}>
-                  {activeGoalsCount}
+                  {programsError ? "—" : activeGoalsCount}
                 </div>
 
                 <div className={styles.metricLabel}>
@@ -309,7 +325,16 @@ export default function DesignB({
               </div>
 
               <div className={styles.sessionList}>
-                {sessions.length === 0 ? (
+                {sessionsError ? (
+                  <div
+                    style={{
+                      padding: "20px 0",
+                      color: "#607987",
+                    }}
+                  >
+                    Couldn&apos;t load your sessions. Try refreshing the page.
+                  </div>
+                ) : sessions.length === 0 ? (
                   <div
                     style={{
                       padding: "20px 0",
@@ -395,7 +420,12 @@ export default function DesignB({
                 </div>
               </div>
 
-              {programs.length === 0 ? (
+              {programsError ? (
+                <EmptyState
+                  title="Couldn't load goals"
+                  message="Something went wrong loading this. Try refreshing the page."
+                />
+              ) : programs.length === 0 ? (
                 <EmptyState
                   title="No goals yet"
                   message="Goals will appear here once your clinical team adds them."
@@ -431,7 +461,12 @@ export default function DesignB({
                 </div>
               </div>
 
-              {soapNotes.length === 0 ? (
+              {soapNotesError ? (
+                <EmptyState
+                  title="Couldn't load updates"
+                  message="Something went wrong loading this. Try refreshing the page."
+                />
+              ) : soapNotes.length === 0 ? (
                 <EmptyState
                   title="No updates yet"
                   message="Session updates will appear here once your clinical team shares one."
@@ -639,9 +674,8 @@ function formatUpdateDate(iso: string | null) {
     return "Recently";
   }
 
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  // formatClinicDate(), not toLocaleDateString(undefined, ...) - see
+  // lib/clinic-date.ts for why an ambient-locale/timezone format here was
+  // a real SSR/hydration mismatch, not just a cosmetic inconsistency.
+  return formatClinicDate(iso);
 }

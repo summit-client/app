@@ -102,3 +102,32 @@ using it as a live reference tonight.
   token-vs-hardcoded-colour consistency), so left as-is rather than
   expanding scope. Worth a follow-up if `apps/client` is the reference
   portal going forward.
+
+---
+
+## Round 2 (functionality pass) — additional finding, not fixed
+
+**`AdminViewBanner` isn't sticky, so it can scroll out of view on a tall
+dashboard.** Its own doc comment states the point of the banner is that an
+admin viewing a family's data "as" them is never mistaken for that
+family's own session, by the admin or by anyone glancing at their screen -
+but the banner renders in normal document flow with no `position: sticky`
+or `fixed`, so scrolling down `dashboardGrid`'s five cards on a narrow
+screen scrolls the banner away while the rest of the page (and the
+mobile nav's own sticky topbar) stays visible. Not fixed here: `.mobileTopbar`
+(`design-b.module.css`, only active below 760px) is *also*
+`position: sticky; top: 0`, and it renders directly after the banner in the
+DOM - making the banner sticky too without visually verifying the two
+don't overlap when both are "stuck" (this session has no way to render the
+app in a browser; no live Supabase project reachable, same limitation as
+the rest of this pass) risked leaving the banner in a worse state -
+overlapping the hamburger topbar - than simply not being sticky. Flagging
+for whoever can check it in an actual browser rather than guessing at the
+stacking blind.
+
+Everything else re-audited this round (`proxy.ts`, `lib/supabase-server.ts`,
+`Sidebar.tsx`, `mobile-nav-chrome.tsx`, both API routes) came back clean -
+no second functional issue found beyond what's fixed in this round's
+commits (the clinic-timezone date bug, the three query-error-vs-empty
+sites, goal ordering, SOAP-note null ordering, the date-format hydration
+mismatch, and the dashboard session-count tile).

@@ -44,7 +44,8 @@ export type ResolveResult =
   | { kind: "viewing"; viewed: ViewedClient }
   | { kind: "needs-selection"; clinicId: string }
   | { kind: "not-permitted" }
-  | { kind: "account-problem"; problem: AccountProblem };
+  | { kind: "account-problem"; problem: AccountProblem }
+  | { kind: "error" };
 
 /**
  * `clients` briefly had no clinic_id column at all (this file's first
@@ -70,22 +71,39 @@ export async function resolveViewedClient(
   req: NextApiRequest,
   userId: string,
 ): Promise<ResolveResult> {
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("role, clinic_id")
     .eq("id", userId)
     .maybeSingle();
+
+  // A real query failure (network blip, transient DB error - not an RLS
+  // filter, which returns [] with no error) used to fall straight through
+  // every branch below to "not-permitted", which both callers turn into a
+  // silent redirect home. That looks identical to "wrong role" from the
+  // outside and would bounce a perfectly legitimate family member away
+  // from their own dashboard during a transient outage, with nothing
+  // telling them why. Surface it as its own case instead.
+  if (profileError) {
+    console.error("resolveViewedClient: profile lookup failed:", profileError.message);
+    return { kind: "error" };
+  }
 
   if (profile?.role === "client") {
     if (!profile.clinic_id) {
       return { kind: "account-problem", problem: "NO_CLINIC" };
     }
 
-    const { data: client } = await supabase
+    const { data: client, error: clientError } = await supabase
       .from("clients")
       .select("id, name")
       .eq("user_id", userId)
       .maybeSingle();
+
+    if (clientError) {
+      console.error("resolveViewedClient: client lookup failed:", clientError.message);
+      return { kind: "error" };
+    }
 
     if (!client) {
       return { kind: "account-problem", problem: "NO_CLIENT_LINK" };
@@ -103,12 +121,21 @@ export async function resolveViewedClient(
 
     // Re-validated against the admin's own clinic on every request - the
     // cookie only says which id to re-check, never grants access on its own.
-    const { data: client } = await supabase
+    const { data: client, error: clientError } = await supabase
       .from("clients")
       .select("id, name")
       .eq("id", cookieClientId)
       .eq("clinic_id", profile.clinic_id)
       .maybeSingle();
+
+    if (clientError) {
+      // Previously fell through to "needs-selection" on any failure here,
+      // same as a genuinely unknown/foreign client id - which silently
+      // re-shows the picker (and, worse, looks like the admin's previous
+      // selection was quietly forgotten) instead of saying a lookup failed.
+      console.error("resolveViewedClient: admin view-as client lookup failed:", clientError.message);
+      return { kind: "error" };
+    }
 
     if (!client) return { kind: "needs-selection", clinicId: profile.clinic_id };
 
@@ -126,7 +153,7 @@ export async function resolveViewedClient(
 export async function listClinicClients(
   supabase: SupabaseClient,
   clinicId: string,
-): Promise<SelectableClient[]> {
+): Promise<{ clients: SelectableClient[]; error: boolean }> {
   const { data, error } = await supabase
     .from("clients")
     .select("id, name")
@@ -135,9 +162,12 @@ export async function listClinicClients(
   // An RLS-filtered read returns [] with no error - this only catches the
   // other kind of empty result (wrong column, permission actually denied,
   // etc.), the exact distinction a bad .eq("clinic_id", ...) once hid, so
-  // log it rather than silently treating both the same.
+  // log it rather than silently treating both the same. The caller also
+  // gets the error flag now instead of just a same-shaped [] either way,
+  // since "your clinic has zero clients" and "the client list failed to
+  // load" need different copy on the picker.
   if (error) console.error("listClinicClients failed:", error.message);
-  return data ?? [];
+  return { clients: data ?? [], error: Boolean(error) };
 }
 
 export function setViewAsCookie(res: NextApiResponse, clientId: string) {

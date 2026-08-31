@@ -9,8 +9,10 @@ import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient } from "../lib/admin-view-as";
+import { clinicTodayDateStr } from "../lib/clinic-date";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { AccountProblemNotice } from "../components/account-problem-notice";
+import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
@@ -33,11 +35,13 @@ type PageProps =
   | {
       mode: "appointments";
       sessions: Session[];
+      sessionsError: boolean;
       clientName: string;
       isAdminViewingAs: boolean;
       todayDateStr: string;
     }
-  | { mode: "problem"; problem: AccountProblem };
+  | { mode: "problem"; problem: AccountProblem }
+  | { mode: "error" };
 
 type Filter = "All" | "Scheduled" | "Completed" | "Cancelled";
 
@@ -50,7 +54,11 @@ export default function Appointments(
     return <AccountProblemNotice problem={props.problem} />;
   }
 
-  const { sessions, clientName, isAdminViewingAs, todayDateStr } = props;
+  if (props.mode === "error") {
+    return <LoadErrorNotice />;
+  }
+
+  const { sessions, sessionsError, clientName, isAdminViewingAs, todayDateStr } = props;
 
   const filteredSessions =
     filter === "All"
@@ -116,7 +124,11 @@ export default function Appointments(
         </div>
 
         <section className={styles.apptList}>
-          {filteredSessions.length === 0 ? (
+          {sessionsError ? (
+            <div className={styles.apptEmpty}>
+              Couldn&apos;t load your appointments. Try refreshing the page.
+            </div>
+          ) : filteredSessions.length === 0 ? (
             <div className={styles.apptEmpty}>No appointments scheduled.</div>
           ) : (
             filteredSessions.map((session) => {
@@ -190,6 +202,9 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   const resolved = await resolveViewedClient(supabase, req as NextApiRequest, user.id);
 
+  if (resolved.kind === "error") {
+    return { props: { mode: "error" } };
+  }
   if (resolved.kind === "needs-selection") {
     // The picker lives on the landing page, not here.
     return { redirect: { destination: "/", permanent: false } };
@@ -226,26 +241,21 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     .order("hour", { ascending: true })
     .order("minute", { ascending: true });
 
-  const todayDateStr = new Date().toISOString().slice(0, 10);
+  // clinicTodayDateStr() (not new Date().toISOString()) so the
+  // scheduled/completed split below is the clinic's own calendar day, not
+  // the UTC server's - see lib/clinic-date.ts and the matching fix in
+  // pages/index.tsx's "Upcoming Sessions" query.
+  const todayDateStr = clinicTodayDateStr();
 
   if (sessionsError) {
     console.error("Failed to load appointments:", sessionsError.message);
-
-    return {
-      props: {
-        mode: "appointments",
-        sessions: [],
-        clientName: viewed.clientName,
-        isAdminViewingAs: viewed.isAdminViewingAs,
-        todayDateStr,
-      },
-    };
   }
 
   return {
     props: {
       mode: "appointments",
       sessions: (sessions ?? []) as Session[],
+      sessionsError: Boolean(sessionsError),
       clientName: viewed.clientName,
       isAdminViewingAs: viewed.isAdminViewingAs,
       todayDateStr,
