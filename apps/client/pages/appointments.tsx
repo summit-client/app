@@ -105,7 +105,7 @@ export default function Appointments(
           </p>
         </header>
 
-        <div className={styles.filters}>
+        <div className={styles.filters} role="group" aria-label="Filter appointments by status">
           {(["All", "Scheduled", "Completed", "Cancelled"] as const).map(
             (option) => (
               <button
