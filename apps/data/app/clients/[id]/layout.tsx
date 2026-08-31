@@ -28,6 +28,7 @@ function useTabs() {
     { seg: "planning", label: "Treatment Plan" },
     { seg: "assessments", label: "Assessments" },
     { seg: "documents", label: "Documents" },
+    { seg: "funding", label: "Funding" },
     { seg: "timeline", label: "Timeline" },
     { seg: "supervision", label: "Case Review" },
     { seg: "report", label: "Report" },

@@ -151,3 +151,25 @@ Four defects that reading it had not:
 - `client_sessions.scheduled_session_id` exists but nothing sets it yet. The
   Run Session workspace needs to carry the booking through.
 - No UI for any of it. A screen is not evidence that the layer beneath works.
+
+## The screens that exist now
+
+Two, both built because the layer beneath them was otherwise inert.
+
+**Client → Funding** (`apps/data/app/clients/[id]/funding`). The clinic's side
+of the money: record an allocation, post a charge or credit, reconcile against
+the funder's records. The family sees the same figures in their own portal,
+derived from the same view — not a second calculation. Entry sign follows from
+the kind rather than being typed, because a credit entered as a charge
+reconciles to the wrong number in the direction nobody checks.
+
+**Settings → Workforce** (`apps/data/components/settings/workforce.tsx`). The
+staff-to-login linking screen migration `0025` calls for, and the derivation
+queue. Where a scheduler name differs from the person's name, both are shown
+rather than the difference being hidden behind a confirmation. A scheduler
+record already claimed by someone else does not appear in the list.
+
+The queue groups blocked sessions by reason and says how to clear each one. It
+is deliberately not a list of errors: hours are still recorded when only the
+charge is blocked, and the screen says so, because "no budget on file" should
+not also mean "nobody gets paid for this".
