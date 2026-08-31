@@ -29,7 +29,7 @@ interface PostedGoal {
 
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
-    clientId?: number; clientName?: string; plannedDurationMin?: number;
+    clientId?: number; plannedDurationMin?: number;
     location?: string; focus?: string | null;
     goals?: PostedGoal[]; clientInterests?: string[]; supervisorPriorities?: string[];
   } | null;
@@ -51,8 +51,13 @@ export async function POST(request: NextRequest) {
   }
 
   // Evidence is scoped to this one client; nothing outside their record enters.
+  // The client's real name is never put into the AI-bound evidence — compliance.md:
+  // "De-identify before any AI call. Stable IDs replace names and DOBs." — even
+  // though this task routes to the BAA-covered Azure OpenAI provider when PHI is
+  // enabled, that gates which vendor may be called, not whether the name itself
+  // needs to travel. The caller already knows the client it's planning for.
   const evidence: SessionPlanEvidence = {
-    client: { id: body.clientId, displayName: body.clientName ?? `Client ${body.clientId}` },
+    client: { id: body.clientId, displayName: `Client ${body.clientId}` },
     plannedDurationMin: body.plannedDurationMin,
     location: body.location,
     focus: body.focus ?? null,

@@ -89,8 +89,11 @@ function PlanStage({ client, programs, session, lastDone, onChange }: {
       });
       const res = await fetch("/api/session-plan", {
         method: "POST", headers: { "content-type": "application/json" },
+        // The client's name never leaves the browser for this call — the
+        // endpoint builds an AI-bound evidence packet, and compliance.md
+        // requires de-identification before any AI call.
         body: JSON.stringify({
-          clientId: client.id, clientName: client.name, plannedDurationMin: duration,
+          clientId: client.id, plannedDurationMin: duration,
           location, focus: focus || null, goals, clientInterests: client.interests,
         }),
       });
