@@ -265,6 +265,19 @@ html { scroll-behavior: smooth; }
   0%, 100% { transform: translate(0,0) scale(1); }
   50%      { transform: translate(-24px,28px) scale(1.06); }
 }
+/* Final CTA: white text over the brand gradient failed AA at the gradient's
+   lighter (teal) end - measured 2.57:1 for the heading and 2.04:1 for the
+   paragraph against #28B4A6, both well under the 3:1/4.5:1 AA needs. A flat
+   30% black scrim (not a new hue - same gradient underneath, just darkened)
+   brings the worst case to 4.9:1 for white text everywhere the gradient can
+   land, checked against all three of its stops. */
+#trial::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.3);
+  pointer-events: none;
+}
+
 .testi-bg::before {
   content: '"';
   position: absolute;

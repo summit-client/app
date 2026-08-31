@@ -516,7 +516,7 @@ export default function Home() {
         textAlign: 'center', position: 'relative', overflow: 'hidden',
         fontFamily: body,
       }}>
-        <div className="reveal" style={{ position: 'relative', maxWidth: 680, margin: '0 auto' }}>
+        <div className="reveal" style={{ position: 'relative', zIndex: 1, maxWidth: 680, margin: '0 auto' }}>
           <h2 style={{
             fontFamily: display,
             fontSize: 'clamp(2rem,3.8vw,2.9rem)',
