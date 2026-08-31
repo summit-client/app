@@ -137,14 +137,22 @@ export function signOutUrl(): string {
 /**
  * Who may use which portal.
  *
- * `clinician` and `employee` mirror auth_is_staff() deliberately: both read
- * clinic data under policies that call it, so admitting a role here that the
- * function rejects produces a portal that renders and then shows nothing.
+ * `clinician` mirrors auth_is_staff() deliberately: it reads clinic data
+ * under policies that call it, so admitting a role here that the function
+ * rejects produces a portal that renders and then shows nothing.
+ *
+ * `employee` does NOT mirror auth_is_staff() - it deliberately admits
+ * scheduler too (2026-08-31, for the Admin console link), same call
+ * auth_is_scheduling_staff() (migration 0013) already made for the
+ * scheduling tables: scheduler is its own staff category here, not folded
+ * into the clinical admin/supervisor/clinician one. hub_can_manage()
+ * (migration 0022) was widened to match, so this doesn't produce that same
+ * renders-then-empty portal the comment above warns about.
  */
 const ACCESS: Record<PortalKey, readonly AppRole[]> = {
   scheduler: ["admin", "scheduler"],
   clinician: ["admin", "supervisor", "clinician"],
-  employee: ["admin", "supervisor", "clinician"],
+  employee: ["admin", "supervisor", "clinician", "scheduler"],
   // "admin" added 2026-08-28 so admins can reach the family portal from the
   // nav bar for QA. Note this only makes the link visible - apps/client's
   // own data fetch (pages/index.tsx) looks up `clients` by `user_id =

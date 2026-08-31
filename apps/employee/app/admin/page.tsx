@@ -18,17 +18,40 @@ import { SessionGate, useIdentity } from "@/components/session-provider";
  * Admin: the supervisor and admin console with team directory, pending sign-off
  * queue, time-off decisions, PD verification and the audit feed. Admins see
  * the whole clinic; supervisors see their linked team (enforced by RLS in
- * live mode; the preview store holds one employee).
+ * live mode; the preview store holds one employee). Schedulers also reach
+ * this console (2026-08-31), scoped clinic-wide the same as admin - see
+ * migration 0022's widened hub_can_manage().
  */
 export default function AdminPage() {
+  // No HrGate `requires` here: scheduler maps to EMPLOYEE in this portal's
+  // three-tier HubRole ladder (session.ts) everywhere else, on purpose - it
+  // isn't promoted to SUPERVISOR app-wide just to reach this one screen.
+  // AdminAccessGate below checks the raw appRole instead, so the exception
+  // stays scoped to the Admin console specifically.
+  return (
+    <HrGate>
+      <AdminAccessGate>
+        <AdminConsole />
+      </AdminAccessGate>
+    </HrGate>
+  );
+}
+
+function AdminAccessGate({ children }: { children: React.ReactNode }) {
   // Gate on profiles.role via RLS-backed identity, not on a role the browser
   // holds. The previous check read a role out of localStorage that My Profile
   // let anyone set, so any signed-in employee could open this console.
-  return (
-    <HrGate requires={["SUPERVISOR", "ADMIN"]}>
-      <AdminConsole />
-    </HrGate>
-  );
+  const identity = useIdentity();
+  const allowed = identity.role === "ADMIN" || identity.role === "SUPERVISOR" || identity.appRole === "scheduler";
+  if (!allowed) {
+    return (
+      <div className="card card-pad" style={{ marginTop: 16, maxWidth: 640 }}>
+        <h1 className="h-page">Not available to you</h1>
+        <p className="sub" style={{ marginTop: 8 }}>This area is for admin, supervisor and scheduler accounts.</p>
+      </div>
+    );
+  }
+  return <>{children}</>;
 }
 
 function AdminConsole() {
@@ -86,7 +109,10 @@ function AdminConsole() {
     <div>
       <AdminTabs tab={tab} setTab={setTab} role={profile.role} />
       <p className="sub">
-        {profile.role === "ADMIN" ? "Whole-clinic view." : "Your linked team."} Pending approvals first; everything you decide is audited.
+        {/* Scheduler's hub_can_manage() grant (migration 0022) is
+            unconditional, same as admin's - clinic-wide, not team-linked -
+            so it reads the copy the same way admin does. */}
+        {profile.role === "ADMIN" || identity.appRole === "scheduler" ? "Whole-clinic view." : "Your linked team."} Pending approvals first; everything you decide is audited.
       </p>
 
       <h2 className="section-title">Team directory</h2>

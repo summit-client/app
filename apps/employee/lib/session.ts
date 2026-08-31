@@ -43,12 +43,25 @@ export interface Session {
   isPreview: boolean;
 }
 
-/** The three roles PORTAL_ACCESS.employee admits, in this portal's own terms.
- *  A role outside it is ROLE_EXCLUDED before this map is ever consulted. */
+/**
+ * The roles PORTAL_ACCESS.employee admits, collapsed into this portal's own
+ * three-tier ladder. A role outside it is ROLE_EXCLUDED before this map is
+ * ever consulted.
+ *
+ * scheduler maps to EMPLOYEE, the same as clinician - self-service hub
+ * screens only (My Onboarding, Training, etc.), never blanket SUPERVISOR
+ * power over other people's records. Scheduler's one elevated privilege
+ * here - reaching the Admin console - doesn't fit this ladder (it's an
+ * orthogonal grant, not "promote to supervisor everywhere in the app"), so
+ * it's handled as an explicit exception on the Admin route itself
+ * (apps/employee/app/admin/page.tsx) rather than by mapping scheduler to
+ * SUPERVISOR here.
+ */
 const HUB_ROLE: Partial<Record<AppRole, HubRole>> = {
   admin: "ADMIN",
   supervisor: "SUPERVISOR",
   clinician: "EMPLOYEE",
+  scheduler: "EMPLOYEE",
 };
 
 const APP_ROLE: Record<HubRole, AppRole> = {
