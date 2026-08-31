@@ -9,6 +9,7 @@ import DesignB, {
   type DashboardProgram,
   type DashboardSoapNote,
 } from "../components/design-b";
+import { positionOf, totalPosition, type BudgetEntry, type ClientBudget } from "../lib/budget";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient, listClinicClients, type SelectableClient } from "../lib/admin-view-as";
 import { AdminViewBanner } from "../components/admin-view-banner";
@@ -24,6 +25,10 @@ type DashboardProps = {
   sessions: DashboardSession[];
   programs: DashboardProgram[];
   soapNotes: DashboardSoapNote[];
+  budget: {
+    allocated: number; spent: number; remaining: number; percentUsed: number; currency: string;
+    count: number;
+  } | null;
   isAdminViewingAs: boolean;
 };
 
@@ -165,6 +170,34 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // SOAP notes: RLS (session_notes_client_read) also enforces status in
   // ('signed','countersigned') server-side - a draft is never selectable
   // here even if this query's own filter were ever removed by mistake.
+  // Budgets: funding-source agnostic. RLS (client_budgets_client_read) scopes
+  // these to the signed-in family's own child; the client_id filter is
+  // defense-in-depth, matching the pattern above. Spent-to-date is summed
+  // from entries rather than read off a stored total, so the dashboard and
+  // the statement can never disagree.
+  const { data: budgetRows, error: budgetsError } = await supabase
+    .from("client_budgets")
+    .select("id, client_id, name, funding_source, reference, allocated_amount, currency, period_start, period_end, status, notes")
+    .eq("client_id", viewed.clientId)
+    .neq("status", "CLOSED")
+    .order("period_start", { ascending: false });
+
+  if (budgetsError) {
+    console.error("Failed to load client budgets:", budgetsError.message);
+  }
+
+  const budgetIds = (budgetRows ?? []).map((b) => b.id as string);
+  const { data: entryRows, error: entriesError } = budgetIds.length
+    ? await supabase
+        .from("budget_entries")
+        .select("id, budget_id, entry_date, kind, description, session_id, service_type, quantity, unit_rate, amount, reconciled")
+        .in("budget_id", budgetIds)
+    : { data: [], error: null };
+
+  if (entriesError) {
+    console.error("Failed to load budget entries:", entriesError.message);
+  }
+
   const { data: soapNotes, error: soapNotesError } = await supabase
     .from("session_notes")
     .select("id, status, signed_at, countersigned_at, body")
@@ -193,7 +226,54 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       sessions: (sessions ?? []) as DashboardSession[],
       programs: (programs ?? []) as DashboardProgram[],
       soapNotes: (soapNotes ?? []) as DashboardSoapNote[],
+      budget: summarizeBudgets(budgetRows ?? [], entryRows ?? []),
       isAdminViewingAs: viewed.isAdminViewingAs,
     },
   };
 };
+
+
+/** Database rows to the shapes the budget library works in. */
+function toBudget(r: Record<string, unknown>): ClientBudget {
+  return {
+    id: r.id as string,
+    clientId: Number(r.client_id),
+    name: r.name as string,
+    fundingSource: r.funding_source as string,
+    reference: (r.reference as string) ?? null,
+    allocatedAmount: Number(r.allocated_amount),
+    currency: (r.currency as string) ?? "CAD",
+    periodStart: r.period_start as string,
+    periodEnd: (r.period_end as string) ?? null,
+    status: r.status as ClientBudget["status"],
+    notes: (r.notes as string) ?? null,
+  };
+}
+
+function toEntry(r: Record<string, unknown>): BudgetEntry {
+  return {
+    id: r.id as string,
+    budgetId: r.budget_id as string,
+    entryDate: r.entry_date as string,
+    kind: r.kind as BudgetEntry["kind"],
+    description: r.description as string,
+    sessionId: r.session_id == null ? null : Number(r.session_id),
+    serviceType: (r.service_type as string) ?? null,
+    quantity: r.quantity == null ? null : Number(r.quantity),
+    unitRate: r.unit_rate == null ? null : Number(r.unit_rate),
+    amount: Number(r.amount),
+    reconciled: Boolean(r.reconciled),
+  };
+}
+
+/** The combined position across every open budget, for the dashboard tile. */
+function summarizeBudgets(
+  budgetRows: Record<string, unknown>[],
+  entryRows: Record<string, unknown>[],
+): DashboardProps["budget"] {
+  if (!budgetRows.length) return null;
+  const budgets = budgetRows.map(toBudget);
+  const entries = entryRows.map(toEntry);
+  const total = totalPosition(budgets.map((b) => positionOf(b, entries)));
+  return { ...total, count: budgets.length };
+}
