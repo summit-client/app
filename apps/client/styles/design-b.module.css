@@ -351,6 +351,76 @@
   background: var(--surface-2);
 }
 
+/* Appointments page (pages/appointments.tsx) - shares .page/.sidebar/.main
+   and the .status/.confirmed/.cancelled/.completed pill classes above with
+   the dashboard, but its own filter bar and session cards previously lived
+   entirely as inline styles with no breakpoint behaviour of their own, so
+   the page didn't reflow at the same 1100/760/520 tiers the dashboard does.
+   These reuse that same scheme rather than inventing a new one. */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.filterButton {
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.filterButtonActive {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.apptList {
+  display: grid;
+  gap: 12px;
+}
+
+.apptEmpty {
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+}
+
+.apptCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.apptTitle {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.apptMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 @media (max-width: 1100px) {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -463,6 +533,14 @@
 
   .status {
     grid-column: 2;
+    justify-self: start;
+  }
+
+  .apptCard {
+    grid-template-columns: 1fr;
+  }
+
+  .apptCard .status {
     justify-self: start;
   }
 }
