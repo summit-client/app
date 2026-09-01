@@ -676,6 +676,167 @@
   font-weight: 700;
 }
 
+/* pages/messages.tsx - the care-team message thread. Bubbles align by
+   sender: the signed-in family's own messages on the right (accent-tinted,
+   like .navItemActive elsewhere in this file), the care team's on the left
+   (plain .surface, same treatment .updateCard already uses for clinical
+   content). Poll-on-load/manual-refresh only (see the page for why) - no
+   streaming, so no unread/typing states to style. */
+.threadCard {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  max-height: 68vh;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.threadScroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.messageRow {
+  display: flex;
+  flex-direction: column;
+  max-width: 72%;
+}
+
+.messageRowMine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.messageRowTheirs {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.messageSender {
+  margin: 0 3px 4px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.messageBubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.messageBubbleMine {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-bottom-right-radius: 4px;
+}
+
+.messageBubbleTheirs {
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+}
+
+.messageTime {
+  margin: 4px 3px 0;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.composeBar {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.composeInput {
+  flex: 1;
+  min-height: 44px;
+  max-height: 140px;
+  padding: 11px 13px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.composeSendButton {
+  padding: 11px 18px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 0;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.composeSendButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composeDisabledNotice {
+  padding: 14px 18px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.threadToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.refreshButton {
+  padding: 8px 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.refreshButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 520px) {
+  .messageRow {
+    max-width: 88%;
+  }
+
+  .threadCard {
+    max-height: none;
+  }
+}
+
 @media (max-width: 1100px) {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
