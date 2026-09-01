@@ -5,6 +5,8 @@ import { UserContext } from "../lib/UserContext";
 import Sidebar from "../components/Sidebar";
 import SessionTypeEditModal from "../components/SessionTypeEditModal";
 import { CalendarView } from "../components/calendar/CalendarView";
+import { SessionDetail } from "../components/calendar/SessionDetail";
+import { RescheduleModal } from "../components/calendar/RescheduleModal";
 import { gapsOverlap, parseTimeSetting, toDateStr, todayDateStr } from "../components/calendar/dateUtils";
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
@@ -2318,10 +2320,21 @@ finally { setLoading(false); }
 
 // ─── Sessions view ─────────────────────────────────────────────────────────────
 
-function SessionsView({ clients, employees, sessionTypes, bookings, calendars, locations, refreshBookings, showToast, typeColors }) {
+function SessionsView({ clients, employees, sessionTypes, bookings, calendars, locations, staffAvailability, clientAvailability, workStart, workEnd, refreshBookings, showToast, typeColors }) {
   const appUser = useContext(UserContext);
   const role = appUser?.role || "client";
   const isAdminOrScheduler = role === "admin" || role === "scheduler";
+  const clinicId = appUser?.clinic_id || "";
+  const incrementMinutes = Number(getSetting("calendar.gridIncrementMinutes")) || 15;
+
+  // The session click-popup, shared with the real calendar tab (see
+  // components/calendar/SessionDetail.tsx's header) - this list previously
+  // had no "click a session to see it" affordance at all, only the pencil/✕
+  // row actions below (left untouched). Clicking a session's name opens the
+  // same popup, including the "View both schedules" dual mini-calendar.
+  const [detailSession, setDetailSession] = useState(null);
+  const [reschedulingSession, setReschedulingSession] = useState(null);
+  const [rescheduleInitialSlot, setRescheduleInitialSlot] = useState(null);
 
   const [calFilter, setCalFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("scheduled");
@@ -2570,7 +2583,12 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           return (
             <div key={b.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 140px 100px 80px 80px", gap: 0, padding: "10px 12px", borderBottom: i < filtered.length - 1 ? `0.5px solid ${COLORS.border}` : "none", background: isSel ? COLORS.bgS : COLORS.bg, opacity: isCancelled ? 0.55 : 1, alignItems: "center", transition: "background 0.1s" }}>
               <input type="checkbox" checked={isSel} onChange={() => toggleSelect(b.id)} style={{ cursor: "pointer" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div
+                role="button" tabIndex={0} aria-label={`View session details for ${client?.name || "this session"}`}
+                onClick={() => setDetailSession(b)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDetailSession(b); } }}
+                style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+              >
                 <Avatar name={client?.name || "?"} size={28} color="#378ADD" />
                 <span style={{ fontSize: 13, fontWeight: 500, color: COLORS.text }}>{client?.name || "—"}</span>
               </div>
@@ -2654,6 +2672,32 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           </div>
         );
       })()}
+
+      {detailSession && (
+        <SessionDetail
+          session={detailSession} clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors}
+          isDraft={(calendars || []).find(c => c.id === detailSession.calendar_id)?.status === "draft"}
+          staffAvailability={staffAvailability || []} clientAvailability={clientAvailability || []}
+          clinicId={clinicId} workStartHour={workStart} workEndHour={workEnd} incrementMinutes={incrementMinutes}
+          onClose={() => setDetailSession(null)}
+          onReschedule={proposedSlot => { setRescheduleInitialSlot(proposedSlot || null); setReschedulingSession(detailSession); setDetailSession(null); }}
+          onCancelled={() => { setDetailSession(null); refreshBookings(); showToast("Session cancelled"); }}
+        />
+      )}
+
+      {reschedulingSession && (
+        <RescheduleModal
+          session={reschedulingSession}
+          client={clients.find(c => c.id === reschedulingSession.client_id)}
+          employees={employees} locations={locations} sessionTypes={sessionTypes}
+          liveSessions={(bookings || []).filter(b => b.status !== "cancelled")}
+          staffAvailability={staffAvailability || []} clientAvailability={clientAvailability || []}
+          clinicId={clinicId} workStartHour={workStart} workEndHour={workEnd} orgIncrementMinutes={incrementMinutes}
+          initialSlot={rescheduleInitialSlot}
+          onClose={() => { setReschedulingSession(null); setRescheduleInitialSlot(null); }}
+          onSaved={message => { setReschedulingSession(null); setRescheduleInitialSlot(null); refreshBookings(); showToast(message); }}
+        />
+      )}
     </div>
   );
 }

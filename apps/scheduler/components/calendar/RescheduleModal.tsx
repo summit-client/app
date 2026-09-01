@@ -39,6 +39,12 @@ interface Props {
   workStartHour: number;
   workEndHour: number;
   orgIncrementMinutes: number;
+  /** Pre-selects a date/time instead of the session's own current one - set
+   *  when this modal is opened via "Continue to reschedule" from the
+   *  dual-schedule mini-calendar (SessionSchedulesPanel) after a slot was
+   *  picked there. The grid below still lets the user change it before
+   *  saving - this only seeds the initial selection. */
+  initialSlot?: { dateStr: string; hour: number; minute: number } | null;
   onClose: () => void;
   onSaved: (message: string) => void;
 }
@@ -47,7 +53,7 @@ type SlotState = "open" | "clinician-only" | "client-only" | "neither" | "booked
 
 export function RescheduleModal({
   session, client, employees, locations, sessionTypes, liveSessions, staffAvailability, clientAvailability,
-  clinicId, workStartHour, workEndHour, orgIncrementMinutes, onClose, onSaved,
+  clinicId, workStartHour, workEndHour, orgIncrementMinutes, initialSlot, onClose, onSaved,
 }: Props) {
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -61,12 +67,14 @@ export function RescheduleModal({
   const [homeAddress, setHomeAddress] = React.useState(session.home_address || "");
   const [typeName, setTypeName] = React.useState(session.type);
   const [weekStart, setWeekStart] = React.useState(() => {
-    const d = parseDateStr(session.session_date);
+    const d = parseDateStr(initialSlot?.dateStr || session.session_date);
     const day = d.getDay();
     return addDays(d, day === 0 ? -6 : 1 - day);
   });
-  const [selectedDate, setSelectedDate] = React.useState(session.session_date);
-  const [selectedSlot, setSelectedSlot] = React.useState<{ hour: number; minute: number } | null>({ hour: session.hour, minute: session.minute });
+  const [selectedDate, setSelectedDate] = React.useState(initialSlot?.dateStr || session.session_date);
+  const [selectedSlot, setSelectedSlot] = React.useState<{ hour: number; minute: number } | null>(
+    initialSlot ? { hour: initialSlot.hour, minute: initialSlot.minute } : { hour: session.hour, minute: session.minute },
+  );
   const [repeatWeekly, setRepeatWeekly] = React.useState(false);
   const [endType, setEndType] = React.useState<"date" | "count" | null>(null);
   const [endDate, setEndDate] = React.useState("");
@@ -220,7 +228,12 @@ export function RescheduleModal({
     <div style={overlayStyle} onClick={onClose}>
       <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" style={{ ...modalStyle, width: "min(480px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Reschedule</div>
-        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 12 }}>{client?.name || "Unknown client"}</div>
+        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: initialSlot ? 4 : 12 }}>{client?.name || "Unknown client"}</div>
+        {initialSlot && (
+          <div style={{ fontSize: 12, color: "#3f9c78", marginBottom: 8 }}>
+            Pre-filled from the schedule comparison you just looked at — review and confirm below.
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 8 }}>
           <Field label="Clinician">
