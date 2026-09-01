@@ -29,7 +29,7 @@
  */
 import * as React from "react";
 import { supabase } from "../../lib/supabase";
-import { WEEKDAY_ABBR, addDays, toDateStr, parseDateStr, startOfWeek, formatFullRange } from "./dateUtils";
+import { WEEKDAY_ABBR, addDays, toDateStr, parseDateStr, startOfWeek, formatFullRange, formatWeekMonthLabel } from "./dateUtils";
 import { isAvailable, hasSessionConflict, hasClientSessionConflict, buildBusyBlocks } from "./suggestions";
 import type { AvailabilityRow, ExistingSession } from "./suggestions";
 import { sessionDuration } from "./types";
@@ -58,10 +58,20 @@ interface Props {
 
 type SlotState = "open" | "clinician-only" | "client-only" | "neither" | "booked";
 
+// "Clinician only" and "client only" used to be the exact same colour
+// (#EF9F2722/#8A5E10, orange) - indistinguishable at this panel's tight
+// size, and orange is also this app's "draft calendar" warning colour
+// elsewhere (CalendarView's "Show drafts" toggle/banner), so reusing it
+// here for two DIFFERENT things was doubly confusing (issue #133: "I see
+// green and orange... I need to know what the orange represents... I have
+// no idea, I'm just guessing"). Blue vs. rose are both far enough from the
+// existing green (open)/red (booked)/neutral-grey (neither) pair, and from
+// each other, to read apart at a glance - see the legend rendered below,
+// which already existed but couldn't rescue two identical swatches.
 const slotColors: Record<SlotState, { bg: string; text: string; label: string }> = {
-  open: { bg: "#5DCAA522", text: "#0F6E56", label: "Both open" },
-  "clinician-only": { bg: "#EF9F2722", text: "#8A5E10", label: "Clinician only" },
-  "client-only": { bg: "#EF9F2722", text: "#8A5E10", label: "Client only" },
+  open: { bg: "#5DCAA522", text: "#0F6E56", label: "Both available" },
+  "clinician-only": { bg: "#5B8DEF22", text: "#2B5BA6", label: "Clinician only" },
+  "client-only": { bg: "#D4537E22", text: "#9C3459", label: "Client only" },
   neither: { bg: "var(--color-background-secondary)", text: "var(--color-text-tertiary)", label: "Neither marked available" },
   booked: { bg: "#FCE8E8", text: "#A33A3A", label: "Conflict — already busy" },
 };
@@ -177,17 +187,43 @@ export function SessionSchedulesPanel({
     return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
   }
 
+  // Blocks used to render in a single 30px-tall lane, positioned purely by
+  // left/width percentage with no collision handling - two sessions that
+  // overlap in time (or a "Busy" block simply adjacent to the viewed
+  // session once the `Math.max(2, ...)` minimum width rounds it wider than
+  // its real duration) rendered directly on top of each other. That's the
+  // "bouncing box around the word Busy... overlaps the clinician's own
+  // session" bug from issue #133: reproduced with a same-clinician session
+  // overlapping the viewed one. Fixed with a small interval-graph coloring
+  // (same idea as TimeGrid's clusterByOverlap, just 1-D since there's no
+  // vertical time axis here) - blocks that overlap in time get their own
+  // row instead of sharing one.
+  const ROW_H = 22;
+  const ROW_GAP = 3;
+  function layoutIntoRows(blocks: ReturnType<typeof buildBusyBlocks>): { rows: number; placed: (ReturnType<typeof buildBusyBlocks>[number] & { row: number })[] } {
+    const rowEnds: number[] = [];
+    const placed = blocks.map((b) => {
+      let row = rowEnds.findIndex((end) => end <= b.startMinutes);
+      if (row === -1) { row = rowEnds.length; rowEnds.push(b.endMinutes); }
+      else rowEnds[row] = b.endMinutes;
+      return { ...b, row };
+    });
+    return { rows: Math.max(1, rowEnds.length), placed };
+  }
+
   function renderLane(label: string, blocks: ReturnType<typeof buildBusyBlocks>) {
+    const { rows, placed } = layoutIntoRows(blocks);
+    const laneHeight = rows * ROW_H + (rows - 1) * ROW_GAP + 6;
     return (
       <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: 4 }}>{label.toUpperCase()}</div>
-        <div style={{ position: "relative", height: 30, borderRadius: 6, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
-          {blocks.map((b) => (
+        <div style={{ position: "relative", height: laneHeight, borderRadius: 6, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+          {placed.map((b) => (
             <div
               key={b.id}
               title={b.isViewedSession ? `This session · ${fmtHM(b.startMinutes)} – ${fmtHM(b.endMinutes)}` : `Busy · ${fmtHM(b.startMinutes)} – ${fmtHM(b.endMinutes)}`}
               style={{
-                position: "absolute", top: 3, bottom: 3,
+                position: "absolute", top: 3 + b.row * (ROW_H + ROW_GAP), height: ROW_H,
                 left: `${pct(b.startMinutes)}%`, width: `${Math.max(2, pct(b.endMinutes) - pct(b.startMinutes))}%`,
                 borderRadius: 4,
                 background: b.isViewedSession ? "#378ADD" : "#88888855",
@@ -213,6 +249,14 @@ export function SessionSchedulesPanel({
           {employee?.name || "Clinician"} &amp; {client?.name || "Client"} — other sessions on either calendar show only as &quot;Busy&quot;, never who they belong to.
         </div>
 
+        {/* A day strip showing just "31, 1, 2, 3" is ambiguous the moment a
+            week crosses a month boundary (issue #133's own example: Aug 31
+            into September) - this names the month(s) the visible week
+            actually falls in, next to (not instead of) the existing
+            week-navigation row. */}
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>
+          {formatWeekMonthLabel(weekDays)}
+        </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 6px" }}>
           <button aria-label="Previous week" onClick={() => setWeekStart((w) => addDays(w, -7))} style={navBtnSmall}>‹</button>
           <button onClick={() => setWeekStart(startOfWeek(parseDateStr(session.session_date)))} style={navBtnSmall}>Session&apos;s week</button>

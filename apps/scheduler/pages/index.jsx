@@ -7,6 +7,7 @@ import SessionTypeEditModal from "../components/SessionTypeEditModal";
 import { CalendarView } from "../components/calendar/CalendarView";
 import { SessionDetail } from "../components/calendar/SessionDetail";
 import { RescheduleModal } from "../components/calendar/RescheduleModal";
+import { SearchSelectMenu } from "../components/calendar/FilterPanel";
 import { gapsOverlap, parseTimeSetting, toDateStr, todayDateStr } from "../components/calendar/dateUtils";
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
@@ -548,6 +549,31 @@ function OptionButton({ label, sub, selected, onClick, color, disabled }) {
       <div>{label}</div>
       {sub && <div style={{ fontSize: 12, color: selected ? c : COLORS.textT, marginTop: 3 }}>{sub}</div>}
     </button>
+  );
+}
+
+/** A picked field collapsed into one compact, removable chip - issue #133
+ *  item 9's "selection summary": once client/session-type/clinician are all
+ *  chosen in the quickSlot wizard, their three full StepCards give way to a
+ *  row of these instead of staying expanded, so the date/time (still shown
+ *  in the "New session" header above) and what was picked stay visible at
+ *  once instead of scrolling past several already-answered questions.
+ *  Clicking the ✕ clears just that one field, which re-expands its own
+ *  StepCard again (the collapse condition needs all three set). */
+function SelectedPill({ label, value, color, onClear }) {
+  const c = color || "#5DCAA5";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRadius: 20, background: c + "14", border: `1px solid ${c}55`, fontSize: 13 }}>
+      <span style={{ color: COLORS.textT }}>{label}:</span>
+      <span style={{ fontWeight: 500, color: COLORS.text }}>{value}</span>
+      <button
+        onClick={onClear}
+        aria-label={`Change ${label.toLowerCase()}`}
+        style={{ border: "none", background: "none", cursor: "pointer", color: c, fontSize: 13, lineHeight: 1, padding: 0, marginLeft: 2 }}
+      >
+        ✕
+      </button>
+    </span>
   );
 }
 
@@ -1310,7 +1336,14 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [selectedStaff, setSelectedStaff] = useState(null);
 
   const [sessionsPerWeek, setSessionsPerWeek] = useState(null);
-  const [recurring, setRecurring] = useState(null);
+  // Defaults to "No" (issue #133 item 7) - most bookings through this wizard
+  // are one-time, and leaving this unanswered had a second, compounding
+  // effect: `ready` below required an explicit choice here before the whole
+  // step even showed a "Book session" button, which is a very plausible
+  // reading of "I did a dummy click to create and I'm not seeing the
+  // listing populate" (item 8) - nothing to populate if the button never
+  // appeared and no insert ever ran.
+  const [recurring, setRecurring] = useState("no");
   const [endType, setEndType] = useState(null);
   const [endDate, setEndDate] = useState("");
   const [endCount, setEndCount] = useState("");
@@ -1364,7 +1397,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     setSelectedCalendar(covering || null);
     setQuickClient(null); setQuickType(null); setQuickStaff(null);
     setQuickIsHome(false); setQuickHomeAddress("");
-    setRecurring(null); setEndType(null); setEndDate(""); setEndCount("");
+    setRecurring("no"); setEndType(null); setEndDate(""); setEndCount("");
     setPendingConflict(null);
     setTrail([]);
     setStep("quickSlot");
@@ -1891,7 +1924,8 @@ finally { setLoading(false); }
     const eligibleStaff = quickType && quickClient
       ? employees.filter(e => e.specialties?.includes(quickType.name) && e.location_id === quickClient.location_id)
       : [];
-    const ready = quickClient && quickType && quickStaff && recurring && (recurring === "no" || (endType && (endType === "date" ? endDate : endCount)));
+    const allThreeChosen = !!(quickClient && quickType && quickStaff);
+    const ready = allThreeChosen && recurring && (recurring === "no" || (endType && (endType === "date" ? endDate : endCount)));
 
     return (
       // No PH here (unlike every other step) - this always renders inside
@@ -1924,31 +1958,65 @@ finally { setLoading(false); }
           )}
         </StepCard>
 
-        {selectedCalendar && (
-          <StepCard question="Client">
+        {/* Client / Session type / Clinician all show up together now
+            (issue #133 item 6) instead of Session type and Clinician being
+            gated behind picking a client first - eligibleStaff's own live
+            filtering by client-location + session-type is unchanged, it
+            just no longer hides the whole Clinician card while incomplete;
+            see its `sub` text below for the in-between state. Once all
+            three are answered they collapse into one compact, editable
+            summary (item 9) rather than staying expanded. */}
+        {selectedCalendar && allThreeChosen && (
+          <StepCard question="Selected">
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {eligibleClients.map(c => <OptionButton key={c.id} label={c.name} selected={quickClient?.id === c.id} onClick={() => { setQuickClient(c); setQuickStaff(null); }} />)}
+              <SelectedPill label="Client" value={quickClient.name} onClear={() => { setQuickClient(null); setQuickStaff(null); }} />
+              <SelectedPill label="Session type" value={quickType.name} color={quickType.color} onClear={() => { setQuickType(null); setQuickStaff(null); }} />
+              <SelectedPill label="Clinician" value={quickStaff.name} color="#378ADD" onClear={() => setQuickStaff(null)} />
             </div>
           </StepCard>
         )}
 
-        {selectedCalendar && quickClient && (
-          <StepCard question="Session type">
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {sessionTypes.map(t => <OptionButton key={t.id} label={t.name} color={t.color} selected={quickType?.id === t.id} onClick={() => { setQuickType(t); setQuickStaff(null); }} />)}
-            </div>
-          </StepCard>
+        {selectedCalendar && !allThreeChosen && (
+          <>
+            <StepCard question="Client">
+              {/* Was a flat wall of pills - unusable once a clinic has more
+                  than a handful of clients (issue #133 item 5: "135 people
+                  plus for a large clinic"). Reuses the same filterable,
+                  alphabetical-by-last-name dropdown FilterPanel.tsx already
+                  built for the Clinicians/Clients calendar filters. */}
+              <SearchSelectMenu
+                label="client"
+                items={eligibleClients.map(c => ({ id: c.id, name: c.name }))}
+                selectedId={quickClient?.id ?? null}
+                onSelect={(id) => { setQuickClient(eligibleClients.find(c => c.id === id) || null); setQuickStaff(null); }}
+                placeholder="Search clients by name…"
+              />
+            </StepCard>
+
+            <StepCard question="Session type">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {sessionTypes.map(t => <OptionButton key={t.id} label={t.name} color={t.color} selected={quickType?.id === t.id} onClick={() => { setQuickType(t); setQuickStaff(null); }} />)}
+              </div>
+            </StepCard>
+
+            <StepCard
+              question="Clinician"
+              sub={
+                !quickClient || !quickType
+                  ? "Pick a client and a session type above to see qualified clinicians here - filtering stays live as you choose either one."
+                  : !eligibleStaff.length
+                    ? "No clinician at this client's location is qualified for this session type."
+                    : undefined
+              }
+            >
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {eligibleStaff.map(e => <OptionButton key={e.id} label={e.name} sub={`${e.role} · ${e.booked}/${e.capacity}`} color="#378ADD" selected={quickStaff?.id === e.id} onClick={() => setQuickStaff(e)} />)}
+              </div>
+            </StepCard>
+          </>
         )}
 
-        {selectedCalendar && quickClient && quickType && (
-          <StepCard question="Clinician" sub={!eligibleStaff.length ? "No clinician at this client's location is qualified for this session type." : undefined}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {eligibleStaff.map(e => <OptionButton key={e.id} label={e.name} sub={`${e.role} · ${e.booked}/${e.capacity}`} color="#378ADD" selected={quickStaff?.id === e.id} onClick={() => setQuickStaff(e)} />)}
-            </div>
-          </StepCard>
-        )}
-
-        {selectedCalendar && quickClient && quickType && quickStaff && (
+        {selectedCalendar && allThreeChosen && (
           <StepCard question="Location">
             <div style={{ display: "flex", gap: 10, marginBottom: quickIsHome ? 10 : 0 }}>
               <OptionButton label={locations.find(l => l.id === quickStaff.location_id)?.name || "Clinic"} sub="Clinician's location" selected={!quickIsHome} onClick={() => setQuickIsHome(false)} />
@@ -1961,7 +2029,7 @@ finally { setLoading(false); }
           </StepCard>
         )}
 
-        {selectedCalendar && quickClient && quickType && quickStaff && (
+        {selectedCalendar && allThreeChosen && (
           <StepCard question="Is this a recurring schedule?">
             <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
               <OptionButton label="No" sub="One-time only" selected={recurring === "no"} onClick={() => { setRecurring("no"); setEndType(null); }} />
@@ -2908,6 +2976,11 @@ export default function Scheduler() {
           onFocusPerson={focusPersonOnCalendar}
           focus={calendarFocus}
           onConsumedFocus={() => setCalendarFocus(null)}
+          // CalendarView.tsx keeps its own independently-fetched `sessions`
+          // state, so it never noticed a session booked elsewhere (e.g.
+          // click-to-create's quickSlot wizard) - see its refreshSignal
+          // prop's own doc comment (issue #133 item 8).
+          refreshSignal={bookings}
         />
       </main>
       {calendarPrefill && (

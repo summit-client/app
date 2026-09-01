@@ -367,6 +367,21 @@ function DayColumn({
   const [focusedMinute, setFocusedMinute] = React.useState<number | null>(null);
   const [hasKeyboardFocus, setHasKeyboardFocus] = React.useState(false);
 
+  // Plain mouse-hover feedback before a click, distinct from both the
+  // active-drag indicator (dragHoverSlot, driven by dragover elsewhere on
+  // the grid) and the keyboard-focus indicator above (hasKeyboardFocus) -
+  // issue #133 item 10: "I don't know what I'm aiming at" moving the mouse
+  // over the grid before clicking to create. Cleared on mouseleave and
+  // suppressed while a drag is in progress anywhere on this column
+  // (dragHoverSlot takes over then) so the two indicators never compete.
+  const [hoverMinute, setHoverMinute] = React.useState<number | null>(null);
+  function handleColMouseMove(e: React.MouseEvent) {
+    setHoverMinute(snappedOffsetFromY(e.clientY));
+  }
+  function handleColMouseLeave() {
+    setHoverMinute(null);
+  }
+
   function snappedOffsetFromY(clientY: number): number {
     const rect = colRef.current!.getBoundingClientRect();
     const rawMin = (clientY - rect.top) / pxPerMin;
@@ -476,6 +491,8 @@ function DayColumn({
       onFocus={handleColFocus}
       onBlur={handleColBlur}
       onKeyDown={handleColKeyDown}
+      onMouseMove={handleColMouseMove}
+      onMouseLeave={handleColMouseLeave}
       tabIndex={0}
       role="slider"
       aria-orientation="vertical"
@@ -504,6 +521,35 @@ function DayColumn({
           </div>
         );
       })}
+      {/* Plain hover feedback (issue #133 item 10) - a lightweight tinted
+          band the width of one snap increment, under the cursor, so
+          there's some answer to "what am I aiming at" before a click
+          commits to a time. Deliberately quieter than both the drag
+          indicator below (a solid line + a filled time label - an active
+          commitment) and the keyboard-focus indicator (also a solid line +
+          label): no line, a much fainter fill, and no label chrome, just
+          the plain time text. Hidden during an active drag anywhere on
+          this grid (draggingEmployeeId set) and while this exact column
+          has keyboard focus, so at most one of the three indicators shows
+          at a time. */}
+      {hoverMinute != null && dragHoverSlot == null && draggingEmployeeId == null && !hasKeyboardFocus && (
+        <div
+          style={{
+            // A background colour that's already translucent (hex+alpha),
+            // not a div-level `opacity` - opacity also dims every
+            // descendant, which would leave the time label below too faint
+            // to read.
+            position: "absolute", left: 0, right: 0, zIndex: 5, pointerEvents: "none",
+            top: hoverMinute * pxPerMin, height: Math.max(snapMinutes * pxPerMin, 4),
+            background: "#88888818",
+            display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4,
+          }}
+        >
+          <span style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+            {(() => { const t = timeFromMinuteOffset(hoverMinute); return `${String(t.hour % 24).padStart(2, "0")}:${String(t.minute).padStart(2, "0")}`; })()}
+          </span>
+        </div>
+      )}
       {hoverTop != null && (
         <div style={{ position: "absolute", left: 0, right: 0, top: hoverTop, zIndex: 30, pointerEvents: "none" }}>
           <div style={{ height: 2, background: "#5DCAA5", boxShadow: "0 0 0 1px rgba(93,202,165,0.5)" }} />

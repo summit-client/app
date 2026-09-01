@@ -153,6 +153,26 @@ export function formatFullRange(dateStr: string, hour: number, minute: number, d
   return `${weekday} ${dateStr} ${fmt(startMinutesTotal)} - ${fmt(endMinutesTotal)}`;
 }
 
+/** "August 2026" for a run of days entirely inside one month; "Aug 31 - Sep
+ *  6, 2026" (or "Dec 28, 2026 - Jan 3, 2027" across a year boundary) when it
+ *  spans two - the exact ambiguity a numbers-only day strip ("Monday 31,
+ *  Tuesday 1...") leaves unresolved once the run crosses a month boundary
+ *  (issue #133: the dual mini-calendar showed day numbers with no month at
+ *  all). Takes the raw day list rather than just first/last so callers that
+ *  already have `weekDays` computed don't need to re-derive anything. */
+export function formatWeekMonthLabel(days: Date[]): string {
+  if (days.length === 0) return "";
+  const first = days[0];
+  const last = days[days.length - 1];
+  if (first.getFullYear() === last.getFullYear() && first.getMonth() === last.getMonth()) {
+    return first.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  }
+  const sameYear = first.getFullYear() === last.getFullYear();
+  const startLabel = first.toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+  const endLabel = last.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return `${startLabel} – ${endLabel}`;
+}
+
 /** Working-day check against calendar.workDays' comma-separated setting. */
 export function isWorkDay(d: Date, workDays: string[]): boolean {
   return workDays.includes(WEEKDAY_ABBR[d.getDay()]);
