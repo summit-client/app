@@ -40,13 +40,30 @@
   --font-body: 'Hanken Grotesk', sans-serif;
 }
 
-html,
-body {
+/* `overflow-x: hidden` lives on `html` only, not also on `body` (2026-09-01
+   - see the `.hero-bg` comment further down for the full story). Setting it
+   on BOTH is the actual reason `.hero-sticky`'s `position: sticky` never
+   pinned at all - not a fade-timing or height problem. Per the CSS spec,
+   BODY's overflow is normally propagated up to become the root scrolling
+   box's overflow, and root-relative `position: sticky` is computed against
+   that one root scroller; explicitly setting a non-visible overflow on BOTH
+   html and body suppresses that propagation, so body becomes a second,
+   independent (and here, never-actually-scrolled) scroll container - and a
+   sticky element measured against a container that never scrolls just
+   renders at its static, `position: relative`-like offset the entire time,
+   which is exactly what was happening: confirmed live, `.hero-sticky`'s
+   `top` tracked `64 - scrollY` in lockstep from scrollY 0 onward instead of
+   holding at 64. Keeping it on just one of the two still clips horizontal
+   overflow site-wide (verified: no scrollable width at any breakpoint below,
+   once the two actual overflow sources - the hero blob and the footer link
+   row - are fixed at the source instead of relying on this to hide them). */
+html {
   max-width: 100vw;
   overflow-x: hidden;
 }
 
 body {
+  max-width: 100vw;
   color: var(--foreground);
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
@@ -154,16 +171,26 @@ html { scroll-behavior: smooth; }
 
 /* Shared section padding rhythm - was a flat `88px 2rem` inline on every
    section regardless of viewport, which can't respond to a media query at
-   all. Tapers at the same 1100/760/520 tiers as the grid above. */
-.landing-section { padding: 88px 2rem; }
-@media (max-width: 1100px) { .landing-section { padding: 72px 2rem; } }
-@media (max-width: 760px)  { .landing-section { padding: 56px 1.5rem; } }
-@media (max-width: 520px)  { .landing-section { padding: 44px 1.25rem; } }
+   all. Tapers at the same 1100/760/520 tiers as the grid above.
+   Re-tuned (2026-09-01): two adjacent sections stack their padding at the
+   seam (bottom padding of one + top padding of the next, since nothing sets
+   a margin between them), so the *visible* gap between e.g. Features and
+   How it works was double these numbers - 88+88 = 176px on desktop, and
+   88+100 = 188px into the final CTA. Values below are ~20% tighter at every
+   tier and share a single ratio between the two classes (landing-section-lg
+   stays ~1.2x landing-section, matching the original's own ~1.1-1.14x, for
+   the final CTA to still read as the larger, closing section) rather than
+   each being tuned independently, so the rhythm holds at every breakpoint
+   instead of just on desktop. */
+.landing-section { padding: 72px 2rem; }
+@media (max-width: 1100px) { .landing-section { padding: 56px 2rem; } }
+@media (max-width: 760px)  { .landing-section { padding: 44px 1.5rem; } }
+@media (max-width: 520px)  { .landing-section { padding: 32px 1.25rem; } }
 
-.landing-section-lg { padding: 100px 2rem; }
-@media (max-width: 1100px) { .landing-section-lg { padding: 80px 2rem; } }
-@media (max-width: 760px)  { .landing-section-lg { padding: 60px 1.5rem; } }
-@media (max-width: 520px)  { .landing-section-lg { padding: 48px 1.25rem; } }
+.landing-section-lg { padding: 88px 2rem; }
+@media (max-width: 1100px) { .landing-section-lg { padding: 68px 2rem; } }
+@media (max-width: 760px)  { .landing-section-lg { padding: 52px 1.5rem; } }
+@media (max-width: 520px)  { .landing-section-lg { padding: 40px 1.25rem; } }
 
 .btn-primary { transition: transform .2s ease, box-shadow .2s ease; }
 .btn-primary:hover {
@@ -252,14 +279,30 @@ html { scroll-behavior: smooth; }
 }
 
 /* Pseudo-elements */
+/* `right: 0`, not `-80px` (2026-09-01) - the -80px used to push this 500px
+   circle 80px past the right edge of the page. That's exactly the kind of
+   overflow `html`'s `overflow-x: hidden` above is meant to catch, but this
+   element sits *inside* `.hero-bg`, an ancestor of `.hero-sticky` - and, as
+   that rule's own comment explains, giving any ancestor of a sticky element
+   a non-visible overflow (this one included, not just html/body) defeats
+   its stickiness the same way, confirmed live the same way. So this can't
+   be fixed by clipping it from outside; it has to not overflow in the first
+   place. `right: 0` keeps the same corner-glow effect - the visible portion
+   was already being silently clipped to this same extent by the old
+   html+body rule, so this is what was actually on screen already, just
+   finally sized to match. Shrinks on narrow viewports (below, phone width)
+   so it can't overflow the *left* edge instead once anchored at `right: 0`. */
 .hero-bg::after {
   content: '';
   position: absolute;
-  top: -80px; right: -80px;
+  top: -80px; right: 0;
   width: 500px; height: 500px;
   background: radial-gradient(circle, rgba(40,180,166,.09) 0%, transparent 70%);
   pointer-events: none;
   animation: floatBlob 9s ease-in-out infinite;
+}
+@media (max-width: 520px) {
+  .hero-bg::after { width: 260px; height: 260px; }
 }
 @keyframes floatBlob {
   0%, 100% { transform: translate(0,0) scale(1); }
