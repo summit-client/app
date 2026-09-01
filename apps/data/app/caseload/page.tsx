@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { urlFor } from "@summit/portals";
-import { getMyClients } from "@/lib/data";
+import { createNoteOnlySession, getMyClients } from "@/lib/data";
 import type { ClientRow } from "@/lib/types";
 
 const STATUS_PILL: Record<string, string> = {
@@ -18,9 +19,12 @@ const STATUS_PILL: Record<string, string> = {
  * screen to browse clients outside this list.
  */
 export default function CaseloadPage() {
+  const router = useRouter();
   const [clients, setClients] = React.useState<ClientRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [addingNoteFor, setAddingNoteFor] = React.useState<number | null>(null);
+  const [noteError, setNoteError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -37,6 +41,24 @@ export default function CaseloadPage() {
   // doc comment and the PR description for the full reasoning.
   const scheduleHref = `${urlFor("scheduler")}/?view=sessions`;
 
+  // A quick, independent way to reach the session-note form without going
+  // through a calendar/schedule entry point — mints a note-only session
+  // (status 'documentation', no data collection attached) and opens its
+  // note form directly. For the common case of documenting a session that
+  // already happened; the Sessions tab on the client record covers writing
+  // a note against a specific existing session instead.
+  const addNote = async (clientId: number) => {
+    setAddingNoteFor(clientId);
+    setNoteError(null);
+    try {
+      const session = await createNoteOnlySession(clientId);
+      router.push(`/clients/${clientId}/sessions/${session.id}/note`);
+    } catch (e) {
+      setNoteError(e instanceof Error ? e.message : "Could not start a session note.");
+      setAddingNoteFor(null);
+    }
+  };
+
   return (
     <div>
       <h1 className="h-page">My Caseload</h1>
@@ -45,6 +67,12 @@ export default function CaseloadPage() {
       {loadError ? (
         <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--warn)" }}>
           <p className="sub" style={{ color: "var(--ink)" }}>{loadError}</p>
+        </div>
+      ) : null}
+
+      {noteError ? (
+        <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--danger)" }}>
+          <p className="sub" style={{ color: "var(--ink)" }}>{noteError}</p>
         </div>
       ) : null}
 
@@ -74,6 +102,12 @@ export default function CaseloadPage() {
                 <td><span className={`pill ${STATUS_PILL[c.status] ?? "neutral"}`}>{c.status}</span></td>
                 <td style={{ textAlign: "right" }}>
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                    <button
+                      type="button" className="btn ghost" disabled={addingNoteFor === c.id}
+                      onClick={() => void addNote(c.id)}
+                    >
+                      {addingNoteFor === c.id ? "Opening…" : "+ Note"}
+                    </button>
                     <Link href={`/clients/${c.id}/goals`} className="btn ghost" style={{ textDecoration: "none" }}>
                       Goals
                     </Link>

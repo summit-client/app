@@ -177,7 +177,7 @@ async function hydrateSessionRows(clientId: number): Promise<number[]> {
 async function hydrateNoteRows(clientId: number): Promise<void> {
   const { data, error } = await sb()
     .from("session_notes")
-    .select("session_id, client_id, body, billable_code, status")
+    .select("session_id, client_id, body, billable_code, status, return_note")
     .eq("client_id", clientId);
   if (error) throw error;
   for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
@@ -193,6 +193,7 @@ async function hydrateNoteRows(clientId: number): Promise<void> {
       abcNarrative: (body.abcNarrative as string) ?? "",
       billableCode: row.billable_code as SessionNoteDraft["billableCode"],
       status: row.status as SessionNoteDraft["status"],
+      returnNote: (row.return_note as string | null) ?? null,
     });
   }
 }
@@ -417,6 +418,51 @@ export async function completeRunSession(sessionId: number, programs: Program[])
 export async function lockRunSession(sessionId: number): Promise<void> {
   const s = getRunSession(sessionId);
   if (s && s.status === "completed") await updateRunSession(sessionId, { status: "locked" });
+}
+
+/**
+ * Create a `client_sessions` row for note-only documentation, landing
+ * directly in 'documentation' status — for a clinician writing up a session
+ * that already happened (from the caseload roster or a client's Sessions
+ * tab) without running the live Plan → Session Tab data-collection flow.
+ * Inserting straight into a non-initial status is fine: the
+ * forbid_locked_session_update trigger (migration 0004) only restricts
+ * UPDATEs, and the status column's own check constraint admits
+ * 'documentation' as a starting value same as any other.
+ */
+export async function createNoteOnlySession(clientId: number, occurredOn?: string): Promise<RunSession> {
+  const stamp = occurredOn ? new Date(occurredOn).toISOString() : new Date().toISOString();
+  const id = Math.max(10_000, ...mem.sessions.map((s) => s.id + 1));
+  const session: RunSession = {
+    id, clientId, clinicianId: null, status: "documentation",
+    startTime: stamp, endTime: stamp, plannedDurationMin: null, actualDurationMin: null,
+    location: null, serviceType: "Direct Therapy", focus: null, plan: null,
+    programVersionSnapshot: [], createdAt: new Date().toISOString(),
+  };
+  mem.sessions.push(session);
+  persistMem();
+  if (!IS_PREVIEW) {
+    const user = (await sb().auth.getUser()).data.user;
+    const { data, error } = await sb().from("client_sessions").insert({
+      client_id: clientId, clinician_id: user?.id, clinic_id: await myClinicId(),
+      status: "documentation", start_time: stamp, end_time: stamp, service_type: "Direct Therapy",
+    }).select("id").single();
+    if (error) throw error;
+    session.id = data.id; // adopt the DB id so the note (session_notes.session_id) attaches to it
+    persistMem();
+  }
+  return session;
+}
+
+/**
+ * documentation → completed for a note-only session, mirroring what
+ * `completeRunSession` does after a live session's data collection — except
+ * there are no program summaries to roll up here, since none were ever
+ * collected. Called once the SOAP note is signed.
+ */
+export async function completeNoteOnlySession(sessionId: number): Promise<void> {
+  const s = getRunSession(sessionId);
+  if (s && s.status === "documentation") await updateRunSession(sessionId, { status: "completed" });
 }
 
 export function summariesFor(sessionId: number): SessionProgramSummary[] {
