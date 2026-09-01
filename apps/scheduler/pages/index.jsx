@@ -494,6 +494,31 @@ function Badge({ label, color }) {
   return <span style={{ fontSize: 12, fontWeight: 500, padding: "2px 10px", borderRadius: 20, background: color + "22", color, border: `1px solid ${color}44` }}>{label}</span>;
 }
 
+// Neither clients nor staff have a detail/profile page anywhere in this app
+// (confirmed by searching pages/ and admin.tsx before adding this) - so a
+// name click resolves to the smaller, already-existing "scope the real
+// calendar to this person" mechanism (CalendarView's own filters) instead of
+// a bespoke profile screen. Renders as plain text when there's nothing to
+// link to (no id/onClick), matching how {client?.name}/{emp?.name} rendered
+// before this - a session with a dangling client_id/employee_id shows "—"
+// rather than a broken control.
+function PersonLink({ name, onClick, size = 14, weight = 500, color }) {
+  const c = color || COLORS.text;
+  if (!name || !onClick) {
+    return <span style={{ fontSize: size, fontWeight: weight, color: c }}>{name || "—"}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="person-link"
+      style={{ fontSize: size, fontWeight: weight, color: c, fontFamily: "inherit", background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", textAlign: "left" }}
+    >
+      {name}
+    </button>
+  );
+}
+
 function StatCard({ label, value, sub, accent }) {
   return (
     <div style={{ background: COLORS.bgS, borderRadius: 10, padding: "14px 18px", border: `0.5px solid ${COLORS.border}` }}>
@@ -672,7 +697,7 @@ function ClientMatchCard({ item, accepted, onAccept, onReject, typeColors }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function Dashboard({ clients, employees, bookings, typeColors }) {
+function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) {
   const [staffFilter, setStaffFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
 
@@ -738,8 +763,19 @@ function Dashboard({ clients, employees, bookings, typeColors }) {
                     <div style={{ width: 3, height: 36, borderRadius: 2, background: color, flexShrink: 0 }} />
                     <Avatar name={client?.name || "?"} size={32} color={color} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>{client?.name}</div>
-                      <div style={{ fontSize: 13, color: COLORS.textS }}>{emp?.name} · {bDay} {b.hour}:00</div>
+                      <div>
+                        <PersonLink
+                          name={client?.name}
+                          onClick={client && (() => onFocusPerson({ clientId: client.id, dateStr: b.session_date, label: client.name }))}
+                        />
+                      </div>
+                      <div style={{ fontSize: 13, color: COLORS.textS }}>
+                        <PersonLink
+                          name={emp?.name}
+                          size={13} weight={400} color={COLORS.textS}
+                          onClick={emp && (() => onFocusPerson({ employeeId: emp.id, dateStr: b.session_date, label: emp.name }))}
+                        /> · {bDay} {b.hour}:00
+                      </div>
                     </div>
                     <Badge label={b.type} color={color} />
                   </div>
@@ -2756,6 +2792,19 @@ export default function Scheduler() {
     setCalendarPrefill({ dateStr, hour, minute });
   }
 
+  // Backs the Dashboard's clickable client/clinician names (PersonLink,
+  // above). Neither role has a detail/profile page anywhere in this app, so
+  // rather than inventing one, this reuses the real Calendar tab's own
+  // filters + date-anchor to scope it down to that person's session -
+  // consumed once by CalendarView's `focus` prop, then cleared here so a
+  // later, unrelated visit to the Calendar tab doesn't silently reapply it.
+  const [calendarFocus, setCalendarFocus] = useState(null);
+  function focusPersonOnCalendar({ employeeId, clientId, dateStr, label }) {
+    setCalendarFocus({ employeeId: employeeId ?? null, clientId: clientId ?? null, dateStr: dateStr ?? null });
+    setView("calendar");
+    if (label) showToast(`Calendar filtered to ${label}`);
+  }
+
   const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
   const ViewComp = views[view];
 
@@ -2780,6 +2829,8 @@ export default function Scheduler() {
         select, input { outline: none; }
         select:focus, input:focus { border-color: var(--color-border-primary) !important; }
         button:active { transform: scale(0.98); }
+        .person-link { text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 2px; transition: text-decoration-color 0.1s; }
+        .person-link:hover, .person-link:focus-visible { text-decoration-color: currentColor; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--color-border-secondary); border-radius: 3px; }
@@ -2810,6 +2861,9 @@ export default function Scheduler() {
           onRequestCreate={requestCreateAt}
           prefill={calendarPrefill}
           onConsumedPrefill={() => setCalendarPrefill(null)}
+          onFocusPerson={focusPersonOnCalendar}
+          focus={calendarFocus}
+          onConsumedFocus={() => setCalendarFocus(null)}
         />
       </main>
       {calendarPrefill && (

@@ -64,9 +64,21 @@ interface Props {
   clientAvailability: CalClientAvailability[];
   showToast: (msg?: string) => void;
   onRequestCreate: (dateStr: string, hour: number, minute: number) => void;
+  /** Set once, briefly, by a click on a client/clinician name in the
+   *  Dashboard's Sessions list (see pages/index.jsx's focusPersonOnCalendar) -
+   *  there's no per-person profile page anywhere in this app, so that click
+   *  lands here instead: scope this tab to that person via the same
+   *  filters/date-anchor a user could set by hand. */
+  focus?: { employeeId?: number | null; clientId?: number | null; dateStr?: string | null } | null;
+  /** Called once the incoming `focus` has been applied, so the parent can
+   *  clear it - this view fully unmounts whenever pages/index.jsx's `view`
+   *  switches away from "calendar" (see its `views` map), so without this
+   *  a stale focus would silently reapply itself on the next visit to this
+   *  tab even after someone had since cleared filters by hand. */
+  onConsumedFocus?: () => void;
 }
 
-export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, setCalendars, staffAvailability, clientAvailability, showToast, onRequestCreate }: Props) {
+export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, setCalendars, staffAvailability, clientAvailability, showToast, onRequestCreate, focus = null, onConsumedFocus }: Props) {
   const appUser = useAppUser();
   const clinicId = appUser?.clinic_id || "";
   const [mode, setMode] = React.useState<ViewMode>("week");
@@ -78,6 +90,24 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const [selected, setSelected] = React.useState<CalSession | null>(null);
   const [rescheduling, setRescheduling] = React.useState<CalSession | null>(null);
   const [, forceTick] = React.useState(0);
+
+  // Applied once on mount only (empty dep array - this component remounts
+  // fresh on every navigation into this tab, per the comment on `focus`
+  // above, so there is no later prop change to react to). Reads `focus` via
+  // closure rather than as a dependency for exactly that reason.
+  React.useEffect(() => {
+    if (!focus) return;
+    if (focus.employeeId != null || focus.clientId != null) {
+      setFilters({
+        ...emptyFilters(),
+        employeeIds: focus.employeeId != null ? new Set([focus.employeeId]) : new Set(),
+        clientIds: focus.clientId != null ? new Set([focus.clientId]) : new Set(),
+      });
+    }
+    if (focus.dateStr) setAnchor(parseDateStr(focus.dateStr));
+    onConsumedFocus?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Measures the actual viewport-fit container so the time grid scales its
   // px-per-minute to the device instead of always rendering at one fixed

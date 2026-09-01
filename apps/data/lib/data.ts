@@ -506,6 +506,75 @@ export async function getClients(): Promise<ClientRow[]> {
   }));
 }
 
+/**
+ * The signed-in clinician's own caseload — "my clients," not the clinic's
+ * whole client list getClients() returns (that stays clinic-wide: several
+ * screens use it as a generic by-id lookup for whatever client the URL
+ * names, e.g. clients/[id]/layout.tsx, which must resolve any client in the
+ * clinic, not just this clinician's own).
+ *
+ * There is no clinician-to-client assignment table in this schema — migration
+ * 0014's own header says so explicitly and deliberately granted clinic-wide
+ * read access to `clients`/`sessions` for exactly that reason, rather than
+ * inventing an assignment model unilaterally. The closest real signal this
+ * schema has is `client_sessions.clinician_id`: it is set to auth.uid() every
+ * time this clinician actually creates or runs a session with a client
+ * (createRunSession/ensureSessionRecord above), so "clients I have at least
+ * one client_session row for" is a genuine, already-populated relationship —
+ * not a new grant. `client_sessions` is already readable clinic-wide under
+ * `auth_is_staff()` (migration 0004), so filtering by clinician_id here is a
+ * WHERE clause on data already permitted, not a widened policy.
+ *
+ * Known gap this proxy inherits: a client with no client_session yet (a
+ * brand-new intake this clinician hasn't run a first session with) won't
+ * appear here even if they're the intended clinician. Closing that properly
+ * needs a real assignment column/table — logged in BLOCKED-data.md rather
+ * than worked around with a broader grant.
+ */
+export async function getMyClients(): Promise<ClientRow[]> {
+  if (IS_PREVIEW) return previewClients;
+  const user = (await sb().auth.getUser()).data.user;
+  if (!user) return [];
+
+  const { data: mine, error: mineErr } = await sb()
+    .from("client_sessions")
+    .select("client_id")
+    .eq("clinician_id", user.id);
+  if (mineErr) throw mineErr;
+  const clientIds = [...new Set((mine ?? []).map((r) => r.client_id as number))];
+  if (!clientIds.length) return [];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [{ data: clients, error: clientsErr }, { data: programs }, { data: upcoming }] = await Promise.all([
+    sb().from("clients").select("id,name,status").in("id", clientIds).order("name"),
+    sb().from("programs").select("client_id,status").in("client_id", clientIds).neq("status", "archived"),
+    sb().from("sessions").select("client_id,session_date")
+      .in("client_id", clientIds).gte("session_date", today).order("session_date"),
+  ]);
+  if (clientsErr) throw clientsErr;
+
+  const nextByClient = new Map<number, string>();
+  for (const s of (upcoming ?? []) as { client_id: number; session_date: string }[]) {
+    if (!nextByClient.has(s.client_id)) nextByClient.set(s.client_id, s.session_date);
+  }
+  const goalCounts = new Map<number, { active: number; mastered: number }>();
+  for (const p of (programs ?? []) as { client_id: number; status: string }[]) {
+    const g = goalCounts.get(p.client_id) ?? { active: 0, mastered: 0 };
+    if (p.status === "active") g.active++;
+    if (p.status === "mastered" || p.status === "maintenance") g.mastered++;
+    goalCounts.set(p.client_id, g);
+  }
+
+  return (clients ?? []).map((c) => ({
+    id: c.id, name: c.name, age: null, funding: null, serviceType: null,
+    status: c.status ?? "active",
+    activeGoals: goalCounts.get(c.id)?.active ?? 0,
+    masteredGoals: goalCounts.get(c.id)?.mastered ?? 0,
+    nextSession: nextByClient.get(c.id) ?? null,
+    supervisor: null, lastSession: null, interests: [],
+  }));
+}
+
 export async function getTodaySessions(): Promise<ScheduledSession[]> {
   if (IS_PREVIEW) return previewSessions;
   const today = new Date().toISOString().slice(0, 10);

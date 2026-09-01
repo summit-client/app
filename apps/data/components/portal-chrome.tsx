@@ -35,6 +35,7 @@ export function PortalNav() {
     { href: "/", label: "Today", id: "Today", icon: "▦" },
     { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙" },
     { href: "/attention", label: "Attention", id: "Attention", icon: "◈" },
+    { href: "/tasks", label: "My Tasks", id: "My Tasks", icon: "☑" },
     ...(identity?.appRole === "clinician" ? [] : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" }]),
   ];
 
