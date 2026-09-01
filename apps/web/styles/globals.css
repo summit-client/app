@@ -543,6 +543,92 @@ html { scroll-behavior: smooth; }
 }
 .compare tfoot .compare-us { border-bottom: 1px solid #C9DED8; }
 
+/* ── Comparison table, mobile ──
+   Issue #134: PR #122 (already merged) kept the Summit column reachable
+   with `position: sticky`, but the ask here is broader — no left-right
+   scrolling to compare at all, not just a shorter scroll to the answer.
+   Below 640px the <table> above is swapped for a per-row card list built
+   from the same COMPARE_ROWS array (index.tsx), each row's three columns
+   turned into a heading plus two stacked "label: value" lines. Two
+   renderings of one dataset, toggled by display so exactly one exists in
+   the accessibility tree at a time — the table keeps full table semantics
+   above 640px, the cards need none of their own since nothing here is
+   tabular once it's one column wide.
+
+   640px (not the table's own 560px min-width breakpoint) is deliberate:
+   it clears the table's own scroll threshold with margin, so nothing
+   between the two breakpoints falls into "still a table, already
+   cramped." */
+.compare-cards {
+  display: none;
+}
+@media (max-width: 640px) {
+  .compare-wrap { display: none; }
+  .compare-cards {
+    display: block;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .compare-card {
+    padding: .95rem 0;
+    border-bottom: 1px solid var(--brand-gray-100);
+  }
+  .compare-card-title {
+    font-weight: 500;
+    color: #254449;
+    font-size: .92rem;
+    line-height: 1.4;
+    margin-bottom: .55rem;
+  }
+  .compare-card-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .2rem 0;
+  }
+  .compare-card-label {
+    font-family: var(--font-display);
+    font-size: .66rem;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--brand-gray-500);
+    flex: 0 0 auto;
+  }
+  .compare-card-value {
+    color: var(--brand-gray-500);
+    font-size: .88rem;
+    text-align: right;
+  }
+  /* The Summit answer, same tint the desktop column uses, so it still
+     reads as the emphasized cell rather than a third equal fact. */
+  .compare-card-us {
+    background: #F1F7F4;
+    margin: .45rem -.9rem -.95rem;
+    padding: .55rem .9rem;
+    border-radius: 0 0 8px 8px;
+  }
+  .compare-card-check {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    color: #0C5350;
+    font-weight: 600;
+  }
+  .compare-card-total {
+    border-bottom: none;
+    padding-top: 1.1rem;
+    border-top: 2px solid #C9DED8;
+  }
+  .compare-card-total .compare-card-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: #0B2B31;
+  }
+}
+
 /* Visually hidden but available to assistive tech. Used for the table caption
    and for the text behind each tick, so a screen reader hears "Included in
    Summit" rather than nothing at all. */

@@ -39,6 +39,25 @@ const PILL_STAGGER = 0.13
 const PILL_DUR     = 0.14
 const LINE_DUR     = 0.09
 
+// "What it replaces" rows — shared between the desktop <table> and the
+// mobile stacked-card list below so the two renderings can never drift
+// apart in content, only in layout.
+const COMPARE_ROWS: [string, string][] = [
+  ['Scheduling, matching and recurring calendars', 'Practice management'],
+  ['Client records, contacts and service history', 'Practice management'],
+  ['Session data captured as it happens', 'A separate data tool'],
+  ['Programs, goals and progress graphs', 'A separate data tool'],
+  ['Structured assessments and scoring', 'A separate data tool'],
+  ['Clinical notes, signature and countersignature', 'Practice management'],
+  ['Caseload review and documentation oversight', 'Spreadsheets'],
+  ['Family portal with progress and statements', 'A separate portal, or email'],
+  ['Funding allocations, spend and reconciliation', 'Accounting, plus spreadsheets'],
+  ['Staff records, onboarding and training', 'An HR system'],
+  ['Credentials and continuing education tracking', 'Spreadsheets'],
+  ['Timesheets, approvals and overtime rules', 'A payroll system'],
+  ['Hours, utilization and cost by service', 'Spreadsheets'],
+]
+
 // Moment the final connector finishes drawing.
 const SCENE_PEAK = PILL_START + (PILL_COUNT - 1) * PILL_STAGGER + PILL_DUR + LINE_DUR
 
@@ -503,6 +522,19 @@ export default function Home() {
             hand at month end.
           </p>
 
+          {/* Real <table> at desktop widths — thirteen rows of two short
+              values each is exactly what a table is for, and a screen
+              reader announces the column when reading a cell, which the
+              stacked-card version below cannot do.
+
+              Below 640px this table is replaced (not just scrolled) by a
+              per-row card list: PR #122 pinned the Summit column with
+              `position: sticky` so it was at least reachable by swiping,
+              but the request here was to stop needing left-right scrolling
+              at all, not to make the scroll shorter. Both renderings map
+              the same COMPARE_ROWS array so the content can't drift; CSS
+              (`.compare-wrap`/`.compare-cards` in globals.css) shows
+              exactly one of the two per viewport width. */}
           <div className="compare-wrap">
             <table className="compare">
               <caption className="visually-hidden">
@@ -516,21 +548,7 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  ['Scheduling, matching and recurring calendars', 'Practice management'],
-                  ['Client records, contacts and service history', 'Practice management'],
-                  ['Session data captured as it happens', 'A separate data tool'],
-                  ['Programs, goals and progress graphs', 'A separate data tool'],
-                  ['Structured assessments and scoring', 'A separate data tool'],
-                  ['Clinical notes, signature and countersignature', 'Practice management'],
-                  ['Caseload review and documentation oversight', 'Spreadsheets'],
-                  ['Family portal with progress and statements', 'A separate portal, or email'],
-                  ['Funding allocations, spend and reconciliation', 'Accounting, plus spreadsheets'],
-                  ['Staff records, onboarding and training', 'An HR system'],
-                  ['Credentials and continuing education tracking', 'Spreadsheets'],
-                  ['Timesheets, approvals and overtime rules', 'A payroll system'],
-                  ['Hours, utilization and cost by service', 'Spreadsheets'],
-                ].map(([capability, lives]) => (
+                {COMPARE_ROWS.map(([capability, lives]) => (
                   <tr key={capability}>
                     <th scope="row">{capability}</th>
                     <td>{lives}</td>
@@ -550,6 +568,35 @@ export default function Home() {
               </tfoot>
             </table>
           </div>
+
+          <ul className="compare-cards">
+            {COMPARE_ROWS.map(([capability, lives]) => (
+              <li className="compare-card" key={capability}>
+                <div className="compare-card-title">{capability}</div>
+                <div className="compare-card-row">
+                  <span className="compare-card-label">Usually lives in</span>
+                  <span className="compare-card-value">{lives}</span>
+                </div>
+                <div className="compare-card-row compare-card-us">
+                  <span className="compare-card-label">With Summit</span>
+                  <span className="compare-card-value compare-card-check">
+                    <Icon name="check" size={16} /> Included
+                  </span>
+                </div>
+              </li>
+            ))}
+            <li className="compare-card compare-card-total">
+              <div className="compare-card-title">Systems to run</div>
+              <div className="compare-card-row">
+                <span className="compare-card-label">Without Summit</span>
+                <span className="compare-card-value">Four to five</span>
+              </div>
+              <div className="compare-card-row compare-card-us">
+                <span className="compare-card-label">With Summit</span>
+                <span className="compare-card-value compare-card-check"><b>One</b></span>
+              </div>
+            </li>
+          </ul>
 
           <p style={{ fontSize: '.8rem', color: g500, marginTop: '1.5rem', maxWidth: 620, lineHeight: 1.65 }}>
             The middle column describes the category of product a capability normally
@@ -695,7 +742,7 @@ export default function Home() {
               ['Features','#features'],
               ['How it works','#how'],
               ['Security','#trust'],
-              ['Contact','mailto:yanko@summitclient.io'],
+              ['Contact','mailto:info@summitclient.io'],
               ['Privacy','/privacy'],
               ['Terms','/terms'],
             ] as [string,string][]).map(([label,href]) => (
