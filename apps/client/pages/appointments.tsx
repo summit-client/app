@@ -188,7 +188,7 @@ export default function Appointments(
               Download calendar (.ics)
             </a>
 
-            {/* Real webcal:// subscription (migration 0041) - a family's
+            {/* Real webcal:// subscription (migration 0043) - a family's
                 own account only, never rendered during admin "view as" (see
                 CalendarFeedSubscribe's own header for why). */}
             {!isAdminViewingAs && <CalendarFeedSubscribe />}

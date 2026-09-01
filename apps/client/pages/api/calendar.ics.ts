@@ -15,7 +15,7 @@ import { buildAppointmentsIcs, type IcsSession } from "../../lib/ics";
  *
  * Not a subscribable webcal:// feed - a calendar app polling on its own
  * can't send that cookie. See pages/api/calendar/feed/[token].ics.ts for
- * that (a separate, unauthenticated-but-token-gated route, migration 0041)
+ * that (a separate, unauthenticated-but-token-gated route, migration 0043)
  * rather than this one growing a second trust model.
  *
  * Text responses, not JSX - this is a file download, not a page, so it

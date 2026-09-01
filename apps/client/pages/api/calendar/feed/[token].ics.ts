@@ -8,7 +8,7 @@ import { buildAppointmentsIcs, type IcsSession } from "../../../../lib/ics";
  * The actual subscribable calendar feed - unauthenticated, token-gated
  * instead. See pages/api/calendar.ics.ts's header for the cookie-based
  * one-time download this exists alongside (that route stays untouched
- * rather than growing a second trust model), and migration 0041's header
+ * rather than growing a second trust model), and migration 0043's header
  * for the full design behind the token itself, checked here in application
  * code rather than by RLS.
  *

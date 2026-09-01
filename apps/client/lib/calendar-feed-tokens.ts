@@ -4,7 +4,7 @@ import { urlFor } from "@summit/portals";
 
 /**
  * A shareable, revocable secret for subscribing to a family's calendar feed
- * (pages/api/calendar/feed/[token].ics.ts) - migration 0041's
+ * (pages/api/calendar/feed/[token].ics.ts) - migration 0043's
  * `calendar_feed_tokens` table. See that migration's header for the full
  * design: why revoking is an update, not a delete, and why this table's own
  * RLS doesn't (and can't) cover the actual feed lookup.

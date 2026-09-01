@@ -1,4 +1,4 @@
--- 0041 · Calendar feed tokens — real webcal:// subscription for apps/client
+-- 0043 · Calendar feed tokens — real webcal:// subscription for apps/client
 --
 -- pages/api/calendar.ics.ts was a one-time authenticated download only: a
 -- calendar app polling a webcal:// URL on its own can't send this app's

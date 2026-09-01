@@ -9,7 +9,7 @@ import {
 
 /**
  * Manages the signed-in family's own calendar feed token - the
- * authenticated half of migration 0041's calendar_feed_tokens feature (see
+ * authenticated half of migration 0043's calendar_feed_tokens feature (see
  * that migration's header for the full design). pages/appointments.tsx's
  * "Subscribe" control calls this to check the current state (GET), generate
  * a link (POST), and revoke one (DELETE). The unauthenticated other half -
@@ -96,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Revoke-then-insert, not update-in-place: the old row stays as a
     // record that a link existed and when it stopped working, same
-    // reasoning as revoke itself (migration 0041's header).
+    // reasoning as revoke itself (migration 0043's header).
     const { error: revokeError } = await supabase
       .from("calendar_feed_tokens")
       .update({ revoked_at: new Date().toISOString() })

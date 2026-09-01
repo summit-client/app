@@ -10,7 +10,7 @@ type FeedState = {
 /**
  * "Subscribe to calendar feed" control for pages/appointments.tsx -
  * generates/revokes the signed-in family's own `calendar_feed_tokens` row
- * (migration 0041, `pages/api/calendar/feed-token.ts`) and shows the
+ * (migration 0043, `pages/api/calendar/feed-token.ts`) and shows the
  * resulting `webcal://` link once one exists, next to the existing
  * one-time-download link. Rendering it is entirely the caller's call: not
  * shown at all during admin "view as" (see the render site in
