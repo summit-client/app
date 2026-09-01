@@ -119,10 +119,15 @@ export function RescheduleModal({
     return out;
   }, [selectedDate, employeeId, duration, existing, staffAvailability, clientAvailability, client, workStartHour, workEndHour, incrementMinutes]);
 
+  // Same colour-legibility fix as SessionSchedulesPanel.tsx's identical
+  // legend (issue #133 item 2) - "clinician-only"/"client-only" used to
+  // share one colour here too, and this modal is reached directly from
+  // that panel's "Continue to reschedule" button, so the two need to agree
+  // visually as well as textually.
   const slotColors: Record<SlotState, { bg: string; text: string; label: string }> = {
     open: { bg: "#5DCAA522", text: "#0F6E56", label: "Both available" },
-    "clinician-only": { bg: "#EF9F2722", text: "#8A5E10", label: "Clinician only" },
-    "client-only": { bg: "#EF9F2722", text: "#8A5E10", label: "Client only" },
+    "clinician-only": { bg: "#5B8DEF22", text: "#2B5BA6", label: "Clinician only" },
+    "client-only": { bg: "#D4537E22", text: "#9C3459", label: "Client only" },
     neither: { bg: "var(--color-background-secondary)", text: "var(--color-text-tertiary)", label: "Neither marked available" },
     booked: { bg: "#FCE8E8", text: "#A33A3A", label: "Clinician busy" },
   };

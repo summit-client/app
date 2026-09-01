@@ -78,9 +78,21 @@ interface Props {
    *  a stale focus would silently reapply itself on the next visit to this
    *  tab even after someone had since cleared filters by hand. */
   onConsumedFocus?: () => void;
+  /** Any new value (object/array identity change, not equality) re-runs
+   *  this tab's own `sessions` fetch. This view keeps its own independent
+   *  copy of the visible range's sessions (`loadRange` below) rather than
+   *  reading the page-level `bookings` state directly - which meant a
+   *  session booked elsewhere (click-to-create's quickSlot wizard calling
+   *  refreshBookings()) never appeared here until something else happened
+   *  to remount this tab or shift the date range (issue #133 item 8: "did
+   *  a dummy click to create and I'm not seeing the listing populate").
+   *  pages/index.jsx passes its own `bookings` array through here for
+   *  exactly this purpose - a fresh array reference from any refetch is
+   *  enough to trigger a reload, no dedicated counter needed. */
+  refreshSignal?: unknown;
 }
 
-export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, setCalendars, staffAvailability, clientAvailability, showToast, onRequestCreate, focus = null, onConsumedFocus }: Props) {
+export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, setCalendars, staffAvailability, clientAvailability, showToast, onRequestCreate, focus = null, onConsumedFocus, refreshSignal }: Props) {
   const appUser = useAppUser();
   const clinicId = appUser?.clinic_id || "";
   const [mode, setMode] = React.useState<ViewMode>("week");
@@ -165,7 +177,10 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     if (filters.clientIds.size) q = q.in("client_id", [...filters.clientIds]);
     const { data } = await q;
     if (data) setSessions(data as CalSession[]);
-  }, [clinicId, range.queryStart, range.queryEnd, filters]);
+    // refreshSignal is read only to force a refetch when it changes - see
+    // the prop's own doc comment on why this tab can't just trust a stale
+    // fetch from before the caller's most recent write.
+  }, [clinicId, range.queryStart, range.queryEnd, filters, refreshSignal]);
 
   React.useEffect(() => {
     const t = setTimeout(() => { void loadRange(); }, 120);
@@ -197,7 +212,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       .neq("status", "cancelled");
     setOverlaySessions((data as CalSession[]) || []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clinicId, overlayKey, range.queryStart, range.queryEnd]);
+  }, [clinicId, overlayKey, range.queryStart, range.queryEnd, refreshSignal]);
 
   React.useEffect(() => {
     const t = setTimeout(() => { void loadOverlay(); }, 120);

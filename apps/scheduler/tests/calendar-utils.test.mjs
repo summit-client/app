@@ -48,7 +48,7 @@ const types = await import(await bundleOf("components/calendar/types.ts", "_type
 const suggestions = await import(await bundleOf("components/calendar/suggestions.ts", "_suggestions.bundle.mjs"));
 
 const {
-  toDateStr, parseDateStr, addDays, startOfWeek, computeViewRange, shiftView, gapsOverlap, generateWeeklyDatesFrom, formatFullRange,
+  toDateStr, parseDateStr, addDays, startOfWeek, computeViewRange, shiftView, gapsOverlap, generateWeeklyDatesFrom, formatFullRange, formatWeekMonthLabel,
 } = dateUtils;
 const { sessionDuration, sessionGridIncrement } = types;
 const { isAvailable, hasSessionConflict, hasClientSessionConflict, buildBusyBlocks, suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } = suggestions;
@@ -96,6 +96,26 @@ t(
   formatFullRange("2026-08-20", 16, 0, 60) === "Thu 2026-08-20 4:00 PM - 5:00 PM",
   formatFullRange("2026-08-20", 16, 0, 60),
 );
+
+// issue #133 item 1: the dual mini-calendar showed day numbers with no
+// month at all, ambiguous the moment a week crosses a boundary (the
+// issue's own worked example: Aug 31 into September).
+{
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(parseDateStr("2026-08-17"), i));
+  t("formatWeekMonthLabel: whole week inside one month", formatWeekMonthLabel(weekDays) === "August 2026", formatWeekMonthLabel(weekDays));
+}
+{
+  // The issue's exact example: Mon Aug 31 - Sun Sep 6, 2026.
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(parseDateStr("2026-08-31"), i));
+  t("formatWeekMonthLabel: crosses a month boundary, same year", formatWeekMonthLabel(weekDays) === "Aug 31 – Sep 6, 2026", formatWeekMonthLabel(weekDays));
+}
+{
+  // Dec 28, 2026 (Mon) - Jan 3, 2027 (Sun): crosses a YEAR boundary too, so
+  // both ends need their own year shown, not just a trailing one.
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(parseDateStr("2026-12-28"), i));
+  t("formatWeekMonthLabel: crosses a year boundary", formatWeekMonthLabel(weekDays) === "Dec 28, 2026 – Jan 3, 2027", formatWeekMonthLabel(weekDays));
+}
+t("formatWeekMonthLabel: empty input", formatWeekMonthLabel([]) === "");
 
 console.log("gapsOverlap");
 

@@ -81,10 +81,16 @@ function ClearAllLink({ onClearAll }: { onClearAll: () => void }) {
 }
 
 /** Closes on outside click, and on Escape - shared by both menu kinds so
- *  none of them need "click Filter again" to collapse. */
-function useMenu() {
-  const [open, setOpen] = React.useState(false);
+ *  none of them need "click Filter again" to collapse.
+ *
+ *  `openKey`/`setOpenKey` are lifted to FilterPanel (one shared "which menu
+ *  is open" slot, `own` is this instance's own key) rather than each menu
+ *  keeping an independent local `open` boolean - see useHoverIntent below
+ *  for why a per-menu boolean isn't enough on its own. */
+function useMenu(own: string, openKey: string | null, setOpenKey: React.Dispatch<React.SetStateAction<string | null>>) {
   const ref = React.useRef<HTMLDivElement>(null);
+  const open = openKey === own;
+  const setOpen = React.useCallback((v: boolean) => setOpenKey(v ? own : null), [own, setOpenKey]);
   React.useEffect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent) {
@@ -94,7 +100,7 @@ function useMenu() {
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("mousedown", onDocClick); document.removeEventListener("keydown", onKey); };
-  }, [open]);
+  }, [open, setOpen]);
   return { open, setOpen, ref };
 }
 
@@ -107,30 +113,52 @@ function useMenu() {
  *  down, which fires a real mouseleave before ever reaching the panel.
  *  Closing on a short delay, cancelled by re-entering either the trigger or
  *  the panel (both share one wrapper, so one onMouseEnter covers both),
- *  gives the cursor time to actually arrive. */
-function useHoverIntent(setOpen: (v: boolean) => void, closeDelayMs = 350) {
+ *  gives the cursor time to actually arrive.
+ *
+ *  That delay is exactly what caused issue #133's "switch between two open
+ *  filters and the old list stays visible too long, overlapping the new
+ *  one": Locations and Session types each kept their own independent local
+ *  `open` state, so moving the pointer from one trigger straight to the
+ *  next opened the new menu immediately (its own onMouseEnter) while the
+ *  old one's onMouseLeave-started close timer was still counting down -
+ *  for up to `closeDelayMs`, BOTH panels were open and visibly overlapped.
+ *  Now that `open` is derived from one shared `openKey` (see useMenu
+ *  above), setOpenKey(own) on entry closes every other menu in the same
+ *  render, synchronously - no delay to race. The delayed close below still
+ *  runs (so leaving the trigger without moving to another menu still has
+ *  the original grace period to reach the panel), but it's a functional
+ *  update guarded against staleness: if something else already changed
+ *  openKey by the time it fires, it's a no-op instead of clobbering
+ *  whichever menu is now actually open. */
+function useHoverIntent(own: string, setOpenKey: React.Dispatch<React.SetStateAction<string | null>>, closeDelayMs = 350) {
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancel = React.useCallback(() => {
     if (timer.current != null) { clearTimeout(timer.current); timer.current = null; }
   }, []);
   React.useEffect(() => cancel, [cancel]);
   return {
-    onMouseEnter: () => { cancel(); setOpen(true); },
-    onMouseLeave: () => { cancel(); timer.current = setTimeout(() => setOpen(false), closeDelayMs); },
+    onMouseEnter: () => { cancel(); setOpenKey(own); },
+    onMouseLeave: () => {
+      cancel();
+      timer.current = setTimeout(() => setOpenKey((cur) => (cur === own ? null : cur)), closeDelayMs);
+    },
   };
 }
 
 function PillFilterMenu<T extends string | number>({
-  label, items, selected, onToggle, onClearAll,
+  label, items, selected, onToggle, onClearAll, menuKey, openKey, setOpenKey,
 }: {
   label: string;
   items: { id: T; label: string; color?: string }[];
   selected: Set<T>;
   onToggle: (id: T) => void;
   onClearAll: () => void;
+  menuKey: string;
+  openKey: string | null;
+  setOpenKey: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
-  const { open, setOpen, ref } = useMenu();
-  const hover = useHoverIntent(setOpen);
+  const { open, setOpen, ref } = useMenu(menuKey, openKey, setOpenKey);
+  const hover = useHoverIntent(menuKey, setOpenKey);
   return (
     <div
       ref={ref}
@@ -187,15 +215,18 @@ function PillFilterMenu<T extends string | number>({
 }
 
 function SearchFilterMenu<T extends number>({
-  label, items, selected, onToggle, onClearAll,
+  label, items, selected, onToggle, onClearAll, menuKey, openKey, setOpenKey,
 }: {
   label: string;
   items: { id: T; name: string }[];
   selected: Set<T>;
   onToggle: (id: T) => void;
   onClearAll: () => void;
+  menuKey: string;
+  openKey: string | null;
+  setOpenKey: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
-  const { open, setOpen, ref } = useMenu();
+  const { open, setOpen, ref } = useMenu(menuKey, openKey, setOpenKey);
   const [query, setQuery] = React.useState("");
 
   const sorted = React.useMemo(
@@ -208,7 +239,7 @@ function SearchFilterMenu<T extends number>({
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <button onClick={() => setOpen((v) => !v)} style={triggerStyle(selected.size > 0)}>
+      <button onClick={() => setOpen(!open)} style={triggerStyle(selected.size > 0)}>
         {label} {selected.size > 0 && <span style={countBadge}>{selected.size}</span>}
       </button>
       {open && (
@@ -248,6 +279,81 @@ function SearchFilterMenu<T extends number>({
   );
 }
 
+/** Single-select searchable, alphabetical-by-last-name dropdown - the same
+ *  shape SearchFilterMenu above already uses for the Clinicians/Clients
+ *  filters, adapted from "toggle a Set of many" to "pick exactly one and
+ *  close" for the Create wizard's client picker (issue #133 item 5: that
+ *  picker was a flat wall of pills, unusable once a clinic has more than a
+ *  handful of clients - "135 people plus for a large clinic," per the
+ *  report). Reused rather than reinvented since this is exactly the problem
+ *  SearchFilterMenu already solves. */
+export function SearchSelectMenu<T extends number>({
+  label, items, selectedId, onSelect, placeholder,
+}: {
+  label: string;
+  items: { id: T; name: string }[];
+  selectedId: T | null;
+  onSelect: (id: T) => void;
+  placeholder?: string;
+}) {
+  const [openKey, setOpenKey] = React.useState<string | null>(null);
+  const { open, setOpen, ref } = useMenu("select", openKey, setOpenKey);
+  const [query, setQuery] = React.useState("");
+
+  const sorted = React.useMemo(
+    () => [...items].sort((a, b) => lastNameKey(a.name).localeCompare(lastNameKey(b.name))),
+    [items],
+  );
+  const filtered = query.trim()
+    ? sorted.filter((i) => i.name.toLowerCase().includes(query.trim().toLowerCase()))
+    : sorted;
+  const selected = items.find((i) => i.id === selectedId);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          padding: "7px 12px", borderRadius: 8, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+          border: `0.5px solid ${selected ? "#5DCAA5" : COLORS.borderS}`, background: selected ? "#5DCAA50c" : COLORS.bgS,
+          color: selected ? COLORS.text : COLORS.textT, cursor: "pointer", width: "100%", minWidth: 220, textAlign: "left",
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selected ? selected.name : (placeholder || `Select a ${label.toLowerCase()}…`)}
+        </span>
+        <span aria-hidden="true" style={{ color: COLORS.textT, flexShrink: 0 }}>▾</span>
+      </button>
+      {open && (
+        <div style={{ ...panelStyle, minWidth: 260, width: "100%" }}>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${label.toLowerCase()}…`}
+            style={{ width: "100%", padding: "6px 10px", borderRadius: 7, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 13, marginBottom: 8 }}
+          />
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {filtered.length === 0 && <div style={{ fontSize: 12, color: COLORS.textT, padding: "6px" }}>No matches</div>}
+            {filtered.map((i) => {
+              const active = i.id === selectedId;
+              return (
+                <div
+                  key={i.id}
+                  onClick={() => { onSelect(i.id); setOpen(false); setQuery(""); }}
+                  style={{ padding: "6px 8px", borderRadius: 6, fontSize: 13.5, cursor: "pointer", fontWeight: active ? 600 : 400, color: active ? "#0F6E56" : COLORS.text, background: active ? "#5DCAA512" : "transparent" }}
+                >
+                  {i.name}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface CalPickerCalendar { id: number; name: string; status: string; }
 
 /** Single-select calendar dropdown, reintroduced by request after the
@@ -264,8 +370,14 @@ export function CalendarPicker({
   selectedId: number | null;
   onChange: (id: number | null) => void;
 }) {
-  const { open, setOpen, ref } = useMenu();
-  const hover = useHoverIntent(setOpen);
+  // Its own single-slot "open" state (own="calendar-picker", never shared
+  // with anything else) - this dropdown lives outside FilterPanel, in its
+  // own spot on the toolbar, so it was never part of the Locations/Session
+  // types overlap regression that made FilterPanel's four menus share a
+  // slot (see useMenu's own comment above).
+  const [openKey, setOpenKey] = React.useState<string | null>(null);
+  const { open, setOpen, ref } = useMenu("calendar-picker", openKey, setOpenKey);
+  const hover = useHoverIntent("calendar-picker", setOpenKey);
   const visible = calendars.filter((c) => c.status !== "archived");
   const selected = visible.find((c) => c.id === selectedId);
 
@@ -339,6 +451,11 @@ export function FilterPanel({
     onChange(emptyFilters());
   }
 
+  // One shared "which of these four menus is open" slot instead of each
+  // menu owning an independent local boolean - see useMenu/useHoverIntent's
+  // own comments above for the overlap bug this fixes (issue #133 item 4).
+  const [openKey, setOpenKey] = React.useState<string | null>(null);
+
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
       <PillFilterMenu
@@ -347,6 +464,7 @@ export function FilterPanel({
         selected={filters.locationIds}
         onToggle={(id) => toggle("locationIds", id)}
         onClearAll={clearAll}
+        menuKey="locations" openKey={openKey} setOpenKey={setOpenKey}
       />
       <PillFilterMenu
         label="Session types"
@@ -354,6 +472,7 @@ export function FilterPanel({
         selected={filters.typeNames}
         onToggle={(id) => toggle("typeNames", id)}
         onClearAll={clearAll}
+        menuKey="sessionTypes" openKey={openKey} setOpenKey={setOpenKey}
       />
       <SearchFilterMenu
         label="Clinicians"
@@ -361,6 +480,7 @@ export function FilterPanel({
         selected={filters.employeeIds}
         onToggle={(id) => toggle("employeeIds", id)}
         onClearAll={clearAll}
+        menuKey="clinicians" openKey={openKey} setOpenKey={setOpenKey}
       />
       <SearchFilterMenu
         label="Clients"
@@ -368,6 +488,7 @@ export function FilterPanel({
         selected={filters.clientIds}
         onToggle={(id) => toggle("clientIds", id)}
         onClearAll={clearAll}
+        menuKey="clients" openKey={openKey} setOpenKey={setOpenKey}
       />
       {activeFilterCount(filters) > 0 && (
         <button
