@@ -34,6 +34,52 @@ organization's training would be recorded.
 
 ---
 
+### 2. Client-facing receipts — the data now exists, the screen is not mine
+
+Asked for directly: receipts carrying the practitioner's credential number.
+**Nothing anywhere in the repo generates a receipt today.** The two greps that
+match "invoice" are a settings label ("Billing cycle — how often invoices are
+generated") and an integrations description; neither produces anything.
+
+**The data is all there since PR #96.** A Canadian insurance receipt needs the
+client, the service dates, the amount paid, the practitioner's name and
+registration number, and the clinic's name and address. Every one of those is
+now reachable in one query chain:
+
+| Receipt field | Source |
+|---|---|
+| Client, dates, service, amount | `budget_entries` (0023) — the charge ledger |
+| Practitioner | `sessions.employee_id` → `staff` → `employment_records.user_id` (0026) |
+| Credential + number | `employee_credentials.credential_number` (0007) |
+| Clinic name | `clinics.name` |
+| Clinic address | **missing — no address column on `clinics`** |
+
+`apps/client/pages/statement.tsx` is already most of a receipt: it renders the
+same ledger with a running balance and prints. A receipt is that, filtered to
+one date range, with the practitioner block added and the balance removed.
+
+**Why it isn't built here.** The receipt belongs in `apps/client` (the family
+downloads it) or `apps/data`. Both are outside this session's walls and both
+had live sessions on them. Generating it from `apps/scheduler`, as asked, is
+the weakest of the three options: the scheduler knows the booking but not the
+charge, so it would have to re-derive an amount that `budget_entries` already
+holds — a second answer to "what was this session billed at".
+
+**What is needed, in order:**
+
+1. A `clinics.address` column (plus the legal/operating name if they differ).
+   Nothing else on the receipt is missing.
+2. A receipt view or function joining the chain above, so the credential number
+   on the receipt is read rather than passed in by a caller who might send the
+   wrong one.
+3. The screen, in `apps/client`, reusing `statement.tsx`'s print path.
+
+The employee-portal half is done in this branch: `primaryCredential()` and
+`credentialLine()` in `lib/hr-store.ts` return the credential in good standing
+with the furthest renewal, recorded once and read everywhere. A lapsed
+credential is deliberately never returned — presenting a lapsed registration
+number on a receipt is worse than presenting none.
+
 ## Checked, already correct — no change made
 
 ### 2. `proxy.ts` auth pattern

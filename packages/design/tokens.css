@@ -1,9 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Hanken+Grotesk:ital,wght@0,300..800;1,300..500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300..600&family=Source+Sans+3:ital,wght@0,300..600;1,300..500&display=swap');
 
 /* ============================================================================
    Summit design tokens — the Scheduler's design language, platform wide.
 
-   Adopted from apps/scheduler: Bricolage Grotesque over Hanken Grotesk, an
+   Outfit over Source Sans 3, the pairing the brand suite specifies, matched to
    OKLCH palette tinted toward the brand hue, a fixed rem type scale, the 4pt
    spacing rhythm, brand-tinted shadows and named easings. Light, warm, calm.
 
@@ -20,8 +20,28 @@
 
 :root {
   /* ── Hue: the one dial the accent turns ────────────────────────────────── */
-  --hue: 190;        /* surfaces, borders, light brand steps */
-  --hue-deep: 212;   /* ink, deep brand steps, shadows */
+  /* Tuned to the real Summit mark rather than to the placeholder that
+     preceded it. Sampled from the asset: #26b6c1 and #3fbdaf on the peaks,
+     #145e7b and #113a4c in the shadowed faces — a shade greener and less blue
+     than the 190/212 this dial carried.
+
+     Only the HUE angles move, and that is nearly but NOT entirely free:
+     WCAG contrast is computed from sRGB relative luminance, not from OKLCH
+     lightness, so rotating hue at constant L and C does shift the ratios a
+     little. Measured across this 5-degree move:
+
+       ink on white          17.49 -> 17.45
+       muted on white         6.69 ->  6.68
+       brand-600 on white     6.48 ->  6.42
+       brand-700 on white     9.66 ->  9.58
+       brand-800 on white    13.91 -> 13.85
+
+     Every pair still clears AA with room to spare. Do not read that as
+     licence to spin the dial freely: a larger rotation, particularly toward
+     yellow-green where luminance rises fastest, can move a borderline pair
+     across 4.5:1. Re-measure if you turn it further than this. */
+  --hue: 185;        /* surfaces, borders, light brand steps */
+  --hue-deep: 205;   /* ink, deep brand steps, shadows */
 
   /* ── Brand scale (OKLCH, perceptually uniform) ─────────────────────────── */
   --brand-50:  oklch(97%  0.014 var(--hue));
@@ -42,8 +62,8 @@
   --logo-ink: oklch(21% 0.042 212);
 
   /* ── Typography ────────────────────────────────────────────────────────── */
-  --font-display: "Bricolage Grotesque", system-ui, sans-serif;
-  --font-body: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  --font-display: "Outfit", system-ui, sans-serif;
+  --font-body: "Source Sans 3", system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
   --text-2xs: 0.6875rem;  /* 11 */

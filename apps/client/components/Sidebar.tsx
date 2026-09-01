@@ -138,7 +138,19 @@ export default function Sidebar() {
       }}
     >
       <div className={styles.brand}>
-        <div className={styles.brandMark}>▲</div>
+        {/* The real Summit mark. This was a ▲ character standing in for a logo:
+            it rendered in whatever the user's font supplied, at whatever weight,
+            and carried no brand at all. Same asset as the marketing header and
+            the other portals, 6.5 KB, sized explicitly so the sidebar does not
+            shift while it loads. */}
+        <img
+          src="/summit-mark-64.png"
+          alt=""
+          width={28}
+          height={28}
+          className={styles.brandMark}
+          style={{ display: "block", flexShrink: 0 }}
+        />
 
         <div>
           <strong>Summit</strong>

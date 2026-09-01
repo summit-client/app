@@ -1,6 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { HubGate } from "@/components/hub-provider";
+import { HrGate } from "@/components/hr-provider";
+import { credentialLine, primaryCredential } from "@/lib/hr-store";
+import { SignaturePad } from "@/components/signature-pad";
 
 import * as React from "react";
 import { getProfile, saveProfile } from "@/lib/hub";
@@ -12,7 +16,12 @@ import { SessionGate, useIdentity, useSession } from "@/components/session-provi
 export default function ProfilePage() {
   return (
     <HubGate>
-      <Profile />
+      {/* HrGate too: the credential number below comes from the HR snapshot,
+          and reading it before that store has loaded would render an empty
+          field that looks like "you have no credential recorded". */}
+      <HrGate>
+        <Profile />
+      </HrGate>
     </HubGate>
   );
 }
@@ -38,6 +47,19 @@ function Profile() {
           <input id="pr-name" className="input" defaultValue={p.name} onBlur={(e) => patch("name", e.target.value)} /></div>
         <div className="field"><label htmlFor="pr-num">Employee number</label>
           <input id="pr-num" className="input" defaultValue={p.employeeNumber} onBlur={(e) => patch("employeeNumber", e.target.value)} /></div>
+        {/* Read-only on purpose. The number is recorded once on My Credentials
+            and read here; a second place to type it is a second place for it to
+            be wrong, and this is the field an insurer or a College checks. */}
+        <div className="field">
+          <label htmlFor="pr-cred">Professional credential</label>
+          <input id="pr-cred" className="input" readOnly disabled
+            value={credentialLine() ?? "None recorded"} />
+          <p className="sub" style={{ fontSize: 11, marginTop: 4 }}>
+            {primaryCredential()
+              ? <>Recorded on <Link href="/credentials">My Credentials</Link>. Used on certificates and client receipts.</>
+              : <>Add it on <Link href="/credentials">My Credentials</Link> so it can appear on certificates and client receipts.</>}
+          </p>
+        </div>
         <div className="field"><label htmlFor="pr-title">Job title</label>
           <input id="pr-title" className="input" defaultValue={p.jobTitle ?? ""} onBlur={(e) => patch("jobTitle", e.target.value)} /></div>
         <div className="field"><label htmlFor="pr-loc">Location</label>
@@ -64,6 +86,8 @@ function Profile() {
           ? "Preview mode: the role switcher demos the supervisor and admin views. Signed in, your role comes from your Summit account and cannot be changed here."
           : "Your role comes from your Summit account. An administrator changes it."}
       </p>
+
+      <SignaturePad />
     </div>
   );
 }

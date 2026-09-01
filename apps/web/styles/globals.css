@@ -36,8 +36,8 @@
   --brand-error: #B3261E;
   --brand-error-bg: #FDECEC;
   --brand-error-border: #F5C6C6;
-  --font-display: 'Bricolage Grotesque', sans-serif;
-  --font-body: 'Hanken Grotesk', sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Source Sans 3', sans-serif;
 }
 
 /* `overflow-x: hidden` lives on `html` only, not also on `body` (2026-09-01
@@ -55,8 +55,10 @@
    `top` tracked `64 - scrollY` in lockstep from scrollY 0 onward instead of
    holding at 64. Keeping it on just one of the two still clips horizontal
    overflow site-wide (verified: no scrollable width at any breakpoint below,
-   once the two actual overflow sources - the hero blob and the footer link
-   row - are fixed at the source instead of relying on this to hide them). */
+   once the actual overflow source - the footer link row - is fixed at the
+   source instead of relying on this to hide it; the hero's decorative blob
+   that used to overflow here is gone entirely as of the brand simplification
+   below, not just clipped). */
 html {
   max-width: 100vw;
   overflow-x: hidden;
@@ -113,23 +115,28 @@ html { scroll-behavior: smooth; }
 .an4 { animation: fadeUp .6s .40s ease both; }
 .an5 { animation: fadeUp .6s .55s ease both; }
 
-/* Scroll-triggered reveal — toggled via IntersectionObserver in index.tsx */
+/* Scroll-triggered reveal — toggled via IntersectionObserver in index.tsx.
+   Was .7s ease (plus per-item transitionDelay stagger on top) - measured in
+   a browser as ~490ms from scroll-into-view to fully settled even though the
+   observer itself fires in well under 100ms, which read as sluggish rather
+   than responsive. ease-out starts the motion immediately instead of easing
+   in first, and the shorter duration lands well under the ~300-400ms window
+   that still reads as smooth rather than abrupt. */
 .reveal {
   opacity: 0;
   transform: translateY(24px);
-  transition: opacity .7s ease, transform .7s ease;
+  transition: opacity .35s ease-out, transform .35s ease-out;
 }
 .reveal.is-visible {
   opacity: 1;
   transform: translateY(0);
 }
 
-/* Gradient text — needs nested <span>, can't be inline */
+/* Emphasis colour for the second half of a headline. Was a background-clip
+   gradient; now a solid, which is what the brand system actually specifies and
+   what survives being screenshotted, printed, or read in forced-colours mode. */
 .grad-text {
-  background: linear-gradient(135deg, #28B4A6 0%, #21798A 55%, #1A3F5C 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #0C5350;
 }
 
 /* Hover states */
@@ -166,8 +173,33 @@ html { scroll-behavior: smooth; }
 @media (max-width: 760px) {
   .grid-3 { grid-template-columns: 1fr; }
 }
-.feature-card         { transition: transform .2s, box-shadow .2s; }
-.feature-card:hover   { transform: translateY(-5px); box-shadow: 0 16px 44px rgba(26,63,92,.1) !important; }
+/* The feature list. Rows separated by a hairline rather than boxed in cards:
+   the divider does the grouping the border used to, without drawing six
+   rectangles. Column gaps are wider than row gaps so the eye reads down a
+   column before across, which is the order the copy is written in.
+
+   No hover lift. These rows are not interactive — nothing happens when you
+   click one — and a card that rises under the cursor promises an affordance
+   that is not there. */
+.feature-rows {
+  column-gap: 3rem;
+  row-gap: 0;
+}
+.feature-row {
+  padding: 1.6rem 0;
+  border-top: 1px solid var(--brand-gray-100);
+}
+/* The first row of each column needs no rule above it: at 3 columns that is
+   the first three, at 2 the first two, at 1 only the first. */
+.feature-rows > .feature-row:nth-child(-n + 3) { border-top: 0; padding-top: 0; }
+@media (max-width: 1100px) {
+  .feature-rows > .feature-row:nth-child(-n + 3) { border-top: 1px solid var(--brand-gray-100); padding-top: 1.6rem; }
+  .feature-rows > .feature-row:nth-child(-n + 2) { border-top: 0; padding-top: 0; }
+}
+@media (max-width: 760px) {
+  .feature-rows > .feature-row:nth-child(-n + 3) { border-top: 1px solid var(--brand-gray-100); padding-top: 1.6rem; }
+  .feature-rows > .feature-row:first-child { border-top: 0; padding-top: 0; }
+}
 
 /* Shared section padding rhythm - was a flat `88px 2rem` inline on every
    section regardless of viewport, which can't respond to a media query at
@@ -210,8 +242,6 @@ html { scroll-behavior: smooth; }
 .marquee {
   width: 100%;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
 }
 .marquee-track {
   display: flex;
@@ -279,52 +309,18 @@ html { scroll-behavior: smooth; }
 }
 
 /* Pseudo-elements */
-/* `right: 0`, not `-80px` (2026-09-01) - the -80px used to push this 500px
-   circle 80px past the right edge of the page. That's exactly the kind of
-   overflow `html`'s `overflow-x: hidden` above is meant to catch, but this
-   element sits *inside* `.hero-bg`, an ancestor of `.hero-sticky` - and, as
-   that rule's own comment explains, giving any ancestor of a sticky element
-   a non-visible overflow (this one included, not just html/body) defeats
-   its stickiness the same way, confirmed live the same way. So this can't
-   be fixed by clipping it from outside; it has to not overflow in the first
-   place. `right: 0` keeps the same corner-glow effect - the visible portion
-   was already being silently clipped to this same extent by the old
-   html+body rule, so this is what was actually on screen already, just
-   finally sized to match. Shrinks on narrow viewports (below, phone width)
-   so it can't overflow the *left* edge instead once anchored at `right: 0`. */
-.hero-bg::after {
-  content: '';
-  position: absolute;
-  top: -80px; right: 0;
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(40,180,166,.09) 0%, transparent 70%);
-  pointer-events: none;
-  animation: floatBlob 9s ease-in-out infinite;
-}
-@media (max-width: 520px) {
-  .hero-bg::after { width: 260px; height: 260px; }
-}
-@keyframes floatBlob {
-  0%, 100% { transform: translate(0,0) scale(1); }
-  50%      { transform: translate(-24px,28px) scale(1.06); }
-}
-/* Final CTA: white text over the brand gradient failed AA at the gradient's
-   lighter (teal) end - measured 2.57:1 for the heading and 2.04:1 for the
-   paragraph against #28B4A6, both well under the 3:1/4.5:1 AA needs. A flat
-   30% black scrim (not a new hue - same gradient underneath, just darkened)
-   brings the worst case to 4.9:1 for white text everywhere the gradient can
-   land, checked against all three of its stops. */
-#trial::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: rgba(0,0,0,.3);
-  pointer-events: none;
-}
+/* The hero's floating radial blob and its floatBlob keyframes are gone: a
+   blurred coloured circle is a gradient wearing a different hat, and it moved
+   forever behind the copy.
+
+   The final CTA's 30% black scrim is gone too. It existed only because white
+   text failed AA at the light end of the old brand gradient; the section is a
+   flat ink fill now, where white measures 15.4:1. */
 
 .testi-bg::before {
   content: '"';
   position: absolute;
-  font-family: 'Bricolage Grotesque', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 18rem;
   font-weight: 800;
   color: rgba(255,255,255,.025);
@@ -335,7 +331,7 @@ html { scroll-behavior: smooth; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .an1, .an2, .an3, .an4, .an5, .reveal, .float-badge, .hero-bg::after, .marquee-track {
+  .an1, .an2, .an3, .an4, .an5, .reveal, .float-badge, .marquee-track {
     animation: none !important;
     transition: none !important;
     opacity: 1 !important;
@@ -418,8 +414,8 @@ html { scroll-behavior: smooth; }
 .auth-submit {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: .55rem;
   padding: .85rem 1rem; border: none; border-radius: 8px;
-  background: linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%);
-  color: #fff; font-family: var(--font-display); font-weight: 700; font-size: .95rem;
+  background: #0C5350;
+  color: #fff; font-family: var(--font-display); font-weight: 600; font-size: .95rem;
   cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
 }
 .auth-submit:hover:not(:disabled) {
@@ -456,4 +452,187 @@ html { scroll-behavior: smooth; }
 @media (max-width: 520px) {
   .auth-shell { padding: 5rem 1rem 2.5rem; }
   .auth-card { padding: 1.75rem 1.35rem; }
+}
+/* ── Comparison table ──
+   A real <table>, because this is tabular data: three columns, a row header
+   per capability, a caption and a tfoot total. Screen readers announce the
+   column when reading a cell, which a grid of divs cannot do.
+
+   Deliberately not cards. Thirteen rows of two short values each is exactly
+   what a table is for, and boxing every row would triple the height while
+   making the columns harder to compare down. */
+.compare-wrap {
+  overflow-x: auto;
+  /* max-width pins the scroller to its parent. Without it the table's
+     min-width stretched this wrapper instead of scrolling inside it, and the
+     whole PAGE scrolled sideways at 375px — measured at scrollWidth 512
+     against a 375 viewport, with the table as the confirmed cause.
+     -webkit-overflow-scrolling keeps the momentum scroll on iOS. */
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.compare {
+  width: 100%;
+  min-width: 560px;          /* below this it scrolls rather than crushing */
+  border-collapse: collapse;
+  font-size: .9rem;
+  text-align: left;
+}
+.compare thead th {
+  font-family: var(--font-display);
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--brand-gray-500);
+  padding: 0 1rem .75rem 0;
+  border-bottom: 1px solid #C9DED8;
+  white-space: nowrap;
+}
+.compare tbody th {
+  font-weight: 400;
+  color: #254449;
+  padding: .8rem 1rem .8rem 0;
+  border-bottom: 1px solid var(--brand-gray-100);
+}
+.compare tbody td {
+  color: var(--brand-gray-500);
+  padding: .8rem 1rem .8rem 0;
+  border-bottom: 1px solid var(--brand-gray-100);
+}
+
+/* The Summit column is the answer to every row, so it gets a tint and a rule
+   down each side rather than a heavier weight on every cell. One emphasis,
+   applied once. */
+.compare .compare-us {
+  width: 1%;
+  white-space: nowrap;
+  color: #0C5350;
+  background: #F1F7F4;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  border-left: 1px solid #C9DED8;
+  border-right: 1px solid #C9DED8;
+}
+.compare thead .compare-us { color: #0C5350; }
+
+.compare tfoot th,
+.compare tfoot td {
+  padding-top: 1rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: #0B2B31;
+  border-top: 1px solid #C9DED8;
+}
+.compare tfoot .compare-us { border-bottom: 1px solid #C9DED8; }
+
+/* Visually hidden but available to assistive tech. Used for the table caption
+   and for the text behind each tick, so a screen reader hears "Included in
+   Summit" rather than nothing at all. */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+
+/* Hero stats. Three short figures that read as one row. At 2.5rem apart they
+   wrapped 2-then-1 below ~430px, leaving the third stranded under a gap wide
+   enough to read as a mistake. Tightened so all three hold one line, and the
+   figures step down with it rather than the row breaking. */
+@media (max-width: 520px) {
+  .hero-stats { gap: 1.25rem !important; }
+  .hero-stats > div > div:first-child { font-size: 1.25rem; }
+  .hero-stats > div > div:last-child { font-size: .7rem; }
+}
+
+/* ── Session flow ──
+   The same pinned-scroll device the hero uses, reused rather than reinvented:
+   a tall track holds a sticky viewport while scroll drives the sequence. One
+   motion vocabulary across the page.
+
+   Tighter than the hero, though. The hero runs 320vh because it choreographs
+   several things at once; this steps through five panels, so 260vh keeps each
+   stage on screen long enough to read without the section becoming a hostage
+   scroll. */
+.flow-track { height: 260vh; position: relative; }
+.flow-sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.flow-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  width: 100%;
+  /* Intro above, stages across. Side by side, the intro took a third of the
+     width and squeezed five panels into ~130px each, which wrapped every
+     label onto two lines. Stacking gives the sequence the full measure and
+     reads as a timeline rather than as a sidebar with a chart next to it. */
+  display: block;
+}
+.flow-intro { max-width: 52ch; margin-bottom: 2.5rem; }
+.flow-stages {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+/* Below the breakpoint the pinned sequence becomes a plain vertical list.
+   Five panels side by side on a phone would be five unreadable columns, and
+   SessionFlow already renders every stage in its settled state here, so
+   nothing is hidden behind motion that will not run. */
+@media (max-width: 860px) {
+  .flow-track { height: auto; }
+  .flow-sticky { position: static; height: auto; padding: 56px 0; }
+  .flow-inner { grid-template-columns: 1fr; gap: 2rem; }
+  .flow-stages { grid-template-columns: 1fr; gap: 1.75rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-track { height: auto; }
+  .flow-sticky { position: static; height: auto; padding: 56px 0; }
+}
+
+/* Tightened from .7s/24px. The reveal is feedback that a section has arrived,
+   not an event in itself; at 700ms the last card was still settling while the
+   reader had moved on. */
+.reveal {
+  transition: opacity .45s ease, transform .45s ease;
+  transform: translateY(14px);
+}
+
+
+/* Feature rows slide in from the leading edge rather than rising.
+   Same observer, same duration as every other reveal on the page — only the
+   axis differs, because these are rows in a list and a horizontal entrance
+   reads as the list arriving rather than as six separate things popping up.
+
+   18px, not 40: far enough to register as movement, short enough that a row
+   is legible the moment it starts. The stagger runs 70ms down the column,
+   which is the order the rules group them in.
+
+   Reduced motion gets the settled state with no transform, like everything
+   else here. */
+.reveal-slide { transform: translateX(-18px); }
+.reveal-slide.is-visible { transform: translateX(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-slide,
+  .reveal-slide.is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
