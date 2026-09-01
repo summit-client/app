@@ -3,18 +3,20 @@ import { createClient } from "../../lib/supabase-server";
 import { resolveViewedClient } from "../../lib/admin-view-as";
 import { clinicTodayDateStr } from "../../lib/clinic-date";
 import { explainAccountProblem } from "../../lib/explain-account-problem";
+import { readDefaultSessionDurationMinutes, DEFAULT_SESSION_DURATION_MINUTES } from "../../lib/org-settings";
 import { buildAppointmentsIcs, type IcsSession } from "../../lib/ics";
 
 /**
  * Downloadable .ics export of the viewed client's upcoming appointments -
- * linked from pages/appointments.tsx. A one-time download, not a
- * subscribable webcal:// feed: a real subscription needs a shareable
- * secret token in the URL (calendar apps can't do cookie-based auth), and
- * minting/storing/expiring that token needs its own DB table this session
- * has no way to create - see BLOCKED-client.md. This route instead relies
- * on the same session cookie every other page in this app already trusts,
- * which only works while the browser downloading it is signed in - exactly
- * the trust boundary this route needs and no more.
+ * linked from pages/appointments.tsx. A one-time, cookie-authenticated
+ * download: relies on the same session cookie every other page in this app
+ * already trusts, which only works while the browser downloading it is
+ * signed in.
+ *
+ * Not a subscribable webcal:// feed - a calendar app polling on its own
+ * can't send that cookie. See pages/api/calendar/feed/[token].ics.ts for
+ * that (a separate, unauthenticated-but-token-gated route, migration 0044)
+ * rather than this one growing a second trust model.
  *
  * Text responses, not JSX - this is a file download, not a page, so it
  * doesn't render AccountProblemNotice/LoadErrorNotice; each resolveViewedClient
@@ -82,7 +84,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const ics = buildAppointmentsIcs((sessions ?? []) as IcsSession[], viewed.clientName);
+  // resolveViewedClient() already looked this up internally (for both the
+  // real-client and admin-view-as branches) but doesn't expose it on
+  // ViewedClient - a second small lookup, same as
+  // pages/api/sessions/request-change.ts does for the same reason.
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("clinic_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile?.clinic_id) {
+    console.error(
+      "calendar.ics: could not resolve clinic_id for session duration:",
+      profileError?.message ?? "no clinic_id on profile"
+    );
+  }
+  const durationMinutes = profile?.clinic_id
+    ? await readDefaultSessionDurationMinutes(supabase, profile.clinic_id)
+    : DEFAULT_SESSION_DURATION_MINUTES;
+
+  const ics = buildAppointmentsIcs(
+    (sessions ?? []) as IcsSession[],
+    viewed.clientName,
+    durationMinutes
+  );
 
   res.setHeader("Content-Type", "text/calendar; charset=utf-8");
   res.setHeader("Content-Disposition", 'attachment; filename="summit-appointments.ics"');
