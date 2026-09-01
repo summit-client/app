@@ -186,7 +186,29 @@ export default function Home() {
   const rotateX = useTransform(smooth, [0.18, 0.85], [0, 10])
   const calScale = useTransform(smooth, [0.18, 0.85], [1, 0.95])
   const badgeOpacity = useTransform(scrollYProgress, [0.10, 0.18], [1, 0])
-  const sceneOpacity = useTransform(scrollYProgress, [0.88, 1], [1, 0])
+  // No scroll-linked fade on the hero-sticky wrapper itself (there used to be
+  // one, [0.88, 1] -> [1, 0]) - it was the real source of the oversized gap
+  // between the hero and the rest of the page, not a missing/wrong
+  // margin-padding-gap value anywhere. `useScroll`'s `['start start','end
+  // end']` offset saturates scrollYProgress at 1 at exactly the scroll
+  // position where `.hero-sticky`'s `position: sticky` naturally releases
+  // (both are pinned to "container bottom reaches viewport bottom") - and
+  // from there, `.hero-bg`'s own remaining height is always exactly one more
+  // viewport tall, however tall `.hero-bg` itself is set to (that's just
+  // what "a nearly-viewport-tall sticky child, in a container that ends
+  // right after it" requires - shrinking `.hero-bg`'s 320vh doesn't change
+  // this, it only compresses everything before it). scrollYProgress is
+  // clamped at 1 for that entire final viewport, so any opacity curve that
+  // reaches 0 by progress 1 (as this one deliberately did) stays at 0 for
+  // that whole extra scroll - a full viewport of scrolling with nothing on
+  // screen. Removing the fade costs nothing: every element it was wrapping
+  // already resolves its own end state well before progress 1 (pills settle
+  // by ~0.68, calScale/rotateX/rotateY by 0.85, the connector lines fade
+  // themselves out by 0.9), so the scene is already visually "done." Once
+  // `position: sticky` releases, that finished scene just scrolls normally
+  // out of view with the rest of the page - the same way any non-sticky
+  // element would - instead of sitting invisible while the page scrolls
+  // under it.
 
   // Three pills, one per portal the platform actually gives someone, rather
   // than three scheduler features. PILL_COUNT above must stay at 3.
@@ -210,7 +232,6 @@ export default function Home() {
         background: '#F1F7F4',
       }}>
         <motion.div className="hero-sticky" style={{
-          opacity: staticScene ? 1 : sceneOpacity,
           fontFamily: body,
         }}>
           <div className="hero-grid">
@@ -662,7 +683,14 @@ export default function Home() {
             fontFamily: display, fontWeight: 600,
             color: 'rgba(255,255,255,.6)', fontSize: '1rem', letterSpacing: '-.01em',
           }}>SUMMIT</span>
-          <div style={{ display: 'flex', gap: '2rem' }}>
+          {/* flexWrap: pre-existing gap - on a narrow viewport these six
+              links don't fit one line and were overflowing the page
+              horizontally, invisibly, because they've always been masked by
+              html/body's own overflow-x:hidden. That rule is what was
+              breaking the hero's scroll-pinned scene below (see the
+              `.hero-bg` comment in globals.css), so fixing it here is a
+              prerequisite for removing it there, not a separate feature. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', rowGap: '.6rem', gap: '.6rem 2rem' }}>
             {([
               ['Features','#features'],
               ['How it works','#how'],
