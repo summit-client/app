@@ -3,6 +3,38 @@ import { createClient } from "../../../lib/supabase-server";
 import { messageProblem } from "../../../lib/messages";
 
 /**
+ * Sending is never possible from an admin's "view as" session.
+ *
+ * Carried over from the messaging route this one replaces. RLS is already the
+ * real boundary — a family message insert requires a guardian relationship on
+ * the thread, which an admin does not have, so the database refuses it. This
+ * check exists so the refusal is a clear 403 rather than an RLS-shaped 500,
+ * and so the rule is stated where someone editing the route will read it: an
+ * admin who wants to write to a family writes as themselves, from the staff
+ * side, under their own name.
+ */
+async function refuseIfNotFamily(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  res: NextApiResponse,
+): Promise<boolean> {
+  const { data: profile, error } = await supabase
+    .from("profiles").select("role").eq("id", userId).maybeSingle();
+  if (error) {
+    console.error("messages: profile lookup failed:", error.message);
+    res.status(500).json({ error: "Could not verify your account." });
+    return true;
+  }
+  if (profile?.role !== "client") {
+    res.status(403).json({
+      error: "Staff accounts send from the clinic side, under their own name.",
+    });
+    return true;
+  }
+  return false;
+}
+
+/**
  * Post a reply into an existing thread.
  *
  * Why this is a route and not a `supabase.from("messages").insert()` in the
@@ -28,6 +60,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(401).json({ error: "Not signed in." });
     return;
   }
+
+  if (await refuseIfNotFamily(supabase, user.id, res)) return;
 
   const threadId = typeof req.body?.threadId === "string" ? req.body.threadId : "";
   const body = typeof req.body?.body === "string" ? req.body.body : "";

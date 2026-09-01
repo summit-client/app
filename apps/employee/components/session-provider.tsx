@@ -14,7 +14,8 @@ import {
   explainProblem, getSession, refreshSession,
   type HubRole, type Session,
 } from "@/lib/session";
-import { initSettings, refreshSettings } from "@summit/settings";
+import { initSettings, onSettingsChange, refreshSettings, resolve } from "@summit/settings";
+import { applyLogoColors, type LogoTone } from "@summit/design";
 
 interface Ctx { session: Session | null; loading: boolean; reload: () => void }
 
@@ -44,6 +45,41 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
 export function useSession(): Ctx {
   return React.useContext(SessionCtx);
+}
+
+/** appearance.logo1/2/3 → --logo-1/2/3. Only forwards a value when the
+ *  clinic actually has an override row (source !== "default") — an org
+ *  with none set must resolve exactly to tokens.css's static default, not
+ *  a copy of it pushed inline (see @summit/design's applyLogoColors()
+ *  comment for why). */
+function overrideOnly(key: string): string | null {
+  const r = resolve(key);
+  return r.source === "default" ? null : String(r.effective);
+}
+
+/**
+ * Applies this clinic's per-tenant logo colour overrides (if any) to
+ * <html>, mirroring apps/data's `SettingsEffects` — this app has no other
+ * settings-driven document effect yet, so it gets its own small component
+ * rather than folding into SessionProvider's identity-loading effect.
+ * grove.tsx (Volcano, SummitPeaks, ScoreRing, TheClimb) is this app's only
+ * current consumer of --logo-1/2/3 (--logo-2 only, in practice); see
+ * @summit/design's applyLogoColors() for the contrast note before adding
+ * a new one.
+ */
+export function BrandingEffects() {
+  React.useEffect(() => {
+    const apply = () => {
+      applyLogoColors({
+        logo1: overrideOnly("appearance.logo1"),
+        logo2: overrideOnly("appearance.logo2"),
+        logo3: overrideOnly("appearance.logo3"),
+      } satisfies Partial<Record<LogoTone, string | null>>);
+    };
+    apply();
+    return onSettingsChange(apply);
+  }, []);
+  return null;
 }
 
 /** The signed-in person's identity, for screens rendered inside a SessionGate.

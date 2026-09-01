@@ -7,9 +7,10 @@ import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/sett
 import { HUB_TASKS } from "@/lib/content";
 import { directory, hr } from "@/lib/hr-store";
 import {
-  decideTimeOff, getAudit, getPd, getProfile, getProgress, getTimeOff, getTraining,
-  issueOnboardingCertificate, listPendingSignoffs, onboardingProgress, pendingOnboardingCertificates,
-  signOffTask, verifyPd, type PendingSignoff,
+  decideTimeOff, getAudit, issueOnboardingCertificate, listPendingCertificatesToIssue,
+  listPendingPdVerifications, listPendingSignoffs, listPendingTimeOffRequests, listTeamDirectory,
+  signOffTask, verifyPd,
+  type PendingCertificate, type PendingPd, type PendingSignoff, type PendingTimeOff, type TeamMember,
 } from "@/lib/hub";
 import { deactivateTeammate, editTeammate, inviteTeammate, ProvisioningError } from "@/lib/hr-backend";
 import { SessionGate, useIdentity } from "@/components/session-provider";
@@ -54,65 +55,75 @@ function AdminAccessGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Every queue on this screen used to read the CALLER's own loaded hub
+ * snapshot (getProgress()/getPd()/getTimeOff()/getProfile()) instead of the
+ * clinic's - see CLAUDE.md's "Admin console... scoped to the wrong user"
+ * note. All five queues below (team directory, sign-offs, certificates,
+ * time-off, PD) now fetch separately from a clinic-wide query
+ * (lib/hub-backend.ts's listTeamDirectory()/listPendingSignoffs()/
+ * listPendingCertificatesToIssue()/listPendingTimeOffRequests()/
+ * listPendingPdVerifications(), all relying on RLS - no user_id filter) and
+ * join the result against directory() for names, the same pattern
+ * "Pending sign-offs" already used before this change. hub_pd_records and
+ * hub_time_off_requests needed a new manage-scoped SELECT policy first
+ * (migration 0036, not yet applied live) - hub_certificates and
+ * hub_task_progress already had one from migration 0006.
+ */
+type QueueState<T> = { rows: T[] | null; error: string | null };
+
+function useManagedQueue<T>(load: () => Promise<T[]>): [QueueState<T>, () => void] {
+  const [state, setState] = React.useState<QueueState<T>>({ rows: null, error: null });
+  const reload = React.useCallback(() => {
+    load()
+      .then((rows) => setState({ rows, error: null }))
+      .catch((e: unknown) => setState({ rows: null, error: e instanceof Error ? e.message : String(e) }));
+  }, [load]);
+  React.useEffect(() => { reload(); }, [reload]);
+  return [state, reload];
+}
+
 function AdminConsole() {
   const identity = useIdentity();
   const [ready, setReady] = React.useState(false);
-  const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [tab, setTab] = React.useState<"queues" | "staff" | "settings">("queues");
-  // Team/clinic-wide, unlike everything else on this screen: it names other
-  // people's tasks, so it cannot come from the caller's own loaded hub
-  // snapshot the way getProgress()/getPd()/getTimeOff() do. Fetched
-  // separately and re-fetched after every sign-off decision.
-  const [signoffs, setSignoffs] = React.useState<PendingSignoff[] | null>(null);
-  const [signoffsError, setSignoffsError] = React.useState<string | null>(null);
-  const reloadSignoffs = React.useCallback(() => {
-    listPendingSignoffs()
-      .then((rows) => { setSignoffs(rows); setSignoffsError(null); })
-      .catch((e: unknown) => setSignoffsError(e instanceof Error ? e.message : String(e)));
-  }, []);
-  React.useEffect(() => { reloadSignoffs(); }, [reloadSignoffs]);
+
+  const [signoffs, reloadSignoffs] = useManagedQueue<PendingSignoff>(listPendingSignoffs);
+  const [certs, reloadCerts] = useManagedQueue<PendingCertificate>(listPendingCertificatesToIssue);
+  const [timeOff, reloadTimeOff] = useManagedQueue<PendingTimeOff>(listPendingTimeOffRequests);
+  const [pd, reloadPd] = useManagedQueue<PendingPd>(listPendingPdVerifications);
+  const [team, reloadTeam] = useManagedQueue<TeamMember>(listTeamDirectory);
+
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading admin…</p>;
 
-  // The record on screen still comes from the hub store; only the ROLE that
-  // decides what this console exposes comes from identity.
-  const profile = { ...getProfile(), role: identity.role };
+  // Every screen this console gates on the role from identity, never a stored
+  // hub record - see AdminAccessGate above.
+  const role = identity.role;
 
   if (tab !== "queues") {
     return (
       <div>
-        <AdminTabs tab={tab} setTab={setTab} role={profile.role} />
-        {tab === "staff" ? <StaffTab isAdmin={profile.role === "ADMIN"} isPreview={identity.isPreview} /> : <BackendSettingsTab />}
+        <AdminTabs tab={tab} setTab={setTab} role={role} />
+        {tab === "staff" ? <StaffTab isAdmin={role === "ADMIN"} isPreview={identity.isPreview} /> : <BackendSettingsTab />}
       </div>
     );
   }
 
-  const progress = getProgress();
-  const ob = onboardingProgress(progress);
   const peopleById = new Map(directory().map((p) => [p.id, p]));
-  const pendingSignoffs = (signoffs ?? []).map((p) => ({
-    ...p, task: HUB_TASKS.find((t) => t.key === p.taskKey), person: peopleById.get(p.userId),
+  const nameOf = (userId: string) => peopleById.get(userId)?.name ?? "Unknown employee";
+  const pendingSignoffs = (signoffs.rows ?? []).map((p) => ({
+    ...p, task: HUB_TASKS.find((t) => t.key === p.taskKey),
   }));
-  const pendingTimeOff = getTimeOff().filter((r) => r.status === "REQUESTED");
-  const unverifiedPd = getPd().filter((r) => !r.verified);
-  // Onboarding certificates are no longer minted in the browser: nothing there
-  // could verify they were earned, and the registry number came from a counter
-  // in localStorage. Earned-but-unissued ones queue here for a supervisor.
-  const pendingCerts = pendingOnboardingCertificates();
-
-  const trainingDue = (() => {
-    const done = new Set(getTraining().filter((t) => t.status === "COMPLETED").map((t) => t.courseKey));
-    return HUB_TASKS.filter((t) => t.courseKey && !done.has(t.courseKey)).length;
-  })();
 
   return (
     <div>
-      <AdminTabs tab={tab} setTab={setTab} role={profile.role} />
+      <AdminTabs tab={tab} setTab={setTab} role={role} />
       <p className="sub">
         {/* Scheduler's hub_can_manage() grant (migration 0022) is
             unconditional, same as admin's - clinic-wide, not team-linked -
             so it reads the copy the same way admin does. */}
-        {profile.role === "ADMIN" || identity.appRole === "scheduler" ? "Whole-clinic view." : "Your linked team."} Pending approvals first; everything you decide is audited.
+        {role === "ADMIN" || identity.appRole === "scheduler" ? "Whole-clinic view." : "Your linked team."} Pending approvals first; everything you decide is audited.
       </p>
 
       <h2 className="section-title">Team directory</h2>
@@ -120,16 +131,27 @@ function AdminConsole() {
         <table className="data">
           <thead><tr><th>Employee</th><th>#</th><th>Role / title</th><th>Location</th><th>VSC</th><th>Start</th><th>Onboarding</th><th>Training due</th></tr></thead>
           <tbody>
-            <tr>
-              <td><b>{profile.name}</b></td>
-              <td>{profile.employeeNumber}</td>
-              <td>{profile.jobTitle ?? "—"}</td>
-              <td>{profile.location ?? "—"}</td>
-              <td><span className={`pill ${profile.vscStatus === "CLEARED" ? "good" : "warn"}`}>{profile.vscStatus.replace(/_/g, " ").toLowerCase()}</span></td>
-              <td style={{ fontVariantNumeric: "tabular-nums" }}>{profile.startDate ?? "—"}</td>
-              <td style={{ fontVariantNumeric: "tabular-nums" }}>{ob.percent}%</td>
-              <td style={{ fontVariantNumeric: "tabular-nums" }}>{trainingDue}</td>
-            </tr>
+            {team.error ? (
+              <tr><td colSpan={8} role="alert" style={{ color: "var(--danger, #b3261e)" }}>
+                Could not load the team directory. {team.error}{" "}
+                <button className="btn ghost" style={{ padding: "2px 8px" }} onClick={reloadTeam}>Try again</button>
+              </td></tr>
+            ) : team.rows === null ? (
+              <tr><td colSpan={8} style={{ color: "var(--muted)" }}>Loading…</td></tr>
+            ) : team.rows.length ? team.rows.map((m) => (
+              <tr key={m.userId}>
+                <td><b>{nameOf(m.userId)}</b></td>
+                <td>{m.employeeNumber || "—"}</td>
+                <td>{m.jobTitle ?? "—"}</td>
+                <td>{m.location ?? "—"}</td>
+                <td><span className={`pill ${m.vscStatus === "CLEARED" ? "good" : "warn"}`}>{m.vscStatus.replace(/_/g, " ").toLowerCase()}</span></td>
+                <td style={{ fontVariantNumeric: "tabular-nums" }}>{m.startDate ?? "—"}</td>
+                <td style={{ fontVariantNumeric: "tabular-nums" }}>{m.onboardingPercent}%</td>
+                <td style={{ fontVariantNumeric: "tabular-nums" }}>{m.trainingDue}</td>
+              </tr>
+            )) : (
+              <tr><td colSpan={8} style={{ color: "var(--muted)" }}>No accounts found for this clinic.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -140,12 +162,12 @@ function AdminConsole() {
 
       <h2 className="section-title">Pending sign-offs {pendingSignoffs.length ? <span className="pill warn">{pendingSignoffs.length}</span> : null}</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {signoffsError ? (
+        {signoffs.error ? (
           <div className="card card-pad" role="alert" style={{ borderColor: "var(--danger, #b3261e)" }}>
-            <b>Could not load pending sign-offs.</b> <span className="sub">{signoffsError}</span>
+            <b>Could not load pending sign-offs.</b> <span className="sub">{signoffs.error}</span>
             <button className="btn ghost" style={{ marginLeft: 8, padding: "4px 10px" }} onClick={reloadSignoffs}>Try again</button>
           </div>
-        ) : signoffs === null ? (
+        ) : signoffs.rows === null ? (
           <div className="card card-pad"><p className="sub">Loading pending sign-offs…</p></div>
         ) : (
           <>
@@ -154,7 +176,7 @@ function AdminConsole() {
                 <div style={{ minWidth: 0 }}>
                   <b style={{ fontSize: "var(--text-sm)" }}>{p.task?.title ?? p.taskKey}</b>
                   <p className="trend" style={{ marginTop: 4 }}>
-                    {p.person?.name ?? "Unknown employee"} · Week {p.task?.week} · {p.task?.section}{p.notes ? ` · note: ${p.notes}` : ""}
+                    {nameOf(p.userId)} · Week {p.task?.week} · {p.task?.section}{p.notes ? ` · note: ${p.notes}` : ""}
                   </p>
                 </div>
                 <button className="btn" onClick={() => void signOffTask(p.taskKey, p.userId).then(reloadSignoffs)}>Sign off as completed</button>
@@ -165,47 +187,80 @@ function AdminConsole() {
         )}
       </div>
 
-      <h2 className="section-title">Certificates to issue {pendingCerts.length ? <span className="pill warn">{pendingCerts.length}</span> : null}</h2>
+      <h2 className="section-title">Certificates to issue {certs.rows?.length ? <span className="pill warn">{certs.rows.length}</span> : null}</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {pendingCerts.map((c) => (
-          <div key={c.title} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 0 }}>
-              <b style={{ fontSize: "var(--text-sm)" }}>{c.title}</b>
-              <p className="trend" style={{ marginTop: 4 }}>{profile.name} · {c.competency} · earned, awaiting issue</p>
-            </div>
-            <button className="btn" onClick={() => void issueOnboardingCertificate(c.title, c.competency).then(force)}>
-              Issue certificate
-            </button>
+        {certs.error ? (
+          <div className="card card-pad" role="alert" style={{ borderColor: "var(--danger, #b3261e)" }}>
+            <b>Could not load certificates to issue.</b> <span className="sub">{certs.error}</span>
+            <button className="btn ghost" style={{ marginLeft: 8, padding: "4px 10px" }} onClick={reloadCerts}>Try again</button>
           </div>
-        ))}
-        {!pendingCerts.length ? <div className="card card-pad"><p className="sub">No certificates waiting to be issued.</p></div> : null}
+        ) : certs.rows === null ? (
+          <div className="card card-pad"><p className="sub">Loading…</p></div>
+        ) : (
+          <>
+            {certs.rows.map((c) => (
+              <div key={`${c.userId}-${c.title}`} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0 }}>
+                  <b style={{ fontSize: "var(--text-sm)" }}>{c.title}</b>
+                  <p className="trend" style={{ marginTop: 4 }}>{nameOf(c.userId)} · {c.competency} · earned, awaiting issue</p>
+                </div>
+                <button className="btn" onClick={() => void issueOnboardingCertificate(c.title, c.competency, c.userId).then(reloadCerts)}>
+                  Issue certificate
+                </button>
+              </div>
+            ))}
+            {!certs.rows.length ? <div className="card card-pad"><p className="sub">No certificates waiting to be issued.</p></div> : null}
+          </>
+        )}
       </div>
 
-      <h2 className="section-title">Time-off requests {pendingTimeOff.length ? <span className="pill warn">{pendingTimeOff.length}</span> : null}</h2>
+      <h2 className="section-title">Time-off requests {timeOff.rows?.length ? <span className="pill warn">{timeOff.rows.length}</span> : null}</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {pendingTimeOff.map((r) => (
-          <div key={r.id} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "var(--text-sm)" }}>
-              <b>{profile.name}</b> · {r.type === "VACATION" ? "Vacation" : "Sick"} · {r.startDate} → {r.endDate} ({r.days}d){r.note ? ` · ${r.note}` : ""}
-            </span>
-            <span style={{ display: "flex", gap: 8 }}>
-              <button className="btn" onClick={() => void decideTimeOff(r.id, "APPROVED").then(force)}>Approve</button>
-              <button className="btn secondary" onClick={() => void decideTimeOff(r.id, "DENIED").then(force)}>Deny</button>
-            </span>
+        {timeOff.error ? (
+          <div className="card card-pad" role="alert" style={{ borderColor: "var(--danger, #b3261e)" }}>
+            <b>Could not load time-off requests.</b> <span className="sub">{timeOff.error}</span>
+            <button className="btn ghost" style={{ marginLeft: 8, padding: "4px 10px" }} onClick={reloadTimeOff}>Try again</button>
           </div>
-        ))}
-        {!pendingTimeOff.length ? <div className="card card-pad"><p className="sub">No pending requests.</p></div> : null}
+        ) : timeOff.rows === null ? (
+          <div className="card card-pad"><p className="sub">Loading…</p></div>
+        ) : (
+          <>
+            {timeOff.rows.map((r) => (
+              <div key={r.id} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "var(--text-sm)" }}>
+                  <b>{nameOf(r.userId)}</b> · {r.type === "VACATION" ? "Vacation" : "Sick"} · {r.startDate} → {r.endDate} ({r.days}d){r.note ? ` · ${r.note}` : ""}
+                </span>
+                <span style={{ display: "flex", gap: 8 }}>
+                  <button className="btn" onClick={() => void decideTimeOff(r.id, "APPROVED").then(reloadTimeOff)}>Approve</button>
+                  <button className="btn secondary" onClick={() => void decideTimeOff(r.id, "DENIED").then(reloadTimeOff)}>Deny</button>
+                </span>
+              </div>
+            ))}
+            {!timeOff.rows.length ? <div className="card card-pad"><p className="sub">No pending requests.</p></div> : null}
+          </>
+        )}
       </div>
 
-      <h2 className="section-title">PD awaiting verification {unverifiedPd.length ? <span className="pill warn">{unverifiedPd.length}</span> : null}</h2>
+      <h2 className="section-title">PD awaiting verification {pd.rows?.length ? <span className="pill warn">{pd.rows.length}</span> : null}</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {unverifiedPd.map((r) => (
-          <div key={r.id} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "var(--text-sm)" }}><b>{r.title}</b> · {r.provider || "—"} · {r.hours}h · {r.date}</span>
-            <button className="btn secondary" onClick={() => void verifyPd(r.id).then(force)}>Verify</button>
+        {pd.error ? (
+          <div className="card card-pad" role="alert" style={{ borderColor: "var(--danger, #b3261e)" }}>
+            <b>Could not load PD awaiting verification.</b> <span className="sub">{pd.error}</span>
+            <button className="btn ghost" style={{ marginLeft: 8, padding: "4px 10px" }} onClick={reloadPd}>Try again</button>
           </div>
-        ))}
-        {!unverifiedPd.length ? <div className="card card-pad"><p className="sub">All PD entries are verified.</p></div> : null}
+        ) : pd.rows === null ? (
+          <div className="card card-pad"><p className="sub">Loading…</p></div>
+        ) : (
+          <>
+            {pd.rows.map((r) => (
+              <div key={r.id} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "var(--text-sm)" }}><b>{nameOf(r.userId)}</b> · {r.title} · {r.provider || "—"} · {r.hours}h · {r.date}</span>
+                <button className="btn secondary" onClick={() => void verifyPd(r.id).then(reloadPd)}>Verify</button>
+              </div>
+            ))}
+            {!pd.rows.length ? <div className="card card-pad"><p className="sub">All PD entries are verified.</p></div> : null}
+          </>
+        )}
       </div>
 
       <h2 className="section-title">Recent activity</h2>

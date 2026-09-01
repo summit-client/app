@@ -265,7 +265,19 @@ that, most awkward first:
    this is the block to unpick for a packaged product.
 10. **`--logo-1/2/3` are fixed and never re-tinted.** Right for a single brand,
    but a tenant cannot have their own logo colours while everything around the
-   logo re-tints.
+   logo re-tints. **Mechanism added 2026-09-01** (`packages/design`'s
+   `applyLogoColors()`, `packages/settings`' `appearance.logo1/2/3`, wired
+   into `apps/data`'s `SettingsEffects` and a new `apps/employee`
+   `BrandingEffects`) — tokens.css keeps Mount Etna's values as the default,
+   an org override is applied inline only when one exists. **Still open:**
+   no Settings UI writes `appearance.logo1/2/3` yet (deliberately excluded
+   from `AppearanceSection`'s `GenericSection` in
+   `apps/data/components/settings/custom.tsx`) — add one the way
+   `appearance.primaryColor` already has an (unenforced) contrast warning,
+   since `apps/employee/components/grove.tsx`'s `SummitPeaks`/`TheClimb`
+   render text over a `--logo-2`-filled shape (mitigated for today's fixed
+   text colours with a `var(--surface)` stroke halo, not a general
+   contrast check on arbitrary input).
 
 ## Commercial model — OPEN, two versions in circulation
 

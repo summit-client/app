@@ -1023,6 +1023,129 @@ await check("operator diagnostics are not readable by a family", async () => {
   });
 });
 
+// --------------------------------------------------------------------------
+// 0047 · Merging two parallel builds
+//
+// Main built four family-facing features against auth_client_row_id(), the
+// one-login-one-child link 0041 replaced. On the merged tree every one of them
+// returned nothing to a guardian and refused their writes. These are the tests
+// that say so, and that the permission gates are real rather than decorative.
+// --------------------------------------------------------------------------
+
+const sess = (await db.query(
+  `insert into sessions (clinic_id, client_id, session_date, hour, status, type)
+   values ('${clinicA}', ${maya}, current_date + 3, 14, 'scheduled', 'Session') returning id`)).rows[0].id;
+
+await db.exec(`insert into client_documents
+                 (clinic_id, client_id, file_path, title, direction, uploaded_by)
+               values ('${clinicA}', ${maya}, 'x/report.pdf', 'Assessment report',
+                       'staff_to_client', '${aClin}')`);
+await db.exec(`insert into home_program_activities
+                 (clinic_id, client_id, title, assigned_by)
+               values ('${clinicA}', ${maya}, 'Practise requesting help', '${aClin}')`);
+await db.exec(`insert into session_change_requests
+                 (clinic_id, session_id, client_id, request_type, created_by)
+               values ('${clinicA}', ${sess}, ${maya}, 'reschedule', '${parentA}')`);
+
+await check("a guardian reaches main's documents, home program and change requests", async () => {
+  await as(parentA, async () => {
+    eq(await count(`select count(*)::int n from client_documents`), 1, "documents");
+    eq(await count(`select count(*)::int n from home_program_activities`), 1, "home program");
+    eq(await count(`select count(*)::int n from session_change_requests`), 1, "change requests");
+  });
+});
+
+await check("a guardian can still upload a document, and only in their own direction", async () => {
+  await as(parentA, async () => {
+    await db.exec(`insert into client_documents
+                     (clinic_id, client_id, file_path, title, direction, uploaded_by)
+                   values ('${clinicA}', ${maya}, 'x/consent.pdf', 'Signed consent',
+                           'client_to_staff', '${parentA}')`);
+  });
+  // Not in the staff direction, which would let a family plant a document that
+  // reads as though the clinic sent it.
+  await as(parentA, () => insertRaises(
+    `insert into client_documents (clinic_id, client_id, file_path, title, direction, uploaded_by)
+     values ('${clinicA}', ${maya}, 'x/fake.pdf', 'From the clinic', 'staff_to_client', '${parentA}')`,
+    "family-uploaded staff document"));
+});
+
+await check("requesting a change needs manage_appointments, not merely view_appointments", async () => {
+  // parentA holds everything; the request lands.
+  await as(parentA, async () => {
+    await db.exec(`insert into session_change_requests
+                     (clinic_id, session_id, client_id, request_type, created_by)
+                   values ('${clinicA}', ${sess}, ${maya}, 'cancel', '${parentA}')`);
+  });
+  // silent holds view_appointments but not manage_appointments.
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'manage_appointments'
+                    and relationship_id in (select id from guardian_relationships
+                                             where user_id='${silent}')`);
+  await as(silent, () => insertRaises(
+    `insert into session_change_requests (clinic_id, session_id, client_id, request_type, created_by)
+     values ('${clinicA}', ${sess}, ${maya}, 'cancel', '${silent}')`,
+    "change request without manage_appointments"));
+});
+
+await check("a guardian without clinical access sees no home-program work", async () => {
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'view_clinical_progress'
+                    and relationship_id in (select id from guardian_relationships
+                                             where user_id='${silent}')`);
+  await as(silent, async () =>
+    eq(await count(`select count(*)::int n from home_program_activities`), 0, "home program"));
+});
+
+await check("an unrelated family reaches none of main's four surfaces", async () => {
+  await as(outsider, async () => {
+    for (const t of ["client_documents", "home_program_activities",
+                     "session_change_requests", "client_messages"]) {
+      eq(await count(`select count(*)::int n from public.${t}`), 0, t);
+    }
+  });
+});
+
+await check("client_messages is an archive: readable, but nothing new lands there", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into client_messages (clinic_id, client_id, sender_user_id, sender_role, body)
+     values ('${clinicA}', ${maya}, '${parentA}', 'client', 'new message')`,
+    "family write to the retired table"));
+  await as(aClin, () => insertRaises(
+    `insert into client_messages (clinic_id, client_id, sender_user_id, sender_role, body)
+     values ('${clinicA}', ${maya}, '${aClin}', 'clinician', 'new reply')`,
+    "staff write to the retired table"));
+});
+
+await check("a thread's clinic is derived from the child, never taken from the request", async () => {
+  // The gap 0013 flagged and main solved for client_messages: a row claiming
+  // clinic B while its client lives in clinic A would sit in the wrong queue.
+  const t = (await db.query(
+    `insert into message_threads (clinic_id, household_id, client_id, subject, started_by)
+     values ('${clinicB}', '${household}', ${maya}, 'Wrong clinic', '${parentA}')
+     returning id, clinic_id`)).rows[0];
+  eq(t.clinic_id, clinicA, "derived clinic");
+  const m = (await db.query(
+    `insert into messages (clinic_id, thread_id, author_user_id, author_kind, body)
+     values ('${clinicB}', '${t.id}', '${aClin}', 'staff', 'hello') returning clinic_id`)).rows[0];
+  eq(m.clinic_id, clinicA, "derived message clinic");
+});
+
+await check("staff messaging is gated on the care-team action, not on client-file access", async () => {
+  // A scheduler may read a client file; the family's care conversation is not
+  // part of that. Main's action catalogue says so and now governs 0044's
+  // tables too.
+  const scheduler = await mkUser("a_sched2", "scheduler", clinicA);
+  await as(scheduler, async () => {
+    eq(await count(`select count(*)::int n from message_threads`), 0, "scheduler threads");
+    eq(await count(`select count(*)::int n from messages`), 0, "scheduler messages");
+  });
+  await as(aClin, async () => {
+    const n = await count(`select count(*)::int n from message_threads`);
+    if (n === 0) throw new Error("a clinician can no longer read any thread");
+  });
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

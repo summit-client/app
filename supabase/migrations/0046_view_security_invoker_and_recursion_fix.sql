@@ -1,4 +1,4 @@
--- 0040 · Two security fixes found by executing, not by reading
+-- 0046 · Two security fixes found by executing, not by reading
 --
 -- ===========================================================================
 -- BUG 1 · Every view in this schema bypassed row-level security
@@ -165,7 +165,7 @@ comment on view rls_coverage is
 -- BUG 4 · The client-facing tables were never moved onto the household model
 -- ===========================================================================
 --
--- 0035 replaced one-login-one-child with households and guardian
+-- 0041 replaced one-login-one-child with households and guardian
 -- relationships, and gave the new tables policies to match. It did not migrate
 -- the tables that already existed. Reading each one as a guardian shows what
 -- that left behind:

@@ -22,9 +22,12 @@ interface Props {
   draftSessionIds: Set<number>;
   onSelectDay: (dateStr: string) => void;
   onSessionClick: (s: CalSession) => void;
+  /** Session id -> colour, for the "compare schedules" overlay - see the
+   *  same prop on TimeGrid for why. */
+  sessionColorOverrides?: Record<number, string>;
 }
 
-export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, typeColors, draftSessionIds, onSelectDay, onSessionClick }: Props) {
+export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, typeColors, draftSessionIds, onSelectDay, onSessionClick, sessionColorOverrides }: Props) {
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const today = toDateStr(new Date());
   const monthIdx = anchorMonth.getMonth();
@@ -72,7 +75,7 @@ export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, 
             )}
             {chips.map((s) => {
               const client = clients.find((c) => c.id === s.client_id);
-              const color = typeColors[s.type] || "#888";
+              const color = sessionColorOverrides?.[s.id] ?? (typeColors[s.type] || "#888");
               const draft = draftSessionIds.has(s.id);
               return (
                 <div

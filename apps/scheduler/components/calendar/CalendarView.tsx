@@ -29,8 +29,10 @@ import type { AvailabilityRow, ExistingSession, Suggestion } from "./suggestions
 import { TimeGrid } from "./TimeGrid";
 import { MonthGrid } from "./MonthGrid";
 import { FilterPanel, CalendarPicker, CalendarFilters, emptyFilters, activeFilterCount, matchesFilters } from "./FilterPanel";
+import { StaffOverlayPicker, OverlayLegend, overlayColorFor } from "./StaffOverlayPicker";
 import { RecurringIcon } from "./icons";
 import { RescheduleModal } from "./RescheduleModal";
+import { SessionDetail } from "./SessionDetail";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { sessionGridIncrement, sessionDuration } from "./types";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../../lib/checkSlotConflict";
@@ -64,9 +66,33 @@ interface Props {
   clientAvailability: CalClientAvailability[];
   showToast: (msg?: string) => void;
   onRequestCreate: (dateStr: string, hour: number, minute: number) => void;
+  /** Set once, briefly, by a click on a client/clinician name in the
+   *  Dashboard's Sessions list (see pages/index.jsx's focusPersonOnCalendar) -
+   *  there's no per-person profile page anywhere in this app, so that click
+   *  lands here instead: scope this tab to that person via the same
+   *  filters/date-anchor a user could set by hand. */
+  focus?: { employeeId?: number | null; clientId?: number | null; dateStr?: string | null } | null;
+  /** Called once the incoming `focus` has been applied, so the parent can
+   *  clear it - this view fully unmounts whenever pages/index.jsx's `view`
+   *  switches away from "calendar" (see its `views` map), so without this
+   *  a stale focus would silently reapply itself on the next visit to this
+   *  tab even after someone had since cleared filters by hand. */
+  onConsumedFocus?: () => void;
+  /** Any new value (object/array identity change, not equality) re-runs
+   *  this tab's own `sessions` fetch. This view keeps its own independent
+   *  copy of the visible range's sessions (`loadRange` below) rather than
+   *  reading the page-level `bookings` state directly - which meant a
+   *  session booked elsewhere (click-to-create's quickSlot wizard calling
+   *  refreshBookings()) never appeared here until something else happened
+   *  to remount this tab or shift the date range (issue #133 item 8: "did
+   *  a dummy click to create and I'm not seeing the listing populate").
+   *  pages/index.jsx passes its own `bookings` array through here for
+   *  exactly this purpose - a fresh array reference from any refetch is
+   *  enough to trigger a reload, no dedicated counter needed. */
+  refreshSignal?: unknown;
 }
 
-export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, setCalendars, staffAvailability, clientAvailability, showToast, onRequestCreate }: Props) {
+export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, setCalendars, staffAvailability, clientAvailability, showToast, onRequestCreate, focus = null, onConsumedFocus, refreshSignal }: Props) {
   const appUser = useAppUser();
   const clinicId = appUser?.clinic_id || "";
   const [mode, setMode] = React.useState<ViewMode>("week");
@@ -77,7 +103,26 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const [filters, setFilters] = React.useState<CalendarFilters>(emptyFilters());
   const [selected, setSelected] = React.useState<CalSession | null>(null);
   const [rescheduling, setRescheduling] = React.useState<CalSession | null>(null);
+  const [rescheduleInitialSlot, setRescheduleInitialSlot] = React.useState<{ dateStr: string; hour: number; minute: number } | null>(null);
   const [, forceTick] = React.useState(0);
+
+  // Applied once on mount only (empty dep array - this component remounts
+  // fresh on every navigation into this tab, per the comment on `focus`
+  // above, so there is no later prop change to react to). Reads `focus` via
+  // closure rather than as a dependency for exactly that reason.
+  React.useEffect(() => {
+    if (!focus) return;
+    if (focus.employeeId != null || focus.clientId != null) {
+      setFilters({
+        ...emptyFilters(),
+        employeeIds: focus.employeeId != null ? new Set([focus.employeeId]) : new Set(),
+        clientIds: focus.clientId != null ? new Set([focus.clientId]) : new Set(),
+      });
+    }
+    if (focus.dateStr) setAnchor(parseDateStr(focus.dateStr));
+    onConsumedFocus?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Measures the actual viewport-fit container so the time grid scales its
   // px-per-minute to the device instead of always rendering at one fixed
@@ -113,8 +158,6 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   // see sessionGridIncrement in types.ts.
   const [draggingSessionId, setDraggingSessionId] = React.useState<number | null>(null);
   const [dragHoverSlot, setDragHoverSlot] = React.useState<{ dateStr: string; hour: number; minute: number } | null>(null);
-  const draggingSession = draggingSessionId != null ? sessions.find((s) => s.id === draggingSessionId) : undefined;
-  const activeSnapMinutes = sessionGridIncrement(draggingSession, sessionTypes, personalSnapMinutes);
 
   const range = React.useMemo(
     () => computeViewRange(mode, anchor, { nDays, showWeekends: weekendsInView, workDays }),
@@ -134,12 +177,66 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     if (filters.clientIds.size) q = q.in("client_id", [...filters.clientIds]);
     const { data } = await q;
     if (data) setSessions(data as CalSession[]);
-  }, [clinicId, range.queryStart, range.queryEnd, filters]);
+    // refreshSignal is read only to force a refetch when it changes - see
+    // the prop's own doc comment on why this tab can't just trust a stale
+    // fetch from before the caller's most recent write.
+  }, [clinicId, range.queryStart, range.queryEnd, filters, refreshSignal]);
 
   React.useEffect(() => {
     const t = setTimeout(() => { void loadRange(); }, 120);
     return () => clearTimeout(t);
   }, [loadRange]);
+
+  // ── "Compare schedules" overlay ──────────────────────────────────────
+  // Which OTHER staff members' sessions to layer on top of this view, and
+  // that fetch's own result - kept entirely separate from `sessions`/
+  // `loadRange` above rather than folded into the same query, because
+  // loadRange's query is scoped by the viewer's own location/type/client/
+  // employee filters (see FilterPanel) and the overlay is specifically
+  // meant to show full, unfiltered detail for whoever is picked regardless
+  // of what the viewer's own view is currently filtered down to - see
+  // StaffOverlayPicker.tsx's header comment. Order is preserved (a Set
+  // would not) since it is what overlayColorFor uses to keep one person's
+  // colour stable while others are added or removed.
+  const [overlayStaffIds, setOverlayStaffIds] = React.useState<number[]>([]);
+  const [overlaySessions, setOverlaySessions] = React.useState<CalSession[]>([]);
+  const overlayKey = overlayStaffIds.join(",");
+
+  const loadOverlay = React.useCallback(async () => {
+    if (!clinicId || overlayStaffIds.length === 0) { setOverlaySessions([]); return; }
+    const { data } = await supabase.from("sessions").select("*")
+      .eq("clinic_id", clinicId)
+      .in("employee_id", overlayStaffIds)
+      .gte("session_date", toDateStr(range.queryStart))
+      .lte("session_date", toDateStr(range.queryEnd))
+      .neq("status", "cancelled");
+    setOverlaySessions((data as CalSession[]) || []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clinicId, overlayKey, range.queryStart, range.queryEnd, refreshSignal]);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => { void loadOverlay(); }, 120);
+    return () => clearTimeout(t);
+  }, [loadOverlay]);
+
+  function toggleOverlayStaff(id: number) {
+    setOverlayStaffIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+  function removeOverlayStaff(id: number) {
+    setOverlayStaffIds((prev) => prev.filter((x) => x !== id));
+  }
+  function clearOverlay() {
+    setOverlayStaffIds([]);
+  }
+  // Every place that used to just `await loadRange()` after writing a
+  // session (reschedule, cancel) now needs the overlay's own separate fetch
+  // refreshed too - an overlaid staff member's sessions live only in
+  // `overlaySessions`, not in `sessions`/loadRange's result, so a write that
+  // only reloaded loadRange would leave a just-moved overlay session
+  // showing at its stale position until the next unrelated re-fetch.
+  async function refreshAll() {
+    await Promise.all([loadRange(), loadOverlay()]);
+  }
 
   // Draft calendars (see the Create wizard's "calendar" step) are a working
   // area, not a live schedule - their sessions stay off this view and out
@@ -160,10 +257,6 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   // scheduler previewing a draft calendar's layout can't accidentally have
   // it silently treated as already-booked.
   const [showDrafts, setShowDrafts] = React.useState(false);
-  const draftSessionIds = React.useMemo(
-    () => new Set(sessions.filter((s) => s.calendar_id != null && draftCalendarIds.has(s.calendar_id)).map((s) => s.id)),
-    [sessions, draftCalendarIds],
-  );
   // Reintroduced per-calendar filtering (dropped when this view was
   // rebuilt) as an explicit, single-select choice - "All calendars" (null)
   // keeps today's showDrafts-gated behavior; picking one specific calendar
@@ -209,9 +302,58 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     [displaySessions, filters],
   );
 
+  // Overlay sessions get the same live/draft treatment as the viewer's own
+  // (respect "Show drafts"), but never the location/type/client/employee
+  // filters above - see the overlay fetch's own comment for why.
+  const overlayLiveOrShown = React.useMemo(
+    () => (showDrafts ? overlaySessions : overlaySessions.filter((s) => s.calendar_id == null || !draftCalendarIds.has(s.calendar_id))),
+    [overlaySessions, showDrafts, draftCalendarIds],
+  );
+  // One colour per overlaid person, keyed by session id so TimeGrid/
+  // MonthGrid can recolour a block without knowing anything about staff or
+  // overlays - see StaffOverlayPicker.tsx.
+  const sessionColorOverrides = React.useMemo(() => {
+    const map: Record<number, string> = {};
+    for (const s of overlayLiveOrShown) map[s.id] = overlayColorFor(s.employee_id, overlayStaffIds);
+    return map;
+  }, [overlayLiveOrShown, overlayStaffIds]);
+  // Union by session id, overlay wins on collision (recolours a session that
+  // would otherwise already be showing via the viewer's own filters) - this
+  // is what actually puts the overlaid sessions on the grid; TimeGrid/
+  // MonthGrid render whatever list they're handed with no separate overlay
+  // concept of their own.
+  const mergedSessions = React.useMemo(() => {
+    if (overlayLiveOrShown.length === 0) return visibleSessions;
+    const byId = new Map<number, CalSession>();
+    for (const s of visibleSessions) byId.set(s.id, s);
+    for (const s of overlayLiveOrShown) byId.set(s.id, s);
+    return Array.from(byId.values());
+  }, [visibleSessions, overlayLiveOrShown]);
+  const draftSessionIds = React.useMemo(
+    () => new Set(mergedSessions.filter((s) => s.calendar_id != null && draftCalendarIds.has(s.calendar_id)).map((s) => s.id)),
+    [mergedSessions, draftCalendarIds],
+  );
+
   const splitEmployeeIds = filters.employeeIds.size > 0 && filters.employeeIds.size <= SPLIT_THRESHOLD
     ? [...filters.employeeIds]
     : null;
+  // Split-by-employee sub-columns bucket sessions strictly by the ids named
+  // here; an overlaid staff member outside that set would otherwise vanish
+  // from the grid entirely (their sessions match none of TimeGrid's
+  // sub-columns rather than falling back to the shared one). Overlay and
+  // split are two different ways of comparing several people at once -
+  // this just picks overlay when both would otherwise apply, rather than
+  // trying to reconcile the two layouts.
+  const effectiveSplitEmployeeIds = overlayStaffIds.length > 0 ? null : splitEmployeeIds;
+
+  // Resolved against mergedSessions (own + overlay), not just the viewer's
+  // own `sessions` fetch, so starting a drag on an overlaid session's block
+  // - same click-and-drag gesture as any other session on this grid, since
+  // this is a full-detail overlay, not a read-only one - actually finds it
+  // instead of silently no-op'ing (see handleDropSession below for the
+  // write side of the same fix).
+  const draggingSession = draggingSessionId != null ? mergedSessions.find((s) => s.id === draggingSessionId) : undefined;
+  const activeSnapMinutes = sessionGridIncrement(draggingSession, sessionTypes, personalSnapMinutes);
 
   function go(direction: 1 | -1) {
     setAnchor((a) => shiftView(mode, a, direction, nDays));
@@ -264,7 +406,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     );
     if (fresh) {
       showToast("That slot was just booked by someone else - pick another time.");
-      await loadRange();
+      await refreshAll();
       return;
     }
 
@@ -313,7 +455,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       );
       if (collision) {
         showToast(`Can't move the series - ${collision.shiftedDateStr} already has a session at that time.`);
-        await loadRange();
+        await refreshAll();
         return;
       }
 
@@ -322,7 +464,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       ));
       failed = results.some((r) => r.error);
     }
-    await loadRange();
+    await refreshAll();
     showToast(failed ? "Reschedule failed for one or more sessions - please check the calendar." : "Session rescheduled");
   }
 
@@ -368,7 +510,12 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   // against this component's own `sessions` state means the lookup works no
   // matter which day column the drop lands in.
   function handleDropSession(sessionId: number, dateStr: string, hour: number, minute: number) {
-    const session = sessions.find((s) => s.id === sessionId);
+    // mergedSessions, not just `sessions` - a dropped session may belong to
+    // an overlaid staff member and only exist in `overlaySessions`. RLS is
+    // still what actually decides whether the write is allowed (see
+    // migrations 0013/0014); this only decides whether the drop resolves to
+    // a session at all instead of silently doing nothing.
+    const session = mergedSessions.find((s) => s.id === sessionId);
     if (!session) return;
     if (session.session_date === dateStr && session.hour === hour && session.minute === minute) return;
     if (session.recurrence_id) {
@@ -446,6 +593,11 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           </button>
         )}
 
+        <StaffOverlayPicker
+          employees={employees} selectedIds={overlayStaffIds}
+          onToggle={toggleOverlayStaff} onClearAll={clearOverlay}
+        />
+
         <div style={{ marginLeft: "auto" }}>
           <FilterPanel
             locations={locations} sessionTypes={sessionTypes} employees={employees} clients={clients}
@@ -453,6 +605,8 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           />
         </div>
       </div>
+
+      <OverlayLegend employees={employees} selectedIds={overlayStaffIds} onRemove={removeOverlayStaff} />
 
       {draftCalendars.length > 0 && !hasActiveCalendar && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", borderRadius: 8, background: "#EF9F2712", border: "0.5px solid #EF9F2755", marginBottom: 12, fontSize: 13 }}>
@@ -481,7 +635,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
         </div>
       )}
 
-      {visibleSessions.length === 0 && activeFilterCount(filters) > 0 && (
+      {mergedSessions.length === 0 && activeFilterCount(filters) > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", marginBottom: 12, fontSize: 13, color: "var(--color-text-secondary)" }}>
           No sessions match your filters for {range.label}.
           <button onClick={() => setFilters(emptyFilters())} style={{ fontSize: 13, color: "#3f9c78", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>
@@ -495,8 +649,9 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           session_date` (migration 0018's sessions_clinic_date_idx). With no
           filters active, a blank grid here means "nothing in this range,"
           but nothing on screen says that, so it reads identically to a
-          broken fetch. */}
-      {visibleSessions.length === 0 && activeFilterCount(filters) === 0 && (
+          broken fetch. mergedSessions (not visibleSessions) so this doesn't
+          fire while an overlay is actually showing something. */}
+      {mergedSessions.length === 0 && activeFilterCount(filters) === 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", marginBottom: 12, fontSize: 13, color: "var(--color-text-secondary)" }}>
           No sessions found for {range.label}. If you expected to see one, check that it falls in this range - try Prev/Next, Today, or Month view to widen it.
         </div>
@@ -504,17 +659,17 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
       {mode === "month" ? (
         <MonthGrid
-          days={range.days} anchorMonth={anchor} sessions={visibleSessions} clients={clients} sessionTypes={sessionTypes}
-          typeColors={typeColors} draftSessionIds={draftSessionIds}
+          days={range.days} anchorMonth={anchor} sessions={mergedSessions} clients={clients} sessionTypes={sessionTypes}
+          typeColors={typeColors} draftSessionIds={draftSessionIds} sessionColorOverrides={sessionColorOverrides}
           onSelectDay={(dateStr) => { setMode("day"); setAnchor(parseDateStr(dateStr)); }}
           onSessionClick={setSelected}
         />
       ) : (
         <div ref={gridAreaRef} style={{ height: "calc(100vh - var(--portalnav-h, 51px) - 230px)", minHeight: 320 }}>
           <TimeGrid
-            days={range.days} sessions={visibleSessions} clients={clients} employees={employees} locations={locations}
+            days={range.days} sessions={mergedSessions} clients={clients} employees={employees} locations={locations}
             sessionTypes={sessionTypes} typeColors={typeColors} workStartHour={workStartHour} workEndHour={workEndHour}
-            splitEmployeeIds={splitEmployeeIds} onSlotClick={onRequestCreate} onSessionClick={setSelected} onDropSession={handleDropSession}
+            splitEmployeeIds={effectiveSplitEmployeeIds} onSlotClick={onRequestCreate} onSessionClick={setSelected} onDropSession={handleDropSession}
             containerHeight={gridHeight} snapMinutes={activeSnapMinutes} gridlineMinutes={gridlineMinutes}
             dragHoverSlot={dragHoverSlot}
             onSessionDragStart={setDraggingSessionId}
@@ -522,17 +677,21 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
             onDragEnd={() => { setDraggingSessionId(null); setDragHoverSlot(null); }}
             staffAvailability={staffAvailability} draggingEmployeeId={draggingSession?.employee_id ?? null}
             draftSessionIds={draftSessionIds} today={todayDateStr()}
+            sessionColorOverrides={sessionColorOverrides}
           />
         </div>
       )}
 
       {selected && (
         <SessionDetail
-          session={selected} clients={clients} employees={employees} locations={locations} typeColors={typeColors}
+          session={selected} clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors}
+          colorOverride={sessionColorOverrides[selected.id]}
           isDraft={draftSessionIds.has(selected.id)}
+          staffAvailability={staffAvailability} clientAvailability={clientAvailability}
+          clinicId={clinicId} workStartHour={workStartHour} workEndHour={workEndHour} incrementMinutes={orgIncrementMinutes}
           onClose={() => setSelected(null)}
-          onReschedule={() => { setRescheduling(selected); setSelected(null); }}
-          onCancelled={() => { setSelected(null); void loadRange(); showToast("Session cancelled"); }}
+          onReschedule={(proposedSlot) => { setRescheduleInitialSlot(proposedSlot || null); setRescheduling(selected); setSelected(null); }}
+          onCancelled={() => { setSelected(null); void refreshAll(); showToast("Session cancelled"); }}
         />
       )}
 
@@ -560,8 +719,9 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           liveSessions={liveSessions} staffAvailability={staffAvailability} clientAvailability={clientAvailability}
           clinicId={clinicId}
           workStartHour={workStartHour} workEndHour={workEndHour} orgIncrementMinutes={orgIncrementMinutes}
-          onClose={() => setRescheduling(null)}
-          onSaved={(message) => { setRescheduling(null); void loadRange(); showToast(message); }}
+          initialSlot={rescheduleInitialSlot}
+          onClose={() => { setRescheduling(null); setRescheduleInitialSlot(null); }}
+          onSaved={(message) => { setRescheduling(null); setRescheduleInitialSlot(null); void refreshAll(); showToast(message); }}
         />
       )}
     </div>
@@ -659,72 +819,4 @@ const overlayStyle: React.CSSProperties = {
 const modalStyle: React.CSSProperties = {
   width: 340, background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
 };
-
-function SessionDetail({
-  session, clients, employees, locations, typeColors, isDraft, onClose, onCancelled, onReschedule,
-}: {
-  session: CalSession; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
-  typeColors: Record<string, string>; isDraft: boolean; onClose: () => void; onCancelled: () => void; onReschedule: () => void;
-}) {
-  useEscapeToClose(onClose);
-  const trapRef = useFocusTrap<HTMLDivElement>();
-  const [cancelling, setCancelling] = React.useState(false);
-  const [cancelError, setCancelError] = React.useState<string | null>(null);
-  const client = clients.find((c) => c.id === session.client_id);
-  const emp = employees.find((e) => e.id === session.employee_id);
-  const loc = locations.find((l) => l.id === session.location_id);
-  const color = typeColors[session.type] || "#888";
-
-  async function handleCancel() {
-    if (!confirm("Cancel this session?")) return;
-    setCancelling(true);
-    setCancelError(null);
-    // Previously called onCancelled() (which closes this modal and shows a
-    // success toast) regardless of whether the update actually succeeded -
-    // optimistic UI with no failure path. Keep the modal open with an error
-    // instead of reporting a cancellation that may not have happened.
-    const { error } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", session.id);
-    setCancelling(false);
-    if (error) { setCancelError("Cancel failed. Please try again."); return; }
-    onCancelled();
-  }
-
-  return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Session detail for ${client?.name || "session"}`} style={{ ...modalStyle, borderLeft: `4px solid ${color}` }} onClick={(e) => e.stopPropagation()}>
-        {isDraft && (
-          <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: "#8A5E10", background: "#EF9F2722", borderRadius: 5, padding: "2px 8px", marginBottom: 8 }}>
-            DRAFT — not yet on the confirmed calendar
-          </div>
-        )}
-        <div style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>{client?.name || "Unknown client"}</div>
-        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14 }}>{emp?.name || "Unassigned"}</div>
-        <DetailRow label="Date" value={session.session_date} />
-        <DetailRow label="Time" value={`${String(session.hour).padStart(2, "0")}:${String(session.minute).padStart(2, "0")}`} />
-        <DetailRow label="Location" value={session.is_home_visit ? (session.home_address || "Client's home") : (loc?.name || "—")} />
-        <DetailRow label="Type" value={session.type} />
-        <DetailRow label="Recurrence" value={session.recurrence_id ? "Recurring" : "One-time"} />
-        {cancelError && <div style={{ fontSize: 13, color: "#A33A3A", marginTop: 8 }}>{cancelError}</div>}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <button onClick={handleCancel} disabled={cancelling} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: cancelling ? "not-allowed" : "pointer", background: "#FCE8E8", color: "#A33A3A" }}>
-            {cancelling ? "Cancelling..." : "Cancel session"}
-          </button>
-          <button onClick={onReschedule} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: "pointer", background: "#5DCAA5", color: "#fff" }}>
-            Reschedule
-          </button>
-          <button onClick={onClose} style={navBtn}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-      <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{value}</span>
-    </div>
-  );
-}
 

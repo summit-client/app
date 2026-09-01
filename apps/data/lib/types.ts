@@ -73,6 +73,36 @@ export interface ScheduledSession {
 }
 
 /**
+ * One of the signed-in clinician's own booked sessions, for the caseload
+ * calendar (app/caseload's Calendar view). Deliberately narrower than
+ * apps/scheduler's CalSession — this view is read-only and never edits a
+ * session, so it carries only what the grid displays, already resolved to a
+ * client name rather than a bare client_id.
+ */
+export interface CaseloadSession {
+  id: number;
+  clientId: number;
+  clientName: string;
+  date: string;       // ISO "YYYY-MM-DD"
+  hour: number;
+  minute: number;
+  time: string;        // "9:00 AM", derived from hour/minute
+  type: string;
+  status: string;       // scheduled · completed · no_show (cancelled sessions are excluded at the query)
+}
+
+/**
+ * The result of asking "what are my own upcoming sessions" — distinguished
+ * from a plain empty array so the calendar can tell "you have no scheduler
+ * resource linked yet" apart from "you have no sessions in this range,"
+ * rather than rendering the same silent-blank-grid trap CLAUDE.md's "RLS
+ * returns empty sets, not errors" note warns about for a different cause.
+ */
+export type CaseloadCalendarResult =
+  | { status: "ok"; sessions: CaseloadSession[] }
+  | { status: "not_linked" };
+
+/**
  * The atomic observation. Every tap creates one of these immediately — it is
  * the source of truth; session metrics, graphs, mastery and Clinical Signals
  * are all derived from these rows and never stored without them.
@@ -165,6 +195,7 @@ export interface SessionNoteDraft {
   abcNarrative: string;
   billableCode: "97153" | "97155" | "97156";
   status: "draft" | "signed" | "awaiting_countersign" | "countersigned" | "returned";
+  returnNote?: string | null;   // supervisor's "what to fix" reason, set only when status is 'returned'
 }
 
 /**

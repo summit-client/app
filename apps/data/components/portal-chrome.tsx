@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { getSetting, onSettingsChange, term, terms } from "@summit/settings";
+import { getSetting, onSettingsChange, resolve, term, terms } from "@summit/settings";
+import { applyLogoColors, type LogoTone } from "@summit/design";
 import { useSession } from "@/components/session-provider";
 
 /**
@@ -35,6 +36,7 @@ export function PortalNav() {
     { href: "/", label: "Today", id: "Today", icon: "▦" },
     { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙" },
     { href: "/attention", label: "Attention", id: "Attention", icon: "◈" },
+    { href: "/tasks", label: "My Tasks", id: "My Tasks", icon: "☑" },
     ...(identity?.appRole === "clinician" ? [] : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" }]),
   ];
 
@@ -51,8 +53,18 @@ export function PortalNav() {
   );
 }
 
-/** Applies density, text size and accessibility preferences to <html> so every
- * module inherits them — one settings source, zero per-module styling. */
+/** appearance.logo1/2/3 → --logo-1/2/3. Only forwards a value when the
+ *  clinic actually has an override row (source !== "default") — an org
+ *  with none set must resolve exactly to tokens.css's static default, not
+ *  a copy of it pushed inline (see applyLogoColors' comment for why). */
+function overrideOnly(key: string): string | null {
+  const r = resolve(key);
+  return r.source === "default" ? null : String(r.effective);
+}
+
+/** Applies density, text size, accessibility and per-tenant logo colour
+ * preferences to <html> so every module inherits them — one settings
+ * source, zero per-module styling. */
 export function SettingsEffects() {
   React.useEffect(() => {
     const apply = () => {
@@ -63,6 +75,11 @@ export function SettingsEffects() {
       el.toggleAttribute("data-line-spacing", getSetting("a11y.lineSpacing") === true);
       el.toggleAttribute("data-large-controls", getSetting("a11y.largerControls") === true || String(getSetting("run.tapSize")) === "large");
       el.toggleAttribute("data-focus-rings", getSetting("a11y.focusIndicators") === true);
+      applyLogoColors({
+        logo1: overrideOnly("appearance.logo1"),
+        logo2: overrideOnly("appearance.logo2"),
+        logo3: overrideOnly("appearance.logo3"),
+      } satisfies Partial<Record<LogoTone, string | null>>);
     };
     apply();
     return onSettingsChange(apply);

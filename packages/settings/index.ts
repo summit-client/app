@@ -131,6 +131,22 @@ export const SETTINGS: SettingDef[] = [
   { key: "appearance.portalTheme", label: "Client portal theme", section: "appearance", scope: "org", type: "select", options: [{ value: "match", label: "Match organization" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }], default: "match", keywords: ["dark mode"] },
   { key: "appearance.primaryColor", label: "Primary colour", section: "appearance", scope: "org", type: "color", default: "#1b5a6e", keywords: ["brand", "hex"] },
   { key: "appearance.accentColor", label: "Accent colour", section: "appearance", scope: "org", type: "color", default: "#b65a1f", keywords: ["brand", "hex"] },
+  /* Per-tenant override for tokens.css's fixed --logo-1/2/3 (see that
+     file's comment and @summit/design's applyLogoColors()). Defaults are
+     the sRGB hex closest to Mount Etna's current OKLCH values, so an org
+     with no override row still resolves to (visually) today's colours;
+     the pixel-exact default is tokens.css's static value, applied only
+     when no override is set — see applyLogoColors' own comment on why the
+     resolved *default* is never pushed inline.
+     Deliberately excluded from AppearanceSection's `<GenericSection
+     slug="appearance" />` (apps/data/components/settings/custom.tsx) — the
+     mechanism only, no Settings UI yet. Before building that UI, add a
+     contrast check the way AppearanceSection already warns on
+     appearance.primaryColor vs white: grove.tsx's SummitPeaks and TheClimb
+     render fixed-colour text over a --logo-2-filled shape. */
+  { key: "appearance.logo1", label: "Logo colour 1 (lightest)", description: "Overrides --logo-1. No current consumer renders this — see packages/design/tokens.css.", section: "appearance", scope: "org", type: "color", default: "#00a59b", keywords: ["logo", "brand", "mark"] },
+  { key: "appearance.logo2", label: "Logo colour 2 (mid)", description: "Overrides --logo-2 — the tone apps/employee's mountain/volcano graphics (components/grove.tsx) actually render with today.", section: "appearance", scope: "org", type: "color", default: "#006a71", keywords: ["logo", "brand", "mark"] },
+  { key: "appearance.logo3", label: "Logo colour 3 (darkest)", description: "Overrides --logo-3. No current consumer renders this — see packages/design/tokens.css.", section: "appearance", scope: "org", type: "color", default: "#004c5a", keywords: ["logo", "brand", "mark"] },
 
   /* Language */
   { key: "language.interface", label: "Preferred interface language", section: "language", scope: "org", userOverridable: true, type: "select", options: sel("English", "French", "Spanish", "German", "Italian", "Portuguese", "Bulgarian", "Arabic", "Mandarin"), default: "English", keywords: ["locale", "translation"] },
@@ -217,6 +233,16 @@ export const SETTINGS: SettingDef[] = [
   { key: "calendar.gridlineMinutes", label: "Hour gridlines every", description: "How often the calendar draws a time gridline.", section: "calendar", scope: "org", type: "select", options: sel("15", "30", "60"), default: "60", keywords: ["gridlines", "hours"] },
   { key: "calendar.gridIncrementMinutes", label: "Default scheduling increment (minutes)", description: "Org-wide default snap increment for creating and dragging sessions. A session type can override this for itself.", section: "calendar", scope: "org", type: "select", options: sel("5", "10", "15", "30"), default: "15", keywords: ["increment", "snap", "granularity"] },
   { key: "calendar.dragSnapMinutes", label: "Drag snap increment (minutes)", description: "Personal preference for how finely dragging a session snaps on the calendar. Independent of the org's default scheduling increment.", section: "calendar", scope: "user", userOverridable: true, type: "select", options: sel("5", "10", "15", "30"), default: "15", keywords: ["drag", "snap"] },
+
+  /* Navigation — portal visibility. Sidebar module order/pin/hide
+     (localStorage, "summit-nav-hidden") is a separate, still-local
+     mechanism — see apps/data/components/portal-chrome.tsx's PortalNav.
+     This key alone drives @summit/portals' portalsFor() override: parsed by
+     parseVisiblePortals() into PortalKey[] and passed in by whichever
+     screen renders <AppNav>. It can only ever narrow a role's default
+     portal list, never widen it, and empty/unset (the only state any real
+     org is in today) reproduces the unfiltered list exactly. */
+  { key: "nav.visiblePortals", label: "Visible portals", description: "Comma-separated portal keys (scheduler, clinician, employee, client) to show in the cross-portal bar. Narrows what a role would otherwise see there — it can never grant access a role doesn't already have. Leave blank to show every portal the role is normally admitted to.", section: "navigation", scope: "org", type: "text", default: "", keywords: ["portals", "sidebar", "modules", "visibility"] },
 
   /* Client Portal */
   { key: "portal.sessionSummaries", label: "Families can view session summaries", section: "client-portal", scope: "org", type: "toggle", default: true, keywords: ["family", "portal"] },

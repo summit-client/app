@@ -15,9 +15,10 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 import type { Session } from "./session";
+import { earnedUnissuedCertificatesFor, onboardingPercentFor, trainingDueFor } from "./hub-cert-logic";
 import type {
-  AuditEvent, Certificate, EmployeeProfile, PdRecord, PendingSignoff, TaskProgress,
-  TaskStatus, TimeOffRequest, TrainingRecord,
+  AuditEvent, Certificate, EmployeeProfile, PdRecord, PendingCertificate, PendingPd, PendingSignoff,
+  PendingTimeOff, TaskProgress, TaskStatus, TeamMember, TimeOffRequest, TrainingRecord,
 } from "./hub-types";
 
 export interface HubSnapshot {
@@ -39,6 +40,23 @@ export interface HubBackend {
    *  team for a supervisor, the whole clinic for an admin) - never just the
    *  caller's own. See migration 0006's hub_progress_manage_select. */
   listPendingSignoffs(): Promise<PendingSignoff[]>;
+  /** Onboarding certificates earned but not yet issued, across the caller's
+   *  manageable scope - same shape of query as listPendingSignoffs(), computed
+   *  from each employee's own progress/training (lib/hub-cert-logic.ts), not
+   *  the caller's. */
+  listPendingCertificatesToIssue(): Promise<PendingCertificate[]>;
+  /** Time-off requests still REQUESTED, across the caller's manageable scope.
+   *  See migration 0036's hub_timeoff_manage_select (not yet applied live -
+   *  see that migration's header). */
+  listPendingTimeOffRequests(): Promise<PendingTimeOff[]>;
+  /** PD records not yet verified, across the caller's manageable scope. See
+   *  migration 0036's hub_pd_manage_select (not yet applied live - see that
+   *  migration's header). */
+  listPendingPdVerifications(): Promise<PendingPd[]>;
+  /** Everyone in the caller's manageable scope, with onboarding % and
+   *  training-due computed per person - the admin console's Team Directory,
+   *  which used to render only the caller's own profile row. */
+  listTeamDirectory(): Promise<TeamMember[]>;
   upsertTraining(rec: TrainingRecord): Promise<void>;
   addPd(entry: Omit<PdRecord, "id" | "verified">): Promise<PdRecord>;
   verifyPd(id: string): Promise<void>;
@@ -151,6 +169,32 @@ export function previewBackend(session: Session): HubBackend {
         .filter((p) => p.status === "AWAITING_SIGNOFF")
         .map((p) => ({ userId: snap.profile.id, taskKey: p.taskKey, notes: p.notes }));
     },
+    // The preview store holds one employee - the caller, tagged with their own
+    // id, same as listPendingSignoffs() above - so these four "clinic-wide"
+    // queues just describe that one person in preview mode.
+    async listPendingCertificatesToIssue() {
+      const held = new Set(snap.certificates.map((c) => c.title));
+      return earnedUnissuedCertificatesFor(snap.progress, snap.training, held)
+        .map((c) => ({ userId: snap.profile.id, ...c }));
+    },
+    async listPendingTimeOffRequests() {
+      return snap.timeOff.filter((r) => r.status === "REQUESTED").map((r) => ({ ...r, userId: snap.profile.id }));
+    },
+    async listPendingPdVerifications() {
+      return snap.pd.filter((r) => !r.verified).map((r) => ({ ...r, userId: snap.profile.id }));
+    },
+    async listTeamDirectory() {
+      return [{
+        userId: snap.profile.id,
+        employeeNumber: snap.profile.employeeNumber,
+        jobTitle: snap.profile.jobTitle,
+        location: snap.profile.location,
+        vscStatus: snap.profile.vscStatus,
+        startDate: snap.profile.startDate,
+        onboardingPercent: onboardingPercentFor(snap.progress, snap.training),
+        trainingDue: trainingDueFor(snap.training),
+      }];
+    },
     async upsertTraining(rec) {
       const i = snap.training.findIndex((t) => t.courseKey === rec.courseKey);
       if (i >= 0) snap.training[i] = rec; else snap.training.push(rec);
@@ -206,6 +250,14 @@ function sb() {
 /** Throw on a failed write instead of returning as if it worked. */
 function ok(operation: string, res: { error: unknown }): void {
   if (res.error) throw new HubWriteError(operation, res.error);
+}
+
+/** Throw on a failed read instead of quietly returning an empty clinic-wide
+ *  queue - the read-side counterpart to ok(), for the same reason
+ *  firstReadError() exists: a failed manage-scoped query here must not read as
+ *  "nothing pending". */
+function okRead(what: string, res: { error: unknown }): void {
+  if (res.error) throw new HubReadError(what, res.error);
 }
 
 export function supabaseBackend(session: Session): HubBackend {
@@ -356,6 +408,128 @@ export function supabaseBackend(session: Session): HubBackend {
       }));
     },
 
+    async listPendingCertificatesToIssue() {
+      // Clinic-wide raw rows for onboarding progress, training and already-
+      // issued certificates - the same building blocks load() reads for the
+      // caller's own snapshot, here unfiltered by user_id and relying on
+      // hub_progress_manage_select / hub_training_manage / hub_certs_manage_select
+      // (migration 0006) the same way listPendingSignoffs() does. Certificate
+      // "earned" is computed client-side per employee (lib/hub-cert-logic.ts) -
+      // there is no stored "earned but unissued" status to filter on in SQL.
+      const [progRes, trainRes, certRes] = await Promise.all([
+        sb().from("hub_task_progress").select("user_id, task_key, status, notes, applicable").eq("clinic_id", clinic),
+        sb().from("hub_employee_training").select("user_id, course_key, status, completed_at").eq("clinic_id", clinic),
+        sb().from("hub_certificates").select("user_id, title").eq("clinic_id", clinic),
+      ]);
+      okRead("clinic onboarding progress", progRes);
+      okRead("clinic training records", trainRes);
+      okRead("clinic certificates", certRes);
+
+      const byUser = new Map<string, { progress: TaskProgress[]; training: TrainingRecord[]; held: Set<string> }>();
+      const ensure = (id: string) => {
+        let e = byUser.get(id);
+        if (!e) { e = { progress: [], training: [], held: new Set() }; byUser.set(id, e); }
+        return e;
+      };
+      for (const r of progRes.data ?? []) {
+        ensure(r.user_id as string).progress.push({
+          taskKey: r.task_key as string, status: r.status as TaskStatus,
+          notes: (r.notes as string) ?? "", applicable: (r.applicable as boolean) ?? true, completedAt: null,
+        });
+      }
+      for (const r of trainRes.data ?? []) {
+        ensure(r.user_id as string).training.push({
+          courseKey: r.course_key as string, status: r.status as TrainingRecord["status"],
+          completedAt: (r.completed_at as string | null) ?? null,
+        });
+      }
+      for (const r of certRes.data ?? []) {
+        ensure(r.user_id as string).held.add(r.title as string);
+      }
+
+      const out: PendingCertificate[] = [];
+      for (const [userId, data] of byUser) {
+        for (const c of earnedUnissuedCertificatesFor(data.progress, data.training, data.held)) {
+          out.push({ userId, ...c });
+        }
+      }
+      return out;
+    },
+
+    async listPendingTimeOffRequests() {
+      // Deliberately no .eq("user_id", uid), same reasoning as
+      // listPendingSignoffs() - relies on the hub_timeoff_manage_select policy.
+      const res = await sb().from("hub_time_off_requests").select("*")
+        .eq("clinic_id", clinic).eq("status", "REQUESTED").order("submitted_at", { ascending: true });
+      okRead("pending time-off requests", res);
+      return (res.data ?? []).map((r) => ({
+        id: r.id as string, userId: r.user_id as string, type: r.type as TimeOffRequest["type"],
+        startDate: r.start_date as string, endDate: r.end_date as string,
+        days: Number(r.days), status: r.status as TimeOffRequest["status"], note: (r.note as string) ?? "",
+      }));
+    },
+
+    async listPendingPdVerifications() {
+      // Deliberately no .eq("user_id", uid), same reasoning as
+      // listPendingSignoffs() - relies on the hub_pd_manage_select policy.
+      const res = await sb().from("hub_pd_records").select("*")
+        .eq("clinic_id", clinic).eq("verified", false).order("date", { ascending: false });
+      okRead("pending PD verifications", res);
+      return (res.data ?? []).map((r) => ({
+        id: r.id as string, userId: r.user_id as string, title: r.title as string,
+        provider: (r.provider as string) ?? "", hours: Number(r.hours), date: r.date as string, verified: false,
+        category: r.category as PdRecord["category"],
+        ceuUnits: r.ceu_units == null ? null : Number(r.ceu_units),
+        fileName: (r.file_name as string | null) ?? null, detection: (r.detection as string) ?? "",
+      }));
+    },
+
+    async listTeamDirectory() {
+      const [profRes, progRes, trainRes] = await Promise.all([
+        sb().from("hub_employee_profiles")
+          .select("user_id, employee_number, job_title, location, vsc_status, start_date").eq("clinic_id", clinic),
+        sb().from("hub_task_progress").select("user_id, task_key, status, notes, applicable").eq("clinic_id", clinic),
+        sb().from("hub_employee_training").select("user_id, course_key, status, completed_at").eq("clinic_id", clinic),
+      ]);
+      okRead("clinic team directory", profRes);
+      okRead("clinic onboarding progress", progRes);
+      okRead("clinic training records", trainRes);
+
+      const byUser = new Map<string, { progress: TaskProgress[]; training: TrainingRecord[] }>();
+      const ensure = (id: string) => {
+        let e = byUser.get(id);
+        if (!e) { e = { progress: [], training: [] }; byUser.set(id, e); }
+        return e;
+      };
+      for (const r of progRes.data ?? []) {
+        ensure(r.user_id as string).progress.push({
+          taskKey: r.task_key as string, status: r.status as TaskStatus,
+          notes: (r.notes as string) ?? "", applicable: (r.applicable as boolean) ?? true, completedAt: null,
+        });
+      }
+      for (const r of trainRes.data ?? []) {
+        ensure(r.user_id as string).training.push({
+          courseKey: r.course_key as string, status: r.status as TrainingRecord["status"],
+          completedAt: (r.completed_at as string | null) ?? null,
+        });
+      }
+
+      return (profRes.data ?? []).map((p) => {
+        const userId = p.user_id as string;
+        const data = ensure(userId);
+        return {
+          userId,
+          employeeNumber: (p.employee_number as string) ?? "",
+          jobTitle: (p.job_title as string | null) ?? null,
+          location: (p.location as string | null) ?? null,
+          vscStatus: (p.vsc_status as TeamMember["vscStatus"]) ?? "NOT_SUBMITTED",
+          startDate: (p.start_date as string | null) ?? null,
+          onboardingPercent: onboardingPercentFor(data.progress, data.training),
+          trainingDue: trainingDueFor(data.training),
+        };
+      });
+    },
+
     async addPd(entry) {
       const res = await sb().from("hub_pd_records").insert(scoped({
         title: entry.title, provider: entry.provider, hours: entry.hours, date: entry.date,
@@ -367,8 +541,12 @@ export function supabaseBackend(session: Session): HubBackend {
     },
 
     async verifyPd(id) {
+      // Scoped to verified = false, same reasoning as signOffTask()'s
+      // status = AWAITING_SIGNOFF guard: without it a stale queue (someone
+      // already verified this record) turns a duplicate click into an update
+      // that matches on id alone and re-writes a row that already moved.
       ok("PD verification", await sb().from("hub_pd_records")
-        .update({ verified: true, verified_by: uid }).eq("id", id));
+        .update({ verified: true, verified_by: uid }).eq("id", id).eq("verified", false));
     },
 
     async issueCourseCertificate(courseKey, title, competency) {
@@ -422,9 +600,13 @@ export function supabaseBackend(session: Session): HubBackend {
     },
 
     async decideTimeOff(id, decision) {
+      // Scoped to status = REQUESTED, same reasoning as signOffTask()'s
+      // status = AWAITING_SIGNOFF guard: without it a stale queue (already
+      // decided, or withdrawn) turns a duplicate click into an update that
+      // matches on id alone and overwrites a decision that already happened.
       ok("time-off decision", await sb().from("hub_time_off_requests")
         .update({ status: decision, decided_by: uid, decided_at: new Date().toISOString() })
-        .eq("id", id));
+        .eq("id", id).eq("status", "REQUESTED"));
     },
 
     async audit(action, detail) {

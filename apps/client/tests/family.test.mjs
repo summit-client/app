@@ -142,5 +142,24 @@ t("childById finds a child", F.childById(family, 7)?.clientId === 7);
 t("childById on an unknown id is null", F.childById(family, 999) === null);
 t("childById on null is null", F.childById(family, null) === null);
 
+console.log("\nThe switcher's choice has to reach the server too");
+t("remembering a child writes the cookie the server reads", (() => {
+  // Server-rendered pages resolve a child through resolveViewedClient, which
+  // cannot see localStorage. Without the cookie a parent who switches children
+  // is switched back by the next page they open.
+  const jar = [];
+  globalThis.document = { set cookie(v) { jar.push(v); }, get cookie() { return jar.join("; "); } };
+  globalThis.localStorage = { setItem() {}, getItem() { return null; } };
+  F.rememberView("user-1", { kind: "child", clientId: 42 });
+  delete globalThis.document; delete globalThis.localStorage;
+  return jar.some((c) => c.startsWith("summit_viewed_child=42") && /samesite=lax/i.test(c));
+})());
+t("no document (server render or a test) does not throw", (() => {
+  globalThis.localStorage = { setItem() {}, getItem() { return null; } };
+  try { F.rememberView("user-1", { kind: "family" }); return true; }
+  catch { return false; }
+  finally { delete globalThis.localStorage; }
+})());
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

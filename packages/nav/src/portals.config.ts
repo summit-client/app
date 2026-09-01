@@ -6,4 +6,7 @@
  * three copies that could disagree. This file is the nav-shaped view of it.
  */
 
-export { PORTALS as portals, portalsFor, type Portal, type PortalKey, type AppRole } from "@summit/portals";
+export {
+  PORTALS as portals, portalsFor, parseVisiblePortals,
+  type Portal, type PortalKey, type AppRole,
+} from "@summit/portals";

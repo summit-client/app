@@ -119,3 +119,42 @@ get their data, and given this schema's data volumes are clinic-scale
 Flagging it as a known inefficiency rather than fixing it speculatively.
 
 ---
+
+## New — `/caseload`'s clinician scoping is a proxy, not a real assignment
+
+`feat/clinician-roster-quick-access` made `getMyClients()`
+(`lib/data.ts`) filter the "My Caseload" roster to clients this clinician
+has at least one `client_sessions` row for (`clinician_id = auth.uid()`).
+That's the closest real, already-populated relationship this schema has —
+migration 0014's own header states plainly that there is no
+clinician-to-client assignment table, which is why it granted `clients`/
+`sessions` read clinic-wide instead of scoping them. Filtering
+`client_sessions` by `clinician_id` needed no new grant (it's already
+readable clinic-wide under `auth_is_staff()`, migration 0004); this is a
+`WHERE` clause on data already permitted, not a widened policy — in
+keeping with the instruction not to add a broad new grant to work around
+a relationship that isn't cleanly queryable.
+
+**Known gap this proxy inherits, not fixed here:** a client with no
+`client_session` yet — a brand-new intake this clinician hasn't run a
+first session with — won't appear on their roster even if they are the
+intended clinician. The real fix is a clinician-assignment column or
+table (e.g. `clients.primary_clinician_id`), which is a migration, out of
+scope for an `apps/data`-only branch. Until that exists, a brand-new
+intake's clinician has to reach that client by some other route (the
+scheduler, a direct link) rather than the roster, for as long as it takes
+for a first session to exist.
+
+Also not filtered by clinician: the scheduler's own booking table
+(`sessions`, `employee_id → staff.id`) has no link from `staff` back to
+`auth.users`/`profiles` until migration 0026's employment-record
+reconciliation, so "this clinician's own upcoming bookings" can't be
+computed the same way. The roster's "Next session" column instead shows
+the client's next scheduled booking with *any* staff member (still
+useful — it's about the client, not who's covering it — but not
+guaranteed to be this clinician's own session), and the "Schedule" quick
+link opens the scheduler's general Sessions view rather than one
+pre-filtered to the client, since the scheduler has no URL param it reads
+for a client filter and this branch doesn't touch `apps/scheduler`.
+
+---

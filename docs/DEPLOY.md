@@ -1,15 +1,30 @@
-# Deploying the workforce branch
+# Deploying: migrations 0000, 0023–0040
 
-`feat/client-budget-and-credential-numbers` — migrations `0000` and `0023`–`0033`.
+Covers everything unapplied as of 2026-09-01: `0000` (the workforce branch's
+baseline reconstruction), `0023`–`0033` (client budgets through provisional-
+data readiness), `0034` (receipt identity), and `0035`–`0040` (six same-night
+overnight-run features — see "0035 was a numbering collision" below before
+you assume the file names below always matched their content).
 
-Read this end to end before running anything. Three of these migrations are not
-ordinary: one runs out of order, two cannot run alongside anything else, and one
-can take access away if production is not in the state it appears to be in.
+Read this end to end before running anything. Several of these migrations are
+not ordinary: one runs out of order, two cannot run alongside anything else,
+one can take access away if production is not in the state it appears to be
+in, and one (`0036`) needs manual Storage setup this file cannot do for you.
 
 Everything here has been executed against a real Postgres 18 (`supabase/tests`,
-100 tests). None of it has been executed against production, and the whole
-point of steps 1 and 3 is that this file does not assume what production looks
-like.
+100 tests) or a scratch local database. None of it has been executed against
+production, and the whole point of steps 1 and 3 is that this file does not
+assume what production looks like.
+
+**0035 was a numbering collision, fixed 2026-09-01.** Six PRs landed the same
+night, each independently picking "0035" as the next free number from its own
+branch's view. All six were renumbered sequentially (`0035_client_care_messaging`
+stays `0035`; `0036`–`0040` are `client_documents`, `clinician_tasks`,
+`home_program_activities`, `scheduler_staff_roster_read_access`, and
+`session_change_requests`, in that order) before any of them were ever applied
+to production — so there is no live-database renumbering to reconcile, only
+the repo's own file names to trust. They have no dependencies on each other
+and no required relative order among themselves.
 
 ---
 
@@ -107,6 +122,32 @@ Read step 4 first. If pre-flight (a) and (b) came back the way this file expects
 — row security already on, profiles already carrying policies — then `0032`'s
 first half is a no-op and its second half replaces hand-made policies with
 recorded ones. That still deserves a staging run.
+
+### 2e. `0034` through `0040` — ordinary, except `0036`'s Storage setup
+
+None of these touch enums or existing row security, so `supabase db push`
+handles all six the same way as 2b:
+
+```bash
+supabase db push
+```
+
+**`0036_client_documents.sql` does not work end to end from this alone.** The
+table and its RLS are metadata only — the file bytes live in Supabase Storage,
+a separate permission system this migration cannot configure. After the push:
+
+1. Create a Storage bucket named `client-documents`, **private**, not public.
+2. Add four `storage.objects` RLS policies scoped to the same `clinic_id`/
+   `client_id` boundary as the table above. The exact SQL is in
+   `0036_client_documents.sql`'s own trailing "MANUAL STEPS REQUIRED" comment
+   block — copy it from there rather than retyping it, so it stays in sync
+   with the path convention (`{clinic_id}/{client_id}/{uuid}-{filename}`) the
+   app actually writes.
+
+Skip either step and the failure is silent from the table's own RLS: a private
+bucket with no policies means every upload/download just fails; a public
+bucket means every file is downloadable by anyone with the URL, regardless of
+clinic or client. Table RLS never sees Storage requests, so it catches neither.
 
 ---
 

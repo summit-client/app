@@ -18,6 +18,7 @@
     "@summit/design": "workspace:*",
     "@summit/portals": "workspace:*",
     "@summit/session": "workspace:*",
+    "@summit/settings": "workspace:*",
     "@summit/proxy-auth": "workspace:*"
   },
   "devDependencies": {

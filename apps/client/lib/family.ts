@@ -1,7 +1,7 @@
 /**
  * The family a signed-in parent can see.
  *
- * One query against `my_family` (migration 0035), which resolves the children,
+ * One query against `my_family` (migration 0041), which resolves the children,
  * the household and the permissions held over each. Not assembled from four
  * queries in the page: the permission join is the part that is easy to get
  * subtly wrong, and getting it wrong in one screen out of eight is how a family
@@ -138,6 +138,14 @@ export function familyFromRows(rows: MyFamilyRow[]): Family {
 
 const KEY_PREFIX = "summit-family-view";
 
+/**
+ * The cookie name is duplicated from lib/admin-view-as.ts rather than imported.
+ * That file pulls in next and @supabase/supabase-js types, and this module is
+ * compiled standalone by tests/family.test.mjs; importing it would drag the
+ * server world into a browser module for one string.
+ */
+const VIEWED_CHILD_COOKIE = "summit_viewed_child";
+
 export function rememberView(userId: string, view: FamilyView): void {
   try {
     localStorage.setItem(
@@ -147,6 +155,23 @@ export function rememberView(userId: string, view: FamilyView): void {
   } catch {
     /* private mode, or storage disabled. The portal still works, it just
        opens on the default view each time. */
+  }
+
+  // The same choice, where the server can see it. Pages rendered in
+  // getServerSideProps resolve a child through resolveViewedClient, which
+  // cannot read localStorage - without this a parent who switches to their
+  // second child is switched back by the next server-rendered page.
+  //
+  // Not a grant: the value is validated against `my_family` on the server, so
+  // a hand-edited cookie reaches nothing new. SameSite=Lax because it only
+  // ever needs to survive ordinary navigation within this portal.
+  try {
+    const value = view.kind === "family" ? "" : String(view.clientId);
+    document.cookie =
+      `${VIEWED_CHILD_COOKIE}=${encodeURIComponent(value)}; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax`;
+  } catch {
+    /* No document (server render, or a test importing this module). The
+       localStorage half above is what the client-rendered switcher reads. */
   }
 }
 

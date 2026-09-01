@@ -55,7 +55,19 @@
   --brand-800: oklch(28%  0.072 var(--hue-deep));
   --brand-900: oklch(20%  0.050 var(--hue-deep));
 
-  /* ── Logo and graphic colours: fixed Summit teal, never re-tinted ──────── */
+  /* ── Logo and graphic colours: Mount Etna's fixed defaults ──────────────
+     These three stay hardcoded here as the DEFAULT for every tenant — this
+     block is never rewritten per-clinic. A per-tenant override now exists
+     one layer up: @summit/settings' appearance.logo1/2/3 (org scope), read
+     by @summit/design's applyLogoColors() and applied as an inline
+     `style.setProperty("--logo-1", …)` on <html> by each app's settings
+     effects hook (apps/data's SettingsEffects, apps/employee's
+     BrandingEffects) — see those two call sites and applyLogoColors' own
+     comment before changing this. No override row exists for Mount Etna
+     today, so this file's values are still exactly what renders.
+     --logo-ink is unused by any current consumer (grep confirmed
+     2026-09-01) and has no settings-backed override yet; add one the same
+     way if a consumer appears. */
   --logo-1: oklch(64% 0.135 188);
   --logo-2: oklch(46% 0.115 200);
   --logo-3: oklch(37% 0.095 208);

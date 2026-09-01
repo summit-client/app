@@ -1,8 +1,8 @@
--- 0039 · Announcements, notification preferences, and the notification centre
+-- 0045 · Announcements, notification preferences, and the notification centre
 --
 -- THE CENTRE IS DERIVED, NOT STORED
 --
--- Same decision as `family_tasks` in 0036, for the same reason. A stored
+-- Same decision as `family_tasks` in 0042, for the same reason. A stored
 -- notifications table has to be written by every feature that might notify, and
 -- then unwritten when the thing it referred to changes: the appointment is
 -- cancelled, the message is read, the announcement expires. Miss one unwind and
@@ -261,7 +261,7 @@ language sql stable security invoker set search_path = public, pg_temp as $$
 
   union all
 
-  -- Things needing the family to act, from 0036. Derived there too, so a task
+  -- Things needing the family to act, from 0042. Derived there too, so a task
   -- that has been done stops appearing without anything having to clear it.
   select
     'task'::text,

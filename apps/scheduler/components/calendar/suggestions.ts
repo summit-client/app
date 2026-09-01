@@ -76,6 +76,51 @@ export function hasSessionConflict(employeeId: number, dateStr: string, startMin
   });
 }
 
+/** Same shape as hasSessionConflict, but for the CLIENT side of a booking -
+ *  nothing in this app checked this before (only the clinician's own
+ *  double-booking was ever guarded against), so a proposed slot could look
+ *  clear while the client already had another session at that time. Used by
+ *  the dual-schedule mini-calendar (components/calendar/SessionSchedulesPanel)
+ *  when deciding whether a slot is actually open for BOTH people. */
+export function hasClientSessionConflict(clientId: number, dateStr: string, startMin: number, durationMinutes: number, sessions: ExistingSession[], excludeSessionId?: number): boolean {
+  const endMin = startMin + durationMinutes;
+  return sessions.some((s) => {
+    if (s.status === "cancelled" || s.client_id == null || s.client_id !== clientId || s.session_date !== dateStr) return false;
+    if (excludeSessionId != null && s.id === excludeSessionId) return false;
+    const sStart = s.hour * 60 + s.minute;
+    return startMin < sStart + s.durationMinutes && sStart < endMin;
+  });
+}
+
+export interface BusyBlock {
+  id: number;
+  startMinutes: number;
+  endMinutes: number;
+  isViewedSession: boolean;
+}
+
+/**
+ * Reduces one day's worth of a person's live sessions to the {start,end}
+ * spans a mini-calendar draws, sorted left-to-right, flagging which block
+ * (if any) is the session actually being viewed. The caller decides how to
+ * render each block - this only computes the geometry, never anything that
+ * would leak identity: the PHI rule ("every other session renders as an
+ * opaque busy block, time and duration only") lives entirely in the caller,
+ * because this function is never handed a client name or session type to
+ * begin with.
+ */
+export function buildBusyBlocks(dateStr: string, sessions: ExistingSession[], viewedSessionId: number | null): BusyBlock[] {
+  return sessions
+    .filter((s) => s.session_date === dateStr && s.status !== "cancelled")
+    .map((s) => ({
+      id: s.id,
+      startMinutes: s.hour * 60 + s.minute,
+      endMinutes: s.hour * 60 + s.minute + s.durationMinutes,
+      isViewedSession: s.id === viewedSessionId,
+    }))
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+}
+
 function fmt(dateStr: string, hour: number, minute: number): string {
   const d = parseDateStr(dateStr);
   const ampm = hour >= 12 ? "PM" : "AM";
