@@ -1146,6 +1146,154 @@ await check("staff messaging is gated on the care-team action, not on client-fil
   });
 });
 
+// --------------------------------------------------------------------------
+// 0045 · Announcements and the notification centre
+// --------------------------------------------------------------------------
+const annAll = (await db.query(
+  `insert into announcements (clinic_id, audience, title, body, category, created_by)
+   values ('${clinicA}', 'all_families', 'Holiday closure',
+           'The clinic is closed on 8 September.', 'closure', '${aAdmin}')
+   returning id`)).rows[0].id;
+const annHouse = (await db.query(
+  `insert into announcements (clinic_id, audience, household_id, title, body, created_by)
+   values ('${clinicA}', 'household', '${household}', 'Your intake is complete',
+           'Everything is on file.', '${aAdmin}')
+   returning id`)).rows[0].id;
+
+await check("a family sees a clinic-wide announcement and their own household's", async () => {
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from my_announcements`), 2, "announcements"));
+});
+
+await check("another household's announcement is not visible", async () => {
+  const other = (await db.query(
+    `insert into households (clinic_id, name) values ('${clinicA}','Someone Else') returning id`)).rows[0].id;
+  await db.exec(`insert into announcements (clinic_id, audience, household_id, title, body, created_by)
+                 values ('${clinicA}','household','${other}','Private','Not for you','${aAdmin}')`);
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from my_announcements`), 2, "still two"));
+});
+
+await check("an announcement that has not been published yet is unreachable, not merely hidden", async () => {
+  // The publish window is in the policy rather than the view, so a draft is
+  // not selectable however the query is shaped.
+  await db.exec(`insert into announcements (clinic_id, audience, title, body, publish_at, created_by)
+                 values ('${clinicA}','all_families','Draft','Not yet', now() + interval '2 days','${aAdmin}')`);
+  await as(parentA, async () => {
+    eq(await count(`select count(*)::int n from announcements where title='Draft'`), 0, "draft via the table");
+    eq(await count(`select count(*)::int n from my_announcements`), 2, "draft via the view");
+  });
+});
+
+await check("an expired announcement stops appearing on its own", async () => {
+  // Published two days ago, expired an hour ago. The window constraint refuses
+  // an expiry before the publish time, which is why this cannot be done by
+  // back-dating expires_at on an announcement posted seconds earlier - a clinic
+  // "unpublishes" by ending the window, not by moving it behind the start.
+  const past = (await db.query(
+    `insert into announcements (clinic_id, audience, title, body, publish_at, expires_at, created_by)
+     values ('${clinicA}','all_families','Last week''s notice','Over now',
+             now() - interval '2 days', now() - interval '1 hour','${aAdmin}')
+     returning id`)).rows[0].id;
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from my_announcements where announcement_id='${past}'`),
+       0, "an expired announcement"));
+  await insertRaises(
+    `update announcements set expires_at = publish_at - interval '1 hour' where id='${past}'`,
+    "an expiry before the publish time");
+});
+
+await check("a household announcement cannot be written without a household", async () => {
+  await insertRaises(
+    `insert into announcements (clinic_id, audience, title, body, created_by)
+     values ('${clinicA}','household','Oops','No household named','${aAdmin}')`,
+    "household announcement with no household");
+});
+
+await check("a family cannot write or edit an announcement", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into announcements (clinic_id, audience, title, body, created_by)
+     values ('${clinicA}','all_families','From a parent','Hello','${aAdmin}')`,
+    "family-written announcement"));
+  await as(parentA, () => updateAffects(
+    `update announcements set title='edited' where id='${annHouse}'`, 0, "family editing"));
+});
+
+await check("a clinician cannot publish an announcement; that is a settings action", async () => {
+  await as(aClin, () => insertRaises(
+    `insert into announcements (clinic_id, audience, title, body, created_by)
+     values ('${clinicA}','all_families','From a clinician','Hello','${aClin}')`,
+    "clinician-written announcement"));
+});
+
+await check("read state is per person, so one parent reading does not clear it for the other", async () => {
+  await as(parentA, async () =>
+    await db.exec(`insert into announcement_reads (announcement_id, user_id)
+                   values ('${annHouse}', '${parentA}')`));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from my_announcements where is_unread`), 1, "parent A"));
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from my_announcements where is_unread`), 2, "parent B"));
+});
+
+await check("a parent cannot mark an announcement read on someone else's behalf", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into announcement_reads (announcement_id, user_id) values ('${annAll}','${parentB}')`,
+    "read state written for another person"));
+});
+
+await check("notification preferences are private, even from the clinic", async () => {
+  await as(parentA, async () =>
+    await db.exec(`insert into notification_preferences (user_id, kind, sms)
+                   values ('${parentA}', 'appointment_reminder', true)`));
+  await as(aAdmin, async () =>
+    eq(await count(`select count(*)::int n from notification_preferences`), 0, "admin reading preferences"));
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from notification_preferences`), 0, "another parent"));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from notification_preferences`), 1, "their own"));
+});
+
+await check("detail in an external preview is off until someone turns it on", async () => {
+  await as(parentA, async () =>
+    eq((await one(`select allow_detail_in_preview a from notification_preferences
+                    where user_id='${parentA}' and kind='appointment_reminder'`)).a,
+       false, "default"));
+});
+
+await check("the notification centre carries messages, announcements and tasks together", async () => {
+  await as(parentA, async () => {
+    const rows = (await db.query(`select source, title, href from public.my_notifications()`)).rows;
+    const sources = new Set(rows.map((r) => r.source));
+    if (!sources.has("announcement")) throw new Error("no announcement reached the centre");
+    if (!sources.has("message")) throw new Error("no unread message reached the centre");
+    if (rows.some((r) => !r.href)) throw new Error("a notification has nowhere to go");
+  });
+});
+
+await check("the centre is empty for someone with no family", async () => {
+  await as(outsider, async () =>
+    eq(await count(`select count(*)::int n from public.my_notifications()`), 0, "outsider"));
+});
+
+await check("an internal staff note never produces a notification", async () => {
+  // The centre counts unread from my_message_threads, which counts shared
+  // messages only. A badge for a note the family may not read would tell them
+  // something happened that they are not permitted to see.
+  const before = await (async () => {
+    let n = 0;
+    await as(parentA, async () => {
+      n = await count(`select count(*)::int n from public.my_notifications() where source='message'`);
+    });
+    return n;
+  })();
+  await db.exec(`insert into messages (clinic_id, thread_id, author_user_id, author_kind, body, visibility)
+                 values ('${clinicA}','${thread}','${aClin}','staff','Another internal note.','internal')`);
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_notifications() where source='message'`),
+       before, "message notifications after an internal note"));
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

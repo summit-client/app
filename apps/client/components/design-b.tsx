@@ -11,6 +11,7 @@ import * as React from "react";
 import { FamilySwitcher } from "./family-switcher";
 import { childById, displayName, recallView, rememberView, type Family, type FamilyView } from "../lib/family";
 import type { FamilyTask } from "../pages/index";
+import { sourceLabel, type Notification } from "../lib/notifications";
 
 type IconName =
   | "home"
@@ -81,6 +82,7 @@ type DesignBProps = {
   budgetError: boolean;
   family: Family;
   tasks: FamilyTask[];
+  alerts: Notification[];
 };
 
 function formatMoney(amount: number, currency = "CAD"): string {
@@ -219,6 +221,7 @@ export default function DesignB({
   budgetError,
   family,
   tasks,
+  alerts,
 }: DesignBProps) {
   // Which child the parent is looking at. Server-rendered as their default so
   // the first paint is not blank, then reconciled to what they last chose once
@@ -297,6 +300,54 @@ export default function DesignB({
                     ? "Everything happening across your family."
                     : `View ${clientName}'s current care information.`}
               </p>
+
+              {/* Unread replies and clinic notices. Sits above "For you"
+                  because it is the half a parent cannot see anywhere else on
+                  this page, and it never repeats a task: the two lists are
+                  filtered to disjoint sources on purpose. Not rendered at all
+                  when empty, for the same reason as the task strip below. */}
+              {alerts.length > 0 ? (
+                <section aria-labelledby="waiting" style={{ marginTop: 18 }}>
+                  <h2 id="waiting" style={{
+                    fontSize: 12, letterSpacing: ".08em", textTransform: "uppercase",
+                    color: "#607987", fontWeight: 700, marginBottom: 10,
+                  }}>
+                    New for your family
+                  </h2>
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                    {alerts.map((a) => (
+                      <li key={`${a.source}:${a.refId}`}>
+                        <Link
+                          href={a.href}
+                          style={{
+                            display: "flex", gap: 12, alignItems: "baseline",
+                            padding: "11px 14px", textDecoration: "none",
+                            border: "1px solid #dce8ee", borderRadius: 10,
+                            borderLeft: `3px solid ${a.isUrgent ? "#8A3B22" : "#0C5350"}`,
+                            background: "#fff", flexWrap: "wrap",
+                          }}
+                        >
+                          {/* The source as a word. An icon alone would make a
+                              message and a closure notice look the same. */}
+                          <span style={{
+                            fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase",
+                            fontWeight: 700, color: a.isUrgent ? "#8A3B22" : "#607987",
+                            flexShrink: 0,
+                          }}>
+                            {a.isUrgent ? "Urgent · " : ""}{sourceLabel(a.source)}
+                          </span>
+                          <span style={{ color: "#173247", fontWeight: 600, fontSize: 14 }}>
+                            {a.title}
+                          </span>
+                          {a.detail ? (
+                            <span style={{ color: "#607987", fontSize: 13 }}>{a.detail}</span>
+                          ) : null}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
 
               {/* For You. Only rendered when something is actually waiting:
                   an empty task strip is a section that teaches a parent to

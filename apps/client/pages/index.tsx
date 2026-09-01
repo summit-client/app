@@ -20,6 +20,7 @@ import { AccountProblemNotice } from "../components/account-problem-notice";
 import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
+import { notificationsFromRows, sortNotifications, type Notification } from "../lib/notifications";
 import { familyFromRows, type Family } from "../lib/family";
 
 export type FamilyTask = {
@@ -53,6 +54,12 @@ type DashboardProps = {
   family: Family;
   /** What still needs their attention, derived in the database (0036). */
   tasks: FamilyTask[];
+  /**
+   * Unread replies and clinic notices. Deliberately excludes tasks: those
+   * already have their own per-child panel, and the same item in two lists is
+   * a list a parent stops trusting.
+   */
+  alerts: Notification[];
   isAdminViewingAs: boolean;
 };
 
@@ -287,6 +294,13 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // handed a funding task to render.
   const { data: taskRows, error: tasksError } = await supabase.rpc("my_family_tasks");
 
+  // The notification centre (migration 0045). Assembled from live rows, so
+  // nothing here can outlive the thing that caused it. Filtered to the two
+  // sources the per-child task panel below cannot carry: a message thread and
+  // a clinic notice belong to the household, not to one child.
+  const { data: alertRows, error: alertsError } = await supabase.rpc("my_notifications");
+  if (alertsError) console.error("Failed to load notifications:", alertsError.message);
+
   if (familyError) console.error("Failed to load family:", familyError.message);
   if (tasksError) console.error("Failed to load family tasks:", tasksError.message);
 
@@ -294,6 +308,8 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     props: {
       mode: "dashboard",
       family: familyFromRows(familyRows ?? []),
+      alerts: sortNotifications(
+        notificationsFromRows(alertRows ?? []).filter((n) => n.source !== "task")),
       tasks: (taskRows ?? []).map((t: Record<string, unknown>) => ({
         taskId: t.task_id as string,
         clientId: Number(t.client_id),
