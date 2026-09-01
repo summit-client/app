@@ -8,6 +8,7 @@ type SidebarIconName =
   | "home"
   | "calendar"
   | "progress"
+  | "activities"
   | "funding"
   | "message"
   | "document"
@@ -46,6 +47,13 @@ function SidebarIcon({
     progress: (
       <>
         <path d="M4 19V9M10 19V5M16 19v-8M22 19H2" />
+      </>
+    ),
+    activities: (
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="m8 8.5 1.5 1.5L12 7" />
+        <path d="M8 15h8M8 18h5" />
       </>
     ),
     funding: (
@@ -106,6 +114,7 @@ const navItems: NavItem[] = [
   { label: "Dashboard", icon: "home", href: "/" },
   { label: "Appointments", icon: "calendar", href: "/appointments" },
   { label: "Progress", icon: "progress", href: "/progress" },
+  { label: "Home Program", icon: "activities", href: "/activities" },
   { label: "Funding", icon: "funding", href: "/statement" },
   { label: "Messages", icon: "message", comingSoon: true },
   { label: "Documents", icon: "document", href: "/documents" },
