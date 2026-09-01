@@ -1,0 +1,65 @@
+-- 0035 · Staff roster read access for the clinical roles, for the mutual
+-- schedule-visibility overlay
+--
+-- WHAT THIS IS FOR
+--
+-- apps/scheduler is adding a "compare schedules" overlay: any non-client
+-- staff role should be able to pick other staff members and see their
+-- sessions layered on the calendar in a distinct colour, at the same detail
+-- level as their own. That needs two things to already be true under RLS:
+--
+--   1. `sessions` is readable clinic-wide by every staff role, so the
+--      overlay's own fetch (independent of whatever the viewer's own
+--      Clinicians/location/type/client filters are set to - see
+--      apps/scheduler/components/calendar/CalendarView.tsx) returns full
+--      detail for whoever is picked.
+--   2. `staff` is readable clinic-wide by every staff role, so the picker
+--      has a roster to choose from and the grid can resolve a name for
+--      whoever a session's employee_id points at.
+--
+-- (1) IS ALREADY TRUE. `select policyname, cmd from pg_policies where
+-- tablename = 'sessions'` shows two clinic-scoped select policies today:
+-- sessions_staff_select (migration 0013, admin/scheduler via
+-- auth_is_scheduling_staff()) and sessions_clinical_staff_select
+-- (migration 0014, admin/supervisor/clinician via auth_is_staff()).
+-- Postgres ORs multiple permissive policies together, so the union already
+-- covers every non-client role. Nothing to add there.
+--
+-- (2) IS NOT. The same query against `staff` shows only staff_admin_select
+-- (admin) and staff_scheduler_read (scheduler), both from migration 0013 -
+-- that migration deliberately preserved the pre-existing admin/scheduler-only
+-- shape for `staff` rather than widening it, because its own scope was the
+-- clinic-boundary retrofit, not a permissions redesign (see that file's own
+-- header). Migration 0014 later gave supervisor/clinician the same
+-- clinic-wide read on `clients` and `sessions` for the caseload/today's-
+-- schedule gap, but never touched `staff` - there was no caller that needed
+-- it yet. Confirmed: a supervisor or clinician account today can select from
+-- `staff` only its own row (`user_id = auth.uid()`, from the "Staff can read
+-- own record" policy 0013 preserved) - the roster is otherwise empty to
+-- them, which is exactly the "only ever sees a slice" symptom this feature
+-- is meant to fix, and exactly the "RLS returns empty sets, not errors" trap
+-- CLAUDE.md warns about: the picker would just render with nothing in it.
+--
+-- This adds the missing read, in the same clinic-scoped, per-command,
+-- auth_is_staff()-gated shape as 0014's clients/sessions policies - select
+-- only (apps/scheduler never writes `staff` for a non-admin/scheduler role,
+-- so no insert/update/delete is added), additive (multiple permissive
+-- policies OR together, so staff_admin_select/staff_scheduler_read are
+-- untouched), and explicitly excludes `client` - auth_is_staff() is
+-- admin/supervisor/clinician only (migration 0009), so a client account
+-- gains nothing here, matching the product ask that none of this extend to
+-- the client role.
+--
+-- PORTAL ACCESS NOTE, NOT DECIDED HERE: @summit/portals' ACCESS.scheduler
+-- currently admits only admin and scheduler (apps/scheduler/lib/useUser.ts's
+-- ROLE_EXCLUDED gate gives supervisor/clinician "Scheduler is not for your
+-- role" today) - so this grant makes supervisor/clinician's access correct
+-- the moment product decides to admit them to this portal, without them
+-- being able to reach apps/scheduler at all in the meantime. Widening that
+-- admission list is a separate, cross-portal product decision (it changes
+-- the nav bar and sign-in redirect for every app, not just this one) and is
+-- deliberately not made in this migration.
+-- ============================================================================
+
+create policy staff_clinical_staff_select on staff for select
+  using (clinic_id = auth_clinic_id() and auth_is_staff());
