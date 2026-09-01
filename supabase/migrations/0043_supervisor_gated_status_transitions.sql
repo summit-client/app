@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0042 · Enforce supervisor/admin-only status transitions at the database,
+-- 0043 · Enforce supervisor/admin-only status transitions at the database,
 -- not just in apps/data's UI.
 --
 -- Root cause (apps/data/BLOCKED-data.md, "Carried over, HIGH" section):
