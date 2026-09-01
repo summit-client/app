@@ -639,6 +639,10 @@ await check("payroll_readiness names the first reason someone cannot be paid", a
 });
 
 await check("deployment_readiness reports the checks that are outstanding", async () => {
+  // Read as an admin: 0040 gated the readiness and coverage views on
+  // admin.settings.write, because they were readable by any signed-in parent
+  // and they describe how the deployment is configured.
+  await be(people.admin);
   const rows = (await db.query(`select check_name, outstanding, passing, why from deployment_readiness`)).rows;
   if (rows.length < 6) throw new Error(`expected the full checklist, got ${rows.length} rows`);
   const rls = rows.find((r) => r.check_name === "Row security active");
@@ -646,6 +650,13 @@ await check("deployment_readiness reports the checks that are outstanding", asyn
   eq(rls.passing, true, "row security check");
   // Every row explains itself; a checklist of bare booleans is not a checklist.
   if (rows.some((r) => !r.why || r.why.length < 20)) throw new Error("a check has no explanation");
+});
+
+await check("a diagnostic view is empty for someone without admin.settings.write", async () => {
+  await be(people.clinician);
+  const n = (await db.query(`select count(*)::int n from deployment_readiness`)).rows[0].n;
+  eq(n, 0, "deployment_readiness for a clinician");
+  await be(people.admin);
 });
 
 // --------------------------------------------------------------------------
@@ -748,6 +759,7 @@ await check("a credit is not a receipt line", async () => {
 });
 
 await check("receipt_readiness names what is missing", async () => {
+  await be(people.admin);
   const r = await one(`select * from receipt_readiness where clinic_id='${clinic}'`);
   eq(r.blocker, "ready", `blocker: ${r.blocker}`);
   eq(r.missing_org_address, false, "org address");

@@ -922,6 +922,107 @@ await check("an executable masquerading as a document is refused by the database
     "oversized attachment");
 });
 
+// --------------------------------------------------------------------------
+// 0040 · The two things that made every policy above optional
+//
+// A Postgres view runs as its OWNER unless it is declared
+// `security_invoker = true`, so RLS on the tables underneath was never applied
+// to anyone reading through a view — which is how every page in every portal
+// reads. These tests are the ones that would have caught it.
+// --------------------------------------------------------------------------
+
+await check("every view in the schema evaluates the CALLER's policies, not its owner's", async () => {
+  const off = (await db.query(`
+    select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relkind = 'v'
+       and coalesce((select option_value from pg_options_to_table(c.reloptions)
+                      where option_name = 'security_invoker'), 'false') <> 'true'`)).rows;
+  if (off.length) throw new Error(`views without security_invoker: ${off.map(r => r.relname).join(", ")}`);
+});
+
+await check("no view hands a second clinic's rows to that clinic's admin", async () => {
+  const views = (await db.query(`
+    select c.relname as name from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+     join pg_attribute a on a.attrelid = c.oid and a.attname = 'clinic_id' and a.attnum > 0
+     where n.nspname = 'public' and c.relkind = 'v'`)).rows;
+  const bad = [];
+  for (const v of views) {
+    await as(bAdmin, async () => {
+      const n = await count(`select count(*)::int n from public.${v.name} where clinic_id = '${clinicA}'`);
+      if (n > 0) bad.push(`${v.name}(${n})`);
+    });
+  }
+  if (bad.length) throw new Error(`clinic A rows visible to clinic B: ${bad.join(", ")}`);
+});
+
+await check("no view hands anything to a family with no relationship to anyone", async () => {
+  // `my_permissions` is excluded, and only it: every row is the action
+  // catalogue with a `granted` flag computed for the caller, so reading it
+  // reveals the names of actions you do not have and nothing about anyone
+  // else. The portal needs it to ask what the signed-in person may do.
+  const views = (await db.query(`
+    select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relkind = 'v' and c.relname <> 'my_permissions'`)).rows;
+  const bad = [];
+  for (const v of views) {
+    await as(outsider, async () => {
+      const n = await count(`select count(*)::int n from public.${v.name}`);
+      if (n > 0) bad.push(`${v.name}(${n})`);
+    });
+  }
+  if (bad.length) throw new Error(`visible to an unrelated family: ${bad.join(", ")}`);
+});
+
+await check("a guardian can read household_members at all", async () => {
+  // The policy asked a question about household_members from inside the
+  // household_members policy, so every read raised "infinite recursion" — the
+  // family-contacts feature was broken, not restricted. Invisible while the
+  // views were bypassing the policy entirely.
+  await as(parentA, async () => {
+    const n = await count(`select count(*)::int n from household_members`);
+    if (n === 0) throw new Error("a guardian sees nobody on their own family record");
+  });
+});
+
+await check("the client-facing tables are reachable through the household model, not the old scalar", async () => {
+  // Before 0040: clients and sessions had no family policy at all, and
+  // programs / client_budgets / budget_entries / session_notes were keyed on
+  // auth_client_row_id(), which returns null for every guardian.
+  await as(parentA, async () => {
+    eq(await count(`select count(*)::int n from clients`), 2, "children readable directly");
+    eq(await count(`select count(*)::int n from programs`), 1, "programs");
+    eq(await count(`select count(*)::int n from client_budgets`), 1, "budgets");
+    eq(await count(`select count(*)::int n from budget_entries`), 1, "budget entries");
+  });
+});
+
+await check("the legacy one-child link grants a guardian nothing", async () => {
+  // Kept as a tripwire: if a policy is ever written in terms of
+  // auth_client_row_id() again, it will silently grant nothing rather than
+  // loudly fail, which is the failure mode this whole migration exists for.
+  await as(parentA, async () =>
+    eq((await one(`select public.auth_client_row_id() is null as legacy_dead`)).legacy_dead,
+       true, "auth_client_row_id for a guardian"));
+});
+
+await check("a guardian without billing reads no budget through the table itself", async () => {
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from client_budgets`), 0, "parent B's budgets"));
+});
+
+await check("operator diagnostics are not readable by a family", async () => {
+  for (const v of ["rls_coverage", "deployment_readiness", "receipt_readiness"]) {
+    await as(parentA, async () =>
+      eq(await count(`select count(*)::int n from public.${v}`), 0, v));
+  }
+  // Still readable by the people they are for.
+  await as(aAdmin, async () => {
+    const n = await count(`select count(*)::int n from rls_coverage`);
+    if (n === 0) throw new Error("an admin can no longer read rls_coverage");
+  });
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
