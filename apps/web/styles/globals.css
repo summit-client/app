@@ -515,3 +515,89 @@ html { scroll-behavior: smooth; }
   .hero-stats > div > div:first-child { font-size: 1.25rem; }
   .hero-stats > div > div:last-child { font-size: .7rem; }
 }
+
+/* ── Session flow ──
+   The same pinned-scroll device the hero uses, reused rather than reinvented:
+   a tall track holds a sticky viewport while scroll drives the sequence. One
+   motion vocabulary across the page.
+
+   Tighter than the hero, though. The hero runs 320vh because it choreographs
+   several things at once; this steps through five panels, so 260vh keeps each
+   stage on screen long enough to read without the section becoming a hostage
+   scroll. */
+.flow-track { height: 260vh; position: relative; }
+.flow-sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.flow-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  width: 100%;
+  /* Intro above, stages across. Side by side, the intro took a third of the
+     width and squeezed five panels into ~130px each, which wrapped every
+     label onto two lines. Stacking gives the sequence the full measure and
+     reads as a timeline rather than as a sidebar with a chart next to it. */
+  display: block;
+}
+.flow-intro { max-width: 52ch; margin-bottom: 2.5rem; }
+.flow-stages {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+/* Below the breakpoint the pinned sequence becomes a plain vertical list.
+   Five panels side by side on a phone would be five unreadable columns, and
+   SessionFlow already renders every stage in its settled state here, so
+   nothing is hidden behind motion that will not run. */
+@media (max-width: 860px) {
+  .flow-track { height: auto; }
+  .flow-sticky { position: static; height: auto; padding: 56px 0; }
+  .flow-inner { grid-template-columns: 1fr; gap: 2rem; }
+  .flow-stages { grid-template-columns: 1fr; gap: 1.75rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-track { height: auto; }
+  .flow-sticky { position: static; height: auto; padding: 56px 0; }
+}
+
+/* Tightened from .7s/24px. The reveal is feedback that a section has arrived,
+   not an event in itself; at 700ms the last card was still settling while the
+   reader had moved on. */
+.reveal {
+  transition: opacity .45s ease, transform .45s ease;
+  transform: translateY(14px);
+}
+
+
+/* Feature rows slide in from the leading edge rather than rising.
+   Same observer, same duration as every other reveal on the page — only the
+   axis differs, because these are rows in a list and a horizontal entrance
+   reads as the list arriving rather than as six separate things popping up.
+
+   18px, not 40: far enough to register as movement, short enough that a row
+   is legible the moment it starts. The stagger runs 70ms down the column,
+   which is the order the rules group them in.
+
+   Reduced motion gets the settled state with no transform, like everything
+   else here. */
+.reveal-slide { transform: translateX(-18px); }
+.reveal-slide.is-visible { transform: translateX(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-slide,
+  .reveal-slide.is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

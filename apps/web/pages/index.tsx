@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { motion, useScroll, useSpring, useTransform, useMotionValue, MotionValue } from 'motion/react'
 import { Icon, type IconName } from '../components/Icon'
+import { SessionFlow } from '../components/SessionFlow'
 
 type Cell = { type: string; lines: string[] } | null
 
@@ -438,8 +439,8 @@ export default function Home() {
                  rule and the type scale carry the same grouping with less
                  furniture, and the icon sits inline with the title rather than
                  in a 46px dark tile above it. */
-              <div key={f.title} className="feature-row reveal" style={{
-                transitionDelay: `${(i % 3) * 80}ms`,
+              <div key={f.title} className="feature-row reveal reveal-slide" style={{
+                transitionDelay: `${i * 70}ms`,
               }}>
                 <h3 style={{
                   fontFamily: display, fontSize: '1rem', fontWeight: 600,
@@ -537,45 +538,14 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
-      <section id="how" className="landing-section" style={{ background: off, fontFamily: body }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-          <div style={{
-            fontFamily: display, fontSize: '.72rem', fontWeight: 600,
-            letterSpacing: '.1em', textTransform: 'uppercase', color: teal, marginBottom: '.7rem',
-          }}>How it works</div>
-          <h2 style={{
-            fontFamily: display,
-            fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
-            letterSpacing: '-0.015em',
-            fontWeight: 600, color: navy, marginBottom: '.9rem', maxWidth: 580,
-          }}>
-            Record it once. Everything downstream follows.
-          </h2>
-          <p style={{ fontSize: '1rem', color: g700, maxWidth: 540, marginBottom: '2.8rem' }}>
-            The pieces fit because they are the same record, not four systems reconciled at month end.
-          </p>
-          <div className="grid-3" style={{ display: 'grid', gap: '2rem' }}>
-            {[
-              { n: '1', title: 'Set the clinic up once',   desc: 'Clients, staff, sites, services and funding. Everything after this reads from it, so the same fact is never entered twice.' },
-              { n: '2', title: 'Deliver and record',       desc: 'Book the session, run it in the app, record what happened. That one act is the source for the note, the graph and the hours.' },
-              { n: '3', title: 'The rest follows',         desc: 'The family sees progress and a statement that adds up. The clinician has hours on a timesheet. The charge sits on the budget. Nobody re-keyed any of it.' },
-            ].map((s, i) => (
-              <div key={s.n} className="reveal" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', transitionDelay: `${i * 120}ms` }}>
-                <div style={{
-                  width: 54, height: 54, borderRadius: '50%',
-                  background: ink, color: '#fff',
-                  fontFamily: display, fontSize: '1.2rem', fontWeight: 600,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: '1.2rem',
-                  boxShadow: '0 4px 18px rgba(26,63,92,.28)',
-                }}>{s.n}</div>
-                <h3 style={{ fontFamily: display, fontSize: '1rem', fontWeight: 600, color: navy, marginBottom: '.45rem' }}>{s.title}</h3>
-                <p style={{ fontSize: '.875rem', color: g700, lineHeight: 1.7 }}>{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* ── SESSION FLOW ──
+          Was three numbered paragraphs saying that a booking becomes hours, a
+          charge and a statement. Showing it is shorter and more convincing:
+          five pieces of real product UI lighting up in the order the data
+          actually moves. Scroll-linked rather than looping, so the reader sets
+          the pace and can stop on a stage. */}
+      <section id="how" style={{ background: off, fontFamily: body }}>
+        <SessionFlow />
       </section>
 
       {/* ── TRUST ──
