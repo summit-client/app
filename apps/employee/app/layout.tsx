@@ -28,6 +28,26 @@ import { SessionProvider } from "@/components/session-provider";
 const IS_PREVIEW =
   process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
 
+/**
+ * "MySummitHR" here, in the mobile topbar title below, and in the sidebar
+ * brand-text div is this app's own product name hardcoded instead of read
+ * from `org.name` (docs/context/product.md's multi-tenant-readiness item 8).
+ * Deliberately NOT converted in this file - see apps/data's
+ * `BLOCKED-data.md` ("Carried over — 'Summit Clinician' branding still
+ * hardcoded"): this file is a Server Component, `@summit/settings`'s cache is
+ * only ever populated client-side by initSettings() (CLAUDE.md's
+ * packages/settings note), and a Server Component reading getSetting()
+ * before that resolves would always render the settings registry's static
+ * default, never the tenant's real value, and never update after hydration.
+ * Converting only the client-renderable pieces (support.tsx's email subject
+ * already is, being "use client") while leaving this file's title/topbar/
+ * brand-name static would show two different names depending on which piece
+ * of chrome someone is looking at - worse than the current uniform "MySummitHR"
+ * everywhere. The real fix needs either a server-side org-settings read (no
+ * such function exists in @summit/settings yet) or a client-only wrapper
+ * around all three of title/topbar/brand-name together, same as apps/data's
+ * open item - out of scope for an apps/employee-only change.
+ */
 export const metadata: Metadata = {
   title: "MySummitHR",
   description: "Performance, professional development, credentials, documents and team collaboration.",
