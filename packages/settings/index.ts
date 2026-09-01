@@ -131,6 +131,22 @@ export const SETTINGS: SettingDef[] = [
   { key: "appearance.portalTheme", label: "Client portal theme", section: "appearance", scope: "org", type: "select", options: [{ value: "match", label: "Match organization" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }], default: "match", keywords: ["dark mode"] },
   { key: "appearance.primaryColor", label: "Primary colour", section: "appearance", scope: "org", type: "color", default: "#1b5a6e", keywords: ["brand", "hex"] },
   { key: "appearance.accentColor", label: "Accent colour", section: "appearance", scope: "org", type: "color", default: "#b65a1f", keywords: ["brand", "hex"] },
+  /* Per-tenant override for tokens.css's fixed --logo-1/2/3 (see that
+     file's comment and @summit/design's applyLogoColors()). Defaults are
+     the sRGB hex closest to Mount Etna's current OKLCH values, so an org
+     with no override row still resolves to (visually) today's colours;
+     the pixel-exact default is tokens.css's static value, applied only
+     when no override is set — see applyLogoColors' own comment on why the
+     resolved *default* is never pushed inline.
+     Deliberately excluded from AppearanceSection's `<GenericSection
+     slug="appearance" />` (apps/data/components/settings/custom.tsx) — the
+     mechanism only, no Settings UI yet. Before building that UI, add a
+     contrast check the way AppearanceSection already warns on
+     appearance.primaryColor vs white: grove.tsx's SummitPeaks and TheClimb
+     render fixed-colour text over a --logo-2-filled shape. */
+  { key: "appearance.logo1", label: "Logo colour 1 (lightest)", description: "Overrides --logo-1. No current consumer renders this — see packages/design/tokens.css.", section: "appearance", scope: "org", type: "color", default: "#00a59b", keywords: ["logo", "brand", "mark"] },
+  { key: "appearance.logo2", label: "Logo colour 2 (mid)", description: "Overrides --logo-2 — the tone apps/employee's mountain/volcano graphics (components/grove.tsx) actually render with today.", section: "appearance", scope: "org", type: "color", default: "#006a71", keywords: ["logo", "brand", "mark"] },
+  { key: "appearance.logo3", label: "Logo colour 3 (darkest)", description: "Overrides --logo-3. No current consumer renders this — see packages/design/tokens.css.", section: "appearance", scope: "org", type: "color", default: "#004c5a", keywords: ["logo", "brand", "mark"] },
 
   /* Language */
   { key: "language.interface", label: "Preferred interface language", section: "language", scope: "org", userOverridable: true, type: "select", options: sel("English", "French", "Spanish", "German", "Italian", "Portuguese", "Bulgarian", "Arabic", "Mandarin"), default: "English", keywords: ["locale", "translation"] },

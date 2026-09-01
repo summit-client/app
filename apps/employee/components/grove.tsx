@@ -48,7 +48,14 @@ export function SummitPeaks({ percent, height = 90 }: { percent: number; height?
       <polygon points="140,96 182,44 212,96" fill="url(#peakfill)" />
       <polygon points="128,16 138,30 118,30" fill="#fff" opacity="0.9" />
       <line x1="0" y1={y} x2="220" y2={y} stroke="var(--good)" strokeWidth="2" strokeDasharray="5 4" />
-      <text x="216" y={y - 5} textAnchor="end" fontSize="10" fill="var(--good)" fontWeight="700">{p}</text>
+      {/* This label sits on top of the peak fill above, which is tinted
+          with --logo-2 — a per-tenant override now (see
+          @summit/design's applyLogoColors()), so it can no longer be
+          assumed light or dark. The var(--surface) halo keeps the
+          effective contrast at var(--good)-on-var(--surface) (already
+          AA-verified) no matter what --logo-2 resolves to. */}
+      <text x="216" y={y - 5} textAnchor="end" fontSize="10" fill="var(--good)" fontWeight="700"
+        style={{ paintOrder: "stroke", stroke: "var(--surface)", strokeWidth: 3, strokeLinejoin: "round" }}>{p}</text>
     </svg>
   );
 }
@@ -99,7 +106,14 @@ export function TheClimb({ elevation, camps, size = 300 }: { elevation: number; 
         return (
           <g key={c}>
             <circle cx={cx} cy={cy} r="5" fill={reached ? "var(--good)" : "var(--surface)"} stroke={reached ? "var(--good)" : "var(--line-strong)"} strokeWidth="2" />
-            <text x={cx + 10} y={cy + 4} fontSize="9.5" fill={reached ? "var(--ink)" : "var(--muted)"} fontWeight={reached ? 700 : 500}>{c}</text>
+            {/* Camp labels sit over the --logo-2-tinted climb fill, which
+                a per-tenant override can now change (see @summit/design's
+                applyLogoColors()). The var(--surface) halo pins the
+                effective contrast to var(--ink)/var(--muted)-on-
+                var(--surface) — already AA-verified — regardless of
+                --logo-2's resolved value. */}
+            <text x={cx + 10} y={cy + 4} fontSize="9.5" fill={reached ? "var(--ink)" : "var(--muted)"} fontWeight={reached ? 700 : 500}
+              style={{ paintOrder: "stroke", stroke: "var(--surface)", strokeWidth: 2.5, strokeLinejoin: "round" }}>{c}</text>
           </g>
         );
       })}
