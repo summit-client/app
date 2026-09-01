@@ -71,6 +71,14 @@ interface Props {
   draftSessionIds: Set<number>;
   /** Today's date string, for the header's today-column highlight. */
   today: string;
+  /** Session id -> colour, for the "compare schedules" overlay
+   *  (StaffOverlayPicker.tsx). A session in here has that colour take the
+   *  place of its session-type colour everywhere it renders (block,
+   *  tooltip, stacked-pill list row) - the overlay is "whose calendar is
+   *  this," not "what kind of session is this," and the type is still named
+   *  in plain text in the tooltip, so nothing is lost by recolouring.
+   *  Undefined/omitted for a normal render with no overlay active. */
+  sessionColorOverrides?: Record<number, string>;
 }
 
 interface AvailabilityRow { staff_id: number; day: string; start_time: string; end_time: string }
@@ -128,16 +136,16 @@ function locationLabel(
 }
 
 function Tooltip({
-  session, clients, employees, locations, sessionTypes, typeColors,
+  session, clients, employees, locations, sessionTypes, typeColors, colorOverride,
 }: {
   session: CalSession; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
-  sessionTypes: CalSessionType[]; typeColors: Record<string, string>;
+  sessionTypes: CalSessionType[]; typeColors: Record<string, string>; colorOverride?: string;
 }) {
   const client = clients.find((c) => c.id === session.client_id);
   const emp = employees.find((e) => e.id === session.employee_id);
   const loc = locationLabel(session, locations);
   const dur = sessionDuration(session, sessionTypes);
-  const color = typeColors[session.type] || "#888";
+  const color = colorOverride ?? (typeColors[session.type] || "#888");
   return (
     <div
       style={{
@@ -224,14 +232,14 @@ function SessionBlock({
         </div>
       )}
       {hovered && (
-        <Tooltip session={session} clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors} />
+        <Tooltip session={session} clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors} colorOverride={color} />
       )}
     </div>
   );
 }
 
 function StackedPill({
-  cluster, clients, employees, locations, sessionTypes, typeColors, onSessionClick, onDragBegin, onDragEnd, draftSessionIds,
+  cluster, clients, employees, locations, sessionTypes, typeColors, onSessionClick, onDragBegin, onDragEnd, draftSessionIds, sessionColorOverrides,
 }: {
   cluster: Cluster; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
   sessionTypes: CalSessionType[]; typeColors: Record<string, string>;
@@ -239,11 +247,12 @@ function StackedPill({
   onDragBegin: (sessionId: number) => void;
   onDragEnd: () => void;
   draftSessionIds: Set<number>;
+  sessionColorOverrides?: Record<number, string>;
 }) {
   const [open, setOpen] = React.useState(false);
   if (cluster.sessions.length === 1) {
     const s = cluster.sessions[0];
-    const color = typeColors[s.type] || "#888";
+    const color = sessionColorOverrides?.[s.id] ?? (typeColors[s.type] || "#888");
     return (
       <SessionBlock
         session={s} left="2px" width="calc(100% - 4px)" top={cluster.top} height={cluster.height} color={color}
@@ -253,7 +262,7 @@ function StackedPill({
     );
   }
   const first = cluster.sessions[0];
-  const color = typeColors[first.type] || "#888";
+  const color = sessionColorOverrides?.[first.id] ?? (typeColors[first.type] || "#888");
   return (
     <div
       // Draggable on the collapsed pill itself (moves the first session in
@@ -285,7 +294,7 @@ function StackedPill({
         }}>
           {cluster.sessions.map((s) => {
             const client = clients.find((c) => c.id === s.client_id);
-            const c = typeColors[s.type] || "#888";
+            const c = sessionColorOverrides?.[s.id] ?? (typeColors[s.type] || "#888");
             const draft = draftSessionIds.has(s.id);
             return (
               <div
@@ -320,6 +329,7 @@ function DayColumn({
   date, sessions, clients, employees, locations, sessionTypes, typeColors, workStartHour, workEndHour, pxPerMin,
   snapMinutes, dragHoverSlot, splitEmployeeIds, onSlotClick, onSessionClick, onDropSession,
   onSessionDragStart, onDragHover, onDragEnd, staffAvailability, draggingEmployeeId, draftSessionIds, isToday,
+  sessionColorOverrides,
 }: {
   date: Date; sessions: CalSession[]; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
   sessionTypes: CalSessionType[]; typeColors: Record<string, string>; workStartHour: number; workEndHour: number; pxPerMin: number;
@@ -335,6 +345,7 @@ function DayColumn({
   draggingEmployeeId: number | null;
   draftSessionIds: Set<number>;
   isToday: boolean;
+  sessionColorOverrides?: Record<number, string>;
 }) {
   const colRef = React.useRef<HTMLDivElement>(null);
   const dateStr = toDateStr(date);
@@ -487,6 +498,7 @@ function DayColumn({
                 key={idx} cluster={cl} clients={clients} employees={employees} locations={locations}
                 sessionTypes={sessionTypes} typeColors={typeColors} onSessionClick={onSessionClick}
                 onDragBegin={onSessionDragStart} onDragEnd={onDragEnd} draftSessionIds={draftSessionIds}
+                sessionColorOverrides={sessionColorOverrides}
               />
             ))}
           </div>
@@ -526,7 +538,7 @@ export function TimeGrid({
   days, sessions, clients, employees, locations, sessionTypes, typeColors,
   workStartHour, workEndHour, splitEmployeeIds, onSlotClick, onSessionClick, onDropSession, containerHeight,
   snapMinutes, gridlineMinutes, dragHoverSlot, onSessionDragStart, onDragHover, onDragEnd,
-  staffAvailability, draggingEmployeeId, draftSessionIds, today,
+  staffAvailability, draggingEmployeeId, draftSessionIds, today, sessionColorOverrides,
 }: Props) {
   const gridlineStepHours = gridlineMinutes / 60;
   const gridlineCount = Math.ceil((workEndHour - workStartHour) / gridlineStepHours) + 1;
@@ -597,6 +609,7 @@ export function TimeGrid({
             onSessionDragStart={onSessionDragStart} onDragHover={onDragHover} onDragEnd={onDragEnd}
             staffAvailability={staffAvailability} draggingEmployeeId={draggingEmployeeId}
             draftSessionIds={draftSessionIds} isToday={toDateStr(d) === today}
+            sessionColorOverrides={sessionColorOverrides}
           />
         ))}
       </div>

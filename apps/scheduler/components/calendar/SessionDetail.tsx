@@ -37,6 +37,11 @@ export interface SessionDetailProps {
   locations: CalLocation[];
   sessionTypes: CalSessionType[];
   typeColors: Record<string, string>;
+  /** Set when this session came from the "compare schedules" overlay
+   *  (StaffOverlayPicker.tsx), so the modal's accent bar matches the colour
+   *  the block was shown in on the grid, same as the tooltip already does -
+   *  see TimeGrid.tsx's colorOverride prop. */
+  colorOverride?: string;
   isDraft: boolean;
   staffAvailability: AvailabilityRow[];
   clientAvailability: ClientAvailabilityRow[];
@@ -52,7 +57,7 @@ export interface SessionDetailProps {
 }
 
 export function SessionDetail({
-  session, clients, employees, locations, sessionTypes, typeColors, isDraft,
+  session, clients, employees, locations, sessionTypes, typeColors, colorOverride, isDraft,
   staffAvailability, clientAvailability, clinicId, workStartHour, workEndHour, incrementMinutes,
   onClose, onCancelled, onReschedule,
 }: SessionDetailProps) {
@@ -64,7 +69,7 @@ export function SessionDetail({
   const client = clients.find((c) => c.id === session.client_id);
   const emp = employees.find((e) => e.id === session.employee_id);
   const loc = locations.find((l) => l.id === session.location_id);
-  const color = typeColors[session.type] || "#888";
+  const color = colorOverride ?? (typeColors[session.type] || "#888");
 
   async function handleCancel() {
     if (!confirm("Cancel this session?")) return;
