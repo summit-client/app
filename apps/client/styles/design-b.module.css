@@ -420,16 +420,27 @@
   color: var(--muted);
 }
 
+/* Was a two-column grid (content | status pill) until the reschedule/cancel
+   request row needed a third, full-width area beneath both - a flex column
+   renders identically to the old grid for a card with nothing below the top
+   row (see .apptCardTop, which reproduces the old grid's own layout). */
 .apptCard {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   padding: 18px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: var(--shadow-md);
+}
+
+.apptCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .apptTitle {
@@ -445,6 +456,77 @@
   gap: 12px;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Request-a-change (pages/appointments.tsx) - the action row for an
+   upcoming session with no pending request yet, and the pill shown instead
+   once one exists. Buttons reuse @summit/design's shared .btn/.btn.secondary
+   rather than a third button style; only the row layout is local. */
+.requestActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.requestPill {
+  align-self: flex-start;
+}
+
+/* components/request-change-modal.tsx - a small, centred confirmation
+   dialog. Reuses the shared .field/.input/.btn classes from
+   @summit/design/components.css for the form itself; only the overlay/panel
+   chrome is local, since nothing else in this app has needed a modal
+   before. */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in oklch, black 45%, transparent);
+}
+
+.modalPanel {
+  width: 100%;
+  max-width: 440px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg, 0 20px 50px rgba(0, 0, 0, 0.25));
+}
+
+.modalTitle {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.modalSubtitle {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modalError {
+  margin: 0 0 14px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.modalHint {
+  margin: 0 0 18px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* pages/progress.tsx - goals grouped by domain, each domain its own
