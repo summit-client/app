@@ -1,8 +1,20 @@
 import React from 'react';
-import { type AppRole, portals, portalsFor } from './portals.config';
+import { type AppRole, type PortalKey, portals, portalsFor } from './portals.config';
 
 interface AppNavProps {
   activeKey: string;
+  /**
+   * An org-level override on which portals this role's pills show, already
+   * parsed (see @summit/portals' `parseVisiblePortals`) from
+   * @summit/settings' `nav.visiblePortals`. Optional and additive: omit it,
+   * or pass `undefined`/`null`/an empty array, and the bar shows exactly
+   * what it always has — `portalsFor(role)`'s unfiltered list. AppNav takes
+   * no dependency on @summit/settings itself (nav stays as free of a
+   * Supabase-backed read as @summit/portals is) — every caller reads the
+   * setting itself, where it already calls initSettings(), and passes the
+   * parsed result in.
+   */
+  visiblePortals?: readonly PortalKey[] | null;
   /**
    * When set, an "Admin" pill sits at the far right of the bar, before the
    * settings cogwheel and sign-out control. Whether to pass it at all is the
@@ -51,10 +63,10 @@ interface AppNavProps {
  * Client so staff move between them from any screen. Colours come from the
  * shared tokens, so it follows the theme and accent like everything else.
  */
-export function AppNav({ activeKey, adminHref, settingsHref, signOutHref, role }: AppNavProps) {
+export function AppNav({ activeKey, adminHref, settingsHref, signOutHref, role, visiblePortals }: AppNavProps) {
   const visible = role == null
     ? portals.filter((p) => p.key === activeKey)
-    : portalsFor(role);
+    : portalsFor(role, visiblePortals);
   return (
     <nav
       aria-label="Summit portals"
