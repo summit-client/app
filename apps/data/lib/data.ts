@@ -3,11 +3,11 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { ClinicalEvidencePacket, ReportBlock } from "@summit/clinical-ai";
 import type {
-  AbcIncident, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
+  AbcIncident, CaseloadCalendarResult, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
   SessionNoteDraft, SessionPlanDraft, SessionProgramSummary, TrialEvent,
 } from "./types";
 import { deriveProgramSummary } from "./mastery";
-import { previewClients, previewPrograms, previewSessions } from "./preview-data";
+import { previewCaseloadSessions, previewClients, previewPrograms, previewSessions } from "./preview-data";
 
 /**
  * Single data seam for the portal. With NEXT_PUBLIC_DEV_PREVIEW=1 everything is
@@ -479,6 +479,84 @@ export async function getTodaySessions(): Promise<ScheduledSession[]> {
     status: (s.status as string) ?? "scheduled",
     location: "Clinic",
   }));
+}
+
+/**
+ * The signed-in clinician's own `staff` resource id ("employee_id" on
+ * `sessions`), resolved via `employment_records` — the only tracked link
+ * between an auth login (`profiles`/`auth.users`) and a scheduler resource
+ * (`staff`), added by migration 0026. `staff` itself carries no `user_id`;
+ * see that migration's own header ("Nothing joins staff to the other two")
+ * before assuming otherwise. `employment_records_read`'s RLS
+ * (`auth_may_read_hr_of`) always admits reading your own row, so this needs
+ * no new grant. A clinician with no live employment record linked to a
+ * scheduler resource (never linked, or linked then unlinked) gets `null`
+ * here — not an error, just nothing to look up sessions by.
+ */
+async function myEmployeeId(): Promise<number | null> {
+  const user = (await sb().auth.getUser()).data.user;
+  if (!user) return null;
+  const { data, error } = await sb()
+    .from("employment_records")
+    .select("staff_id")
+    .eq("user_id", user.id)
+    .is("end_date", null)
+    .not("staff_id", "is", null)
+    .order("start_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.staff_id == null ? null : Number(data.staff_id);
+}
+
+/**
+ * The signed-in clinician's own upcoming (and recent) sessions across every
+ * client on their caseload, for the read-only caseload calendar
+ * (app/caseload's Calendar view, components/caseload-calendar.tsx). Reuses
+ * the same `sessions` table and the same clinic-wide staff read policy
+ * (`sessions_clinical_staff_select`, migration 0014) apps/scheduler and this
+ * file's own `getTodaySessions()` already read under — confirmed via
+ * `auth_is_staff()` (migration 0009) admitting `clinician`, so no new RLS
+ * grant is needed here. That policy is clinic-wide, not scoped to "mine," so
+ * the `.eq("employee_id", ...)` below is what actually narrows the read to
+ * this clinician's own bookings rather than the whole clinic's — an
+ * app-level scope on top of a broader grant, the same shape as every other
+ * "clinic-wide read, narrowed in the query" case in this file.
+ *
+ * Cancelled sessions are excluded (matches apps/scheduler's own live
+ * calendar) — a cancelled booking isn't part of "what's on my schedule."
+ */
+export async function getMyCaseloadSessions(startDate: string, endDate: string): Promise<CaseloadCalendarResult> {
+  if (IS_PREVIEW) {
+    return { status: "ok", sessions: previewCaseloadSessions.filter((s) => s.date >= startDate && s.date <= endDate) };
+  }
+  const employeeId = await myEmployeeId();
+  if (employeeId == null) return { status: "not_linked" };
+
+  const { data, error } = await sb()
+    .from("sessions")
+    .select("id,client_id,session_date,hour,minute,type,status, clients(name)")
+    .eq("employee_id", employeeId)
+    .gte("session_date", startDate)
+    .lte("session_date", endDate)
+    .neq("status", "cancelled")
+    .order("session_date")
+    .order("hour")
+    .order("minute");
+  if (error) throw error;
+
+  const sessions = (data ?? []).map((s: Record<string, unknown>) => ({
+    id: s.id as number,
+    clientId: s.client_id as number,
+    clientName: ((s.clients as { name?: string } | null)?.name) ?? `Client ${s.client_id}`,
+    date: s.session_date as string,
+    hour: s.hour as number,
+    minute: (s.minute as number) ?? 0,
+    time: fmtTime(s.hour as number, (s.minute as number) ?? 0),
+    type: (s.type as string) ?? "Session",
+    status: (s.status as string) ?? "scheduled",
+  }));
+  return { status: "ok", sessions };
 }
 
 export async function getPrograms(clientId: number): Promise<Program[]> {
