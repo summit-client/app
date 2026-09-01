@@ -676,6 +676,87 @@
   font-weight: 700;
 }
 
+/* pages/activities.tsx - home-program activities, grouped by the goal they
+   support (reuses .domainSection/.domainHeading from the progress page's
+   goal-domain grouping - the same "group of cards under a heading" shape,
+   just grouped by a different relationship). Each card adds action buttons
+   a family can press to record their own progress - the first mutable UI
+   in this app; see lib/admin-view-as.ts for why admin "view as" never
+   renders these as interactive. */
+.activityCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.activityHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.activityTitle {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.activityDescription {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.activityMeta {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.activityActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.activityButton {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.activityButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.activityButtonSecondary {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.activityError {
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 @media (max-width: 1100px) {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
