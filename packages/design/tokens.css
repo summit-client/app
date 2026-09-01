@@ -25,9 +25,21 @@
      #145e7b and #113a4c in the shadowed faces — a shade greener and less blue
      than the 190/212 this dial carried.
 
-     Only the HUE angles move. Lightness and chroma are what every AA contrast
-     pair in this file was measured against, and rotating hue alone leaves those
-     measurements intact. */
+     Only the HUE angles move, and that is nearly but NOT entirely free:
+     WCAG contrast is computed from sRGB relative luminance, not from OKLCH
+     lightness, so rotating hue at constant L and C does shift the ratios a
+     little. Measured across this 5-degree move:
+
+       ink on white          17.49 -> 17.45
+       muted on white         6.69 ->  6.68
+       brand-600 on white     6.48 ->  6.42
+       brand-700 on white     9.66 ->  9.58
+       brand-800 on white    13.91 -> 13.85
+
+     Every pair still clears AA with room to spare. Do not read that as
+     licence to spin the dial freely: a larger rotation, particularly toward
+     yellow-green where luminance rises fastest, can move a borderline pair
+     across 4.5:1. Re-measure if you turn it further than this. */
   --hue: 185;        /* surfaces, borders, light brand steps */
   --hue-deep: 205;   /* ink, deep brand steps, shadows */
 

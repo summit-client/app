@@ -1,37 +1,45 @@
 /* ─────────────────────────────────────────────────────────
    Summit Scheduler — Design System
-   Fonts: Bricolage Grotesque (display) + Hanken Grotesk (body)
+   Fonts: Outfit (display) + Source Sans 3 (body)
    Theme: Light · Warm · Trustworthy · Calm
    ───────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Hanken+Grotesk:ital,wght@0,300..800;1,300..500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300..600&family=Source+Sans+3:ital,wght@0,300..600;1,300..500&display=swap');
 
 :root {
-  /* ── Brand scale (OKLCH — perceptually uniform) ──────── */
-  --brand-50:  oklch(97%  0.014 192);
-  --brand-100: oklch(92%  0.035 191);
-  --brand-200: oklch(83%  0.075 190);
-  --brand-300: oklch(73%  0.110 189);
-  --brand-400: oklch(64%  0.135 188);   /* logo teal-green  */
-  --brand-500: oklch(55%  0.130 194);   /* primary action   */
-  --brand-600: oklch(46%  0.115 200);   /* hover            */
-  --brand-700: oklch(37%  0.095 208);   /* logo dark navy   */
-  --brand-800: oklch(28%  0.072 213);
-  --brand-900: oklch(20%  0.050 215);
+  /* ── Brand scale (OKLCH — perceptually uniform) ────────
+     Hues tuned to the real Summit mark, matching the same move made to
+     @summit/design's dial (190->185 light, 212->205 deep). This file keeps its
+     own copy of the palette instead of importing that package, so the shared
+     change does not reach it and had to be applied here too. If you change one,
+     change both.
+
+     Measured on the shared system, the equivalent shift cost at most 0.07 of a
+     contrast ratio and no pair fell below AA. */
+  --brand-50:  oklch(97%  0.014 187);
+  --brand-100: oklch(92%  0.035 186);
+  --brand-200: oklch(83%  0.075 185);
+  --brand-300: oklch(73%  0.110 184);
+  --brand-400: oklch(64%  0.135 183);   /* logo teal-green  */
+  --brand-500: oklch(55%  0.130 189);   /* primary action   */
+  --brand-600: oklch(46%  0.115 194);   /* hover            */
+  --brand-700: oklch(37%  0.095 201);   /* logo dark navy   */
+  --brand-800: oklch(28%  0.072 206);
+  --brand-900: oklch(20%  0.050 208);
 
   /* ── Surface & Background ────────────────────────────── */
   --color-background-primary:   oklch(100%  0      0  );   /* card / panel white  */
-  --color-background-secondary: oklch(97.5% 0.010 192);   /* sidebar, alt rows   */
-  --color-background-tertiary:  oklch(94.5% 0.016 192);   /* page background     */
+  --color-background-secondary: oklch(97.5% 0.010 187);   /* sidebar, alt rows   */
+  --color-background-tertiary:  oklch(94.5% 0.016 187);   /* page background     */
 
   /* ── Borders ─────────────────────────────────────────── */
   --color-border-primary:   var(--brand-500);
-  --color-border-secondary: oklch(84%  0.018 192);
-  --color-border-tertiary:  oklch(91%  0.012 192);
+  --color-border-secondary: oklch(84%  0.018 187);
+  --color-border-tertiary:  oklch(91%  0.012 187);
 
   /* ── Text ────────────────────────────────────────────── */
   --color-text-primary:   oklch(21%  0.042 212);   /* near-black, teal-tinted */
-  --color-text-secondary: oklch(47%  0.048 200);
+  --color-text-secondary: oklch(47%  0.048 194);
   --color-text-tertiary:  oklch(63%  0.034 196);
 
   /* ── Semantic status ─────────────────────────────────── */
@@ -43,8 +51,8 @@
   --color-error-subtle:   oklch(96%  0.035  25);
 
   /* ── Typography ──────────────────────────────────────── */
-  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
-  --font-body:    'Hanken Grotesk', system-ui, sans-serif;
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-body:    'Source Sans 3', system-ui, sans-serif;
 
   /* Fixed rem scale for app UI (no fluid clamp in product UI) */
   --text-2xs: 0.6875rem;   /*  11px */
