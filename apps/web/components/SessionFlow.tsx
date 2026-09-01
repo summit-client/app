@@ -31,7 +31,13 @@ const SLATE = '#254449'
 const TEAL = '#0C5350'
 const LINE = '#C9DED8'
 const TINT = '#F1F7F4'
-const MUTED = '#5A787C'
+// Issue #134: was #5A787C, which measures 4.54:1 against the section's
+// off-white background (#F7FAFB) — technically over the 4.5:1 AA floor for
+// normal text, but by a margin thin enough to read as "pale" and to risk
+// dropping under it from ordinary rendering/rounding variance. Darkened to
+// clear it with real headroom (~5.65:1), measured the same way: composited
+// against the actual background, not just the token's nominal value.
+const MUTED = '#4B696D'
 
 /** A compact product surface. Deliberately not a screenshot: real markup stays
  *  crisp at any width, reflows on a phone, and cannot go stale. */
@@ -184,9 +190,27 @@ function StageBlock({
     })
   }, [progress, start, span, staticScene])
 
+  // Issue #134: on mobile every stage but the first rendered its caption and
+  // panel at ~25% opacity — well under AA contrast against the section's
+  // off-white background (measured ~1.4:1, need 4.5:1) — even though `active`
+  // above is correctly forced true and the panel border/label already show
+  // the "active" teal. The doc comment above promises every stage renders in
+  // its settled state below the mobile breakpoint; this passed `style={undefined}`
+  // to opt out of the motion styling, expecting that to fall back to CSS
+  // defaults (opacity 1). It doesn't: `opacity`/`y` are still driven by
+  // useTransform(progress, ...) evaluated at v=0 (scroll position on first
+  // paint, before the mobile check flips `staticScene`), and motion.div
+  // applies that inline style on the very first render. Once `staticScene`
+  // becomes true and `style` switches to `undefined`, motion.div stops
+  // *updating* the style but does not remove what it already wrote — the
+  // faded 0.25 stays in the inline `style` attribute indefinitely, which is
+  // why this only ever showed up below the 860px breakpoint (desktop's
+  // opacity is real scroll-linked motion, not a stale first-paint value).
+  // Passing explicit resting values instead of `undefined` overwrites that
+  // stale style outright rather than merely opting out of updating it.
   return (
     <motion.div
-      style={staticScene ? undefined : { opacity, y }}
+      style={staticScene ? { opacity: 1, y: 0 } : { opacity, y }}
       className="flow-stage"
     >
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
