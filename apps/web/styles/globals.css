@@ -475,8 +475,24 @@ html { scroll-behavior: smooth; }
 
 /* The Summit column is the answer to every row, so it gets a tint and a rule
    down each side rather than a heavier weight on every cell. One emphasis,
-   applied once. */
+   applied once.
+
+   Pinned to the right edge of .compare-wrap's own scroll container below
+   560px, where the table no longer fits and the wrapper scrolls (see its
+   own comment above). Un-pinned, this column — the entire point of the
+   table, the thirteen checkmarks answering "does Summit cover this" — sat
+   past the right edge of a 375-414px phone viewport with nothing on screen
+   to suggest a third column existed at all: no partial cell peeking in, no
+   scrollbar (mobile browsers hide them at rest), no hint text. Confirmed
+   live: at 390px wide, only "Capability" and part of "Usually lives in"
+   ever entered the viewport unless the visitor already knew to swipe the
+   table sideways. `position: sticky; right: 0` keeps it docked in view as
+   the rest of the row scrolls underneath, so the answer never depends on a
+   gesture nobody is cued to make. Needs an opaque background to cover the
+   scrolling text behind it, which the tint already provides. */
 .compare .compare-us {
+  position: sticky;
+  right: 0;
   width: 1%;
   white-space: nowrap;
   color: #0C5350;
