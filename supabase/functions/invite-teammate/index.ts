@@ -74,6 +74,41 @@ Deno.serve(async (req) => {
     return json(429, { error: "Too many invites sent. Try again in a bit." });
   }
 
+  // Reject up front if this email already belongs to a real, established
+  // account. inviteUserByEmail resolves an already-registered email to
+  // that SAME EXISTING auth.users id rather than erroring or minting a new
+  // one, and the upsert below writes straight over whatever profile that
+  // id already has - silently reassigning someone else's role/clinic/
+  // supervisor (confirmed live 2026-08-30, see CLAUDE.md's "Known open
+  // work" / docs/context/decisions.md).
+  //
+  // Checked here, before inviteUserByEmail is ever called, for two
+  // reasons: it avoids sending a real invite email for a request we're
+  // about to reject, and it's what lets this safely tell a genuine
+  // pre-existing account apart from the database trigger that creates a
+  // default profiles row (role 'client', clinic_id null) the instant ANY
+  // auth.users row is created, including by inviteUserByEmail itself.
+  // Because this query runs strictly before that call, any row it finds
+  // here necessarily predates - and cannot be - this invite's own
+  // trigger race. (A genuinely new email always passes this check, then
+  // races the trigger exactly as it does today; that path is unchanged.)
+  const { data: existingProfile, error: existingProfileErr } = await admin
+    .from("profiles")
+    .select("id, clinic_id")
+    .eq("email", email)
+    .maybeSingle();
+  if (existingProfileErr) {
+    return json(500, { error: "Could not check for an existing account: " + existingProfileErr.message });
+  }
+  if (existingProfile) {
+    return json(409, {
+      error:
+        existingProfile.clinic_id === caller.clinic_id
+          ? "An account with this email already exists in your clinic."
+          : "An account with this email already exists under another clinic.",
+    });
+  }
+
   let linkedClientId: number | null = null;
   if (role === "client") {
     if (body.client_id == null) {
