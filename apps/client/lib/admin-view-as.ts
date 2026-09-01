@@ -6,10 +6,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * family sees, for diagnosing a reported issue, without the family ever
  * sharing credentials or the admin needing a row in `clients`.
  *
- * Read-only: apps/client has no forms or mutations anywhere (checked before
- * building this), so there is nothing for an admin to do "as" the family by
+ * Read-only: apps/client had no forms or mutations anywhere when this was
+ * built, so there was nothing for an admin to do "as" the family by
  * mistake - only look at the same read-only dashboard/appointments pages a
- * real client account would.
+ * real client account would. That's no longer true app-wide (migration
+ * 0035's home-program activities added the app's first mutation - a family
+ * marking their own activity in_progress/completed) but is still true of
+ * this "view as" path specifically: pages/api/activities/status.ts checks
+ * `isAdminViewingAs` up front and refuses the write before ever touching
+ * the database, on top of RLS refusing it anyway (auth_role() for an admin
+ * account is 'admin', not 'client'). An admin simulating a family still
+ * only ever looks.
  *
  * Cookie-based rather than a `?as=` query param carried through every link:
  * once chosen, the client persists across navigation without every link in

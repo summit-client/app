@@ -3,11 +3,11 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { ClinicalEvidencePacket, ReportBlock } from "@summit/clinical-ai";
 import type {
-  AbcIncident, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
+  AbcIncident, CaseloadCalendarResult, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
   SessionNoteDraft, SessionPlanDraft, SessionProgramSummary, TrialEvent,
 } from "./types";
 import { deriveProgramSummary } from "./mastery";
-import { previewClients, previewPrograms, previewSessions } from "./preview-data";
+import { previewCaseloadSessions, previewClients, previewPrograms, previewSessions } from "./preview-data";
 
 /**
  * Single data seam for the portal. With NEXT_PUBLIC_DEV_PREVIEW=1 everything is
@@ -177,7 +177,7 @@ async function hydrateSessionRows(clientId: number): Promise<number[]> {
 async function hydrateNoteRows(clientId: number): Promise<void> {
   const { data, error } = await sb()
     .from("session_notes")
-    .select("session_id, client_id, body, billable_code, status")
+    .select("session_id, client_id, body, billable_code, status, return_note")
     .eq("client_id", clientId);
   if (error) throw error;
   for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
@@ -193,6 +193,7 @@ async function hydrateNoteRows(clientId: number): Promise<void> {
       abcNarrative: (body.abcNarrative as string) ?? "",
       billableCode: row.billable_code as SessionNoteDraft["billableCode"],
       status: row.status as SessionNoteDraft["status"],
+      returnNote: (row.return_note as string | null) ?? null,
     });
   }
 }
@@ -419,6 +420,51 @@ export async function lockRunSession(sessionId: number): Promise<void> {
   if (s && s.status === "completed") await updateRunSession(sessionId, { status: "locked" });
 }
 
+/**
+ * Create a `client_sessions` row for note-only documentation, landing
+ * directly in 'documentation' status — for a clinician writing up a session
+ * that already happened (from the caseload roster or a client's Sessions
+ * tab) without running the live Plan → Session Tab data-collection flow.
+ * Inserting straight into a non-initial status is fine: the
+ * forbid_locked_session_update trigger (migration 0004) only restricts
+ * UPDATEs, and the status column's own check constraint admits
+ * 'documentation' as a starting value same as any other.
+ */
+export async function createNoteOnlySession(clientId: number, occurredOn?: string): Promise<RunSession> {
+  const stamp = occurredOn ? new Date(occurredOn).toISOString() : new Date().toISOString();
+  const id = Math.max(10_000, ...mem.sessions.map((s) => s.id + 1));
+  const session: RunSession = {
+    id, clientId, clinicianId: null, status: "documentation",
+    startTime: stamp, endTime: stamp, plannedDurationMin: null, actualDurationMin: null,
+    location: null, serviceType: "Direct Therapy", focus: null, plan: null,
+    programVersionSnapshot: [], createdAt: new Date().toISOString(),
+  };
+  mem.sessions.push(session);
+  persistMem();
+  if (!IS_PREVIEW) {
+    const user = (await sb().auth.getUser()).data.user;
+    const { data, error } = await sb().from("client_sessions").insert({
+      client_id: clientId, clinician_id: user?.id, clinic_id: await myClinicId(),
+      status: "documentation", start_time: stamp, end_time: stamp, service_type: "Direct Therapy",
+    }).select("id").single();
+    if (error) throw error;
+    session.id = data.id; // adopt the DB id so the note (session_notes.session_id) attaches to it
+    persistMem();
+  }
+  return session;
+}
+
+/**
+ * documentation → completed for a note-only session, mirroring what
+ * `completeRunSession` does after a live session's data collection — except
+ * there are no program summaries to roll up here, since none were ever
+ * collected. Called once the SOAP note is signed.
+ */
+export async function completeNoteOnlySession(sessionId: number): Promise<void> {
+  const s = getRunSession(sessionId);
+  if (s && s.status === "documentation") await updateRunSession(sessionId, { status: "completed" });
+}
+
 export function summariesFor(sessionId: number): SessionProgramSummary[] {
   return mem.summaries.filter((x) => x.sessionId === sessionId);
 }
@@ -460,6 +506,75 @@ export async function getClients(): Promise<ClientRow[]> {
   }));
 }
 
+/**
+ * The signed-in clinician's own caseload — "my clients," not the clinic's
+ * whole client list getClients() returns (that stays clinic-wide: several
+ * screens use it as a generic by-id lookup for whatever client the URL
+ * names, e.g. clients/[id]/layout.tsx, which must resolve any client in the
+ * clinic, not just this clinician's own).
+ *
+ * There is no clinician-to-client assignment table in this schema — migration
+ * 0014's own header says so explicitly and deliberately granted clinic-wide
+ * read access to `clients`/`sessions` for exactly that reason, rather than
+ * inventing an assignment model unilaterally. The closest real signal this
+ * schema has is `client_sessions.clinician_id`: it is set to auth.uid() every
+ * time this clinician actually creates or runs a session with a client
+ * (createRunSession/ensureSessionRecord above), so "clients I have at least
+ * one client_session row for" is a genuine, already-populated relationship —
+ * not a new grant. `client_sessions` is already readable clinic-wide under
+ * `auth_is_staff()` (migration 0004), so filtering by clinician_id here is a
+ * WHERE clause on data already permitted, not a widened policy.
+ *
+ * Known gap this proxy inherits: a client with no client_session yet (a
+ * brand-new intake this clinician hasn't run a first session with) won't
+ * appear here even if they're the intended clinician. Closing that properly
+ * needs a real assignment column/table — logged in BLOCKED-data.md rather
+ * than worked around with a broader grant.
+ */
+export async function getMyClients(): Promise<ClientRow[]> {
+  if (IS_PREVIEW) return previewClients;
+  const user = (await sb().auth.getUser()).data.user;
+  if (!user) return [];
+
+  const { data: mine, error: mineErr } = await sb()
+    .from("client_sessions")
+    .select("client_id")
+    .eq("clinician_id", user.id);
+  if (mineErr) throw mineErr;
+  const clientIds = [...new Set((mine ?? []).map((r) => r.client_id as number))];
+  if (!clientIds.length) return [];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [{ data: clients, error: clientsErr }, { data: programs }, { data: upcoming }] = await Promise.all([
+    sb().from("clients").select("id,name,status").in("id", clientIds).order("name"),
+    sb().from("programs").select("client_id,status").in("client_id", clientIds).neq("status", "archived"),
+    sb().from("sessions").select("client_id,session_date")
+      .in("client_id", clientIds).gte("session_date", today).order("session_date"),
+  ]);
+  if (clientsErr) throw clientsErr;
+
+  const nextByClient = new Map<number, string>();
+  for (const s of (upcoming ?? []) as { client_id: number; session_date: string }[]) {
+    if (!nextByClient.has(s.client_id)) nextByClient.set(s.client_id, s.session_date);
+  }
+  const goalCounts = new Map<number, { active: number; mastered: number }>();
+  for (const p of (programs ?? []) as { client_id: number; status: string }[]) {
+    const g = goalCounts.get(p.client_id) ?? { active: 0, mastered: 0 };
+    if (p.status === "active") g.active++;
+    if (p.status === "mastered" || p.status === "maintenance") g.mastered++;
+    goalCounts.set(p.client_id, g);
+  }
+
+  return (clients ?? []).map((c) => ({
+    id: c.id, name: c.name, age: null, funding: null, serviceType: null,
+    status: c.status ?? "active",
+    activeGoals: goalCounts.get(c.id)?.active ?? 0,
+    masteredGoals: goalCounts.get(c.id)?.mastered ?? 0,
+    nextSession: nextByClient.get(c.id) ?? null,
+    supervisor: null, lastSession: null, interests: [],
+  }));
+}
+
 export async function getTodaySessions(): Promise<ScheduledSession[]> {
   if (IS_PREVIEW) return previewSessions;
   const today = new Date().toISOString().slice(0, 10);
@@ -479,6 +594,84 @@ export async function getTodaySessions(): Promise<ScheduledSession[]> {
     status: (s.status as string) ?? "scheduled",
     location: "Clinic",
   }));
+}
+
+/**
+ * The signed-in clinician's own `staff` resource id ("employee_id" on
+ * `sessions`), resolved via `employment_records` — the only tracked link
+ * between an auth login (`profiles`/`auth.users`) and a scheduler resource
+ * (`staff`), added by migration 0026. `staff` itself carries no `user_id`;
+ * see that migration's own header ("Nothing joins staff to the other two")
+ * before assuming otherwise. `employment_records_read`'s RLS
+ * (`auth_may_read_hr_of`) always admits reading your own row, so this needs
+ * no new grant. A clinician with no live employment record linked to a
+ * scheduler resource (never linked, or linked then unlinked) gets `null`
+ * here — not an error, just nothing to look up sessions by.
+ */
+async function myEmployeeId(): Promise<number | null> {
+  const user = (await sb().auth.getUser()).data.user;
+  if (!user) return null;
+  const { data, error } = await sb()
+    .from("employment_records")
+    .select("staff_id")
+    .eq("user_id", user.id)
+    .is("end_date", null)
+    .not("staff_id", "is", null)
+    .order("start_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.staff_id == null ? null : Number(data.staff_id);
+}
+
+/**
+ * The signed-in clinician's own upcoming (and recent) sessions across every
+ * client on their caseload, for the read-only caseload calendar
+ * (app/caseload's Calendar view, components/caseload-calendar.tsx). Reuses
+ * the same `sessions` table and the same clinic-wide staff read policy
+ * (`sessions_clinical_staff_select`, migration 0014) apps/scheduler and this
+ * file's own `getTodaySessions()` already read under — confirmed via
+ * `auth_is_staff()` (migration 0009) admitting `clinician`, so no new RLS
+ * grant is needed here. That policy is clinic-wide, not scoped to "mine," so
+ * the `.eq("employee_id", ...)` below is what actually narrows the read to
+ * this clinician's own bookings rather than the whole clinic's — an
+ * app-level scope on top of a broader grant, the same shape as every other
+ * "clinic-wide read, narrowed in the query" case in this file.
+ *
+ * Cancelled sessions are excluded (matches apps/scheduler's own live
+ * calendar) — a cancelled booking isn't part of "what's on my schedule."
+ */
+export async function getMyCaseloadSessions(startDate: string, endDate: string): Promise<CaseloadCalendarResult> {
+  if (IS_PREVIEW) {
+    return { status: "ok", sessions: previewCaseloadSessions.filter((s) => s.date >= startDate && s.date <= endDate) };
+  }
+  const employeeId = await myEmployeeId();
+  if (employeeId == null) return { status: "not_linked" };
+
+  const { data, error } = await sb()
+    .from("sessions")
+    .select("id,client_id,session_date,hour,minute,type,status, clients(name)")
+    .eq("employee_id", employeeId)
+    .gte("session_date", startDate)
+    .lte("session_date", endDate)
+    .neq("status", "cancelled")
+    .order("session_date")
+    .order("hour")
+    .order("minute");
+  if (error) throw error;
+
+  const sessions = (data ?? []).map((s: Record<string, unknown>) => ({
+    id: s.id as number,
+    clientId: s.client_id as number,
+    clientName: ((s.clients as { name?: string } | null)?.name) ?? `Client ${s.client_id}`,
+    date: s.session_date as string,
+    hour: s.hour as number,
+    minute: (s.minute as number) ?? 0,
+    time: fmtTime(s.hour as number, (s.minute as number) ?? 0),
+    type: (s.type as string) ?? "Session",
+    status: (s.status as string) ?? "scheduled",
+  }));
+  return { status: "ok", sessions };
 }
 
 export async function getPrograms(clientId: number): Promise<Program[]> {

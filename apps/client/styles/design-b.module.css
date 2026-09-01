@@ -1,7 +1,12 @@
 .page {
   min-height: calc(100vh - var(--portalnav-h));
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
+  /* var(--sidebar-w), not a hardcoded 210px - apps/data and apps/employee's
+     shared .sidebar (packages/design/components.css) is 244px. A different
+     hardcoded width here was one of the ways this app's sidebar drifted
+     from the other three portals' look even though it pulls its colours
+     from the same tokens. */
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   background: var(--surface-2);
   color: var(--ink);
   font-family: var(--font-body);
@@ -10,7 +15,12 @@
 .sidebar {
   min-height: calc(100vh - var(--portalnav-h));
   padding: 22px 14px;
-  background: var(--surface);
+  /* var(--surface-2), not var(--surface) - the shared .sidebar
+     (packages/design/components.css) sits on the tinted --surface-2 ground,
+     with --surface reserved for cards on top of it. This sidebar was using
+     the card colour instead, making it read as flush-white against the
+     rest of the design system's off-white sidebars. */
+  background: var(--surface-2);
   border-right: 1px solid var(--line);
 }
 
@@ -50,7 +60,17 @@
 
 .brand strong {
   display: block;
-  font-size: 16px;
+  /* var(--font-display) (Outfit), not the inherited body font (Source Sans
+     3) - the shared .brand-name (packages/design/components.css, used by
+     apps/data/apps/employee) sets the portal name in the display face.
+     Nothing here overrode the browser's inherited font-family, so this was
+     silently rendering in body text's font instead - the actual "sidebar
+     font doesn't match" bug. */
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--ink);
 }
 
 .brand span {
@@ -65,9 +85,11 @@
 .navHeading {
   margin: 21px 10px 8px;
   color: var(--faint);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.13em;
+  /* Matches the shared .nav-group's size/weight/tracking (packages/design/
+     components.css) instead of a heavier, larger, wider-tracked one-off. */
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
 }
 
 .navItem {
@@ -92,9 +114,12 @@
 }
 
 .navItemActive {
-  color: var(--accent);
+  /* var(--accent-strong), font-weight 500 - matches the shared
+     .nav-item[aria-current="page"] (packages/design/components.css)
+     instead of the plain --accent colour at an 800 weight it never uses. */
+  color: var(--accent-strong);
   background: var(--accent-soft);
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .main {
@@ -395,16 +420,27 @@
   color: var(--muted);
 }
 
+/* Was a two-column grid (content | status pill) until the reschedule/cancel
+   request row needed a third, full-width area beneath both - a flex column
+   renders identically to the old grid for a card with nothing below the top
+   row (see .apptCardTop, which reproduces the old grid's own layout). */
 .apptCard {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   padding: 18px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: var(--shadow-md);
+}
+
+.apptCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .apptTitle {
@@ -420,6 +456,77 @@
   gap: 12px;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Request-a-change (pages/appointments.tsx) - the action row for an
+   upcoming session with no pending request yet, and the pill shown instead
+   once one exists. Buttons reuse @summit/design's shared .btn/.btn.secondary
+   rather than a third button style; only the row layout is local. */
+.requestActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.requestPill {
+  align-self: flex-start;
+}
+
+/* components/request-change-modal.tsx - a small, centred confirmation
+   dialog. Reuses the shared .field/.input/.btn classes from
+   @summit/design/components.css for the form itself; only the overlay/panel
+   chrome is local, since nothing else in this app has needed a modal
+   before. */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in oklch, black 45%, transparent);
+}
+
+.modalPanel {
+  width: 100%;
+  max-width: 440px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg, 0 20px 50px rgba(0, 0, 0, 0.25));
+}
+
+.modalTitle {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.modalSubtitle {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modalError {
+  margin: 0 0 14px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.modalHint {
+  margin: 0 0 18px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* pages/progress.tsx - goals grouped by domain, each domain its own
@@ -521,6 +628,22 @@
 }
 
 .noteBadgeCountersigned {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+/* pages/documents.tsx - reuses .noteBadge's shape (same pill) with two new
+   tones so a document's direction reads at a glance: something the clinic
+   shared (info, matches .noteBadgeSigned's tone) vs. something the family
+   sent back (good, matches .noteBadgeCountersigned's tone) - not because
+   the two pages are related, just because the same two tones already exist
+   and clear AA on this surface (root CLAUDE.md's design-system note). */
+.docBadgeFromClinic {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.docBadgeFromYou {
   color: var(--good);
   background: var(--good-soft);
 }
@@ -674,6 +797,87 @@
   color: var(--faint);
   font-size: 9.5px;
   font-weight: 700;
+}
+
+/* pages/activities.tsx - home-program activities, grouped by the goal they
+   support (reuses .domainSection/.domainHeading from the progress page's
+   goal-domain grouping - the same "group of cards under a heading" shape,
+   just grouped by a different relationship). Each card adds action buttons
+   a family can press to record their own progress - the first mutable UI
+   in this app; see lib/admin-view-as.ts for why admin "view as" never
+   renders these as interactive. */
+.activityCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.activityHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.activityTitle {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.activityDescription {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.activityMeta {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.activityActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.activityButton {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.activityButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.activityButtonSecondary {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.activityError {
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
 @media (max-width: 1100px) {
