@@ -562,6 +562,65 @@ await check("a child is never in two households", async () => {
     "same child in two households");
 });
 
+// --------------------------------------------------------------------------
+// 0036 · family tasks, derived and permission-filtered
+// --------------------------------------------------------------------------
+await check("a task appears from a real appointment and vanishes when it changes", async () => {
+  const staffRow = (await db.query(
+    `insert into staff (name, clinic_id) values ('Clinician','${clinicA}') returning id`)).rows[0].id;
+  const sess = (await db.query(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${maya}, ${staffRow}, current_date + 3, 16, 0, 'Direct Therapy', 'scheduled', '${clinicA}')
+     returning id`)).rows[0].id;
+
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where kind='appointment'`),
+       1, "appointment task"));
+
+  // Nothing marks it done. Confirming the appointment is what removes it.
+  await db.exec(`update sessions set status='completed' where id=${sess}`);
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where kind='appointment'`),
+       0, "task after the appointment is no longer scheduled"));
+  await db.exec(`delete from sessions where id=${sess}`);
+});
+
+await check("a task about a child you cannot see never appears", async () => {
+  const outsiderChild = (await db.query(
+    `insert into clients (name, status, clinic_id) values ('Someone Else','active','${clinicA}') returning id`)).rows[0].id;
+  const st = (await db.query(
+    `insert into staff (name, clinic_id) values ('Other','${clinicA}') returning id`)).rows[0].id;
+  await db.exec(`insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+                 values (${outsiderChild}, ${st}, current_date + 2, 9, 0, 'Direct Therapy', 'scheduled', '${clinicA}')`);
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where client_id=${outsiderChild}`),
+       0, "another family's task"));
+});
+
+await check("a guardian without billing access is never told funding is low", async () => {
+  const b = (await db.query(
+    `insert into client_budgets (clinic_id, client_id, name, funding_source, allocated_amount, period_start, period_end)
+     values ('${clinicA}', ${maya}, '2026 Allocation', 'Program', 1000, current_date - 30, current_date + 200)
+     returning id`)).rows[0].id;
+  await db.exec(`insert into budget_entries (clinic_id, budget_id, entry_date, kind, description, amount)
+                 values ('${clinicA}','${b}', current_date - 1, 'CHARGE', 'Sessions', 920)`);
+
+  // Parent A holds view_billing; parent B was denied it earlier in this file.
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where kind='funding'`) > 0,
+       true, "parent A sees the funding task"));
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where kind='funding'`),
+       0, "parent B sees a funding task"));
+});
+
+await check("the raw view still carries the permission a caller would need", async () => {
+  // family_tasks itself is unfiltered by design so a staff surface can reason
+  // about it; my_family_tasks() is the one the portal reads.
+  const r = await one(`select required_permission from family_tasks where kind='funding' limit 1`);
+  eq(r.required_permission, "view_billing", "required permission on the raw view");
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

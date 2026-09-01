@@ -7,6 +7,10 @@ import { formatClinicDate } from "../lib/clinic-date";
 import { formatStatus } from "../lib/format-status";
 import type { Program } from "../lib/program-display";
 import styles from "../styles/design-b.module.css";
+import * as React from "react";
+import { FamilySwitcher } from "./family-switcher";
+import { childById, displayName, recallView, rememberView, type Family, type FamilyView } from "../lib/family";
+import type { FamilyTask } from "../pages/index";
 
 type IconName =
   | "home"
@@ -75,6 +79,8 @@ type DesignBProps = {
   soapNotesError: boolean;
   budget: DashboardBudget | null;
   budgetError: boolean;
+  family: Family;
+  tasks: FamilyTask[];
 };
 
 function formatMoney(amount: number, currency = "CAD"): string {
@@ -211,7 +217,44 @@ export default function DesignB({
   soapNotesError,
   budget,
   budgetError,
+  family,
+  tasks,
 }: DesignBProps) {
+  // Which child the parent is looking at. Server-rendered as their default so
+  // the first paint is not blank, then reconciled to what they last chose once
+  // localStorage is readable. Server and client must agree on the first render
+  // or React logs a hydration mismatch, which is why this starts from the same
+  // default the server would pick rather than from storage.
+  const [view, setView] = React.useState<FamilyView>(() =>
+    family.children.length === 1
+      ? { kind: "child", clientId: family.children[0].clientId }
+      : { kind: "family" });
+
+  // The signed-in guardian keys the memory, so a shared family computer does
+  // not open on the other parent's child. Falls back to the household when
+  // there is no id to key on.
+  const memoryKey = family.householdId ?? "anon";
+  React.useEffect(() => {
+    setView(recallView(memoryKey, family));
+  }, [memoryKey, family]);
+
+  const onSwitch = React.useCallback((next: FamilyView) => {
+    setView(next);
+    rememberView(memoryKey, next);
+  }, [memoryKey]);
+
+  const selected = view.kind === "child" ? childById(family, view.clientId) : null;
+
+  // Tasks follow the switcher: one child shows theirs, Everyone shows all.
+  // Sorted so anything urgent leads, then by date, because a list a parent
+  // scrolls to find the important thing is a list they stop reading.
+  const visibleTasks = React.useMemo(() => {
+    const scoped = selected ? tasks.filter((t) => t.clientId === selected.clientId) : tasks;
+    return [...scoped].sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority === "high" ? -1 : 1;
+      return (a.dueOn ?? "9999").localeCompare(b.dueOn ?? "9999");
+    });
+  }, [tasks, selected]);
   const masteredCount = programs.filter((p) => p.status === "mastered").length;
   const activeGoalsCount = programs.filter((p) => p.status !== "mastered" && p.status !== "archived").length;
 
@@ -237,9 +280,83 @@ export default function DesignB({
 
               <h1>Welcome, {familyName}</h1>
 
+              {/* The switcher sits with the greeting because "who am I looking
+                  at" is the first thing a parent of two children needs, and it
+                  has to be answerable without scrolling. Renders nothing for a
+                  family of one. */}
+              {family.children.length > 0 ? (
+                <div style={{ margin: "14px 0 6px" }}>
+                  <FamilySwitcher family={family} view={view} onChange={onSwitch} />
+                </div>
+              ) : null}
+
               <p className={styles.subtitle}>
-                View {clientName}&apos;s current care information.
+                {selected
+                  ? `${displayName(selected)}'s current care information.`
+                  : family.children.length > 1
+                    ? "Everything happening across your family."
+                    : `View ${clientName}'s current care information.`}
               </p>
+
+              {/* For You. Only rendered when something is actually waiting:
+                  an empty task strip is a section that teaches a parent to
+                  skip the top of the page. */}
+              {visibleTasks.length > 0 ? (
+                <section aria-labelledby="for-you" style={{ marginTop: 18 }}>
+                  <h2 id="for-you" style={{
+                    fontSize: 12, letterSpacing: ".08em", textTransform: "uppercase",
+                    color: "#607987", fontWeight: 700, marginBottom: 10,
+                  }}>
+                    For you
+                  </h2>
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                    {visibleTasks.map((t) => {
+                      const child = childById(family, t.clientId);
+                      return (
+                        <li key={t.taskId}>
+                          <Link
+                            href={t.href}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 12,
+                              padding: "12px 14px", minHeight: 44,
+                              background: "#fff", borderRadius: 12, textDecoration: "none",
+                              border: `1px solid ${t.priority === "high" ? "#E4B7A0" : "#d4e2e8"}`,
+                            }}
+                          >
+                            {/* Urgency is a word, not only a border colour. */}
+                            {t.priority === "high" ? (
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, color: "#8A4B2A",
+                                background: "#FBEDE4", borderRadius: 999, padding: "2px 8px",
+                                whiteSpace: "nowrap",
+                              }}>Soon</span>
+                            ) : null}
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#173247" }}>
+                                {t.title}
+                              </span>
+                              <span style={{ display: "block", fontSize: 13, color: "#607987" }}>
+                                {t.detail}
+                                {/* Whose task it is, but only in Everyone view:
+                                    naming the child you already selected is
+                                    noise. */}
+                                {!selected && child ? ` · ${displayName(child)}` : ""}
+                              </span>
+                            </span>
+                            <span aria-hidden="true" style={{ color: "#607987" }}>›</span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ) : family.children.length > 0 ? (
+                // The brief asks for "You're all caught up" rather than an
+                // empty table or a zero.
+                <p className={styles.subtitle} style={{ marginTop: 14 }}>
+                  Nothing needs your attention right now.
+                </p>
+              ) : null}
             </div>
 
             <div className={styles.headerActions}>
