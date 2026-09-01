@@ -4,7 +4,7 @@ import type {
   NextApiRequest,
   NextApiResponse,
 } from "next";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { CalendarMonth, type CalendarEntry } from "../components/calendar-month";
@@ -19,11 +19,18 @@ import type { AccountProblem } from "../lib/explain-account-problem";
 import type { ChangeRequest, ChangeRequestType } from "../lib/session-change-requests";
 import { homeUrlFor } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
+import { FamilySwitcher } from "../components/family-switcher";
+import {
+  can, childById, displayName, familyFromRows, recallView, rememberView,
+  type Family, type FamilyView,
+} from "../lib/family";
 
 type SessionStatus = "scheduled" | "completed" | "cancelled";
 
 type Session = {
   id: number;
+  /** Which child. Present since the calendar became family-wide. */
+  client_id: number;
   session_date: string;
   hour: number | null;
   minute: number | null;
@@ -42,6 +49,8 @@ type Session = {
 type PageProps =
   | {
       mode: "appointments";
+      /** Every child this guardian may see appointments for, not just one. */
+      family: Family;
       sessions: Session[];
       sessionsError: boolean;
       changeRequests: ChangeRequest[];
@@ -52,6 +61,13 @@ type PageProps =
     }
   | { mode: "problem"; problem: AccountProblem }
   | { mode: "error" };
+
+/** The child's name for a session, or a neutral word if they are no longer
+ *  on this guardian's record. Never the raw client id. */
+function childName(family: Family, clientId: number): string {
+  const child = childById(family, clientId);
+  return child ? displayName(child) : "Your family";
+}
 
 type Filter = "All" | "Scheduled" | "Completed" | "Cancelled";
 type ViewMode = "list" | "calendar";
@@ -65,6 +81,11 @@ export default function Appointments(
   // an ascending-date list that opens with the oldest already-happened
   // session first. Full history is still one tap away via the same tabs.
   const [filter, setFilter] = useState<Filter>("Scheduled");
+
+  // Which child the calendar is pointed at. Starts on "everyone", then the
+  // remembered choice is applied in an effect - reading localStorage during
+  // render would give the server and the browser different first paints.
+  const [view, setView] = useState<FamilyView>({ kind: "family" });
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>(
@@ -84,7 +105,29 @@ export default function Appointments(
     return <LoadErrorNotice />;
   }
 
-  const { sessions, sessionsError, clientName, isAdminViewingAs, todayDateStr } = props;
+  const { family, sessions, sessionsError, clientName, isAdminViewingAs, todayDateStr } = props;
+
+  // Keyed on the household, same as the dashboard, so switching child there
+  // and navigating here does not silently switch back.
+  // A legacy single-child account resolves through clients.user_id and has no
+  // my_family rows at all, so there is no permission set to consult. Treating
+  // that as "no permission" would silently remove the request buttons from
+  // every family that predates the household model - which is the opposite of
+  // what adding a permission check is for.
+  const legacyAccount = family.children.length === 0;
+  const mayManage = (clientId: number) =>
+    legacyAccount || can(childById(family, clientId), "manage_appointments");
+
+  const memoryKey = family.householdId ?? "anon";
+  useEffect(() => { setView(recallView(memoryKey, family)); }, [memoryKey, family]);
+
+  function onSwitch(next: FamilyView) {
+    setView(next);
+    rememberView(memoryKey, next);
+    // A date selected in calendar mode belonged to the previous child's
+    // sessions. Clearing it avoids an empty list with no visible reason.
+    setSelectedDate(null);
+  }
 
   // changeRequests is ordered newest-first by the query below, so the first
   // request seen per session here is that session's latest - one lookup per
@@ -96,10 +139,17 @@ export default function Appointments(
     }
   }
 
+  // The switcher narrows first, then the status tabs. A family of one never
+  // sees the switcher at all (it renders nothing), so this is a no-op there.
+  const familySessions =
+    view.kind === "child"
+      ? sessions.filter((session) => session.client_id === view.clientId)
+      : sessions;
+
   const filteredSessions =
     filter === "All"
-      ? sessions
-      : sessions.filter(
+      ? familySessions
+      : familySessions.filter(
           (session) =>
             normalizeStatus(session.status, session.session_date, todayDateStr) ===
             filter.toLowerCase()
@@ -116,9 +166,14 @@ export default function Appointments(
         id: session.id,
         session_date: session.session_date,
         status: normalizeStatus(session.status, session.session_date, todayDateStr),
-        label: `${formatSessionTime(session.hour, session.minute)} ${session.type || "Session"}`,
+        // On a shared calendar the child's name comes first: a parent
+        // scanning Tuesday needs to know whose session it is before they
+        // need to know what kind it is.
+        label: view.kind === "family" && family.children.length > 1
+          ? `${childName(family, session.client_id)} · ${formatSessionTime(session.hour, session.minute)}`
+          : `${formatSessionTime(session.hour, session.minute)} ${session.type || "Session"}`,
       })),
-    [filteredSessions, todayDateStr]
+    [filteredSessions, todayDateStr, view, family]
   );
 
   // Calendar mode's day-click narrows the list below to just that date, on
@@ -177,8 +232,19 @@ export default function Appointments(
                 color: "#6c8290",
               }}
             >
-              View your scheduled and past sessions.
+              {view.kind === "child"
+                ? `Scheduled and past sessions for ${childName(family, view.clientId)}.`
+                : family.children.length > 1
+                  ? "Scheduled and past sessions across your family."
+                  : "View your scheduled and past sessions."}
             </p>
+
+            {/* Renders nothing for a family of one. Placed under the heading
+                rather than beside the .ics link so it reads as part of what
+                the page is showing, not as another action. */}
+            <div style={{ marginTop: 14 }}>
+              <FamilySwitcher family={family} view={view} onChange={onSwitch} />
+            </div>
           </div>
 
           {/* One-time file download (not a subscribable feed - see
@@ -280,7 +346,13 @@ export default function Appointments(
               // past), and never for an admin's read-only "view as" - see
               // pages/api/sessions/request-change.ts's own header for why
               // that second condition matters, not just this one.
-              const canRequestChange = status === "scheduled" && !isAdminViewingAs;
+              // Per child, not per family. A guardian can hold view_appointments
+              // for a sibling and manage_appointments only for their own child;
+              // showing them a button the database will refuse is worse than
+              // not showing it. RLS is still the boundary - this is the UI not
+              // offering what would fail.
+              const canRequestChange =
+                status === "scheduled" && !isAdminViewingAs && mayManage(session.client_id);
               const existingRequest = latestRequestBySession.get(session.id);
               const hasPendingRequest = existingRequest?.status === "pending";
 
@@ -430,10 +502,28 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   const { viewed } = resolved;
 
+  const { data: familyRows, error: familyError } = await supabase
+    .from("my_family")
+    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, relationship, permissions");
+  if (familyError) console.error("Failed to load family:", familyError.message);
+
+  const family = familyFromRows(familyRows ?? []);
+
+  // Only children this guardian may actually see appointments for. A child
+  // they hold view_profile but not view_appointments for belongs in the
+  // switcher (they are still family) but not in this query.
+  const accessibleIds = family.children
+    .filter((c) => can(c, "view_appointments"))
+    .map((c) => c.clientId);
+  // A legacy single-child account resolves through clients.user_id and has no
+  // my_family rows; fall back to the resolved child so the page still works.
+  if (accessibleIds.length === 0) accessibleIds.push(Number(viewed.clientId));
+
   const { data: sessions, error: sessionsError } = await supabase
     .from("sessions")
     .select(`
       id,
+      client_id,
       session_date,
       hour,
       minute,
@@ -448,7 +538,11 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
         name
       )
     `)
-    .eq("client_id", viewed.clientId)
+    // Every child this guardian may see, not just the one the portal is
+    // pointed at. RLS (sessions_family_read, migration 0046) already limits
+    // this to children they hold view_appointments for; the .in() is the app
+    // not asking for what the database would refuse.
+    .in("client_id", accessibleIds)
     .order("session_date", { ascending: true })
     .order("hour", { ascending: true })
     .order("minute", { ascending: true });
@@ -488,6 +582,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   return {
     props: {
       mode: "appointments",
+      family,
       sessions: (sessions ?? []) as Session[],
       sessionsError: Boolean(sessionsError),
       changeRequests: (changeRequests ?? []) as ChangeRequest[],

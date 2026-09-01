@@ -10,6 +10,12 @@ export type IcsSession = {
   hour: number | null;
   minute: number | null;
   type: string | null;
+  /**
+   * Whose session, when the export covers more than one child. Omitted for a
+   * single-child export, where repeating the name in every event title is
+   * noise in a calendar the parent already knows the subject of.
+   */
+  childName?: string | null;
 };
 
 const ICS_LINE_MAX_OCTETS = 75;
@@ -94,7 +100,11 @@ function buildEvent(session: IcsSession, dtstamp: string): string[] {
   // re-importing this feed later updates the existing event instead of
   // creating a duplicate.
   const uid = `session-${session.id}@summitclient.io`;
-  const summary = escapeText(session.type || "Therapy Session");
+  // The child leads the title on a family export. In a calendar app the
+  // summary is often all that fits, and "Maya - Therapy Session" is the half
+  // a parent with two children actually needs.
+  const base = session.type || "Therapy Session";
+  const summary = escapeText(session.childName ? `${session.childName} - ${base}` : base);
 
   const lines = ["BEGIN:VEVENT", `UID:${uid}`, `DTSTAMP:${dtstamp}`];
 

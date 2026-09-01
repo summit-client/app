@@ -1294,6 +1294,64 @@ await check("an internal staff note never produces a notification", async () => 
        before, "message notifications after an internal note"));
 });
 
+// --------------------------------------------------------------------------
+// Phase 8 · the family calendar
+//
+// The calendar now shows every child at once, so "can see it" and "can change
+// it" stop being the same question. These fix that distinction in place.
+// --------------------------------------------------------------------------
+
+await check("one query returns every child's sessions to a guardian", async () => {
+  await db.exec(`insert into sessions (clinic_id, client_id, session_date, hour, status, type)
+                 values ('${clinicA}', ${noah}, current_date + 4, 10, 'scheduled', 'Session')`);
+  await as(parentA, async () => {
+    const rows = (await db.query(`select distinct client_id from sessions`)).rows;
+    eq(rows.length, 2, "children with visible sessions");
+  });
+});
+
+await check("a guardian without view_appointments for a child sees none of their sessions", async () => {
+  // `silent` holds a relationship to Maya only, and had view_appointments
+  // revoked earlier in this file.
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'view_appointments'
+                    and relationship_id in (select id from guardian_relationships
+                                             where user_id='${silent}')`);
+  await as(silent, async () =>
+    eq(await count(`select count(*)::int n from sessions`), 0, "sessions for a guardian without access"));
+});
+
+await check("seeing a sibling's session is not permission to move it", async () => {
+  // The exact case the family calendar creates: parentB may view both
+  // children, but manage only one.
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'manage_appointments'
+                    and relationship_id in (select id from guardian_relationships
+                                             where user_id='${parentB}' and client_id = ${maya})`);
+  const s = (await db.query(
+    `select id from sessions where client_id = ${maya} limit 1`)).rows[0].id;
+  await as(parentB, async () => {
+    // Still visible...
+    eq(await count(`select count(*)::int n from sessions where id = ${s}`), 1, "visible");
+  });
+  // ...but not movable.
+  await as(parentB, () => insertRaises(
+    `insert into session_change_requests (clinic_id, session_id, client_id, request_type, created_by)
+     values ('${clinicA}', ${s}, ${maya}, 'reschedule', '${parentB}')`,
+    "change request without manage_appointments for that child"));
+});
+
+await check("a change request naming a different child than its session is refused", async () => {
+  // What would happen if the route pinned client_id to whichever child the
+  // portal was pointed at, rather than reading it off the session.
+  const mayaSession = (await db.query(
+    `select id from sessions where client_id = ${maya} limit 1`)).rows[0].id;
+  await as(parentA, () => insertRaises(
+    `insert into session_change_requests (clinic_id, session_id, client_id, request_type, created_by)
+     values ('${clinicA}', ${mayaSession}, ${noah}, 'reschedule', '${parentA}')`,
+    "change request with a mismatched child"));
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

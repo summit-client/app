@@ -4,6 +4,7 @@ import { resolveViewedClient } from "../../lib/admin-view-as";
 import { clinicTodayDateStr } from "../../lib/clinic-date";
 import { explainAccountProblem } from "../../lib/explain-account-problem";
 import { buildAppointmentsIcs, type IcsSession } from "../../lib/ics";
+import { can, displayName, familyFromRows } from "../../lib/family";
 
 /**
  * Downloadable .ics export of the viewed client's upcoming appointments -
@@ -66,10 +67,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // sessions isn't useful to import. No .limit() though: unlike the
   // dashboard snapshot, the whole point here is every upcoming
   // appointment, not a preview.
+  // Every child this guardian may see appointments for. Exporting one child's
+  // calendar from a page that shows the whole family's would quietly drop the
+  // sibling's sessions from the file a parent then relies on.
+  const { data: familyRows } = await supabase
+    .from("my_family")
+    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, relationship, permissions");
+  const family = familyFromRows(familyRows ?? []);
+  const exportable = family.children.filter((c) => can(c, "view_appointments"));
+  // A legacy single-child account has no my_family rows; fall back to the
+  // resolved child so the export keeps working for families that predate the
+  // household model.
+  const ids = exportable.length > 0
+    ? exportable.map((c) => c.clientId)
+    : [Number(viewed.clientId)];
+  const nameFor = new Map(exportable.map((c) => [c.clientId, displayName(c)]));
+
   const { data: sessions, error: sessionsError } = await supabase
     .from("sessions")
-    .select("id, session_date, hour, minute, type, status")
-    .eq("client_id", viewed.clientId)
+    .select("id, client_id, session_date, hour, minute, type, status")
+    .in("client_id", ids)
     .gte("session_date", clinicTodayDateStr())
     .neq("status", "cancelled")
     .order("session_date", { ascending: true })
@@ -82,7 +99,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const ics = buildAppointmentsIcs((sessions ?? []) as IcsSession[], viewed.clientName);
+  const multiChild = ids.length > 1;
+  const rows: IcsSession[] = (sessions ?? []).map((s: { client_id: number | string }) => ({
+    ...(s as unknown as IcsSession),
+    childName: multiChild ? nameFor.get(Number(s.client_id)) ?? null : null,
+  }));
+
+  const ics = buildAppointmentsIcs(
+    rows,
+    multiChild ? (family.householdName ?? "Your family") : viewed.clientName,
+  );
 
   res.setHeader("Content-Type", "text/calendar; charset=utf-8");
   res.setHeader("Content-Disposition", 'attachment; filename="summit-appointments.ics"');
