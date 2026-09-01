@@ -165,6 +165,7 @@ export interface SessionNoteDraft {
   abcNarrative: string;
   billableCode: "97153" | "97155" | "97156";
   status: "draft" | "signed" | "awaiting_countersign" | "countersigned" | "returned";
+  returnNote?: string | null;   // supervisor's "what to fix" reason, set only when status is 'returned'
 }
 
 /**

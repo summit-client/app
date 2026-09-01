@@ -58,6 +58,20 @@ export default function SessionsPage() {
                 {sums.length} programs addressed · {obs} atomic observations{abc ? ` · ${abc} ABC entries` : ""} ·
                 note: <b>{note ? note.status.replace(/_/g, " ") : "—"}</b>
               </p>
+              {["documentation", "completed"].includes(s.status) && (!note || note.status === "draft" || note.status === "returned") ? (
+                <div style={{ marginTop: 10 }}>
+                  <Link href={`/clients/${clientId}/sessions/${s.id}/note`} className="btn" style={{ textDecoration: "none" }}>
+                    {note ? "Continue session note" : "Write session note"}
+                  </Link>
+                </div>
+              ) : null}
+              {note && (note.status === "awaiting_countersign" || note.status === "countersigned") ? (
+                <div style={{ marginTop: 10 }}>
+                  <Link href={`/clients/${clientId}/sessions/${s.id}/note`} className="btn ghost" style={{ textDecoration: "none" }}>
+                    View session note
+                  </Link>
+                </div>
+              ) : null}
               {note && (s.status === "completed" || s.status === "locked") ? (
                 <div style={{ marginTop: 10 }}>
                   <PdfExport
