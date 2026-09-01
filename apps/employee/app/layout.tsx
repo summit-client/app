@@ -8,7 +8,7 @@ import "./app.css";
 import { themeInitScript } from "@summit/design";
 import { PortalBar } from "@/components/portal-bar";
 import { SupportButton } from "@/components/support";
-import { SessionProvider } from "@/components/session-provider";
+import { BrandingEffects, SessionProvider } from "@/components/session-provider";
 
 /**
  * Preview mode, double-gated — the flag AND a non-production build.
@@ -61,6 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
+        <BrandingEffects />
         <PortalBar activeKey="employee" />
         {/* Mobile sidebar drawer: a plain checkbox, so the toggle needs no
             "use client" in this Server Component. See the comment on

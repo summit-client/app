@@ -87,7 +87,13 @@ export function AppearanceSection() {
         </div>
       </div>
 
-      <GenericSection slug="appearance" />
+      {/* appearance.logo1/2/3 are excluded here on purpose — they're the
+          mechanism for a per-tenant --logo-1/2/3 override (@summit/design's
+          applyLogoColors()), not yet exposed as an editable setting. See
+          those keys' comment in packages/settings/index.ts before adding
+          them to this list: they need a contrast check first, the way the
+          primary-colour warning below already covers appearance.primaryColor. */}
+      <GenericSection slug="appearance" exclude={["appearance.logo1", "appearance.logo2", "appearance.logo3"]} />
       {!contrastOk ? (
         <p className="sub" style={{ color: "var(--warn)" }}>
           ⚠ The primary colour&rsquo;s contrast against white is below 3:1 — text on branded surfaces may be hard to read.
