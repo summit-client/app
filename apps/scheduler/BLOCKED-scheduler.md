@@ -6,7 +6,46 @@ instead, if anything.
 
 ## 1. Booking-integrity: no DB constraint against double-booking a clinician
 
-**What's still open.** Nothing in the `sessions` table prevents two rows
+**Migration written this session (`supabase/migrations/0044_sessions_no_double_booking.sql`) - NOT YET APPLIED.** This session's Supabase MCP access is
+also read-only, same limit as the pass that wrote this item originally, so a
+human still needs to run this migration against the live database before it
+does anything. Implements exactly the two layers sketched below: the partial
+unique index for the exact-slot case, and a `before insert or update` trigger
+(plain plpgsql, not `security definer`, matching migration `0016`'s four
+trigger functions on this same table) for the overlapping-but-not-identical
+case, computing each row's `tsrange` from `session_date`/`hour`/`minute` and
+`session_types.duration` (looked up by `(clinic_id, type)` since `type` is a
+denormalized name, not a foreign key - same join shape migration `0029`
+already uses). Verified by applying the migration to an isolated local
+Postgres instance in this sandbox against a minimal mirror of the real
+`sessions`/`session_types`/`staff` schema (NOT the live Supabase project) and
+exercising it with real inserts/updates: exact duplicates and duration-aware
+overlaps both correctly fail (the overlap trigger fires first and already
+subsumes the exact-duplicate case in practice, so the unique index mostly
+acts as a second, independent layer rather than the one that actually fires -
+still worth keeping per this file's own suggestion below), back-to-back
+sessions touching at the boundary correctly succeed, a cancelled row frees
+its slot, unrelated clinicians never conflict, and a null/unrecognized `type`
+correctly falls back to the same 60-minute default the app itself uses. Not
+verified against the live database itself - that needs the human-run
+migration plus real app traffic.
+
+App-side: every write site this file's own list below still has under
+`main` (confirmed unchanged in shape by the concurrent `overnight/
+scheduler-issue-133` pass, which touched the same calendar files for other
+reasons) now recognizes a 23505/23P01 write error from this constraint and
+shows the same friendly "that slot was just booked by someone else" message
+the existing fresh-pre-check already shows, instead of a raw Postgres error -
+see `lib/checkSlotConflict.ts`'s `isBookingConflictError` and its call
+sites in `pages/index.jsx`, `components/calendar/CalendarView.tsx`, and
+`components/calendar/RescheduleModal.tsx`. `pages/index.jsx`'s
+`submitReschedule` (the reschedule mini-calendar's own write, mentioned in
+this file's header comment but not in this item's original list) got the
+same treatment, being the same shape of gap.
+
+**Original analysis, kept for context:**
+
+Nothing in the `sessions` table prevents two rows
 from sharing the same `employee_id` + `session_date` + `hour` + `minute` (or
 from overlapping once each session type's duration/gap is taken into
 account). Every create/move path in this app (`insertQuickSlot`,

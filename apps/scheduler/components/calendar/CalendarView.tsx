@@ -35,7 +35,7 @@ import { RescheduleModal } from "./RescheduleModal";
 import { SessionDetail } from "./SessionDetail";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { sessionGridIncrement, sessionDuration } from "./types";
-import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../../lib/checkSlotConflict";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../../lib/checkSlotConflict";
 import { useFocusTrap } from "../../lib/useFocusTrap";
 
 const SPLIT_THRESHOLD = 8;
@@ -416,9 +416,15 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     // "Session rescheduled" and reloaded the grid as though nothing had
     // gone wrong, leaving the session silently unmoved.
     let failed = false;
+    // Set when the failure above was migration 0044's DB constraint
+    // (unique index or overlap trigger) specifically, so the toast below can
+    // show the same friendly conflict message the fresh pre-check above
+    // already shows, rather than a raw "reschedule failed."
+    let conflict = false;
     if (scope === "this" || !session.recurrence_id) {
       const { error } = await supabase.from("sessions").update({ session_date: dateStr, hour, minute }).eq("id", session.id);
       failed = !!error;
+      conflict = isBookingConflictError(error);
     } else {
       const { data: rows } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
       const oldDate = parseDateStr(session.session_date);
@@ -463,9 +469,16 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
         supabase.from("sessions").update({ session_date: shiftedDateStr, hour, minute }).eq("id", row.id),
       ));
       failed = results.some((r) => r.error);
+      conflict = results.some((r) => isBookingConflictError(r.error));
     }
     await refreshAll();
-    showToast(failed ? "Reschedule failed for one or more sessions - please check the calendar." : "Session rescheduled");
+    showToast(
+      !failed
+        ? "Session rescheduled"
+        : conflict
+          ? "That slot was just booked by someone else - pick another time."
+          : "Reschedule failed for one or more sessions - please check the calendar.",
+    );
   }
 
   // Drag conflicts get suggestions too, but only the same-clinician kind:
