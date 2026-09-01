@@ -96,11 +96,17 @@ html { scroll-behavior: smooth; }
 .an4 { animation: fadeUp .6s .40s ease both; }
 .an5 { animation: fadeUp .6s .55s ease both; }
 
-/* Scroll-triggered reveal — toggled via IntersectionObserver in index.tsx */
+/* Scroll-triggered reveal — toggled via IntersectionObserver in index.tsx.
+   Was .7s ease (plus per-item transitionDelay stagger on top) - measured in
+   a browser as ~490ms from scroll-into-view to fully settled even though the
+   observer itself fires in well under 100ms, which read as sluggish rather
+   than responsive. ease-out starts the motion immediately instead of easing
+   in first, and the shorter duration lands well under the ~300-400ms window
+   that still reads as smooth rather than abrupt. */
 .reveal {
   opacity: 0;
   transform: translateY(24px);
-  transition: opacity .7s ease, transform .7s ease;
+  transition: opacity .35s ease-out, transform .35s ease-out;
 }
 .reveal.is-visible {
   opacity: 1;
