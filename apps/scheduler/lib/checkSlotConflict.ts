@@ -93,3 +93,26 @@ export async function fetchFreshConflictKeys(candidates: SlotKey[]): Promise<Set
 export function slotKeyOf(s: SlotKey): string {
   return `${s.employeeId}|${s.dateStr}|${s.hour}|${s.minute}`;
 }
+
+/**
+ * True when a write to `sessions` failed because of the migration 0041
+ * booking-integrity constraint - the `sessions_no_exact_double_book` partial
+ * unique index, or the `enforce_sessions_no_overlap` trigger - rather than
+ * some other failure. The two layers are deliberately made to surface as one
+ * of these two Postgres error codes so this check can treat them as the same
+ * case: 23505 (unique_violation) from the index, and 23P01
+ * (exclusion_violation) from the trigger's own `using errcode =
+ * 'exclusion_violation'` (chosen specifically over the default P0001 so this
+ * function doesn't have to match on the exception message text).
+ *
+ * This is the same race `fetchFreshConflict`/`fetchFreshConflictKeys` above
+ * already try to catch pre-write - this just catches it if it still slips
+ * through (two writes landing within the same round trip), so every call
+ * site should show the same friendly conflict message either way rather than
+ * a raw Postgres error reaching the UI. See
+ * supabase/migrations/0041_sessions_no_double_booking.sql - not yet applied
+ * to the live database as of this change; a human needs to run it.
+ */
+export function isBookingConflictError(error: { code?: string } | null | undefined): boolean {
+  return error?.code === "23505" || error?.code === "23P01";
+}
