@@ -1,6 +1,8 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import { clientSessionFreshness } from "@summit/proxy-auth/client";
+import { loginUrl, refreshUrl } from "@summit/portals";
 import type { ClinicalEvidencePacket, ReportBlock } from "@summit/clinical-ai";
 import type {
   AbcIncident, CaseloadCalendarResult, ClientRow, PendingCountersign, Program, RunSession, ScheduledSession,
@@ -29,6 +31,67 @@ function sb() {
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
   );
+}
+
+/**
+ * The client-side counterpart to what proxy.ts already does on every
+ * navigation into this portal. All four portals share one
+ * `.summitclient.io` session cookie; calling `sb().auth.getUser()` while
+ * that session is within 90s of expiry can redeem the refresh token itself,
+ * and if another portal's own request does the same thing around the same
+ * moment, one of them gets a hard, unrecoverable `refresh_token_already_used`
+ * error - see @summit/proxy-auth's file header for the full race. proxy.ts
+ * already guards every page load with sessionFreshness() before its own
+ * getUser() call; this file's writes call `sb().auth.getUser()` directly
+ * from the browser (to stamp `clinician_id`/`created_by`, or in
+ * myClinicId()/ensureSessionRecord() below, which almost everything here
+ * routes through) with no equivalent guard until now.
+ *
+ * clientSessionFreshness() (@summit/proxy-auth/client) is the client-safe
+ * sibling of sessionFreshness() - see its own file header for why reading
+ * this cookie from `document.cookie` is safe. "fresh" -> proceed exactly as
+ * before; getUser() below is safe to call, unchanged from today. "stale" or
+ * "missing" -> the getUser() call about to happen is the one that could
+ * race, so this sends the browser through the same central refresh endpoint
+ * proxy.ts already uses (@summit/portals' refreshUrl(), mirroring its
+ * "stale" branch) or straight to login ("missing", mirroring its "missing"
+ * branch) instead, and never returns - the page is navigating away, and
+ * nothing past this point should run against a session that's about to be
+ * replaced. `return_to` is always this file's own current location, never
+ * caller-supplied, so there's no open-redirect surface to validate here
+ * (refresh.js validates it again on arrival regardless).
+ *
+ * Landing back on this same page after a refresh is a full navigation, which
+ * re-enters proxy.ts's own sessionFreshness()/loop-guard check before any of
+ * this file's code runs again - so this needs no loop-guard of its own, it
+ * inherits proxy.ts's.
+ *
+ * Known, accepted trade-off: unlike a stale *page load* (nothing to lose),
+ * this can fire mid-action - e.g. mid-way through typing a SOAP note that
+ * hasn't been saved yet - and the ensuing full-page round trip loses
+ * whatever wasn't already in the sessionStorage-persisted `mem` mirror
+ * above. That's still strictly better than today's behaviour (the same
+ * in-progress work is lost either way, but today it's lost to an
+ * unrecoverable auth error with no explanation instead of a session that
+ * comes back signed in), and a non-navigating fix would require apps/web's
+ * refresh endpoint to answer a cross-origin fetch (CORS), which is out of
+ * this change's scope (apps/data and packages/proxy-auth only).
+ */
+async function ensureFreshSession(): Promise<void> {
+  const freshness = await clientSessionFreshness(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (freshness === "fresh") return;
+  if (typeof window === "undefined") return; // no navigation to do off the main thread
+
+  if (freshness === "missing") {
+    window.location.href = loginUrl();
+  } else {
+    const refresh = new URL(refreshUrl());
+    refresh.searchParams.set("return_to", window.location.href);
+    window.location.href = refresh.toString();
+  }
+  // The browser is navigating away - hang rather than let the caller
+  // proceed to the getUser() call this exists to guard.
+  await new Promise<never>(() => {});
 }
 
 /* ---- in-memory store, persisted to sessionStorage so a mid-session page
@@ -306,6 +369,7 @@ export async function createRunSession(
   mem.sessions.push(session);
   persistMem();
   if (!IS_PREVIEW) {
+    await ensureFreshSession();
     const user = (await sb().auth.getUser()).data.user;
     const { data, error } = await sb().from("client_sessions").insert({
       client_id: clientId, clinician_id: user?.id, clinic_id: await myClinicId(),
@@ -442,6 +506,7 @@ export async function createNoteOnlySession(clientId: number, occurredOn?: strin
   mem.sessions.push(session);
   persistMem();
   if (!IS_PREVIEW) {
+    await ensureFreshSession();
     const user = (await sb().auth.getUser()).data.user;
     const { data, error } = await sb().from("client_sessions").insert({
       client_id: clientId, clinician_id: user?.id, clinic_id: await myClinicId(),
@@ -474,6 +539,7 @@ async function ensureSessionRecord(programId: string): Promise<string | null> {
   const cached = active.recordIds.get(programId);
   if (cached) return cached;
   if (active.sessionId == null || active.clientId == null) return null;
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   const { data, error } = await sb()
     .from("session_records")
@@ -533,6 +599,7 @@ export async function getClients(): Promise<ClientRow[]> {
  */
 export async function getMyClients(): Promise<ClientRow[]> {
   if (IS_PREVIEW) return previewClients;
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   if (!user) return [];
 
@@ -609,6 +676,7 @@ export async function getTodaySessions(): Promise<ScheduledSession[]> {
  * here — not an error, just nothing to look up sessions by.
  */
 async function myEmployeeId(): Promise<number | null> {
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   if (!user) return null;
   const { data, error } = await sb()
@@ -733,6 +801,7 @@ export async function createProgram(input: {
       intervalSeconds: 30, dailyTargetMinutes: null, steps: [], targets: [], last5: [],
     };
   }
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   const { data, error } = await sb()
     .from("programs")
@@ -854,6 +923,7 @@ export async function saveClinicalReportProgress(input: {
   status: ClinicalReportStatus;
 }): Promise<void> {
   if (IS_PREVIEW) return;
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   const row: Record<string, unknown> = {
     clinic_id: await myClinicId(), client_id: input.clientId,
@@ -969,6 +1039,7 @@ export function eventsForSession(sessionId: number): TrialEvent[] {
 export async function recordIncident(i: Omit<AbcIncident, "id" | "occurredAt">): Promise<AbcIncident> {
   const full: AbcIncident = { ...i, id: nextId(), occurredAt: new Date().toISOString() };
   if (IS_PREVIEW) { mem.incidents.push(full); persistMem(); return full; }
+  await ensureFreshSession();
   const { error } = await sb().from("behaviour_incidents").insert({
     client_id: i.clientId, antecedent: i.antecedent, behaviour: i.behaviour,
     consequence: i.consequence, suspected_function: i.suspectedFunction,
@@ -986,6 +1057,7 @@ export async function saveNote(note: SessionNoteDraft): Promise<void> {
   mem.notes.set(note.sessionId, note);
   persistMem();
   if (IS_PREVIEW) return;
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   const { error } = await sb().from("session_notes").upsert(
     {
@@ -1087,6 +1159,7 @@ export async function countersignNote(
     if (decision === "countersigned") await lockRunSession(item.sessionId);
     return;
   }
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   const patch: Record<string, unknown> = { status: decision };
   if (decision === "countersigned") {
@@ -1113,6 +1186,7 @@ export async function countersignNote(
 
 /* ---- helpers -------------------------------------------------------------- */
 async function myClinicId(): Promise<string | null> {
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   if (!user) return null;
   const { data } = await sb().from("profiles").select("clinic_id").eq("id", user.id).single();
