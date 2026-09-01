@@ -1,4 +1,4 @@
--- 0035 · Family-initiated session change requests
+-- 0040 · Family-initiated session change requests
 --
 -- apps/client's "Upcoming Sessions" view lets a family ask staff to
 -- reschedule or cancel a booked session. This is deliberately a REQUEST, not

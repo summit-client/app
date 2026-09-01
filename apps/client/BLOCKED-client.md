@@ -246,7 +246,7 @@ back), `lib/documents.ts` (bucket name, upload-path convention, size cap),
 `lib/supabase-browser.ts` (this app's first browser-side Supabase client -
 upload is also this app's first mutation of any kind; disabled entirely
 while `isAdminViewingAs`, matching `lib/admin-view-as.ts`'s read-only-
-support-session design), and migration `0035_client_documents.sql`
+support-session design), and migration `0036_client_documents.sql`
 (`client_documents` table + RLS, clinic-wide staff / own-record-only
 family, same split as 0020/0023).
 
