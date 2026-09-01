@@ -161,6 +161,78 @@ html { scroll-behavior: smooth; }
   .pubnav-inner { padding: 0 16px !important; }
 }
 
+/* Mobile menu toggle + dropdown panel — the replacement for .desktop-nav
+   once it disappears at 780px above. The button is a real <button> (not the
+   checkbox-hack the in-app sidebars use per CLAUDE.md's mobile nav pattern
+   note) because PublicNav already carries client-side state for the scroll
+   listener; a <button> also gets click *and* keyboard activation (Enter and
+   Space) for free, where the checkbox hack needs the visible label to be the
+   focusable/tabbable element and a separate CSS-only "checked" affordance.
+   Hidden above 780px by default so it's absent from desktop entirely — not
+   just visually hidden, no tab stop either since it's not display:flex there. */
+.mobile-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.mobile-nav-toggle:hover { background: var(--brand-gray-100); }
+
+@media (max-width: 780px) {
+  .mobile-nav-toggle { display: inline-flex; }
+  /* "Log in" repeats the toggle's own function once the dropdown carries
+     both nav links and — via that dropdown or the header itself — a path to
+     sign in; keeping just "Get started" plus the toggle on one row is what
+     actually stops recrimping at narrow phone widths (measured next to the
+     780px cutover above, same method that cutover's own comment used). The
+     link still exists for anyone tabbing through by keyboard or landing here
+     via a wider bumped-down width. */
+  .pubnav-login { display: none; }
+}
+
+/* Dropdown panel: absolutely positioned under the fixed 64px-tall nav so it
+   overlays the page instead of pushing it down — nothing that measures the
+   nav's height (.hero-sticky's `top: 64px`, the `#features` etc. anchor
+   scroll-margin) has to account for a variable-height mobile menu. */
+.mobile-nav-panel {
+  position: absolute;
+  top: 64px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 12px 24px rgba(26,63,92,.1);
+  animation: navPanelIn .18s ease-out both;
+}
+@keyframes navPanelIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.mobile-nav-link {
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--brand-gray-700);
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--brand-gray-100);
+}
+.mobile-nav-link:last-child { border-bottom: none; }
+.mobile-nav-link:hover,
+.mobile-nav-link:focus-visible { color: var(--brand-navy); }
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-nav-panel { animation: none; }
+}
+
 /* ── Responsive scheme for the marketing sections below the hero ──
    Matches apps/client's design-b.module.css 3-tier breakpoints (1100/760/
    520, layered under the hero/nav's own already-tuned 780px cutover above -
