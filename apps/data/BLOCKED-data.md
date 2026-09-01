@@ -14,22 +14,48 @@ true, nothing in `packages/` or `supabase/migrations/` changed since either.
 
 ---
 
-## Carried over — cross-portal refresh-token race: client-side `getUser()` calls are not freshness-checked
+## Fixed — cross-portal refresh-token race: client-side `getUser()` calls are not freshness-checked
 
-`proxy.ts` correctly uses `getUser()` and routes through `@summit/proxy-auth`'s
-`sessionFreshness()` before ever calling it. `lib/data.ts` and
-`@summit/session`'s `resolve()`, though, call `sb().auth.getUser()` directly
-from the browser in several places (`createRunSession`, `ensureSessionRecord`,
-`recordIncident`, `saveNote`, `myClinicId()`, plus round 2's
-`getPendingCountersigns()`/`countersignNote()`/`createProgram()`/
-`activateProgram()`/`saveClinicalReportProgress()`). None of these go
-through `sessionFreshness()` first, because that function is explicitly
-documented as server/edge-only (`packages/proxy-auth/index.ts`: "never
-import this from a React component or anything client-rendered"). Round
-3's new `hydrateClientHistory()` and its helpers do **not** add to this —
-they're plain table reads under RLS, no `.auth.getUser()` call in any of
-them. A client-safe freshness check would still be a `packages/proxy-auth`
-or `packages/session` change, out of scope for `apps/data`-only work.
+Closed by a `packages/proxy-auth`-scoped overnight change (module-scoped
+dispatch, not an `apps/data`-only branch — this is exactly the kind of fix
+this doc kept saying was out of reach for one): `packages/proxy-auth/client.ts`
+adds `clientSessionFreshness()`, a new, additive, browser-safe sibling of
+`sessionFreshness()` (`index.ts`, left untouched). It reads the same
+`sb-<ref>-auth-token` cookie via `document.cookie` instead of a server
+request object — confirmed safe by reading `@supabase/ssr`'s own source
+(v0.10.3): every portal's `createBrowserClient()` already manages this exact
+cookie through `document.cookie` (that's how the SDK persists a session in
+the browser at all), and `@supabase/ssr`'s `DEFAULT_COOKIE_OPTIONS` sets
+`httpOnly: false` explicitly, so nothing about reading it client-side was
+ever unsafe — it just hadn't been done yet. See `client.ts`'s own file
+header for the full trail.
+
+`lib/data.ts` now calls a new local `ensureFreshSession()` (mirrors
+`proxy.ts`'s own "check freshness, redirect through the central refresh
+endpoint if stale" pattern, using `@summit/portals`' `refreshUrl()`/
+`loginUrl()`) before every function that reaches `sb().auth.getUser()` —
+directly or transitively through `myClinicId()`/`ensureSessionRecord()`:
+`createRunSession`, `createNoteOnlySession`, `ensureSessionRecord`,
+`getMyClients`, `myEmployeeId`, `createProgram`,
+`saveClinicalReportProgress`, `recordIncident`, `saveNote`,
+`countersignNote`, `myClinicId` (which transitively covers `endRunSession`
+and `recordEvent`, neither of which calls `getUser()` directly). This list
+has shifted since round 2 wrote it: `getPendingCountersigns()` does **not**
+call `.auth.getUser()` (it's a plain RLS-scoped read) so it needed no
+change, and `activateProgram()` doesn't either — the list above is what's
+actually true of the current file, not the round-2 list verbatim. `@summit/session`'s
+`resolve()` was deliberately **not** touched — the fix above is fully additive
+and narrow enough not to need it.
+
+**Not covered by this round, same shape of gap, found while fixing the
+above:** `apps/data/lib/workforce.ts` and `apps/data/lib/funding.ts` also
+call `sb().auth.getUser()` directly from the browser (own `createBrowserClient()`
+instances, not `lib/data.ts`'s) with no freshness check. They were out of
+scope for this dispatch (scoped to `packages/proxy-auth` plus the specific
+`lib/data.ts` call sites the round-2/3 note already tracked), but the fix is
+now a two-line addition per call site (`import { clientSessionFreshness }
+from "@summit/proxy-auth/client"` and the same `ensureFreshSession()`-shaped
+guard `lib/data.ts` now has) rather than a new architectural decision.
 
 ---
 
