@@ -5,11 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { urlFor } from "@summit/portals";
 import { createNoteOnlySession, getMyClients } from "@/lib/data";
+import { CaseloadCalendar } from "@/components/caseload-calendar";
 import type { ClientRow } from "@/lib/types";
 
 const STATUS_PILL: Record<string, string> = {
   active: "good", intake: "accent", maintenance: "neutral", waitlist: "warn",
 };
+
+type View = "list" | "calendar";
 
 /**
  * This clinician's own caseload, scoped server-side (getMyClients() filters
@@ -21,6 +24,7 @@ const STATUS_PILL: Record<string, string> = {
 export default function CaseloadPage() {
   const router = useRouter();
   const [clients, setClients] = React.useState<ClientRow[]>([]);
+  const [view, setView] = React.useState<View>("list");
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [addingNoteFor, setAddingNoteFor] = React.useState<number | null>(null);
@@ -61,8 +65,27 @@ export default function CaseloadPage() {
 
   return (
     <div>
-      <h1 className="h-page">My Caseload</h1>
-      <p className="sub">Clients you have documented at least one session with. Open a client, or jump straight to their goals, notes or schedule.</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h1 className="h-page">My Caseload</h1>
+          <p className="sub">
+            {view === "list"
+              ? "Clients you have documented at least one session with. Open a client, or jump straight to their goals, notes or schedule."
+              : "Your own upcoming sessions, across every client on your caseload."}
+          </p>
+        </div>
+        <div className="mode-tabs" role="tablist" aria-label="Caseload view">
+          {(["list", "calendar"] as const).map((v) => (
+            <button
+              key={v} role="tab" aria-selected={view === v}
+              className={`mode-tab ${view === v ? "active" : ""}`}
+              onClick={() => setView(v)}
+            >
+              {v === "list" ? "List" : "Calendar"}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {loadError ? (
         <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--warn)" }}>
@@ -76,61 +99,67 @@ export default function CaseloadPage() {
         </div>
       ) : null}
 
-      <div className="card table-wrap" style={{ marginTop: 20 }}>
-        <table className="data">
-          <thead>
-            <tr>
-              <th scope="col">Client</th>
-              <th scope="col">Goals</th>
-              <th scope="col">Next session</th>
-              <th scope="col">Status</th>
-              <th aria-label="Quick links" />
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((c) => (
-              <tr key={c.id}>
-                <td>
-                  <Link href={`/clients/${c.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                    <b>{c.name}</b>
-                  </Link>
-                </td>
-                <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                  {c.activeGoals} active · {c.masteredGoals} mastered
-                </td>
-                <td style={{ fontVariantNumeric: "tabular-nums" }}>{c.nextSession ?? "—"}</td>
-                <td><span className={`pill ${STATUS_PILL[c.status] ?? "neutral"}`}>{c.status}</span></td>
-                <td style={{ textAlign: "right" }}>
-                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                    <button
-                      type="button" className="btn ghost" disabled={addingNoteFor === c.id}
-                      onClick={() => void addNote(c.id)}
-                    >
-                      {addingNoteFor === c.id ? "Opening…" : "+ Note"}
-                    </button>
-                    <Link href={`/clients/${c.id}/goals`} className="btn ghost" style={{ textDecoration: "none" }}>
-                      Goals
-                    </Link>
-                    <Link href={`/clients/${c.id}/sessions`} className="btn ghost" style={{ textDecoration: "none" }}>
-                      Notes
-                    </Link>
-                    <a
-                      href={scheduleHref} target="_blank" rel="noreferrer"
-                      className="btn ghost" style={{ textDecoration: "none" }}
-                      title="Opens the scheduler's Sessions view — not yet filterable to one client from here"
-                    >
-                      Schedule ↗
-                    </a>
-                  </div>
-                </td>
+      {view === "list" ? (
+        <div className="card table-wrap" style={{ marginTop: 20 }}>
+          <table className="data">
+            <thead>
+              <tr>
+                <th scope="col">Client</th>
+                <th scope="col">Goals</th>
+                <th scope="col">Next session</th>
+                <th scope="col">Status</th>
+                <th aria-label="Quick links" />
               </tr>
-            ))}
-            {!loading && !clients.length && !loadError ? (
-              <tr><td colSpan={5} style={{ color: "var(--muted)" }}>No clients yet — clients appear here once you've documented a session with them.</td></tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {clients.map((c) => (
+                <tr key={c.id}>
+                  <td>
+                    <Link href={`/clients/${c.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                      <b>{c.name}</b>
+                    </Link>
+                  </td>
+                  <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {c.activeGoals} active · {c.masteredGoals} mastered
+                  </td>
+                  <td style={{ fontVariantNumeric: "tabular-nums" }}>{c.nextSession ?? "—"}</td>
+                  <td><span className={`pill ${STATUS_PILL[c.status] ?? "neutral"}`}>{c.status}</span></td>
+                  <td style={{ textAlign: "right" }}>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                      <button
+                        type="button" className="btn ghost" disabled={addingNoteFor === c.id}
+                        onClick={() => void addNote(c.id)}
+                      >
+                        {addingNoteFor === c.id ? "Opening…" : "+ Note"}
+                      </button>
+                      <Link href={`/clients/${c.id}/goals`} className="btn ghost" style={{ textDecoration: "none" }}>
+                        Goals
+                      </Link>
+                      <Link href={`/clients/${c.id}/sessions`} className="btn ghost" style={{ textDecoration: "none" }}>
+                        Notes
+                      </Link>
+                      <a
+                        href={scheduleHref} target="_blank" rel="noreferrer"
+                        className="btn ghost" style={{ textDecoration: "none" }}
+                        title="Opens the scheduler's Sessions view — not yet filterable to one client from here"
+                      >
+                        Schedule ↗
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!loading && !clients.length && !loadError ? (
+                <tr><td colSpan={5} style={{ color: "var(--muted)" }}>No clients yet — clients appear here once you've documented a session with them.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ marginTop: 20 }}>
+          <CaseloadCalendar />
+        </div>
+      )}
     </div>
   );
 }
