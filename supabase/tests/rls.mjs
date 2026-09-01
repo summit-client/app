@@ -70,6 +70,7 @@ async function as(uid, fn) {
   try { return await fn(); } finally { await db.exec(`reset role;`); }
 }
 const count = async (sql) => Number((await db.query(sql)).rows[0].n);
+const one = async (sql) => (await db.query(sql)).rows[0];
 /** Rows visible to this user, which is the only measure that means anything. */
 const visible = (table, where = "true") => count(`select count(*)::int n from ${table} where ${where}`);
 async function insertRaises(sql, what) {
@@ -408,6 +409,157 @@ await check("the eight scheduler tables now actually filter", async () => {
     eq(await visible("clients", `clinic_id = '${clinicA}'`), 0, "clinic A's clients");
   });
   await as(aHr, async () => eq(await visible("clients"), 0, "HR admin reading clients"));
+});
+
+// --------------------------------------------------------------------------
+// 0035 · households, guardians and per-relationship permissions
+//
+// These are the brief's own acceptance flows, written as assertions:
+//   Flow B  one parent, two children, switching between them
+//   Flow C  two parents on one household with different permissions
+// plus the cross-household isolation the portal rests on.
+// --------------------------------------------------------------------------
+const parentA = await mkUser("parent_a", "client", clinicA);
+const parentB = await mkUser("parent_b", "client", clinicA);
+const outsider = await mkUser("outsider", "client", clinicA);
+
+const maya = (await db.query(
+  `insert into clients (name, status, clinic_id) values ('Maya','active','${clinicA}') returning id`)).rows[0].id;
+const noah = (await db.query(
+  `insert into clients (name, status, clinic_id) values ('Noah','active','${clinicA}') returning id`)).rows[0].id;
+
+const household = (await db.query(
+  `insert into households (clinic_id, name) values ('${clinicA}','Yankov Family') returning id`)).rows[0].id;
+
+await db.exec(`insert into household_members (clinic_id, household_id, full_name, relationship, client_id)
+               values ('${clinicA}','${household}','Maya','self',${maya}),
+                      ('${clinicA}','${household}','Noah','self',${noah})`);
+await db.exec(`insert into household_members (clinic_id, household_id, full_name, relationship, user_id)
+               values ('${clinicA}','${household}','Adina','parent','${parentA}'),
+                      ('${clinicA}','${household}','Ian','parent','${parentB}')`);
+
+// Parent A: both children, everything. Parent B: both children, no billing.
+for (const [who, child] of [[parentA, maya], [parentA, noah], [parentB, maya], [parentB, noah]]) {
+  await db.exec(`insert into guardian_relationships (clinic_id, user_id, client_id, household_id, status)
+                 values ('${clinicA}','${who}',${child},'${household}','ACTIVE')`);
+}
+await db.exec(`update relationship_permissions set granted = true
+                where relationship_id in (select id from guardian_relationships where user_id='${parentA}')`);
+await db.exec(`update relationship_permissions set granted = true
+                where relationship_id in (select id from guardian_relationships where user_id='${parentB}')
+                  and permission not in ('view_billing','pay_invoices','manage_payment_methods',
+                                         'receive_financial_notifications')`);
+
+await check("one login reaches both children — the thing the old scalar could not do", async () => {
+  await as(parentA, async () => {
+    const n = await count(`select count(*)::int n from my_family`);
+    eq(n, 2, "children visible to one parent");
+  });
+});
+
+await check("the legacy one-login-one-child link cannot represent this family at all", async () => {
+  // Not a style point. clients_user_id_unique physically refuses to link one
+  // parent to a second child, which is why families were given a login per
+  // child or a fabricated email. And if the link were somehow made, the scalar
+  // `select id from clients where user_id = auth.uid()` that every client
+  // policy reads would raise rather than pick one.
+  await db.exec(`update clients set user_id='${parentA}' where id = ${maya}`);
+  let refused = false;
+  try { await db.exec(`update clients set user_id='${parentA}' where id = ${noah}`); }
+  catch (e) { refused = /clients_user_id_unique|duplicate key/.test(e.message); }
+  await db.exec(`update clients set user_id = null where id in (${maya}, ${noah})`);
+  if (!refused) throw new Error("expected the unique index to refuse a second child");
+});
+
+await check("auth_accessible_client_ids returns a set, not a scalar", async () => {
+  await as(parentA, async () => {
+    eq(await count(`select count(*)::int n from public.auth_accessible_client_ids()`), 2, "accessible ids");
+  });
+});
+
+await check("a parent cannot reach a child outside their household", async () => {
+  await as(outsider, async () => {
+    eq(await count(`select count(*)::int n from my_family`), 0, "outsider's family");
+    eq(await count(`select count(*)::int n from public.auth_accessible_client_ids()`), 0, "outsider's clients");
+  });
+});
+
+await check("Flow C: the parent without billing permission is refused it", async () => {
+  await as(parentB, async () => {
+    eq((await one(`select public.auth_guardian_can(${maya}, 'view_billing') g`)).g, false, "billing");
+    eq((await one(`select public.auth_guardian_can(${maya}, 'pay_invoices') g`)).g, false, "payment");
+    // and still holds what they were granted
+    eq((await one(`select public.auth_guardian_can(${maya}, 'view_appointments') g`)).g, true, "appointments");
+    eq((await one(`select public.auth_guardian_can(${maya}, 'view_clinical_progress') g`)).g, true, "progress");
+  });
+  await as(parentA, async () =>
+    eq((await one(`select public.auth_guardian_can(${maya}, 'view_billing') g`)).g, true, "parent A billing"));
+});
+
+await check("permissions are per child, not per person", async () => {
+  // The custody case: same parent, different access to each sibling.
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'view_clinical_progress'
+                    and relationship_id = (select id from guardian_relationships
+                                            where user_id='${parentB}' and client_id=${noah})`);
+  await as(parentB, async () => {
+    eq((await one(`select public.auth_guardian_can(${maya}, 'view_clinical_progress') g`)).g, true, "Maya");
+    eq((await one(`select public.auth_guardian_can(${noah}, 'view_clinical_progress') g`)).g, false, "Noah");
+  });
+});
+
+await check("revoking a relationship removes access immediately", async () => {
+  await db.exec(`update guardian_relationships
+                    set status='REVOKED', revoked_at=now()
+                  where user_id='${parentB}' and client_id=${noah}`);
+  await as(parentB, async () => {
+    eq(await count(`select count(*)::int n from my_family`), 1, "children after revoke");
+    eq((await one(`select public.auth_guardian_can(${noah}, 'view_appointments') g`)).g, false, "revoked child");
+  });
+});
+
+await check("an expired relationship stops granting access on its own", async () => {
+  await db.exec(`update guardian_relationships
+                    set status='ACTIVE', revoked_at=null, ends_on = current_date - 1
+                  where user_id='${parentB}' and client_id=${noah}`);
+  await as(parentB, async () =>
+    eq((await one(`select public.auth_guardian_can(${noah}, 'view_appointments') g`)).g, false, "expired"));
+});
+
+await check("a guardian cannot grant themselves access or widen permissions", async () => {
+  await as(outsider, () => insertRaises(
+    `insert into guardian_relationships (clinic_id, user_id, client_id, status)
+     values ('${clinicA}','${outsider}',${maya},'ACTIVE')`,
+    "self-granted guardianship"));
+  await as(parentB, () => updateAffects(
+    `update relationship_permissions set granted = true
+      where relationship_id in (select id from guardian_relationships where user_id='${parentB}')
+        and permission = 'view_billing'`,
+    0, "widening own permissions"));
+});
+
+await check("a guardian cannot read another guardian's relationship", async () => {
+  // restriction_note is frequently the substance of a court order; the other
+  // parent must not be able to read it out of the portal.
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from guardian_relationships where user_id='${parentA}'`),
+       0, "other parent's relationships"));
+});
+
+await check("a household is invisible to anyone outside it", async () => {
+  await as(outsider, async () =>
+    eq(await count(`select count(*)::int n from households`), 0, "households visible to an outsider"));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from households`), 1, "own household"));
+});
+
+await check("a child is never in two households", async () => {
+  const other = (await db.query(
+    `insert into households (clinic_id, name) values ('${clinicA}','Other Family') returning id`)).rows[0].id;
+  await insertRaises(
+    `insert into household_members (clinic_id, household_id, full_name, relationship, client_id)
+     values ('${clinicA}','${other}','Maya','self',${maya})`,
+    "same child in two households");
 });
 
 console.log(out.join("\n"));
