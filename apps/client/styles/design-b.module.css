@@ -1,7 +1,12 @@
 .page {
   min-height: calc(100vh - var(--portalnav-h));
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
+  /* var(--sidebar-w), not a hardcoded 210px - apps/data and apps/employee's
+     shared .sidebar (packages/design/components.css) is 244px. A different
+     hardcoded width here was one of the ways this app's sidebar drifted
+     from the other three portals' look even though it pulls its colours
+     from the same tokens. */
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   background: var(--surface-2);
   color: var(--ink);
   font-family: var(--font-body);
@@ -10,7 +15,12 @@
 .sidebar {
   min-height: calc(100vh - var(--portalnav-h));
   padding: 22px 14px;
-  background: var(--surface);
+  /* var(--surface-2), not var(--surface) - the shared .sidebar
+     (packages/design/components.css) sits on the tinted --surface-2 ground,
+     with --surface reserved for cards on top of it. This sidebar was using
+     the card colour instead, making it read as flush-white against the
+     rest of the design system's off-white sidebars. */
+  background: var(--surface-2);
   border-right: 1px solid var(--line);
 }
 
@@ -50,7 +60,17 @@
 
 .brand strong {
   display: block;
-  font-size: 16px;
+  /* var(--font-display) (Outfit), not the inherited body font (Source Sans
+     3) - the shared .brand-name (packages/design/components.css, used by
+     apps/data/apps/employee) sets the portal name in the display face.
+     Nothing here overrode the browser's inherited font-family, so this was
+     silently rendering in body text's font instead - the actual "sidebar
+     font doesn't match" bug. */
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--ink);
 }
 
 .brand span {
@@ -65,9 +85,11 @@
 .navHeading {
   margin: 21px 10px 8px;
   color: var(--faint);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.13em;
+  /* Matches the shared .nav-group's size/weight/tracking (packages/design/
+     components.css) instead of a heavier, larger, wider-tracked one-off. */
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
 }
 
 .navItem {
@@ -92,9 +114,12 @@
 }
 
 .navItemActive {
-  color: var(--accent);
+  /* var(--accent-strong), font-weight 500 - matches the shared
+     .nav-item[aria-current="page"] (packages/design/components.css)
+     instead of the plain --accent colour at an 800 weight it never uses. */
+  color: var(--accent-strong);
   background: var(--accent-soft);
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .main {
