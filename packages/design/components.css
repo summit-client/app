@@ -30,14 +30,16 @@
 }
 .brand-text { line-height: 1.1; }
 .brand-name {
-  font-family: var(--font-display); font-size: var(--text-md); font-weight: 700;
+  font-family: var(--font-display); font-size: var(--text-md); font-weight: 600;
   color: var(--ink); letter-spacing: -0.03em;
 }
 .brand-sub {
   font-size: var(--text-2xs); color: var(--faint); font-weight: 400;
   letter-spacing: 0.06em; text-transform: uppercase; margin-top: 1px;
 }
-.brand-mark { width: 32px; height: 28px; flex: none; }
+/* Square: the real mark is 1:1. This was 32x28, sized for the placeholder
+   SVG's viewBox, which stretched the actual asset horizontally. */
+.brand-mark { width: 28px; height: 28px; flex: none; }
 
 .sidebar nav {
   flex: 1; padding: var(--space-3) 10px;

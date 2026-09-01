@@ -65,12 +65,18 @@ function handleNav(id: string) {
         borderBottom: "1px solid var(--color-border-tertiary)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Mountain icon mark — geometric teal peaks */}
-          <svg width="32" height="28" viewBox="0 0 32 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <polygon points="16,2 26,22 6,22" fill="var(--brand-400)" opacity="0.9"/>
-            <polygon points="8,8 16,22 0,22" fill="var(--brand-600)" opacity="0.85"/>
-            <polygon points="24,8 32,22 16,22" fill="var(--brand-700)" opacity="0.8"/>
-          </svg>
+          {/* The real Summit mark. This was three flat polygons approximating
+              peaks, a placeholder from before the asset existed. Same file the
+              marketing header and the other three portals use, so all five
+              surfaces finally show one logo. Sized explicitly so the sidebar
+              does not shift while it loads. */}
+          <img
+            src="/summit-mark-64.png"
+            alt=""
+            width={28}
+            height={28}
+            style={{ display: "block", flexShrink: 0 }}
+          />
           <div>
             <div style={{
               fontFamily: "var(--font-display)",

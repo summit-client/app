@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { motion, useScroll, useSpring, useTransform, useMotionValue, MotionValue } from 'motion/react'
+import { Icon, type IconName } from '../components/Icon'
+import { SessionFlow } from '../components/SessionFlow'
 
 type Cell = { type: string; lines: string[] } | null
 
@@ -71,35 +73,50 @@ export default function Home() {
     return () => io.disconnect()
   }, [])
 
-  // Simple count-up for the hero "2x faster" stat
-  const [multiplier, setMultiplier] = useState(0)
+  // Count-up for the hero's portal-count stat. Previously it counted to 2 for
+  // a "2x faster scheduling" claim; it counts to 5 now, which is the number of
+  // portals that actually exist (web, scheduler, data, client, employee) rather
+  // than a speed multiple nobody measured.
+  const [portalCount, setPortalCount] = useState(0)
   useEffect(() => {
     const duration = 900
     const start = performance.now()
     let raf: number
     const tick = (now: number) => {
       const progress = Math.min((now - start) / duration, 1)
-      setMultiplier(Math.round(progress * 2 * 10) / 10)
+      setPortalCount(Math.round(progress * 5))
       if (progress < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [])
 
-  // Brand colours — Summit palette
-  const grad  = 'linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%)'
-  const navy  = '#1A3F5C'
+  // Brand colours, from the SummitClient colour system.
+  //
+  // No gradients anywhere on this page. Every surface is a flat fill: the
+  // hierarchy comes from ink weight, spacing, borders and the product UI
+  // itself, which is how clinic software that people use all day tends to
+  // look, and how it stays legible when screenshotted or printed.
+  //
+  // `ink` replaces what used to be a three-stop brand gradient. Where a
+  // surface previously carried that gradient it now carries ink, and white
+  // text on ink measures 15.4:1, so the black scrim that used to rescue
+  // contrast at the gradient's light end is gone too.
+  const ink   = '#0B2B31'   // deepest: solid sections, headings
+  const navy  = '#254449'   // secondary ink
+  const brand = '#0C5350'   // primary action. 8.2:1 on white
+  const brandHover = '#0F6A67'
   // Darkened from the brand's #28B4A6/#7A9AAD for text use only - both failed
   // WCAG AA (2.57:1 and 2.98:1 on white) at the small sizes they're set in
   // here. Decorative uses of the brand teal (icon fills, gradients, the
   // SessionCell mockup) stay on the literal hex elsewhere in this file.
-  const teal  = '#1C7A70'
+  const teal  = '#0C5350'
   const g100  = '#EEF3F6'
   const g500  = '#57748A'
   const g700  = '#3D5A6A'
   const off   = '#F7FAFB'
-  const display = "'Bricolage Grotesque',sans-serif"
-  const body    = "'Hanken Grotesk',sans-serif"
+  const display = "'Outfit',sans-serif"
+  const body    = "'Source Sans 3',sans-serif"
 
   // This hero is a pinned-scroll ("scrollytelling") sequence: a 320vh-tall
   // container holds the viewport via position:sticky while scrollYProgress
@@ -171,10 +188,18 @@ export default function Home() {
   const badgeOpacity = useTransform(scrollYProgress, [0.10, 0.18], [1, 0])
   const sceneOpacity = useTransform(scrollYProgress, [0.88, 1], [1, 0])
 
+  // Three pills, one per portal the platform actually gives someone, rather
+  // than three scheduler features. PILL_COUNT above must stay at 3.
+  //
+  // The privacy pill has read "HIPAA-ready" and then "PHIPA and PIPEDA". Both
+  // scope the product to one country. Health data law differs by jurisdiction
+  // and none of it is satisfied by a badge on a marketing page, so this
+  // describes the architecture instead: tenant isolation enforced by the
+  // database. That claim holds in every market and can be checked.
   const PILLS = [
-    { glyph: '🤖', title: 'AI staff matching',    sub: 'Best-qualified and available, instantly' },
-    { glyph: '📅', title: 'Recurring schedules',  sub: 'Set once, built in bulk' },
-    { glyph: '🔒', title: 'HIPAA-ready',          sub: 'Encrypted, role-based access' },
+    { glyph: '🗓️', title: 'Schedule and deliver', sub: 'Matched, booked, recorded in the app' },
+    { glyph: '📈', title: 'Data to reports',      sub: 'Graphs and notes from what was recorded' },
+    { glyph: '🔒', title: 'Isolation by design',  sub: 'Enforced in the database, not the app' },
   ]
 
   return (
@@ -182,7 +207,7 @@ export default function Home() {
 
 {/* ── HERO / SCROLL SCENE ── */}
       <div ref={heroRef} className="hero-bg" style={{
-        background: 'linear-gradient(180deg,#EDF6F9 0%,#fff 100%)',
+        background: '#F1F7F4',
       }}>
         <motion.div className="hero-sticky" style={{
           opacity: staticScene ? 1 : sceneOpacity,
@@ -201,12 +226,12 @@ export default function Home() {
                   <div className="an1" style={{
                     display: 'inline-flex', alignItems: 'center', gap: '.4rem',
                     background: 'rgba(40,180,166,.12)', color: teal,
-                    fontSize: '.78rem', fontWeight: 700,
+                    fontSize: '.78rem', fontWeight: 600,
                     padding: '.35rem .8rem', borderRadius: 100,
                     marginBottom: '1.25rem',
                     fontFamily: display, letterSpacing: '.02em',
                   }}>
-                    ✦ Built for ABA Clinics
+                    Clinic management, end to end
                   </div>
                 </FadeOut>
 
@@ -214,12 +239,13 @@ export default function Home() {
                   <h1 className="an2" style={{
                     fontFamily: display,
                     fontSize: 'clamp(2.1rem,3.8vw,3.1rem)',
-                    fontWeight: 800, lineHeight: 1.15,
+                    letterSpacing: '-0.02em',
+                    fontWeight: 600, lineHeight: 1.15,
                     color: navy, marginBottom: '1.25rem',
                   }}>
-                    Scheduling that works<br />
-                    as hard as{' '}
-                    <span className="grad-text">your clinicians do.</span>
+                    Your clinic.<br />
+                    One{' '}
+                    <span className="grad-text">operating system.</span>
                   </h1>
                 </FadeOut>
 
@@ -228,7 +254,7 @@ export default function Home() {
                     fontSize: '1.05rem', color: g700,
                     marginBottom: '2rem', maxWidth: 460, lineHeight: 1.75,
                   }}>
-                    Summit matches clients to the right staff automatically, eliminates double bookings, and builds your entire recurring schedule in minutes, not hours.
+                    Clients, clinical work, documentation, scheduling, staff and operations in one connected workspace. Instead of five systems that each hold part of the picture.
                   </p>
                 </FadeOut>
 
@@ -249,8 +275,8 @@ export default function Home() {
 
               <div className="an4" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '2.5rem' }}>
                 <a href="/signup" className="btn-primary" style={{
-                  background: grad, color: '#fff',
-                  fontFamily: display, fontSize: '1rem', fontWeight: 700,
+                  background: ink, color: '#fff',
+                  fontFamily: display, fontSize: '1rem', fontWeight: 600,
                   padding: '.875rem 2rem', borderRadius: 10,
                   boxShadow: '0 4px 22px rgba(26,63,92,.28)',
                   display: 'inline-block', position: 'relative', zIndex: 3,
@@ -269,11 +295,15 @@ export default function Home() {
               </div>
 
               <FadeOut progress={scrollYProgress} start={0.22} active={!staticScene}>
-                <div className="an5" style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
-                  {[['×','faster scheduling'],['0','double bookings'],['AI','powered matching']].map(([v,l], i) => (
+                <div className="an5 hero-stats" style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
+                  {/* One stat per part of the platform, not three about the
+                      calendar. "1" is the actual claim being made: the session
+                      is recorded once and the note, the graph, the family
+                      statement and the timesheet all come from that record. */}
+                  {[['1','record, end to end'],['','portals, one login'],['0','double entry']].map(([v,l], i) => (
                     <div key={l}>
-                      <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 800, color: navy }}>
-                        {i === 0 ? `${multiplier}${v}` : v}
+                      <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 600, color: navy }}>
+                        {i === 1 ? portalCount : v}
                       </div>
                       <div style={{ fontSize: '.78rem', color: g500, fontWeight: 500 }}>{l}</div>
                     </div>
@@ -352,12 +382,12 @@ export default function Home() {
               }}>
                 <div style={{
                   width: 34, height: 34, borderRadius: '50%',
-                  background: grad, display: 'flex',
+                  background: ink, display: 'flex',
                   alignItems: 'center', justifyContent: 'center',
                   color: '#fff', fontSize: '1rem',
                 }}>✓</div>
                 <div>
-                  <div style={{ fontFamily: display, fontSize: '.78rem', fontWeight: 700, color: navy }}>12 sessions booked</div>
+                  <div style={{ fontFamily: display, fontSize: '.78rem', fontWeight: 600, color: navy }}>12 sessions booked</div>
                   <div style={{ fontSize: '.68rem', color: g500 }}>Conflicts resolved automatically</div>
                 </div>
               </motion.div>
@@ -367,74 +397,59 @@ export default function Home() {
         </motion.div>
       </div>
 
-      {/* ── LOGOS MARQUEE ── */}
-      <div style={{
-        padding: '28px 0',
-        borderTop: `1px solid ${g100}`,
-        borderBottom: `1px solid ${g100}`,
-        fontFamily: body,
-        overflow: 'hidden',
-      }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto 1.1rem', textAlign: 'center', padding: '0 2rem' }}>
-          <div style={{
-            fontSize: '.75rem', color: g500, fontWeight: 600,
-            textTransform: 'uppercase', letterSpacing: '.09em',
-          }}>
-            Trusted by growing ABA clinics across North America
-          </div>
-        </div>
-        <div className="marquee">
-          <div className="marquee-track">
-            {[...Array(2)].flatMap(() =>
-              ['Beacon ABA','Clarity Clinic','Pathways','Summit Therapy','Bright Futures ABA','Maple Grove ABA','Harbourview Clinic']
-            ).map((name, i) => (
-              <span key={i} style={{
-                fontFamily: display, fontSize: '.95rem',
-                fontWeight: 700, color: '#C4D3DC', letterSpacing: '-.01em',
-                padding: '0 1.5rem', whiteSpace: 'nowrap',
-              }}>{name}</span>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* The fabricated "trusted by" logo marquee that used to sit here is gone.
+          Every name in it was invented (Beacon ABA, Clarity Clinic, Pathways,
+          Bright Futures ABA...), presented under "Trusted by growing ABA
+          clinics across North America". Invented customer names on a live page
+          are a claim, not decoration, and this product has real clinics it can
+          name once they agree to be named. Nothing replaces it until then: an
+          honest gap reads better than fake proof. */}
 
       {/* ── FEATURES ── */}
       <section id="features" className="landing-section" style={{ background: '#fff', fontFamily: body }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
-            fontFamily: display, fontSize: '.72rem', fontWeight: 700,
+            fontFamily: display, fontSize: '.72rem', fontWeight: 600,
             letterSpacing: '.1em', textTransform: 'uppercase', color: teal, marginBottom: '.7rem',
           }}>Features</div>
           <h2 style={{
             fontFamily: display,
             fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
-            fontWeight: 800, color: navy, marginBottom: '.9rem', maxWidth: 580,
+            letterSpacing: '-0.015em',
+            fontWeight: 600, color: navy, marginBottom: '.9rem', maxWidth: 580,
           }}>
-            Everything your clinic needs to run smoothly
+            One platform, from the first booking to the last payroll line
           </h2>
           <p style={{ fontSize: '1rem', color: g700, maxWidth: 540, marginBottom: '2.8rem' }}>
-            From intake to recurring sessions, Summit handles the complexity so your team stays focused on clients.
+            Most of this is work that usually takes three or four separate systems, plus the reconciliation between them.
           </p>
-          <div className="grid-3" style={{ display: 'grid', gap: '1.25rem' }}>
+          <div className="grid-3 feature-rows" style={{ display: 'grid' }}>
             {[
-              { icon: '🤖', title: 'AI-Powered Staff Matching',       desc: 'Automatically matches each client to the best-qualified, available staff — factoring session type, availability, and location in seconds.' },
-              { icon: '📅', title: 'Smart Recurring Schedules',        desc: 'Set it once and Summit builds the full recurring calendar — weekly, biweekly, or custom — with zero manual entry required.' },
-              { icon: '🗓️', title: 'Visual Drag-and-Drop Calendar',   desc: 'See your full week at a glance. Drag sessions to reposition them, with real-time conflict detection keeping everything clean.' },
-              { icon: '👥', title: 'Multi-Portal Access',              desc: 'Dedicated views for admins, clinicians, and families. Everyone sees exactly what they need — nothing more.' },
-              { icon: '🔒', title: 'HIPAA-Ready Infrastructure',       desc: 'Built on enterprise-grade infrastructure with role-based access control and encrypted data at rest and in transit.' },
-              { icon: '📍', title: 'Multi-Location Support',           desc: 'Manage sessions across all your clinic locations from one dashboard. Staff, clients, and rooms all in one place.' },
+              { icon: 'calendar', title: 'Scheduling that matches',      desc: 'Matches each client to qualified, available staff and builds the recurring calendar, with conflict detection as you drag. Across every site you run.' },
+              { icon: 'pulse', title: 'Session data as it happens',  desc: 'Run the session in the app and record observations as they occur. Graphs and mastery are derived from that data, never typed in a second time.' },
+              { icon: 'chart', title: 'Assessments and reports',     desc: 'Structured assessments scored in place, with ABLLS-R, AFLS, ADL and MOTAS among the instruments supported. Reports build from the evidence recorded, and a clinician signs every one.' },
+              { icon: 'people', title: 'A portal families use',       desc: 'Upcoming sessions, progress, signed notes, and a funding statement that reconciles: total budget, spent to date, and every charge behind it.' },
+              { icon: 'credential', title: 'Credentials and training',    desc: 'Onboarding, training records and certificates, with a credential framework that tracks continuing education against whichever bodies your staff are registered with, counting one course toward each without inflating the total.' },
+              { icon: 'shield', title: 'Time, pay and privacy',       desc: 'Delivered sessions become hours and charges on their own. Overtime follows the work week your organization declares, and pay rules are configured per region rather than hard-coded to one.' },
             ].map((f, i) => (
-              <div key={f.title} className="feature-card reveal" style={{
-                background: off, borderRadius: 16,
-                padding: '1.75rem', border: `1px solid ${g100}`,
-                transitionDelay: `${(i % 3) * 90}ms`,
+              /* Not a card. Six short, parallel items in a list a person reads
+                 top to bottom do not each represent a discrete object, so a
+                 border and a fill around every one adds containment nobody
+                 needed and turns the section into a grid of boxes. A hairline
+                 rule and the type scale carry the same grouping with less
+                 furniture, and the icon sits inline with the title rather than
+                 in a 46px dark tile above it. */
+              <div key={f.title} className="feature-row reveal reveal-slide" style={{
+                transitionDelay: `${i * 70}ms`,
               }}>
-                <div aria-hidden="true" style={{
-                  width: 46, height: 46, borderRadius: 12, background: grad,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: '1.1rem', fontSize: '1.25rem',
-                }}>{f.icon}</div>
-                <h3 style={{ fontFamily: display, fontSize: '1rem', fontWeight: 700, color: navy, marginBottom: '.45rem' }}>{f.title}</h3>
+                <h3 style={{
+                  fontFamily: display, fontSize: '1rem', fontWeight: 600,
+                  color: navy, marginBottom: '.45rem',
+                  display: 'flex', alignItems: 'center', gap: '.6rem',
+                }}>
+                  <span style={{ color: teal }}><Icon name={f.icon as IconName} size={20} /></span>
+                  {f.title}
+                </h3>
                 <p style={{ fontSize: '.875rem', color: g700, lineHeight: 1.7 }}>{f.desc}</p>
               </div>
             ))}
@@ -442,77 +457,169 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
-      <section id="how" className="landing-section" style={{ background: off, fontFamily: body }}>
+      {/* ── WHAT IT REPLACES ──
+          Rows are capabilities; the middle column is the kind of system that
+          capability usually lives in. No competitor is named and none is said
+          to lack anything: the comparison is against the stack, which is what
+          a clinic is actually choosing between, and every Summit cell is
+          backed by something in the product rather than by a marketing claim. */}
+      <section id="compare" className="landing-section" style={{ background: '#fff', fontFamily: body }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <div style={{
+            fontFamily: display, fontSize: '.72rem', fontWeight: 600,
+            letterSpacing: '.1em', textTransform: 'uppercase', color: teal, marginBottom: '.7rem',
+          }}>What it replaces</div>
+          <h2 style={{
+            fontFamily: display, fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
+            letterSpacing: '-0.015em',
+            fontWeight: 600, color: navy, marginBottom: '.9rem', maxWidth: 620,
+          }}>
+            Most clinics run four or five systems. Here is what each one is for.
+          </h2>
+          <p style={{ fontSize: '1rem', color: g700, maxWidth: 560, marginBottom: '2.4rem', lineHeight: 1.7 }}>
+            The cost is rarely the licences. It is the reconciliation: the same client,
+            the same session and the same hour entered more than once, then compared by
+            hand at month end.
+          </p>
+
+          <div className="compare-wrap">
+            <table className="compare">
+              <caption className="visually-hidden">
+                Clinic capabilities, the kind of system each usually requires, and whether Summit covers it
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Capability</th>
+                  <th scope="col">Usually lives in</th>
+                  <th scope="col" className="compare-us">Summit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['Scheduling, matching and recurring calendars', 'Practice management'],
+                  ['Client records, contacts and service history', 'Practice management'],
+                  ['Session data captured as it happens', 'A separate data tool'],
+                  ['Programs, goals and progress graphs', 'A separate data tool'],
+                  ['Structured assessments and scoring', 'A separate data tool'],
+                  ['Clinical notes, signature and countersignature', 'Practice management'],
+                  ['Caseload review and documentation oversight', 'Spreadsheets'],
+                  ['Family portal with progress and statements', 'A separate portal, or email'],
+                  ['Funding allocations, spend and reconciliation', 'Accounting, plus spreadsheets'],
+                  ['Staff records, onboarding and training', 'An HR system'],
+                  ['Credentials and continuing education tracking', 'Spreadsheets'],
+                  ['Timesheets, approvals and overtime rules', 'A payroll system'],
+                  ['Hours, utilization and cost by service', 'Spreadsheets'],
+                ].map(([capability, lives]) => (
+                  <tr key={capability}>
+                    <th scope="row">{capability}</th>
+                    <td>{lives}</td>
+                    <td className="compare-us">
+                      <Icon name="check" size={18} />
+                      <span className="visually-hidden">Included in Summit</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row">Systems to run</th>
+                  <td>Four to five</td>
+                  <td className="compare-us"><b>One</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <p style={{ fontSize: '.8rem', color: g500, marginTop: '1.5rem', maxWidth: 620, lineHeight: 1.65 }}>
+            The middle column describes the category of product a capability normally
+            requires, not any particular vendor. Several suites cover more than one row,
+            and which rows they cover changes release to release.
+          </p>
+        </div>
+      </section>
+
+      {/* ── SESSION FLOW ──
+          Was three numbered paragraphs saying that a booking becomes hours, a
+          charge and a statement. Showing it is shorter and more convincing:
+          five pieces of real product UI lighting up in the order the data
+          actually moves. Scroll-linked rather than looping, so the reader sets
+          the pace and can stop on a stage. */}
+      <section id="how" style={{ background: off, fontFamily: body }}>
+        <SessionFlow />
+      </section>
+
+      {/* ── TRUST ──
+          This replaces a fabricated testimonial: "Sarah Chen, BCBA-D, Clinical
+          Director, Clarity ABA Clinic" was not a real person and not a real
+          clinic, quoted on a live public page as a customer endorsement.
+
+          What sits here instead is only what can be substantiated. Note what
+          is deliberately NOT claimed: no HIPAA badge (a US regime that does not
+          bind this product), no SOC 2, no "compliant" of any kind. Those are
+          audit outcomes, not design decisions, and a clinic's compliance
+          reviewer treats an unearned badge as a reason to distrust everything
+          next to it. Each line below describes something the schema actually
+          does. */}
+      <section id="trust" className="landing-section" style={{
+        background: ink, position: 'relative', fontFamily: body,
+      }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{
-            fontFamily: display, fontSize: '.72rem', fontWeight: 700,
-            letterSpacing: '.1em', textTransform: 'uppercase', color: teal, marginBottom: '.7rem',
-          }}>How it works</div>
+            fontFamily: display, fontSize: '.72rem', fontWeight: 600,
+            letterSpacing: '.1em', textTransform: 'uppercase',
+            color: 'rgba(255,255,255,.55)', marginBottom: '.7rem',
+          }}>How your data is held</div>
           <h2 style={{
-            fontFamily: display,
-            fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
-            fontWeight: 800, color: navy, marginBottom: '.9rem', maxWidth: 580,
+            fontFamily: display, fontSize: 'clamp(1.7rem,2.8vw,2.4rem)',
+            letterSpacing: '-0.015em',
+            fontWeight: 600, color: '#fff', marginBottom: '.9rem', maxWidth: 620,
           }}>
-            From intake to booked session in minutes
+            Built for organizations that answer for their records
           </h2>
-          <p style={{ fontSize: '1rem', color: g700, maxWidth: 540, marginBottom: '2.8rem' }}>
-            No training required. Summit guides your admin through each step with a simple, guided flow.
+          <p style={{
+            fontSize: '1rem', color: 'rgba(255,255,255,.72)',
+            maxWidth: 560, marginBottom: '2.8rem', lineHeight: 1.7,
+          }}>
+            Health data law differs by jurisdiction, and no badge on a marketing page
+            satisfies any of it. What follows is how the system is built, which is the
+            part a reviewer in any market can check.
           </p>
-          <div className="grid-3" style={{ display: 'grid', gap: '2rem' }}>
+
+          <div className="grid-3" style={{ display: 'grid', gap: '1.75rem' }}>
             {[
-              { n: '1', title: 'Add your clients & staff',  desc: 'Enter client profiles and staff availability. Summit learns who can see who, and when — automatically.' },
-              { n: '2', title: 'Run AI matching',            desc: 'Tell Summit the session type and parameters. It surfaces the best matches instantly, colour-coded by availability.' },
-              { n: '3', title: 'Confirm & go',               desc: 'Review the proposed schedule, drag to adjust if needed, then confirm. Recurring sessions booked in bulk automatically.' },
-            ].map((s, i) => (
-              <div key={s.n} className="reveal" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', transitionDelay: `${i * 120}ms` }}>
+              ['Every record belongs to one organization',
+               'Client, staff and clinical data are separated at the database level, not by a filter the application remembers to apply. A query from one organization cannot return another\u2019s rows.'],
+              ['People see what their role allows',
+               'Permissions are granted per action rather than per job title, so a scheduler can book without reading clinical notes, and whoever administers HR does not thereby see health information.'],
+              ['Findings trace back to their evidence',
+               'Where Summit summarizes or interprets, the underlying observations stay linked to the output. A clinician can follow any statement back to what it came from, and signs before it counts.'],
+              ['Clinical and HR stay apart',
+               'A supervisor reads their own supervisee\u2019s development plan, not a colleague\u2019s. Pay rates are narrower still: your own, or payroll\u2019s.'],
+              ['Corrections are recorded, not overwritten',
+               'Reconciled charges, approved time and issued documents are amended by adding a correcting entry. The original stays, so a figure can always be explained.'],
+              ['Signatures belong to the signer',
+               'Only the person a signature belongs to can record one. There is no path by which an administrator can sign on someone else\u2019s behalf.'],
+            ].map(([title, desc], i) => (
+              <div key={title} className="reveal" style={{ transitionDelay: `${i * 90}ms` }}>
                 <div style={{
-                  width: 54, height: 54, borderRadius: '50%',
-                  background: grad, color: '#fff',
-                  fontFamily: display, fontSize: '1.2rem', fontWeight: 800,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: '1.2rem',
-                  boxShadow: '0 4px 18px rgba(26,63,92,.28)',
-                }}>{s.n}</div>
-                <h3 style={{ fontFamily: display, fontSize: '1rem', fontWeight: 700, color: navy, marginBottom: '.45rem' }}>{s.title}</h3>
-                <p style={{ fontSize: '.875rem', color: g700, lineHeight: 1.7 }}>{s.desc}</p>
+                  width: 30, height: 2, background: '#6BC7BD', marginBottom: '1rem',
+                }} />
+                <div style={{
+                  fontFamily: display, fontSize: '1rem', fontWeight: 600,
+                  color: '#fff', marginBottom: '.5rem', lineHeight: 1.35,
+                }}>{title}</div>
+                <p style={{
+                  fontSize: '.875rem', color: 'rgba(255,255,255,.66)', lineHeight: 1.7,
+                }}>{desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── TESTIMONIAL ── */}
-      <section id="testimonials" className="testi-bg landing-section" style={{
-        background: '#0F2E3D',
-        position: 'relative', overflow: 'hidden',
-        fontFamily: body,
-      }}>
-        <div className="reveal" style={{ maxWidth: 780, margin: '0 auto', textAlign: 'center' }}>
-          <blockquote style={{
-            fontFamily: display,
-            fontSize: 'clamp(1.25rem,2.2vw,1.7rem)',
-            fontWeight: 600, color: '#fff', lineHeight: 1.55, marginBottom: '2rem',
-          }}>
-            &ldquo;We used to spend 4 hours a week building the schedule. With Summit, it&rsquo;s done in 20 minutes — and there are zero double bookings.&rdquo;
-          </blockquote>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
-            <div style={{
-              width: 46, height: 46, borderRadius: '50%', background: grad,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: display, fontWeight: 700, color: '#fff', fontSize: '.95rem',
-            }}>SC</div>
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontFamily: display, fontWeight: 700, color: '#fff', fontSize: '.9rem' }}>Sarah Chen, BCBA-D</div>
-              <div style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.6)' }}>Clinical Director, Clarity ABA Clinic</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* ── FINAL CTA ── */}
       <section id="trial" className="landing-section-lg" style={{
-        background: grad,
+        background: ink,
         textAlign: 'center', position: 'relative', overflow: 'hidden',
         fontFamily: body,
       }}>
@@ -520,16 +627,17 @@ export default function Home() {
           <h2 style={{
             fontFamily: display,
             fontSize: 'clamp(2rem,3.8vw,2.9rem)',
-            fontWeight: 800, color: '#fff', marginBottom: '1rem', lineHeight: 1.2,
+            letterSpacing: '-0.02em',
+            fontWeight: 600, color: '#fff', marginBottom: '1rem', lineHeight: 1.2,
           }}>
-            Ready to take your scheduling to the summit?
+            See what your clinic looks like connected.
           </h2>
           <p style={{ color: 'rgba(255,255,255,.75)', fontSize: '1.05rem', marginBottom: '2.5rem' }}>
-            Start your free trial today. Set up in under 10 minutes.
+            We will show you your own workflows in Summit, not a generic demo.
           </p>
           <a href="/signup" className="btn-primary" style={{
             background: '#fff', color: navy,
-            fontFamily: display, fontSize: '1rem', fontWeight: 700,
+            fontFamily: display, fontSize: '1rem', fontWeight: 600,
             padding: '.9rem 2.25rem', borderRadius: 10,
             display: 'inline-block',
             boxShadow: '0 4px 20px rgba(0,0,0,.14)',
@@ -551,14 +659,14 @@ export default function Home() {
           flexWrap: 'wrap', gap: '1rem',
         }}>
           <span style={{
-            fontFamily: display, fontWeight: 800,
+            fontFamily: display, fontWeight: 600,
             color: 'rgba(255,255,255,.6)', fontSize: '1rem', letterSpacing: '-.01em',
           }}>SUMMIT</span>
           <div style={{ display: 'flex', gap: '2rem' }}>
             {([
               ['Features','#features'],
               ['How it works','#how'],
-              ['Reviews','#testimonials'],
+              ['Security','#trust'],
               ['Contact','mailto:yanko@summitclient.io'],
               ['Privacy','/privacy'],
               ['Terms','/terms'],
@@ -616,11 +724,11 @@ function FeaturePill({ progress, index, glyph, title, sub }: {
       }}>
         <div style={{
           width: 38, height: 38, borderRadius: 11, flexShrink: 0,
-          background: 'linear-gradient(135deg,#28B4A6 0%,#21798A 55%,#1A3F5C 100%)',
+          background: '#0B2B31',
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.05rem',
         }}>{glyph}</div>
         <div>
-          <div style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontSize: '.95rem', fontWeight: 700, color: '#1A3F5C' }}>{title}</div>
+          <div style={{ fontFamily: "'Outfit',sans-serif", fontSize: '.95rem', fontWeight: 600, color: '#1A3F5C' }}>{title}</div>
           <div style={{ fontSize: '.75rem', color: '#7A9AAD' }}>{sub}</div>
         </div>
       </div>
@@ -656,10 +764,12 @@ function SessionCell({ progress, seq, type, lines }: {
   const scale = useTransform(progress, [start, mid, end], [1, 1.09, 1])
   const glow = useTransform(progress, [start, mid, end], [0, 1, 0])
 
+  // Flat fills. These encode service category, so they stay distinguishable
+  // by hue, and each is dark enough to carry white label text at AA.
   const bg =
-    type === 'teal' ? 'linear-gradient(135deg,#28B4A6,#219A8E)' :
-    type === 'blue' ? 'linear-gradient(135deg,#21798A,#1D6478)' :
-                      'linear-gradient(135deg,#e09c00,#c98d00)'
+    type === 'teal' ? '#0C5350' :
+    type === 'blue' ? '#254449' :
+                      '#8A5A12'
 
   return (
     <motion.div style={{
@@ -669,8 +779,8 @@ function SessionCell({ progress, seq, type, lines }: {
     }}>
       <div style={{
         height: '100%', borderRadius: 6, padding: '3px 5px',
-        fontSize: '.6rem', fontWeight: 700, color: '#fff',
-        fontFamily: "'Bricolage Grotesque',sans-serif", lineHeight: 1.3,
+        fontSize: '.6rem', fontWeight: 600, color: '#fff',
+        fontFamily: "'Outfit',sans-serif", lineHeight: 1.3,
         display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
         background: bg,
       }}>
