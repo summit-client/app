@@ -23,8 +23,8 @@ import { previewBackend, supabaseBackend, type HubBackend, type HubSnapshot } fr
 export { IS_PREVIEW };
 export * from "./hub-types";
 import type {
-  AuditEvent, Certificate, EmployeeProfile, PdRecord, PendingSignoff, TaskProgress,
-  TaskStatus, TimeOffRequest, TrainingRecord,
+  AuditEvent, Certificate, EmployeeProfile, PdRecord, PendingCertificate, PendingPd, PendingSignoff,
+  PendingTimeOff, TaskProgress, TaskStatus, TeamMember, TimeOffRequest, TrainingRecord,
 } from "./hub-types";
 
 export const ONBOARDING_CERT_TITLE = "New Team Member Onboarding";
@@ -311,6 +311,30 @@ export async function listPendingSignoffs(): Promise<PendingSignoff[]> {
   return be().listPendingSignoffs();
 }
 
+/** Onboarding certificates earned but not yet issued, across the caller's
+ *  manageable scope. Same shape/reasoning as listPendingSignoffs(). */
+export async function listPendingCertificatesToIssue(): Promise<PendingCertificate[]> {
+  return be().listPendingCertificatesToIssue();
+}
+
+/** Time-off requests still awaiting a decision, across the caller's
+ *  manageable scope. Same shape/reasoning as listPendingSignoffs(). */
+export async function listPendingTimeOffRequests(): Promise<PendingTimeOff[]> {
+  return be().listPendingTimeOffRequests();
+}
+
+/** PD records not yet verified, across the caller's manageable scope. Same
+ *  shape/reasoning as listPendingSignoffs(). */
+export async function listPendingPdVerifications(): Promise<PendingPd[]> {
+  return be().listPendingPdVerifications();
+}
+
+/** Everyone in the caller's manageable scope, for the admin console's Team
+ *  Directory - see HubBackend.listTeamDirectory. */
+export async function listTeamDirectory(): Promise<TeamMember[]> {
+  return be().listTeamDirectory();
+}
+
 /**
  * Supervisor/admin sign-off: AWAITING_SIGNOFF → COMPLETED, recorded.
  *
@@ -389,13 +413,22 @@ export async function addPd(entry: Omit<PdRecord, "id" | "verified">): Promise<v
   changed();
 }
 
+/**
+ * Verify a PD record. The loaded snapshot (`s.pd`) is always the CALLER's own,
+ * never the subject's - guarding on it before writing (the old behaviour)
+ * meant verifying someone else's PD record found no matching local row and
+ * returned early without ever calling the backend, so the button silently did
+ * nothing for every cross-employee verification, which is the only kind the
+ * admin queue produces (see signOffTask()'s comment for the original version
+ * of this bug). Now the write always happens; the local snapshot is only
+ * patched when the caller happened to verify their own record.
+ */
 export async function verifyPd(id: string): Promise<void> {
   const s = requireSnap();
-  const r = s.pd.find((x) => x.id === id);
-  if (!r) return;
   await be().verifyPd(id);
-  r.verified = true;
-  await audit("pd.verified", r.title);
+  const r = s.pd.find((x) => x.id === id);
+  if (r) r.verified = true;
+  await audit("pd.verified", r?.title ?? id);
   changed();
 }
 
@@ -441,14 +474,25 @@ export function pendingOnboardingCertificates(
   return earned.filter((e) => !held.has(e.title));
 }
 
-/** Issue an earned onboarding certificate. Manager-only, enforced in the
- *  database by hub_issue_certificate() -> hub_can_manage(); the button that
- *  calls this is inside a HubGate that already requires SUPERVISOR or ADMIN,
- *  but the gate that matters is the one the browser cannot reach past. */
-export async function issueOnboardingCertificate(title: string, competency: string): Promise<void> {
+/**
+ * Issue an earned onboarding certificate. Manager-only, enforced in the
+ * database by hub_issue_certificate() -> hub_can_manage(); the button that
+ * calls this is inside a HubGate that already requires SUPERVISOR or ADMIN,
+ * but the gate that matters is the one the browser cannot reach past.
+ *
+ * `userId` defaults to the caller's own id, so every existing call site (the
+ * employee's own onboarding screen, and this file's test suite) keeps issuing
+ * to themselves unchanged. The admin console's clinic-wide "Certificates to
+ * issue" queue passes the actual subject explicitly - before this parameter
+ * existed, every click there issued the certificate to the ADMIN who clicked
+ * it, not the employee who earned it, because this function silently
+ * hardcoded s.profile.id regardless of which row's button fired it.
+ */
+export async function issueOnboardingCertificate(title: string, competency: string, userId?: string): Promise<void> {
   const s = requireSnap();
-  const cert = await be().issueOnboardingCertificate(s.profile.id, title, competency);
-  if (cert && !s.certificates.some((c) => c.id === cert.id)) s.certificates.unshift(cert);
+  const subject = userId ?? s.profile.id;
+  const cert = await be().issueOnboardingCertificate(subject, title, competency);
+  if (subject === s.profile.id && cert && !s.certificates.some((c) => c.id === cert.id)) s.certificates.unshift(cert);
   await audit("certificate.issued", title);
   changed();
 }
@@ -466,13 +510,16 @@ export async function requestTimeOff(req: Omit<TimeOffRequest, "id" | "status" |
   changed();
 }
 
+/** Same "always write, patch local snapshot only if it's the caller's own row"
+ *  shape as verifyPd() above and signOffTask(), for the same reason: the admin
+ *  queue decides other people's requests, which are never in the caller's own
+ *  loaded snapshot. */
 export async function decideTimeOff(id: string, decision: "APPROVED" | "DENIED" | "CANCELLED"): Promise<void> {
   const s = requireSnap();
-  const r = s.timeOff.find((x) => x.id === id);
-  if (!r) return;
   await be().decideTimeOff(id, decision);
-  r.status = decision;
-  await audit("timeoff.decided", `${r.type} ${r.startDate} → ${decision}`);
+  const r = s.timeOff.find((x) => x.id === id);
+  if (r) r.status = decision;
+  await audit("timeoff.decided", r ? `${r.type} ${r.startDate} → ${decision}` : `time-off ${id} → ${decision}`);
   changed();
 }
 

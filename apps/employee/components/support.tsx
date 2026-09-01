@@ -17,9 +17,19 @@ export function SupportButton() {
 
   const send = () => {
     const to = String(getSetting("support.devEmail"));
-    const subject = encodeURIComponent(`[MySummitHR] ${kind}`);
+    // "MySummitHR" is this app's own product name, not this clinic's - see
+    // docs/context/product.md's multi-tenant-readiness item 8. org.name
+    // already exists in the settings registry and is readable here (this
+    // component is "use client", unlike app/layout.tsx's title/brand text -
+    // see the comment there before doing the same conversion there). Falls
+    // back to the literal product name only if org.name is ever genuinely
+    // empty; it isn't for Mount Etna today, since the settings registry
+    // seeds it with their real name as the default.
+    const orgName = String(getSetting("org.name") ?? "").trim();
+    const brand = orgName ? `${orgName} HR` : "MySummitHR";
+    const subject = encodeURIComponent(`[${brand}] ${kind}`);
     const body = encodeURIComponent(
-      `${detail}\n\n---\nPage: ${pathname}\nWhen: ${new Date().toISOString()}\nModule: MySummitHR (apps/employee)`,
+      `${detail}\n\n---\nPage: ${pathname}\nWhen: ${new Date().toISOString()}\nModule: ${brand} (apps/employee)`,
     );
     window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
     setOpen(false);
