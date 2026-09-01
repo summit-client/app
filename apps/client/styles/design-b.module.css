@@ -525,6 +525,22 @@
   background: var(--good-soft);
 }
 
+/* pages/documents.tsx - reuses .noteBadge's shape (same pill) with two new
+   tones so a document's direction reads at a glance: something the clinic
+   shared (info, matches .noteBadgeSigned's tone) vs. something the family
+   sent back (good, matches .noteBadgeCountersigned's tone) - not because
+   the two pages are related, just because the same two tones already exist
+   and clear AA on this surface (root CLAUDE.md's design-system note). */
+.docBadgeFromClinic {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.docBadgeFromYou {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
 /* components/calendar-month.tsx - the Calendar view toggle on
    pages/appointments.tsx. Reuses .filterButton/.filterButtonActive
    (defined above) for the List/Calendar toggle itself, so this only
