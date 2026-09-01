@@ -1599,7 +1599,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         setBooking(false);
         // The fresh pre-check above closes the overwhelming majority of
         // cases, but not a write racing another one within this same round
-        // trip - migration 0041's DB constraint is what catches that. See
+        // trip - migration 0042's DB constraint is what catches that. See
         // lib/checkSlotConflict.ts's isBookingConflictError.
         setError(isBookingConflictError(err)
           ? "One of these slots was just booked by someone else - please review and try again."
@@ -1672,7 +1672,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       });
       if (err) {
         setBooking(false);
-        // Same reasoning as handleConfirmAndBook above - migration 0041's DB
+        // Same reasoning as handleConfirmAndBook above - migration 0042's DB
         // constraint is the backstop for a write that races another one
         // within this same round trip, past the fresh pre-check above.
         setError(isBookingConflictError(err)
@@ -1775,7 +1775,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         if (err) {
           setBooking(false);
           // Same reasoning as handleConfirmAndBook/insertQuickSlot above -
-          // migration 0041's DB constraint is the backstop past the fresh
+          // migration 0042's DB constraint is the backstop past the fresh
           // pre-check for a write that races another one within this same
           // round trip.
           setError(isBookingConflictError(err)
@@ -2625,7 +2625,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
     setRescheduleSaving(false);
     if (err) {
       // Same reasoning as the other write sites in this file - migration
-      // 0041's DB constraint is the backstop for a write that races another
+      // 0042's DB constraint is the backstop for a write that races another
       // one within this same round trip, past the fresh pre-check above.
       setRescheduleError(isBookingConflictError(err)
         ? "That slot was just booked by someone else - pick another time."

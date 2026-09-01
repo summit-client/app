@@ -1,4 +1,4 @@
--- 0041 · Close the double-booking race on `sessions` at the database level
+-- 0042 · Close the double-booking race on `sessions` at the database level
 --
 -- BLOCKED-scheduler.md item 1: nothing in `sessions` prevented two rows from
 -- sharing the same employee_id + session_date + hour + minute (an exact
