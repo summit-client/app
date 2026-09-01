@@ -202,6 +202,65 @@
   .set-control { width: 100%; }
 }
 
+/* Caseload calendar (app/caseload's Calendar view) ---------------------------
+   Read-only agenda cells, not apps/scheduler's editable hour-grid — see
+   components/caseload-calendar.tsx's own header for why. */
+.caseload-cal-week {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-2);
+  align-items: start;
+}
+.caseload-cal-day { padding: 10px; min-height: 160px; display: flex; flex-direction: column; gap: 8px; }
+.caseload-cal-day.is-today { border-color: var(--accent); }
+.caseload-cal-day-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+}
+.caseload-cal-day-body { display: flex; flex-direction: column; gap: 6px; }
+.caseload-cal-day-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%; font-size: 12px; color: var(--ink);
+}
+.caseload-cal-day-num.is-today { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+.caseload-cal-chip {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px;
+  padding: 6px 8px; border-radius: var(--radius-sm); background: var(--surface-2);
+  border: 1px solid var(--line); font-size: var(--text-xs); color: var(--ink);
+}
+.caseload-cal-chip:hover { border-color: var(--line-strong); background: var(--accent-tint); }
+.caseload-cal-chip-time { font-variant-numeric: tabular-nums; color: var(--muted); flex: none; }
+.caseload-cal-chip-client { font-weight: 600; }
+.caseload-cal-chip-type { color: var(--muted); }
+.caseload-cal-chip-pill { margin-left: auto; font-size: 10px; padding: 1px 7px; }
+
+.caseload-cal-month {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden;
+}
+.caseload-cal-month-hd {
+  padding: 6px 0; text-align: center; font-size: 11px; font-weight: 700; color: var(--muted);
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
+.caseload-cal-month-cell {
+  min-height: 92px; padding: 6px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  background: var(--surface); display: flex; flex-direction: column; gap: 3px;
+}
+.caseload-cal-month-cell.is-out { background: var(--surface-2); opacity: 0.55; }
+.caseload-cal-month-chip {
+  display: flex; gap: 4px; align-items: baseline; font-size: 10.5px; padding: 1.5px 4px; border-radius: 4px;
+  background: var(--accent-soft); color: var(--ink); overflow: hidden;
+}
+.caseload-cal-month-chip-time { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+.caseload-cal-month-more { border: 0; background: none; padding: 0; font-size: 10.5px; color: var(--accent); cursor: pointer; text-align: left; }
+
+@media (max-width: 820px) {
+  .caseload-cal-week { grid-template-columns: 1fr; }
+  .caseload-cal-month { grid-template-columns: repeat(7, minmax(34px, 1fr)); }
+  .caseload-cal-month-hd { font-size: 9px; padding: 4px 0; }
+  .caseload-cal-month-cell { min-height: 64px; padding: 3px; }
+  .caseload-cal-month-chip span:last-child { display: none; } /* time only once cells are this narrow */
+}
+
 /* Export to PDF ------------------------------------------------------------- */
 /* Print sheets live in a body-level portal, invisible on screen. During
    print-mode only the active sheet renders — always black on white,

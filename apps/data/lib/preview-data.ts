@@ -1,4 +1,4 @@
-import type { ClientRow, Program, ScheduledSession } from "./types";
+import type { CaseloadSession, ClientRow, Program, ScheduledSession } from "./types";
 
 /**
  * DEV PREVIEW fixtures — loaded when NEXT_PUBLIC_DEV_PREVIEW=1 so every screen
@@ -109,3 +109,38 @@ function today(): string {
 function daysAgo(n: number): string {
   return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 }
+
+function daysFromNow(n: number): string {
+  return new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * A wider fixture than `previewSessions` above (which the "Today" tile deck
+ * intentionally keeps to one day's worth of rows) — the caseload calendar
+ * needs a full week/month of sessions across more than one client to
+ * demonstrate it's actually reading a caseload, not one client's schedule.
+ * Spans last week through next month so every mode (week, month) has
+ * something to show regardless of what day this is run on. Times are on the
+ * grid; clientId/type reuse previewClients/previewSessions' own values so a
+ * click-through to a client record (if ever added) resolves to a real
+ * preview client.
+ */
+export const previewCaseloadSessions: CaseloadSession[] = [
+  { id: 9001, clientId: 101, clientName: "Arjun S.", date: today(), hour: 9, minute: 0, time: "9:00 AM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9002, clientId: 102, clientName: "Maya T.", date: today(), hour: 11, minute: 0, time: "11:00 AM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9003, clientId: 101, clientName: "Arjun S.", date: today(), hour: 14, minute: 0, time: "2:00 PM", type: "Parent Coaching", status: "scheduled" },
+  { id: 9004, clientId: 103, clientName: "Leo K.", date: daysAgo(2), hour: 10, minute: 30, time: "10:30 AM", type: "Direct Therapy", status: "completed" },
+  { id: 9005, clientId: 102, clientName: "Maya T.", date: daysAgo(1), hour: 9, minute: 0, time: "9:00 AM", type: "Direct Therapy", status: "completed" },
+  { id: 9006, clientId: 104, clientName: "Sofia R.", date: daysAgo(1), hour: 13, minute: 0, time: "1:00 PM", type: "Caregiver Training", status: "no_show" },
+  { id: 9007, clientId: 101, clientName: "Arjun S.", date: daysFromNow(1), hour: 9, minute: 0, time: "9:00 AM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9008, clientId: 103, clientName: "Leo K.", date: daysFromNow(1), hour: 11, minute: 0, time: "11:00 AM", type: "Intake Assessment", status: "scheduled" },
+  { id: 9009, clientId: 102, clientName: "Maya T.", date: daysFromNow(2), hour: 9, minute: 0, time: "9:00 AM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9010, clientId: 104, clientName: "Sofia R.", date: daysFromNow(2), hour: 15, minute: 30, time: "3:30 PM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9011, clientId: 101, clientName: "Arjun S.", date: daysFromNow(3), hour: 9, minute: 0, time: "9:00 AM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9012, clientId: 102, clientName: "Maya T.", date: daysFromNow(3), hour: 13, minute: 0, time: "1:00 PM", type: "Parent Coaching", status: "scheduled" },
+  { id: 9013, clientId: 103, clientName: "Leo K.", date: daysFromNow(4), hour: 10, minute: 0, time: "10:00 AM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9014, clientId: 101, clientName: "Arjun S.", date: daysFromNow(4), hour: 14, minute: 30, time: "2:30 PM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9015, clientId: 104, clientName: "Sofia R.", date: daysFromNow(7), hour: 9, minute: 0, time: "9:00 AM", type: "Caregiver Training", status: "scheduled" },
+  { id: 9016, clientId: 102, clientName: "Maya T.", date: daysFromNow(10), hour: 11, minute: 0, time: "11:00 AM", type: "Direct Therapy", status: "scheduled" },
+  { id: 9017, clientId: 101, clientName: "Arjun S.", date: daysFromNow(14), hour: 9, minute: 0, time: "9:00 AM", type: "Direct Therapy", status: "scheduled" },
+];

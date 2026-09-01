@@ -138,7 +138,19 @@ function PillFilterMenu<T extends string | number>({
       onMouseEnter={hover.onMouseEnter}
       onMouseLeave={hover.onMouseLeave}
     >
-      <button onClick={() => setOpen((v) => !v)} style={triggerStyle(selected.size > 0)}>
+      {/* setOpen(true), not a toggle - reaching this button with a mouse
+          means the pointer already crossed the wrapper and fired
+          onMouseEnter, which opened the panel via hover-intent above. A
+          toggle here then immediately flips that back to closed as part of
+          the very same click, before either state update ever paints -
+          React batches them - so the panel never visibly opens at all. A
+          real click always looks like nothing happened; only a
+          hover-without-clicking, or a click reached without crossing the
+          wrapper first (keyboard Tab+Enter, most touch browsers), avoided
+          it. Idempotent open is still correct for those paths, and closing
+          is already covered by outside-click, Escape, and the hover-leave
+          delay - this button doesn't need to also close it. */}
+      <button onClick={() => setOpen(true)} style={triggerStyle(selected.size > 0)}>
         {label} {selected.size > 0 && <span style={countBadge}>{selected.size}</span>}
       </button>
       {open && (
@@ -259,7 +271,12 @@ export function CalendarPicker({
 
   return (
     <div ref={ref} style={{ position: "relative" }} onMouseEnter={hover.onMouseEnter} onMouseLeave={hover.onMouseLeave}>
-      <button onClick={() => setOpen((v) => !v)} style={triggerStyle(selectedId != null)}>
+      {/* setOpen(true), not a toggle - see PillFilterMenu's identical
+          button above for why a toggle here makes a real mouse click a
+          no-op (hover-intent already opened it by the time the click
+          fires; toggling then immediately re-closes it in the same
+          batch). */}
+      <button onClick={() => setOpen(true)} style={triggerStyle(selectedId != null)}>
         {selected ? selected.name : "All calendars"}
       </button>
       {open && (
