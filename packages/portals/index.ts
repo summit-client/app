@@ -26,6 +26,13 @@
  * below becomes the default a per-org row overrides, which is a substitution
  * rather than a refactor. That is why this is its own package and not folded
  * into whichever consumer happened to need it first.
+ *
+ * Phase 2, landed: `portalsFor()` below takes an optional org override (read
+ * from @summit/settings' `nav.visiblePortals` by the caller — this package
+ * stays free of Supabase so a server-side redirect can still import it as
+ * cheaply as before). The override can only ever narrow ACCESS, never widen
+ * it, and an absent/empty override reproduces today's role-only behavior
+ * exactly. See `portalsFor` and `parseVisiblePortals` for the shape.
  */
 
 export type PortalKey = "scheduler" | "clinician" | "employee" | "client";
@@ -223,9 +230,45 @@ export function isKnownOrigin(url: string): boolean {
   });
 }
 
-/** The portals a role may use, in display order. Drives the portal bar. */
-export function portalsFor(role: AppRole | null | undefined): readonly Portal[] {
-  return PORTALS.filter((p) => admits(p.key, role));
+/**
+ * The portals a role may use, in display order. Drives the portal bar.
+ *
+ * `orgVisibleKeys` is an optional org-level override — @summit/settings'
+ * `nav.visiblePortals`, already parsed by `parseVisiblePortals()` — that
+ * FURTHER RESTRICTS the role-based list. It can never grant a portal ACCESS
+ * doesn't already admit for this role: it is intersected with the role's
+ * list, never unioned with it. Omitting it, or passing `null`/an empty
+ * array, reproduces exactly what this function returned before the
+ * parameter existed — no org has ever set the value yet, so every caller
+ * that doesn't pass one is unaffected by design, not by coincidence.
+ */
+export function portalsFor(
+  role: AppRole | null | undefined,
+  orgVisibleKeys?: readonly PortalKey[] | null,
+): readonly Portal[] {
+  const base = PORTALS.filter((p) => admits(p.key, role));
+  if (!orgVisibleKeys || orgVisibleKeys.length === 0) return base;
+  const allowed = new Set(orgVisibleKeys);
+  return base.filter((p) => allowed.has(p.key));
+}
+
+/**
+ * Parses @summit/settings' `nav.visiblePortals` (a comma-separated list of
+ * `PortalKey`s, same encoding as `calendar.workDays`) into the array
+ * `portalsFor`'s second argument expects. Unknown tokens are dropped rather
+ * than throwing — a stale key from a future/rolled-back portal shouldn't
+ * break the whole nav bar. Returns `null` for anything that resolves to "no
+ * override" (unset, blank, or every token unknown), which is exactly what
+ * `portalsFor` treats as "show the role's full default list" — so a caller
+ * can always pass this straight through without an extra null check.
+ */
+export function parseVisiblePortals(raw: string | null | undefined): readonly PortalKey[] | null {
+  if (!raw) return null;
+  const keys = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is PortalKey => (PORTAL_KEYS as readonly string[]).includes(s));
+  return keys.length > 0 ? keys : null;
 }
 
 /**

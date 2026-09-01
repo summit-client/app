@@ -14,11 +14,11 @@
 
 import * as React from "react";
 import { AppNav } from "@summit/nav";
-import { signOutUrl } from "@summit/portals";
+import { parseVisiblePortals, signOutUrl } from "@summit/portals";
 import {
   explainProblem, gate, getIdentity, refreshIdentity, type Identity,
 } from "@summit/session";
-import { initSettings, refreshSettings } from "@summit/settings";
+import { getSetting, initSettings, onSettingsChange, refreshSettings } from "@summit/settings";
 
 interface Ctx { identity: Identity | null; loading: boolean; reload: () => void }
 
@@ -80,8 +80,28 @@ export function SessionGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** The cross-portal bar, with the viewer's role once it resolves. */
+/**
+ * The cross-portal bar, with the viewer's role once it resolves.
+ *
+ * `nav.visiblePortals` (@summit/settings, "Navigation" section) is read
+ * fully synchronously the same way every other setting is - {} / defaults
+ * until initSettings() resolves (SessionProvider above already calls it),
+ * the real value after. No org has ever set this, so getSetting() returns
+ * its default ("") and parseVisiblePortals("") is `null` - portalsFor()'s
+ * "no override" case, identical to this bar's behavior before this prop
+ * existed.
+ */
 export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
   const { identity } = useSession();
-  return <AppNav {...props} role={identity?.appRole} signOutHref={signOutUrl()} />;
+  const [, force] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => onSettingsChange(() => force()), []);
+  const visiblePortals = parseVisiblePortals(String(getSetting("nav.visiblePortals")));
+  return (
+    <AppNav
+      {...props}
+      role={identity?.appRole}
+      visiblePortals={visiblePortals}
+      signOutHref={signOutUrl()}
+    />
+  );
 }

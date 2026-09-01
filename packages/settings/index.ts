@@ -218,6 +218,16 @@ export const SETTINGS: SettingDef[] = [
   { key: "calendar.gridIncrementMinutes", label: "Default scheduling increment (minutes)", description: "Org-wide default snap increment for creating and dragging sessions. A session type can override this for itself.", section: "calendar", scope: "org", type: "select", options: sel("5", "10", "15", "30"), default: "15", keywords: ["increment", "snap", "granularity"] },
   { key: "calendar.dragSnapMinutes", label: "Drag snap increment (minutes)", description: "Personal preference for how finely dragging a session snaps on the calendar. Independent of the org's default scheduling increment.", section: "calendar", scope: "user", userOverridable: true, type: "select", options: sel("5", "10", "15", "30"), default: "15", keywords: ["drag", "snap"] },
 
+  /* Navigation — portal visibility. Sidebar module order/pin/hide
+     (localStorage, "summit-nav-hidden") is a separate, still-local
+     mechanism — see apps/data/components/portal-chrome.tsx's PortalNav.
+     This key alone drives @summit/portals' portalsFor() override: parsed by
+     parseVisiblePortals() into PortalKey[] and passed in by whichever
+     screen renders <AppNav>. It can only ever narrow a role's default
+     portal list, never widen it, and empty/unset (the only state any real
+     org is in today) reproduces the unfiltered list exactly. */
+  { key: "nav.visiblePortals", label: "Visible portals", description: "Comma-separated portal keys (scheduler, clinician, employee, client) to show in the cross-portal bar. Narrows what a role would otherwise see there — it can never grant access a role doesn't already have. Leave blank to show every portal the role is normally admitted to.", section: "navigation", scope: "org", type: "text", default: "", keywords: ["portals", "sidebar", "modules", "visibility"] },
+
   /* Client Portal */
   { key: "portal.sessionSummaries", label: "Families can view session summaries", section: "client-portal", scope: "org", type: "toggle", default: true, keywords: ["family", "portal"] },
   { key: "portal.graphs", label: "Families can view progress graphs", section: "client-portal", scope: "org", type: "toggle", default: true },

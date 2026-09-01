@@ -10,8 +10,9 @@
 
 import * as React from "react";
 import { AppNav } from "@summit/nav";
-import { signOutUrl } from "@summit/portals";
+import { parseVisiblePortals, signOutUrl } from "@summit/portals";
 import { getIdentity, type AppRole } from "@summit/session";
+import { getSetting, onSettingsChange } from "@summit/settings";
 
 export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
   const [role, setRole] = React.useState<AppRole | null | undefined>(undefined);
@@ -31,7 +32,26 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
   // whether the link is offered, that gate is what actually enforces it.
   const showAdminLink = role === "admin" || role === "supervisor" || role === "scheduler";
 
+  // `nav.visiblePortals` (@summit/settings, "Navigation" section). PortalBar
+  // sits outside <SessionProvider> (see file header), but the settings
+  // cache and its onSettingsChange listeners are module-level, not scoped
+  // to that provider, so this still picks up the real value once whichever
+  // component calls initSettings() resolves it - same "flash of defaults,
+  // then real value" trade-off @summit/settings' own doc comment describes.
+  // No org has set this yet, so today getSetting() always returns its
+  // default ("") and parseVisiblePortals("") is `null` - portalsFor()'s
+  // "no override" case, i.e. today's exact behavior.
+  const [, force] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => onSettingsChange(() => force()), []);
+  const visiblePortals = parseVisiblePortals(String(getSetting("nav.visiblePortals")));
+
   return (
-    <AppNav {...props} role={role} adminHref={showAdminLink ? "/admin" : undefined} signOutHref={signOutUrl()} />
+    <AppNav
+      {...props}
+      role={role}
+      visiblePortals={visiblePortals}
+      adminHref={showAdminLink ? "/admin" : undefined}
+      signOutHref={signOutUrl()}
+    />
   );
 }

@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useReducer } from "react";
 import "../styles/globals.css";
 import { useUser } from "../lib/useUser";
 import { UserContext } from "../lib/UserContext";
 import { explainProblem } from "../lib/explainProblem";
 import { AppNav } from '@summit/nav';
-import { initSettings } from "@summit/settings";
+import { parseVisiblePortals } from "@summit/portals";
+import { getSetting, initSettings, onSettingsChange } from "@summit/settings";
 
 export default function App({ Component, pageProps }) {
   const { user, problem, loading, signOut } = useUser();
@@ -15,6 +16,15 @@ export default function App({ Component, pageProps }) {
   // timing @summit/settings' own doc comment asks for (see apps/data and
   // apps/employee's SessionProvider).
   useEffect(() => { if (user) void initSettings(); }, [user]);
+
+  // `nav.visiblePortals` (@summit/settings, "Navigation" section) - an
+  // org-level override AppNav uses to further restrict this role's portal
+  // pills. No org has set this yet, so getSetting() returns its default
+  // ("") and parseVisiblePortals("") is `null` - the "no override" case,
+  // i.e. today's exact behavior. See @summit/portals' portalsFor().
+  const [, forceNav] = useReducer((n) => n + 1, 0);
+  useEffect(() => onSettingsChange(forceNav), []);
+  const visiblePortals = parseVisiblePortals(String(getSetting("nav.visiblePortals")));
 
   if (loading) return <div style={{ padding: 40, fontFamily: "Inter, sans-serif" }}>Loading...</div>;
 
@@ -28,7 +38,7 @@ export default function App({ Component, pageProps }) {
     const { title, detail } = explainProblem(problem);
     return (
       <>
-        <AppNav activeKey="scheduler" role={user?.role} />
+        <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} />
         <div style={{ maxWidth: 640, margin: "48px auto", padding: "0 24px", fontFamily: "Inter, sans-serif" }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{title}</h1>
           <p style={{ color: "#6B7280", fontSize: 15 }}>{detail}</p>
@@ -39,7 +49,7 @@ export default function App({ Component, pageProps }) {
 
   return (
     <>
-      <AppNav activeKey="scheduler" role={user?.role} />
+      <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} />
       <UserContext.Provider value={user}>
         <Component {...pageProps} signOut={signOut} />
       </UserContext.Provider>
