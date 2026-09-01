@@ -231,3 +231,54 @@ against sessions with special characters and a title long enough to force
 RFC 5545 line folding, and the calendar-grid math against 6 months
 including a leap-year February and a 6-week grid case. See each commit
 for the actual verification output.
+
+---
+
+## Round 5 (`feat/client-document-center`) — Documents built
+
+Round 3's "Documents — not built" item above is superseded: a
+`documents`-table and Storage-bucket did not exist when that pass ran, and
+now do (as of this round), so the blocker it described no longer applies.
+
+Built `pages/documents.tsx` (list + download of documents shared by the
+clinic, plus an upload control for the family to send signed paperwork
+back), `lib/documents.ts` (bucket name, upload-path convention, size cap),
+`lib/supabase-browser.ts` (this app's first browser-side Supabase client -
+upload is also this app's first mutation of any kind; disabled entirely
+while `isAdminViewingAs`, matching `lib/admin-view-as.ts`'s read-only-
+support-session design), and migration `0035_client_documents.sql`
+(`client_documents` table + RLS, clinic-wide staff / own-record-only
+family, same split as 0020/0023).
+
+**Migration 0035 is not applied, and the Storage bucket it depends on does
+not exist, as of this round.** The Supabase MCP available to this session
+is read-only (root CLAUDE.md), so both are logged for a human, in the
+migration file's own trailing comment and in the PR description:
+
+1. Run migration `0035` against the live database.
+2. Create a Storage bucket named `client-documents`, **private** - table
+   RLS on `client_documents` governs the metadata row only; the bucket and
+   its `storage.objects` policies are a wholly separate permission system
+   this migration cannot set up.
+3. Add the `storage.objects` RLS policies the migration's footer suggests
+   (staff clinic-wide, family own-`client_id`-only, matching the table's
+   split), scoped to the `{clinic_id}/{client_id}/{filename}` path
+   convention `lib/documents.ts`'s `buildDocumentPath()` writes.
+
+Until all three are done: the page still renders correctly (verified by
+reading the code path, not a live render - see below) - the document list
+loads empty (or errors if the table itself doesn't exist yet) rather than
+crashing, every "Download" link degrades to a "Download link unavailable
+right now" notice plus one central banner instead of a broken link per row
+(`storageUnavailable` in `getServerSideProps`), and the upload form is
+disabled with an inline explanation rather than failing silently.
+
+Verified without a live Supabase project or a browser, same limitation
+every prior round in this file notes (no `.env.local` in this worktree, no
+reachable Supabase project) - `pnpm turbo build --filter=@summit/client`
+(includes a full `tsc` pass; Next 16 does not skip type-checking on this
+app's `next.config.mjs`) and a manual read-through of every branch in
+`getServerSideProps` and the upload handler against the RLS policies
+migration `0035` defines. **Flagging for a human with a live project**:
+confirm the three setup steps above, then actually exercise the upload/
+download round trip with a test file - this round could not.
