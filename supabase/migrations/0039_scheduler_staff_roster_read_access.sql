@@ -1,4 +1,4 @@
--- 0035 · Staff roster read access for the clinical roles, for the mutual
+-- 0039 · Staff roster read access for the clinical roles, for the mutual
 -- schedule-visibility overlay
 --
 -- WHAT THIS IS FOR

@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0035 · Home-program activities — the "between-session homework" a
+-- 0038 · Home-program activities — the "between-session homework" a
 -- clinician assigns a client's family, tied to that client's existing goals
 -- (`programs`, migration 0001) where relevant rather than a parallel goal
 -- concept. Two-sided by design: apps/data gets a clinician-facing assignment
