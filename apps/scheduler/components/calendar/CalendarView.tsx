@@ -31,6 +31,7 @@ import { MonthGrid } from "./MonthGrid";
 import { FilterPanel, CalendarPicker, CalendarFilters, emptyFilters, activeFilterCount, matchesFilters } from "./FilterPanel";
 import { RecurringIcon } from "./icons";
 import { RescheduleModal } from "./RescheduleModal";
+import { SessionDetail } from "./SessionDetail";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { sessionGridIncrement, sessionDuration } from "./types";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../../lib/checkSlotConflict";
@@ -89,6 +90,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const [filters, setFilters] = React.useState<CalendarFilters>(emptyFilters());
   const [selected, setSelected] = React.useState<CalSession | null>(null);
   const [rescheduling, setRescheduling] = React.useState<CalSession | null>(null);
+  const [rescheduleInitialSlot, setRescheduleInitialSlot] = React.useState<{ dateStr: string; hour: number; minute: number } | null>(null);
   const [, forceTick] = React.useState(0);
 
   // Applied once on mount only (empty dep array - this component remounts
@@ -558,10 +560,12 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
       {selected && (
         <SessionDetail
-          session={selected} clients={clients} employees={employees} locations={locations} typeColors={typeColors}
+          session={selected} clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors}
           isDraft={draftSessionIds.has(selected.id)}
+          staffAvailability={staffAvailability} clientAvailability={clientAvailability}
+          clinicId={clinicId} workStartHour={workStartHour} workEndHour={workEndHour} incrementMinutes={orgIncrementMinutes}
           onClose={() => setSelected(null)}
-          onReschedule={() => { setRescheduling(selected); setSelected(null); }}
+          onReschedule={(proposedSlot) => { setRescheduleInitialSlot(proposedSlot || null); setRescheduling(selected); setSelected(null); }}
           onCancelled={() => { setSelected(null); void loadRange(); showToast("Session cancelled"); }}
         />
       )}
@@ -590,8 +594,9 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           liveSessions={liveSessions} staffAvailability={staffAvailability} clientAvailability={clientAvailability}
           clinicId={clinicId}
           workStartHour={workStartHour} workEndHour={workEndHour} orgIncrementMinutes={orgIncrementMinutes}
-          onClose={() => setRescheduling(null)}
-          onSaved={(message) => { setRescheduling(null); void loadRange(); showToast(message); }}
+          initialSlot={rescheduleInitialSlot}
+          onClose={() => { setRescheduling(null); setRescheduleInitialSlot(null); }}
+          onSaved={(message) => { setRescheduling(null); setRescheduleInitialSlot(null); void loadRange(); showToast(message); }}
         />
       )}
     </div>
@@ -689,72 +694,4 @@ const overlayStyle: React.CSSProperties = {
 const modalStyle: React.CSSProperties = {
   width: 340, background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
 };
-
-function SessionDetail({
-  session, clients, employees, locations, typeColors, isDraft, onClose, onCancelled, onReschedule,
-}: {
-  session: CalSession; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
-  typeColors: Record<string, string>; isDraft: boolean; onClose: () => void; onCancelled: () => void; onReschedule: () => void;
-}) {
-  useEscapeToClose(onClose);
-  const trapRef = useFocusTrap<HTMLDivElement>();
-  const [cancelling, setCancelling] = React.useState(false);
-  const [cancelError, setCancelError] = React.useState<string | null>(null);
-  const client = clients.find((c) => c.id === session.client_id);
-  const emp = employees.find((e) => e.id === session.employee_id);
-  const loc = locations.find((l) => l.id === session.location_id);
-  const color = typeColors[session.type] || "#888";
-
-  async function handleCancel() {
-    if (!confirm("Cancel this session?")) return;
-    setCancelling(true);
-    setCancelError(null);
-    // Previously called onCancelled() (which closes this modal and shows a
-    // success toast) regardless of whether the update actually succeeded -
-    // optimistic UI with no failure path. Keep the modal open with an error
-    // instead of reporting a cancellation that may not have happened.
-    const { error } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", session.id);
-    setCancelling(false);
-    if (error) { setCancelError("Cancel failed. Please try again."); return; }
-    onCancelled();
-  }
-
-  return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Session detail for ${client?.name || "session"}`} style={{ ...modalStyle, borderLeft: `4px solid ${color}` }} onClick={(e) => e.stopPropagation()}>
-        {isDraft && (
-          <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: "#8A5E10", background: "#EF9F2722", borderRadius: 5, padding: "2px 8px", marginBottom: 8 }}>
-            DRAFT — not yet on the confirmed calendar
-          </div>
-        )}
-        <div style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>{client?.name || "Unknown client"}</div>
-        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14 }}>{emp?.name || "Unassigned"}</div>
-        <DetailRow label="Date" value={session.session_date} />
-        <DetailRow label="Time" value={`${String(session.hour).padStart(2, "0")}:${String(session.minute).padStart(2, "0")}`} />
-        <DetailRow label="Location" value={session.is_home_visit ? (session.home_address || "Client's home") : (loc?.name || "—")} />
-        <DetailRow label="Type" value={session.type} />
-        <DetailRow label="Recurrence" value={session.recurrence_id ? "Recurring" : "One-time"} />
-        {cancelError && <div style={{ fontSize: 13, color: "#A33A3A", marginTop: 8 }}>{cancelError}</div>}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <button onClick={handleCancel} disabled={cancelling} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: cancelling ? "not-allowed" : "pointer", background: "#FCE8E8", color: "#A33A3A" }}>
-            {cancelling ? "Cancelling..." : "Cancel session"}
-          </button>
-          <button onClick={onReschedule} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: "pointer", background: "#5DCAA5", color: "#fff" }}>
-            Reschedule
-          </button>
-          <button onClick={onClose} style={navBtn}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-      <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{value}</span>
-    </div>
-  );
-}
 

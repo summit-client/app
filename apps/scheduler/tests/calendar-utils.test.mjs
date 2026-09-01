@@ -51,7 +51,7 @@ const {
   toDateStr, parseDateStr, addDays, startOfWeek, computeViewRange, shiftView, gapsOverlap, generateWeeklyDatesFrom, formatFullRange,
 } = dateUtils;
 const { sessionDuration, sessionGridIncrement } = types;
-const { isAvailable, hasSessionConflict, suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } = suggestions;
+const { isAvailable, hasSessionConflict, hasClientSessionConflict, buildBusyBlocks, suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } = suggestions;
 
 console.log("dateUtils");
 
@@ -193,6 +193,39 @@ console.log("suggestions.ts");
   t("different-clinician suggestions: never crosses location", results.every((r) => r.employeeId !== 3));
   t("different-clinician suggestions: keeps the exact same day/time", results.every((r) => r.dateStr === thu && r.hour === 10 && r.minute === 0));
   t("different-clinician suggestions: includes the same-location clinician", results.some((r) => r.employeeId === 2));
+}
+
+console.log("hasClientSessionConflict (dual-schedule mini-calendar)");
+
+{
+  const existingSessions = [{ id: 1, employee_id: 9, client_id: 5, session_date: thu, hour: 10, minute: 0, durationMinutes: 60, status: "scheduled" }];
+  t("hasClientSessionConflict: exact overlap on the client side", hasClientSessionConflict(5, thu, 600, 60, existingSessions));
+  t("hasClientSessionConflict: no overlap after the existing session ends", !hasClientSessionConflict(5, thu, 660, 60, existingSessions));
+  t("hasClientSessionConflict: different client, no conflict", !hasClientSessionConflict(6, thu, 600, 60, existingSessions));
+  t("hasClientSessionConflict: cancelled sessions never conflict", !hasClientSessionConflict(5, thu, 600, 60, [{ ...existingSessions[0], status: "cancelled" }]));
+  t("hasClientSessionConflict: excludeSessionId skips itself", !hasClientSessionConflict(5, thu, 600, 60, existingSessions, 1));
+  t("hasClientSessionConflict: a row with no client_id (client-optional type) never conflicts", !hasClientSessionConflict(5, thu, 600, 60, [{ ...existingSessions[0], client_id: null }]));
+}
+
+console.log("buildBusyBlocks (dual-schedule mini-calendar)");
+
+{
+  const sessions = [
+    { id: 1, employee_id: 9, client_id: 5, session_date: thu, hour: 14, minute: 0, durationMinutes: 45, status: "scheduled" },
+    { id: 2, employee_id: 9, client_id: 6, session_date: thu, hour: 9, minute: 0, durationMinutes: 60, status: "scheduled" },
+    { id: 3, employee_id: 9, client_id: 7, session_date: thu, hour: 11, minute: 0, durationMinutes: 30, status: "cancelled" },
+    { id: 4, employee_id: 9, client_id: 8, session_date: "2026-08-21", hour: 9, minute: 0, durationMinutes: 60, status: "scheduled" },
+  ];
+  const blocks = buildBusyBlocks(thu, sessions, 1);
+  t("buildBusyBlocks: excludes cancelled and other-day sessions", blocks.length === 2, `got ${blocks.length}`);
+  t("buildBusyBlocks: sorted by start time", blocks[0].id === 2 && blocks[1].id === 1);
+  t("buildBusyBlocks: computes start/end in minutes", blocks[0].startMinutes === 540 && blocks[0].endMinutes === 600);
+  t("buildBusyBlocks: flags the viewed session", blocks[1].id === 1 && blocks[1].isViewedSession === true);
+  t("buildBusyBlocks: every other block is NOT flagged as viewed - this is the PHI boundary the panel renders opaque", blocks[0].isViewedSession === false);
+  // The function is never even handed a client name or session type to
+  // leak - only ids and minute offsets, confirming the PHI masking has to
+  // happen this way (there's nothing identifying to accidentally render).
+  t("buildBusyBlocks: block shape carries no identifying fields", Object.keys(blocks[0]).sort().join(",") === "endMinutes,id,isViewedSession,startMinutes");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
