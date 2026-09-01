@@ -9,6 +9,7 @@ import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { CalendarMonth, type CalendarEntry } from "../components/calendar-month";
 import { RequestChangeModal } from "../components/request-change-modal";
+import { CalendarFeedSubscribe } from "../components/calendar-feed-subscribe";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient } from "../lib/admin-view-as";
 import { clinicTodayDateStr } from "../lib/clinic-date";
@@ -142,13 +143,7 @@ export default function Appointments(
     <div className={styles.page}>
       <Sidebar />
 
-      <main
-        className={styles.main}
-        style={{
-          background: "#edf7f8",
-          minHeight: "100vh",
-        }}
-      >
+      <main className={styles.main}>
         <header
           style={{
             marginBottom: 24,
@@ -165,7 +160,7 @@ export default function Appointments(
             <h1
               style={{
                 margin: "0 0 6px",
-                color: "#173f5f",
+                color: "var(--ink)",
               }}
             >
               Appointments
@@ -174,23 +169,30 @@ export default function Appointments(
             <p
               style={{
                 margin: 0,
-                color: "#6c8290",
+                color: "var(--muted)",
               }}
             >
               View your scheduled and past sessions.
             </p>
           </div>
 
-          {/* One-time file download (not a subscribable feed - see
-              pages/api/calendar.ics.ts's header comment for why), so a
-              plain link is enough: no JS needed to trigger it. */}
-          <a
-            href="/api/calendar.ics"
-            className={styles.textButton}
-            style={{ whiteSpace: "nowrap" }}
-          >
-            Download calendar (.ics)
-          </a>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+            {/* One-time file download (see pages/api/calendar.ics.ts's
+                header comment) - a plain link is enough, no JS needed to
+                trigger it. */}
+            <a
+              href="/api/calendar.ics"
+              className={styles.textButton}
+              style={{ whiteSpace: "nowrap" }}
+            >
+              Download calendar (.ics)
+            </a>
+
+            {/* Real webcal:// subscription (migration 0041) - a family's
+                own account only, never rendered during admin "view as" (see
+                CalendarFeedSubscribe's own header for why). */}
+            {!isAdminViewingAs && <CalendarFeedSubscribe />}
+          </div>
         </header>
 
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
@@ -240,7 +242,7 @@ export default function Appointments(
 
         {viewMode === "calendar" && selectedDate && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-            <span style={{ fontSize: 13, color: "#6c8290" }}>
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
               Showing {formatSessionDate(selectedDate)} only
             </span>
             <button

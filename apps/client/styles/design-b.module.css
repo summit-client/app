@@ -1,3 +1,31 @@
+/* components/admin-view-banner.tsx - shown on every page while an admin is
+   viewing "as" a family, so the family's own dashboard is never mistaken
+   for their real session. Sticky (not the document flow it used to render
+   in) so scrolling a tall dashboard can't carry it out of view - the whole
+   point of the banner.
+
+   Sticks at `--portalnav-h` (right below the cross-portal AppNav bar,
+   packages/nav's own position:sticky;top:0), not top:0 itself - CSS sticky
+   positions each element independently, so two sticky siblings both pinned
+   to top:0 don't "stack": once scrolled far enough, the second one just
+   renders underneath the first at the same y, hidden by whichever has the
+   higher z-index. Rendering this at top:0 would have traded "scrolls out
+   of view" for "hidden behind AppNav" - the exact same failure this exists
+   to fix, one layer up. Confirmed both ways in a rendered browser before
+   picking this (see the PR that added this comment).
+
+   z-index sits above the mobile off-canvas sidebar (45 below) and its
+   backdrop (40) so neither can cover it while the drawer is open, but
+   below AppNav (50) since it belongs under that bar, not fighting it for
+   the same slot. See `.adminBanner ~ .mobileTopbar` below for the same
+   stacking problem one level further down, applied to the mobile topbar
+   that always renders immediately after this. */
+.adminBanner {
+  position: sticky;
+  top: var(--portalnav-h);
+  z-index: 46;
+}
+
 .page {
   min-height: calc(100vh - var(--portalnav-h));
   display: grid;
@@ -1096,8 +1124,31 @@
     background: var(--surface);
     border-bottom: 1px solid var(--line);
     position: sticky;
-    top: 0;
+    /* var(--portalnav-h), not 0 - this bar sits below the cross-portal
+       AppNav bar (also position:sticky;top:0), and two sticky siblings at
+       the same offset don't stack: past --portalnav-h of scroll this was
+       rendering pinned at the same y as AppNav, hidden behind it since
+       AppNav's z-index (50) beats this bar's (30) - the hamburger toggle
+       silently became unreachable on any tall mobile page. Found while
+       verifying the admin-view banner fix below in a rendered browser. */
+    top: var(--portalnav-h);
     z-index: 30;
+  }
+
+  /* When the admin-view banner (see .adminBanner above) precedes this bar -
+     every page renders it as `{isAdminViewingAs ? <AdminViewBanner .../> :
+     null} <MobileNavChrome .../>`, and MobileNavChrome returns a bare
+     fragment, so nothing wraps it and the two stay true DOM siblings -
+     stick this bar right below the banner instead of the two colliding at
+     the same top offset. --admin-banner-h is a fixed, measured constant,
+     not something computed from the DOM: the banner is a single
+     non-wrapping flex row (its name text is ellipsis-truncated instead of
+     wrapping - see admin-view-banner.tsx), so its rendered height doesn't
+     vary with the client name or theme. Measured 38px at 375px width
+     across a short name, a long one, and a deliberately absurd one before
+     picking 40px here for a 2px margin. */
+  .adminBanner ~ .mobileTopbar {
+    top: calc(var(--portalnav-h) + var(--admin-banner-h, 40px));
   }
 
   .mobileTopbarTitle {
