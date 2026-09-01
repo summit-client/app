@@ -621,6 +621,116 @@ await check("the raw view still carries the permission a caller would need", asy
   eq(r.required_permission, "view_billing", "required permission on the raw view");
 });
 
+// --------------------------------------------------------------------------
+// 0037 · progress, milestones and family observations
+// --------------------------------------------------------------------------
+const goal = (await db.query(
+  `insert into programs (clinic_id, client_id, name, domain, measurement_mode,
+                         operational_definition, mastery_pct, created_by, status)
+   values ('${clinicA}', ${maya}, 'Ask for help independently', 'Communication', 'dtt',
+           'Independently requests assistance', 80, '${aClin}', 'active')
+   returning id`)).rows[0].id;
+
+await check("Flow F: a mastered goal does NOT reach the family until it is shared", async () => {
+  const m = (await db.query(
+    `insert into family_milestones (clinic_id, client_id, program_id, kind, title, occurred_on)
+     values ('${clinicA}', ${maya}, '${goal}', 'goal_mastered', 'Independent jacket fastening', current_date)
+     returning id`)).rows[0].id;
+
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from family_milestones`), 0, "unshared milestone visible"));
+
+  await db.exec(`update family_milestones
+                    set shared_with_family = true, shared_at = now(), shared_by = '${aClin}'
+                  where id = '${m}'`);
+
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from family_milestones`), 1, "shared milestone"));
+});
+
+await check("a milestone cannot be marked shared without recording who shared it", async () => {
+  await insertRaises(
+    `insert into family_milestones (clinic_id, client_id, kind, title, shared_with_family)
+     values ('${clinicA}', ${maya}, 'new_skill', 'Untraceable', true)`,
+    "shared with no sharer");
+});
+
+await check("a guardian without clinical access sees no milestones at all", async () => {
+  // Parent B holds view_clinical_progress for Maya but it was revoked for Noah
+  // earlier; deny Maya too and confirm the milestone disappears.
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'view_clinical_progress'
+                    and relationship_id = (select id from guardian_relationships
+                                            where user_id='${parentB}' and client_id=${maya})`);
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from family_milestones`), 0, "milestones without clinical access"));
+  await db.exec(`update relationship_permissions set granted = true
+                  where permission = 'view_clinical_progress'
+                    and relationship_id = (select id from guardian_relationships
+                                            where user_id='${parentB}' and client_id=${maya})`);
+});
+
+await check("trend says not_enough_data rather than reading a shape into noise", async () => {
+  const r = await one(`select trend, sessions_with_data from client_goal_progress where program_id='${goal}'`);
+  eq(r.trend, "not_enough_data", "trend with no sessions");
+  eq(r.sessions_with_data, 0, "session count");
+});
+
+await check("Flow H: a family observation is stored as one, not as clinical data", async () => {
+  await as(parentA, async () => {
+    await db.exec(`insert into family_observations (clinic_id, client_id, author_user_id, kind, body)
+                   values ('${clinicA}', ${maya}, '${parentA}', 'home_win',
+                           'She ordered her own food today.')`);
+  });
+
+  // It exists as an observation...
+  eq(await count(`select count(*)::int n from family_observations where client_id=${maya}`), 1, "observation stored");
+  // ...and nowhere near the clinical measurements.
+  eq(await count(`select count(*)::int n from session_program_summaries where program_id='${goal}'`),
+     0, "observation leaked into clinical data");
+
+  // And it is labelled as a family observation everywhere it surfaces.
+  await as(parentA, async () => {
+    const r = await one(`select source from my_family_timeline where entry_id like 'observation:%' limit 1`);
+    eq(r.source, "family_observation", "timeline provenance");
+  });
+});
+
+await check("a parent cannot write an observation about someone else's child", async () => {
+  await as(outsider, () => insertRaises(
+    `insert into family_observations (clinic_id, client_id, author_user_id, kind, body)
+     values ('${clinicA}', ${maya}, '${outsider}', 'home_win', 'Not my child')`,
+    "observation about another family's child"));
+});
+
+await check("a parent cannot post an observation under another parent's name", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into family_observations (clinic_id, client_id, author_user_id, kind, body)
+     values ('${clinicA}', ${maya}, '${parentB}', 'home_win', 'Signed as Ian')`,
+    "forged observation author"));
+});
+
+await check("an observation cannot be edited after the fact by the family", async () => {
+  await as(parentA, () => updateAffects(
+    `update family_observations set body = 'rewritten' where client_id = ${maya}`,
+    0, "family editing an observation"));
+});
+
+await check("the timeline carries both sources and keeps them distinguishable", async () => {
+  await as(parentA, async () => {
+    eq(await count(`select count(*)::int n from my_family_timeline where source='milestone'`), 1, "milestones");
+    eq(await count(`select count(*)::int n from my_family_timeline where source='family_observation'`), 1, "observations");
+  });
+});
+
+await check("my_goal_progress is empty for a guardian without clinical access", async () => {
+  await as(outsider, async () =>
+    eq(await count(`select count(*)::int n from public.my_goal_progress()`), 0, "outsider's progress"));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_goal_progress() where program_id='${goal}'`),
+       1, "parent A's progress"));
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
