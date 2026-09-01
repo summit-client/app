@@ -107,7 +107,7 @@ const navItems: NavItem[] = [
   { label: "Appointments", icon: "calendar", href: "/appointments" },
   { label: "Progress", icon: "progress", href: "/progress" },
   { label: "Funding", icon: "funding", href: "/statement" },
-  { label: "Messages", icon: "message", comingSoon: true },
+  { label: "Messages", icon: "message", href: "/messages" },
   { label: "Documents", icon: "document", comingSoon: true },
   { label: "Consents", icon: "consent", comingSoon: true },
   { label: "Settings", icon: "settings", comingSoon: true },

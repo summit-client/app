@@ -731,6 +731,197 @@ await check("my_goal_progress is empty for a guardian without clinical access", 
        1, "parent A's progress"));
 });
 
+// --------------------------------------------------------------------------
+// 0038 · Secure messaging
+//
+// The requirement everything else here serves: an internal staff note must not
+// be reachable by a family. Not filtered in a page — unreachable. So the test
+// that matters reads `messages` as a parent with NO where-clause at all, which
+// is what a forgotten filter or a crafted PostgREST call looks like.
+// --------------------------------------------------------------------------
+
+// A guardian on this household who may NOT message the clinic. Tests that
+// household membership alone does not open a thread.
+const silent = await mkUser("silent", "client", clinicA);
+await db.exec(`insert into household_members (clinic_id, household_id, full_name, relationship, user_id)
+               values ('${clinicA}','${household}','Quiet','other_relative','${silent}')`);
+await db.exec(`insert into guardian_relationships (clinic_id, user_id, client_id, household_id, status)
+               values ('${clinicA}','${silent}',${maya},'${household}','ACTIVE')`);
+await db.exec(`update relationship_permissions set granted = false
+                where permission = 'message_clinic'
+                  and relationship_id in (select id from guardian_relationships where user_id='${silent}')`);
+
+const thread = (await db.query(
+  `insert into message_threads (clinic_id, household_id, client_id, subject, category, started_by)
+   values ('${clinicA}','${household}',${maya},'Maya''s Tuesday session','scheduling','${parentA}')
+   returning id`)).rows[0].id;
+
+await db.exec(`insert into messages (clinic_id, thread_id, author_user_id, author_kind, body)
+               values ('${clinicA}','${thread}','${parentA}','family','Can we move Tuesday?')`);
+await db.exec(`insert into messages (clinic_id, thread_id, author_user_id, author_kind, body)
+               values ('${clinicA}','${thread}','${aClin}','staff','Yes, Thursday 4pm works.')`);
+const internal = (await db.query(
+  `insert into messages (clinic_id, thread_id, author_user_id, author_kind, body, visibility)
+   values ('${clinicA}','${thread}','${aClin}','staff','Parent seems overwhelmed; flag to supervisor.','internal')
+   returning id`)).rows[0].id;
+
+await check("a family reading the messages table unfiltered still cannot see an internal note", async () => {
+  await as(parentA, async () => {
+    // Deliberately no visibility filter. This is the query a page would run if
+    // someone forgot, and the query an attacker would craft on purpose.
+    eq(await count(`select count(*)::int n from messages`), 2, "messages visible to a parent");
+    eq(await count(`select count(*)::int n from messages where id = '${internal}'`), 0, "the internal note");
+  });
+});
+
+await check("the internal note does not even produce an unread badge", async () => {
+  await as(parentA, async () => {
+    const row = await one(`select unread_count, last_message_preview from my_message_threads
+                            where thread_id = '${thread}'`);
+    eq(row.unread_count, 2, "unread");
+    if (String(row.last_message_preview).includes("overwhelmed"))
+      throw new Error("the internal note leaked through the preview");
+  });
+});
+
+await check("an internal note does not move the thread into 'awaiting family'", async () => {
+  // The staff reply already did that; the internal note must not re-touch it.
+  const t0 = await one(`select last_message_at from message_threads where id='${thread}'`);
+  await db.exec(`insert into messages (clinic_id, thread_id, author_user_id, author_kind, body, visibility)
+                 values ('${clinicA}','${thread}','${aClin}','staff','Second internal note.','internal')`);
+  const t1 = await one(`select last_message_at from message_threads where id='${thread}'`);
+  eq(String(t0.last_message_at), String(t1.last_message_at), "an internal note bumped the thread");
+});
+
+await check("staff see the whole thread, internal notes included", async () => {
+  await as(aClin, async () =>
+    eq(await count(`select count(*)::int n from messages where thread_id='${thread}'`), 4, "staff view"));
+});
+
+await check("a family member cannot author an internal note, even by asking for one", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into messages (clinic_id, thread_id, author_user_id, author_kind, body, visibility)
+     values ('${clinicA}','${thread}','${parentA}','family','hidden','internal')`,
+    "family-authored internal note"));
+});
+
+await check("a family member cannot post as staff", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into messages (clinic_id, thread_id, author_user_id, author_kind, body)
+     values ('${clinicA}','${thread}','${parentA}','staff','Approved by the clinic')`,
+    "family posting as staff"));
+});
+
+await check("a family member cannot post under another person's name", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into messages (clinic_id, thread_id, author_user_id, author_kind, body)
+     values ('${clinicA}','${thread}','${parentB}','family','Signed as Ian')`,
+    "forged message author"));
+});
+
+await check("a sent message cannot be edited or deleted by the family", async () => {
+  await as(parentA, async () => {
+    await updateAffects(`update messages set body='rewritten' where thread_id='${thread}'`, 0, "family edit");
+    const res = await db.query(`delete from messages where thread_id='${thread}'`);
+    eq(res.affectedRows ?? 0, 0, "family delete");
+  });
+});
+
+await check("a guardian without message_clinic reaches no thread at all", async () => {
+  await as(silent, async () => {
+    eq(await count(`select count(*)::int n from message_threads`), 0, "threads");
+    eq(await count(`select count(*)::int n from messages`), 0, "messages");
+    eq(await count(`select count(*)::int n from my_message_threads`), 0, "inbox");
+  });
+  await as(silent, () => insertRaises(
+    `insert into messages (clinic_id, thread_id, author_user_id, author_kind, body)
+     values ('${clinicA}','${thread}','${silent}','family','Let me in')`,
+    "reply without message_clinic"));
+});
+
+await check("a household thread is reachable by a guardian of any child in it", async () => {
+  const houseThread = (await db.query(
+    `insert into message_threads (clinic_id, household_id, subject, started_by)
+     values ('${clinicA}','${household}','Address change','${parentB}') returning id`)).rows[0].id;
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from message_threads where id='${houseThread}'`), 1, "household thread"));
+  await as(silent, async () =>
+    eq(await count(`select count(*)::int n from message_threads where id='${houseThread}'`), 0, "silent guardian"));
+});
+
+await check("an unrelated family reaches nothing", async () => {
+  await as(outsider, async () => {
+    eq(await count(`select count(*)::int n from message_threads`), 0, "threads");
+    eq(await count(`select count(*)::int n from messages`), 0, "messages");
+  });
+});
+
+await check("another clinic's staff reach nothing", async () => {
+  await as(bAdmin, async () => {
+    eq(await count(`select count(*)::int n from message_threads`), 0, "cross-tenant threads");
+    eq(await count(`select count(*)::int n from messages`), 0, "cross-tenant messages");
+  });
+});
+
+await check("a family cannot open a thread on someone else's household", async () => {
+  const otherHouse = (await db.query(
+    `insert into households (clinic_id, name) values ('${clinicA}','Other Family') returning id`)).rows[0].id;
+  await as(parentA, () => insertRaises(
+    `insert into message_threads (clinic_id, household_id, subject, started_by)
+     values ('${clinicA}','${otherHouse}','Prying','${parentA}')`,
+    "thread on a foreign household"));
+});
+
+await check("a family cannot open a thread at high priority", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into message_threads (clinic_id, household_id, client_id, subject, priority, started_by)
+     values ('${clinicA}','${household}',${maya},'Urgent','high','${parentA}')`,
+    "family-set priority"));
+});
+
+await check("a family cannot reassign, reclassify or resolve their own thread", async () => {
+  await as(parentA, async () => {
+    await updateAffects(`update message_threads set status='resolved', resolved_at=now()
+                          where id='${thread}'`, 0, "family resolving");
+    await updateAffects(`update message_threads set assigned_to='${aClin}' where id='${thread}'`, 0, "family assigning");
+  });
+});
+
+await check("a family reply reopens a resolved thread rather than vanishing into it", async () => {
+  await db.exec(`update message_threads set status='resolved', resolved_at=now(), resolved_by='${aClin}'
+                  where id='${thread}'`);
+  await db.exec(`insert into messages (clinic_id, thread_id, author_user_id, author_kind, body)
+                 values ('${clinicA}','${thread}','${parentA}','family','Actually, one more thing.')`);
+  const row = await one(`select status, resolved_at from message_threads where id='${thread}'`);
+  eq(row.status, "open", "status after a family reply");
+  if (row.resolved_at !== null) throw new Error("resolved_at survived the reopen");
+});
+
+await check("an attachment is only as visible as the message it hangs off", async () => {
+  await db.exec(`insert into message_attachments
+                   (clinic_id, message_id, storage_path, file_name, content_type, size_bytes, uploaded_by)
+                 values ('${clinicA}','${internal}','x/1.pdf','supervision.pdf','application/pdf',900,'${aClin}')`);
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from message_attachments`), 0, "attachment on an internal note"));
+  await as(aClin, async () =>
+    eq(await count(`select count(*)::int n from message_attachments`), 1, "staff view of the attachment"));
+});
+
+await check("an executable masquerading as a document is refused by the database", async () => {
+  const shared = (await one(`select id from messages where thread_id='${thread}'
+                              and visibility='shared' limit 1`)).id;
+  await insertRaises(
+    `insert into message_attachments
+       (clinic_id, message_id, storage_path, file_name, content_type, size_bytes, uploaded_by)
+     values ('${clinicA}','${shared}','x/2','report.pdf.exe','application/x-msdownload',10,'${aClin}')`,
+    "disallowed content type");
+  await insertRaises(
+    `insert into message_attachments
+       (clinic_id, message_id, storage_path, file_name, content_type, size_bytes, uploaded_by)
+     values ('${clinicA}','${shared}','x/3','huge.pdf','application/pdf',99999999,'${aClin}')`,
+    "oversized attachment");
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

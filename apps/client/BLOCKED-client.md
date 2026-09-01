@@ -231,3 +231,28 @@ against sessions with special characters and a title long enough to force
 RFC 5545 line folding, and the calendar-grid math against 6 months
 including a leap-year February and a 6-week grid case. See each commit
 for the actual verification output.
+
+## Messaging (migration 0038, `pages/messages.tsx`)
+
+- **Staff senders show as "Your clinic", not by name.** A family session
+  cannot select `profiles`, so a join for the author's name comes back
+  null and would render as an unnamed sender. Every alternative is a
+  schema change this session should not make unilaterally: a
+  family-readable display-name view, a denormalized `author_display_name`
+  on `messages`, or a `security definer` name resolver. The denormalized
+  column is probably right, because it also survives a clinician leaving
+  and their profile being deactivated. Flagged rather than guessed.
+
+- **Attachments are metadata only.** `message_attachments` records the
+  file, its type and its size, and the portal lists them. Nothing
+  uploads or downloads: that needs a Supabase Storage bucket with its own
+  policies plus a signed-URL route, and no bucket exists in this repo to
+  write policies against. The allow-list and the 25 MB ceiling are in the
+  table now so that whatever writes rows later cannot widen them.
+
+- **No notification when the clinic replies.** The unread count is
+  correct and per-reader, but it is only visible to someone who opens the
+  portal. Email or SMS needs the notification tables from the brief's
+  §17, which do not exist yet, and per that brief no PHI may appear in a
+  notification preview - which is a design decision to make with the
+  clinic, not to assume.
