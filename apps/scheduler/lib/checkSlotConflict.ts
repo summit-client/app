@@ -95,7 +95,7 @@ export function slotKeyOf(s: SlotKey): string {
 }
 
 /**
- * True when a write to `sessions` failed because of the migration 0042
+ * True when a write to `sessions` failed because of the migration 0044
  * booking-integrity constraint - the `sessions_no_exact_double_book` partial
  * unique index, or the `enforce_sessions_no_overlap` trigger - rather than
  * some other failure. The two layers are deliberately made to surface as one
@@ -110,7 +110,7 @@ export function slotKeyOf(s: SlotKey): string {
  * through (two writes landing within the same round trip), so every call
  * site should show the same friendly conflict message either way rather than
  * a raw Postgres error reaching the UI. See
- * supabase/migrations/0042_sessions_no_double_booking.sql - not yet applied
+ * supabase/migrations/0044_sessions_no_double_booking.sql - not yet applied
  * to the live database as of this change; a human needs to run it.
  */
 export function isBookingConflictError(error: { code?: string } | null | undefined): boolean {

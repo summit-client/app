@@ -6,7 +6,7 @@ instead, if anything.
 
 ## 1. Booking-integrity: no DB constraint against double-booking a clinician
 
-**Migration written this session (`supabase/migrations/0042_sessions_no_double_booking.sql`) - NOT YET APPLIED.** This session's Supabase MCP access is
+**Migration written this session (`supabase/migrations/0044_sessions_no_double_booking.sql`) - NOT YET APPLIED.** This session's Supabase MCP access is
 also read-only, same limit as the pass that wrote this item originally, so a
 human still needs to run this migration against the live database before it
 does anything. Implements exactly the two layers sketched below: the partial
