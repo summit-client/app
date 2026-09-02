@@ -3,61 +3,43 @@
 import * as React from "react";
 import { usePathname } from "next/navigation";
 import { getSetting } from "@summit/settings";
+import { SupportButton as SharedSupportButton, DEFAULT_SUPPORT_EMAIL } from "@summit/nav";
 
 /**
- * Troubleshoot / feature request. Opens a prefilled email to the developer
- * address the organization configured; nothing is sent until the person
- * sends it from their own mail client.
+ * This app's binding for the shared Troubleshoot / feature-request control.
+ *
+ * The control itself moved to @summit/nav so every portal has one, not just
+ * this app. What stayed here is the part that is genuinely this app's: reading
+ * the org's configured address and name out of @summit/settings, and getting
+ * the pathname from the App Router. apps/client and apps/scheduler are Pages
+ * Router and supply theirs a different way, which is exactly why the shared
+ * component takes it as a prop rather than importing a router hook.
  */
 export function SupportButton() {
-  const [open, setOpen] = React.useState(false);
-  const [kind, setKind] = React.useState<"Troubleshoot" | "Feature request">("Troubleshoot");
-  const [detail, setDetail] = React.useState("");
   const pathname = usePathname();
 
-  const send = () => {
-    const to = String(getSetting("support.devEmail"));
-    // "MySummitHR" is this app's own product name, not this clinic's - see
-    // docs/context/product.md's multi-tenant-readiness item 8. org.name
-    // already exists in the settings registry and is readable here (this
-    // component is "use client", unlike app/layout.tsx's title/brand text -
-    // see the comment there before doing the same conversion there). Falls
-    // back to the literal product name only if org.name is ever genuinely
-    // empty; it isn't for Mount Etna today, since the settings registry
-    // seeds it with their real name as the default.
-    const orgName = String(getSetting("org.name") ?? "").trim();
-    const brand = orgName ? `${orgName} HR` : "MySummitHR";
-    const subject = encodeURIComponent(`[${brand}] ${kind}`);
-    const body = encodeURIComponent(
-      `${detail}\n\n---\nPage: ${pathname}\nWhen: ${new Date().toISOString()}\nModule: ${brand} (apps/employee)`,
-    );
-    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
-    setOpen(false);
-    setDetail("");
-  };
+  // "MySummitHR" is this app's own product name, not this clinic's - see
+  // docs/context/product.md's multi-tenant-readiness item 8. org.name already
+  // exists in the settings registry and is readable here (this component is
+  // "use client", unlike app/layout.tsx's title/brand text - see the comment
+  // there before doing the same conversion there). Falls back to the literal
+  // product name only if org.name is ever genuinely empty.
+  const orgName = String(getSetting("org.name") ?? "").trim();
+  const brand = orgName ? `${orgName} HR` : "MySummitHR";
+
+  // A clinic that has never opened the settings screen has no stored row, and
+  // the registry default applies. Coalesced anyway so an empty stored string
+  // cannot produce `mailto:?subject=...`, which opens a blank compose window
+  // and looks like the report went nowhere.
+  const to = String(getSetting("support.devEmail") ?? "").trim() || DEFAULT_SUPPORT_EMAIL;
 
   return (
-    <div style={{ padding: "0 var(--space-2)", marginTop: 10 }}>
-      {open ? (
-        <div style={{ display: "grid", gap: 8, marginBottom: 8 }}>
-          <select className="input" style={{ padding: "6px 8px" }} value={kind} aria-label="Report type"
-            onChange={(e) => setKind(e.target.value as typeof kind)}>
-            <option>Troubleshoot</option>
-            <option>Feature request</option>
-          </select>
-          <textarea className="input" rows={3} value={detail} aria-label="What happened, or what would help?"
-            placeholder={kind === "Troubleshoot" ? "What happened, and on which screen?" : "What would help, and why?"}
-            onChange={(e) => setDetail(e.target.value)} />
-          <div style={{ display: "flex", gap: 6 }}>
-            <button className="btn" style={{ padding: "6px 12px" }} onClick={send} disabled={!detail.trim()}>Email the devs</button>
-            <button className="btn ghost" style={{ padding: "6px 10px" }} onClick={() => setOpen(false)}>Cancel</button>
-          </div>
-        </div>
-      ) : (
-        <button className="btn ghost" style={{ padding: "6px 10px", fontSize: "var(--text-xs)" }} onClick={() => setOpen(true)}>
-          Troubleshoot / request a feature
-        </button>
-      )}
-    </div>
+    <SharedSupportButton
+      to={to}
+      brand={brand}
+      moduleName={`${brand} (apps/employee)`}
+      pathname={pathname ?? ""}
+      placement="sidebar"
+    />
   );
 }

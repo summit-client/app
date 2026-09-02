@@ -221,3 +221,25 @@ Left as-is rather than changed. Flagged here because "audit write failed"
 losing its error object entirely would be worse, and narrowing it to
 `error.code` is a judgement call about diagnosability that belongs with whoever
 owns the audit trail.
+
+## Policies (migration 0053)
+
+- **`hr_policies` has no write path anywhere in this app.** The Policies
+  screen reads the table; nothing in apps/employee ever inserts or
+  updates a row, so a clinic's policies have to be loaded out of band
+  (SQL, or an admin tool that does not exist yet). Migration 0053 adds
+  the `body` column the preview needs, and the read path now uses it,
+  but until something can write a policy an administrator still cannot
+  add one from the product. Flagged rather than built: a policy editor
+  is a screen with its own versioning and acknowledgement-reset
+  semantics, not a form to bolt onto a read-only page.
+
+- **An embedded document cannot report that it failed to load.** A
+  cross-origin iframe that a host refuses to frame - a Google Drive file
+  that is not shared "anyone with the link", most commonly - renders as a
+  blank rectangle and fires no event this page can observe. The preview
+  now always shows a direct link beside the frame rather than trying to
+  detect the failure, because the detection is not possible from here.
+  The real fix is storing policy documents in Summit's own storage
+  instead of linking out, which needs a bucket and signed URLs - the same
+  blocker as message attachments.

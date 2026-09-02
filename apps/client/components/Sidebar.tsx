@@ -2,6 +2,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
 import { signOutUrl } from "@summit/portals";
+import { SupportButton, DEFAULT_SUPPORT_EMAIL } from "@summit/nav";
+import { getSetting } from "@summit/settings";
 import styles from "../styles/design-b.module.css";
 
 type SidebarIconName =
@@ -241,6 +243,19 @@ export default function Sidebar() {
           paddingTop: 20,
         }}
       >
+        {/* Families had no way to report a problem at all - this control
+            existed only in the staff HR portal. The people least able to work
+            around a broken screen were the ones with nowhere to say so.
+            router.pathname rather than asPath, so a report names the route and
+            not a thread or form id. */}
+        <SupportButton
+          to={String(getSetting("support.devEmail") ?? "").trim() || DEFAULT_SUPPORT_EMAIL}
+          brand={String(getSetting("org.name") ?? "").trim() || "Summit"}
+          moduleName="Family portal (apps/client)"
+          pathname={router.pathname}
+          placement="sidebar"
+        />
+
         <button
           type="button"
           onClick={handleLogout}
