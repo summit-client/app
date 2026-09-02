@@ -41,11 +41,31 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const TABS = useTabs();
   const clientId = Number(params.id);
   const [client, setClient] = React.useState<ClientRow | null>(null);
+  // Separate from `client` itself: `client` staying null is ambiguous between
+  // "still loading" and "no such client" (wrong id, stale link, or a client
+  // RLS won't return because it belongs to another clinic — the "RLS returns
+  // empty sets, not errors" trap CLAUDE.md documents, here scoped to a single
+  // record instead of a whole screen). Before this, both cases rendered the
+  // same "Loading client…" forever, with no way out for the second one.
+  const [clientChecked, setClientChecked] = React.useState(false);
   const [programs, setPrograms] = React.useState<Program[]>([]);
   const [tick, setTick] = React.useState(0);
 
+  // Keyed on clientId alone (not pathname) so switching tabs within the same
+  // client never re-triggers the loading/not-found check — only navigating
+  // to a different client does.
   React.useEffect(() => {
-    void getClients().then((cs) => setClient(cs.find((c) => c.id === clientId) ?? null));
+    let cancelled = false;
+    setClientChecked(false);
+    void getClients().then((cs) => {
+      if (cancelled) return;
+      setClient(cs.find((c) => c.id === clientId) ?? null);
+      setClientChecked(true);
+    });
+    return () => { cancelled = true; };
+  }, [clientId]);
+
+  React.useEffect(() => {
     void getPrograms(clientId).then(setPrograms);
   }, [clientId, pathname]);
 
@@ -66,7 +86,17 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   void tick;
   const current = pathname.replace(/\/$/, "").split("/")[3] ?? "";
 
-  if (!client) return <p className="sub">Loading client…</p>;
+  if (!client) {
+    if (!clientChecked) return <p className="sub">Loading client…</p>;
+    return (
+      <div className="card card-pad" style={{ marginTop: 16, maxWidth: 640 }}>
+        <h1 className="h-page">Client not found</h1>
+        <p className="sub" style={{ marginTop: 8 }}>
+          This client doesn&rsquo;t exist, or isn&rsquo;t part of your caseload. <Link href="/caseload">Back to My Caseload</Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -92,6 +122,14 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             href={`/clients/${clientId}${t.seg ? `/${t.seg}` : ""}`}
             className={`client-tab ${current === t.seg ? "active" : ""} ${t.seg === "run" ? "emph" : ""}`}
             aria-current={current === t.seg ? "page" : undefined}
+            // .client-tabs scrolls horizontally instead of wrapping (this
+            // record has 13 tabs; nothing near this width fits them all).
+            // Landing on a tab reached late in that list directly - a
+            // bookmark, a link from elsewhere - could put the active tab
+            // off-screen with no visual sign which one is current. Scroll it
+            // into view on arrival; "nearest" so an already-visible tab
+            // (the common case, clicking within the bar) never jumps.
+            ref={current === t.seg ? (el) => el?.scrollIntoView({ block: "nearest", inline: "nearest" }) : undefined}
           >
             {t.seg === "run" ? "▶ " : ""}{t.label}
           </Link>
