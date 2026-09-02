@@ -412,7 +412,7 @@ await check("the eight scheduler tables now actually filter", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0035 · households, guardians and per-relationship permissions
+// 0047 · households, guardians and per-relationship permissions
 //
 // These are the brief's own acceptance flows, written as assertions:
 //   Flow B  one parent, two children, switching between them
@@ -563,7 +563,7 @@ await check("a child is never in two households", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0036 · family tasks, derived and permission-filtered
+// 0048 · family tasks, derived and permission-filtered
 // --------------------------------------------------------------------------
 await check("a task appears from a real appointment and vanishes when it changes", async () => {
   const staffRow = (await db.query(
@@ -622,7 +622,7 @@ await check("the raw view still carries the permission a caller would need", asy
 });
 
 // --------------------------------------------------------------------------
-// 0037 · progress, milestones and family observations
+// 0049 · progress, milestones and family observations
 // --------------------------------------------------------------------------
 const goal = (await db.query(
   `insert into programs (clinic_id, client_id, name, domain, measurement_mode,
@@ -732,7 +732,7 @@ await check("my_goal_progress is empty for a guardian without clinical access", 
 });
 
 // --------------------------------------------------------------------------
-// 0038 · Secure messaging
+// 0050 · Secure messaging
 //
 // The requirement everything else here serves: an internal staff note must not
 // be reachable by a family. Not filtered in a page — unreachable. So the test
@@ -923,7 +923,7 @@ await check("an executable masquerading as a document is refused by the database
 });
 
 // --------------------------------------------------------------------------
-// 0040 · The two things that made every policy above optional
+// 0052 · The two things that made every policy above optional
 //
 // A Postgres view runs as its OWNER unless it is declared
 // `security_invoker = true`, so RLS on the tables underneath was never applied
@@ -986,7 +986,7 @@ await check("a guardian can read household_members at all", async () => {
 });
 
 await check("the client-facing tables are reachable through the household model, not the old scalar", async () => {
-  // Before 0040: clients and sessions had no family policy at all, and
+  // Before 0052: clients and sessions had no family policy at all, and
   // programs / client_budgets / budget_entries / session_notes were keyed on
   // auth_client_row_id(), which returns null for every guardian.
   await as(parentA, async () => {
@@ -1024,10 +1024,10 @@ await check("operator diagnostics are not readable by a family", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0047 · Merging two parallel builds
+// 0053 · Merging two parallel builds
 //
 // Main built four family-facing features against auth_client_row_id(), the
-// one-login-one-child link 0041 replaced. On the merged tree every one of them
+// one-login-one-child link 0047 replaced. On the merged tree every one of them
 // returned nothing to a guardian and refused their writes. These are the tests
 // that say so, and that the permission gates are real rather than decorative.
 // --------------------------------------------------------------------------
@@ -1147,7 +1147,7 @@ await check("staff messaging is gated on the care-team action, not on client-fil
 });
 
 // --------------------------------------------------------------------------
-// 0045 · Announcements and the notification centre
+// 0051 · Announcements and the notification centre
 // --------------------------------------------------------------------------
 const annAll = (await db.query(
   `insert into announcements (clinic_id, audience, title, body, category, created_by)
@@ -1353,7 +1353,7 @@ await check("a change request naming a different child than its session is refus
 });
 
 // --------------------------------------------------------------------------
-// 0048 · Forms and consents
+// 0054 · Forms and consents
 //
 // The two decisions worth testing: a published template cannot change under a
 // family that already answered it, and a consent is a window rather than an
@@ -1523,7 +1523,7 @@ await check("an unrelated family reaches no form, submission or consent", async 
 });
 
 // --------------------------------------------------------------------------
-// 0049 · forms become tasks
+// 0055 · forms become tasks
 // --------------------------------------------------------------------------
 
 await check("an unanswered required form reaches the family as a task", async () => {
@@ -1595,7 +1595,7 @@ await check("a form task reaches the notification centre too", async () => {
 });
 
 await check("every branch of family_tasks still produces its own kind", async () => {
-  // Not a count. The first draft of 0049 retyped the funding branch and
+  // Not a count. The first draft of 0055 retyped the funding branch and
   // changed `status = 'ACTIVE'` to lowercase; every funding task silently
   // vanished, and the two tests that only asked whether *a* task existed
   // still passed. Naming the kinds is what makes a lost branch visible.
@@ -1616,7 +1616,7 @@ await check("every branch of family_tasks still produces its own kind", async ()
 
 
 // --------------------------------------------------------------------------
-// 0050 · the care team
+// 0056 · the care team
 // --------------------------------------------------------------------------
 await check("a family still cannot read the staff table itself", async () => {
   // The whole reason my_care_team() is a function: a policy here would return
@@ -1827,7 +1827,7 @@ await check("a family cannot escalate their own permissions", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0055-0058 · the goal bank
+// 0061-0064 · the goal bank
 // --------------------------------------------------------------------------
 
 await check("a family cannot read the goal bank", async () => {
@@ -1925,7 +1925,7 @@ await check("every goal bank domain has exactly one spelling", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0059 · supervision
+// 0065 · supervision
 // --------------------------------------------------------------------------
 const supervisee = aClin;
 
@@ -2036,7 +2036,7 @@ await check("a family cannot read supervision of any kind", async () => {
 });
 
 // --------------------------------------------------------------------------
-// 0060-0061 · the lesson plan bank
+// 0066-0067 · the lesson plan bank
 // --------------------------------------------------------------------------
 const lessonProgram = (await db.query(
   `insert into lesson_programs (id, clinic_id, name, status)

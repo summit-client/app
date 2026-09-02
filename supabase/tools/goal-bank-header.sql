@@ -2,7 +2,7 @@
 --
 -- 554 goals with 2,325 teaching steps from the organization's own bank, plus
 -- 24 drafted to fill four thin domains. Loaded into goal_bank_entries and
--- goal_bank_steps (0055): what the Goal Generator searches, and what populates
+-- goal_bank_steps (0061): what the Goal Generator searches, and what populates
 -- a client's program.
 --
 -- WHAT A STEP IS, AND THE BUG THAT NEARLY WASN'T
