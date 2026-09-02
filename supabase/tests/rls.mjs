@@ -2187,6 +2187,149 @@ await check("admin and scheduler keep full, unscoped session writes - 0046 only 
 
 });
 
+// --------------------------------------------------------------------------
+// 0068 · the family access audit
+//
+// The sweeps above prove the policies hold. These prove that what happened
+// while they held is recorded, and that the people the record is about cannot
+// edit or suppress it.
+// --------------------------------------------------------------------------
+const auditKid = (await db.query(
+  `insert into clients (name, status, clinic_id) values ('Audit Child','active','${clinicA}') returning id`)).rows[0].id;
+await db.exec(`insert into household_members (clinic_id, household_id, full_name, relationship, client_id)
+               values ('${clinicA}','${household}','Audit Child','self',${auditKid})`);
+
+const auditCount = async (action) => count(
+  `select count(*)::int n from clinical_audit_events
+    where client_id = ${auditKid} and action = '${action}'`);
+
+await check("linking a guardian to a child is recorded", async () => {
+  await db.exec(`insert into guardian_relationships (clinic_id, user_id, client_id, household_id, status)
+                 values ('${clinicA}','${parentB}',${auditKid},'${household}','ACTIVE')`);
+  eq(await auditCount("family.guardian.linked"), 1, "link events");
+});
+
+await check("the default permission seed is marked, so real decisions stay legible", async () => {
+  // 0047 seeds a full permission set on every new relationship. Sixteen rows
+  // land a millisecond after the link; without the marker a clinic's own later
+  // grant is one line among seventeen identical-looking ones.
+  const seeded = await count(
+    `select count(*)::int n from family_access_audit
+      where client_id = ${auditKid} and from_default_seed`);
+  if (seeded === 0) throw new Error("the seeded permissions were not marked");
+  const real = await count(
+    `select count(*)::int n from family_access_audit
+      where client_id = ${auditKid} and action like 'family.permission%' and not from_default_seed`);
+  eq(real, 0, "no real decisions yet");
+});
+
+await check("changing what a guardian may see is recorded, with the permission named", async () => {
+  const rel = (await one(`select id from guardian_relationships
+                           where user_id='${parentB}' and client_id=${auditKid}`)).id;
+  await db.exec(`update relationship_permissions set granted = true
+                  where relationship_id = '${rel}' and permission = 'view_billing'`);
+  const row = await one(`select action, permission, from_default_seed from family_access_audit
+                          where client_id = ${auditKid} and permission = 'view_billing'
+                          order by created_at desc limit 1`);
+  eq(row.action, "family.permission.granted", "action");
+  eq(row.from_default_seed, false, "marked as a real decision");
+});
+
+await check("ending a guardian's access is recorded as such", async () => {
+  await db.exec(`update guardian_relationships set ends_on = current_date - 1
+                  where user_id='${parentB}' and client_id=${auditKid}`);
+  eq(await auditCount("family.guardian.access_ended"), 1, "access_ended events");
+});
+
+await check("deleting the relationship still leaves a trail", async () => {
+  // The one case where the row itself stops existing, so the audit entry is
+  // the only remaining evidence the access was ever granted.
+  await db.exec(`delete from guardian_relationships
+                  where user_id='${parentB}' and client_id=${auditKid}`);
+  eq(await auditCount("family.guardian.removed"), 1, "removal events");
+});
+
+await check("consent and its withdrawal both appear", async () => {
+  const t = (await db.query(
+    `insert into form_templates (clinic_id, key, version, title, kind, consent_statement,
+                                 status, published_at, created_by)
+     values ('${clinicA}','audit-consent',1,'Audit consent','consent','We may.',
+             'published', now(), '${aAdmin}') returning id`)).rows[0].id;
+  const c = (await db.query(
+    `insert into consent_records (clinic_id, client_id, template_id, granted_by)
+     values ('${clinicA}', ${auditKid}, '${t}', '${parentA}') returning id`)).rows[0].id;
+  eq(await auditCount("family.consent.granted"), 1, "granted");
+  await db.exec(`update consent_records set withdrawn_at = now(), withdrawn_by='${parentA}'
+                  where id = '${c}'`);
+  eq(await auditCount("family.consent.withdrawn"), 1, "withdrawn");
+});
+
+await check("a family cannot read the audit trail, or write to it, or erase it", async () => {
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from clinical_audit_events`), 0, "reading"));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from family_access_audit`), 0, "reading the view"));
+  await as(parentA, () => insertRaises(
+    `insert into clinical_audit_events (clinic_id, client_id, action)
+     values ('${clinicA}', ${maya}, 'family.guardian.linked')`,
+    "family writing an audit event"));
+  await as(parentA, async () => {
+    const res = await db.query(`delete from clinical_audit_events where client_id = ${auditKid}`);
+    eq(res.affectedRows ?? 0, 0, "family deleting audit events");
+  });
+});
+
+await check("an audit row is written even when the actor could not insert one", async () => {
+  // The whole reason the trigger is security definer. A guardian has no insert
+  // on clinical_audit_events, and if the log were written with their rights the
+  // event that matters most - somebody changing who can reach a child - would
+  // be the one event that never lands.
+  //
+  // Written against a child parentA actually guardians. The first version of
+  // this test used auditKid, whom they have no relationship to, so the consent
+  // insert would have been refused by RLS before the trigger ever ran - it
+  // would have proved nothing about the audit and failed for an unrelated
+  // reason. The template id is also read outside the `as()` block, because a
+  // family only sees a template through an assignment or an existing consent.
+  const t = (await db.query(
+    `insert into form_templates (clinic_id, key, version, title, kind, consent_statement,
+                                 status, published_at, created_by)
+     values ('${clinicA}','audit-definer',1,'Definer check','consent','We may.',
+             'published', now(), '${aAdmin}') returning id`)).rows[0].id;
+
+  const before = await count(
+    `select count(*)::int n from clinical_audit_events
+      where client_id = ${maya} and action = 'family.consent.granted'`);
+
+  await as(parentA, async () => {
+    // Proves the actor genuinely cannot write the log themselves.
+    await insertRaises(
+      `insert into clinical_audit_events (clinic_id, client_id, action)
+       values ('${clinicA}', ${maya}, 'family.consent.granted')`,
+      "guardian writing an audit row directly");
+    await db.exec(`insert into consent_records (clinic_id, client_id, template_id, granted_by)
+                   values ('${clinicA}', ${maya}, '${t}', '${parentA}')`);
+  });
+
+  eq(await count(`select count(*)::int n from clinical_audit_events
+                   where client_id = ${maya} and action = 'family.consent.granted'`),
+     before + 1, "logged despite the actor having no insert right");
+});
+
+await check("staff read the trail with names rather than a list of UUIDs", async () => {
+  await as(aClin, async () => {
+    const row = await one(`select client_name, action from family_access_audit
+                            where client_id = ${auditKid} order by created_at limit 1`);
+    eq(row.client_name, "Audit Child", "client resolved to a name");
+  });
+});
+
+await check("another clinic's staff see none of it", async () => {
+  await as(bAdmin, async () =>
+    eq(await count(`select count(*)::int n from family_access_audit where client_id = ${auditKid}`),
+       0, "cross-tenant audit"));
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
