@@ -67,7 +67,7 @@ function AdminAccessGate({ children }: { children: React.ReactNode }) {
  * join the result against directory() for names, the same pattern
  * "Pending sign-offs" already used before this change. hub_pd_records and
  * hub_time_off_requests needed a new manage-scoped SELECT policy first
- * (migration 0036, not yet applied live) - hub_certificates and
+ * (migration 0041, not yet applied live) - hub_certificates and
  * hub_task_progress already had one from migration 0006.
  */
 type QueueState<T> = { rows: T[] | null; error: string | null };
@@ -349,7 +349,7 @@ function StaffTab({ isAdmin, isPreview }: { isAdmin: boolean; isPreview: boolean
               <tr key={m.id}>
                 <td><b>{m.name}</b></td>
                 <td><span className="pill">{m.accessLevel.toLowerCase()}</span></td>
-                <td>{visiblePeople.find((x) => x.id === m.supervisorId)?.name ?? "\u2014"}</td>
+                <td>{visiblePeople.find((x) => x.id === m.supervisorId)?.name ?? "—"}</td>
                 {isAdmin ? (
                   <td>
                     <TeammateActions
@@ -472,7 +472,7 @@ function InviteForm({
         </>
       ) : null}
       <button onClick={send} disabled={sending || !email.trim()} className="btn" style={{ alignSelf: "flex-start" }}>
-        {sending ? "Sending\u2026" : "Send invite"}
+        {sending ? "Sending…" : "Send invite"}
       </button>
     </div>
   );
