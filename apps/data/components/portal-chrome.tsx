@@ -39,6 +39,9 @@ export function PortalNav() {
     { href: "/tasks", label: "My Tasks", id: "My Tasks", icon: "☑" },
     // Families could send messages before there was anywhere to read them.
     { href: "/messages", label: "Family Messages", id: "Family Messages", icon: "✉" },
+    { href: "/goals", label: "Goal Bank", id: "Goal Bank", icon: "◇" },
+    { href: "/lessons", label: "Lesson Plan Bank", id: "Lesson Plan Bank", icon: "▤" },
+    { href: "/supervision", label: "Supervision Notes", id: "Supervision Notes", icon: "◉" },
     ...(identity?.appRole === "clinician" ? [] : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" }]),
   ];
 

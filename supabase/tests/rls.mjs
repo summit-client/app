@@ -1826,6 +1826,258 @@ await check("a family cannot escalate their own permissions", async () => {
     `update profiles set role = 'admin' where id = '${parentA}'`, "self-promotion"));
 });
 
+// --------------------------------------------------------------------------
+// 0055-0058 · the goal bank
+// --------------------------------------------------------------------------
+
+await check("a family cannot read the goal bank", async () => {
+  // It is the clinic's clinical knowledge, not a client record. A parent
+  // browsing every goal the organization teaches is not something the portal
+  // should offer, and goal_bank_read is staff-only.
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from goal_bank_entries`), 0, "entries"));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from goal_bank_steps`), 0, "steps"));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from goal_bank_catalogue`), 0, "catalogue"));
+});
+
+await check("a second clinic's staff cannot read this clinic's bank", async () => {
+  const e = (await db.query(
+    `insert into goal_bank_entries (clinic_id, name, domain, operational_definition,
+                                    default_measurement_mode)
+     values ('${clinicA}','A private goal','Play','The child does the thing 3 times.','dtt')
+     returning id`)).rows[0].id;
+  await db.exec(`insert into goal_bank_steps (entry_id, step_number, description, prompt_level)
+                 values ('${e}', 1, 'Full physical prompt.', 'physical')`);
+  await as(bAdmin, async () => {
+    eq(await count(`select count(*)::int n from goal_bank_entries where id='${e}'`), 0, "entry");
+    eq(await count(`select count(*)::int n from goal_bank_steps where entry_id='${e}'`), 0, "steps");
+  });
+  await as(aClin, async () =>
+    eq(await count(`select count(*)::int n from goal_bank_entries where id='${e}'`), 1, "own clinic"));
+});
+
+await check("a goal written for a client is contributed back to the bank as a draft", async () => {
+  const before = await count(`select count(*)::int n from goal_bank_entries`);
+  const p = (await db.query(
+    `insert into programs (clinic_id, client_id, name, domain, measurement_mode,
+                           operational_definition, created_by)
+     values ('${clinicA}', ${maya}, 'Requests a turn',
+             'Social Skills', 'dtt',
+             'When a peer has a preferred item, the child asks for a turn using a full sentence.', '${aClin}')
+     returning id, goal_bank_id`)).rows[0];
+  eq(await count(`select count(*)::int n from goal_bank_entries`), before + 1, "bank grew");
+  if (!p.goal_bank_id) throw new Error("the program was not linked to what it contributed");
+  const e = await one(`select status, needs_clinical_review, review_reason, domain, clinic_id
+                         from goal_bank_entries where id='${p.goal_bank_id}'`);
+  eq(e.status, "draft", "status");
+  eq(e.needs_clinical_review, true, "flagged");
+  eq(e.domain, "Social Skills", "domain carried over");
+  if (!String(e.review_reason).includes("contributed")) throw new Error("no reason recorded");
+});
+
+await check("a program taken FROM the bank does not contribute a copy of itself", async () => {
+  const src = (await db.query(
+    `insert into goal_bank_entries (clinic_id, name, domain, operational_definition,
+                                    default_measurement_mode)
+     values ('${clinicA}','From the bank','Play','The child takes a turn within 5 seconds, 8 of 10 times.','dtt')
+     returning id`)).rows[0].id;
+  const before = await count(`select count(*)::int n from goal_bank_entries`);
+  await db.exec(`insert into programs (clinic_id, client_id, name, domain, measurement_mode,
+                                       operational_definition, goal_bank_id, created_by)
+                 values ('${clinicA}', ${maya}, 'From the bank','Play','dtt',
+                         'The child takes a turn within 5 seconds, 8 of 10 times.','${src}', '${aClin}')`);
+  eq(await count(`select count(*)::int n from goal_bank_entries`), before, "bank unchanged");
+});
+
+await check("a goal too thin to reuse is not contributed", async () => {
+  const before = await count(`select count(*)::int n from goal_bank_entries`);
+  await db.exec(`insert into programs (clinic_id, client_id, name, domain, measurement_mode,
+                                       operational_definition, created_by)
+                 values ('${clinicA}', ${maya}, 'x', 'Play', 'dtt', 'do it', '${aClin}')`);
+  eq(await count(`select count(*)::int n from goal_bank_entries`), before, "bank unchanged");
+});
+
+await check("contributed and drafted goals land in the review queue", async () => {
+  await as(aClin, async () => {
+    const n = await count(`select count(*)::int n from goal_bank_review_queue`);
+    if (n === 0) throw new Error("the review queue is empty");
+    const row = await one(`select programs_using from goal_bank_review_queue
+                            where name = 'Requests a turn'`);
+    // The program that contributed it counts as a user, which is the signal
+    // that a contributed goal is worth approving for everyone.
+    eq(row.programs_using, 1, "programs using");
+  });
+});
+
+await check("every goal bank domain has exactly one spelling", async () => {
+  // 0002's seeded rows said "Expressive communication" and the 2026 import
+  // says "Expressive Communication". The Generator filters by domain, so two
+  // spellings means a clinician picking one silently does not see the other's
+  // goals - and a filter that returns results looks like it worked.
+  const dupes = (await db.query(`
+    select lower(domain) d, count(distinct domain)::int n
+      from goal_bank_entries group by 1 having count(distinct domain) > 1`)).rows;
+  if (dupes.length) {
+    throw new Error(`domains spelled more than one way: ${dupes.map((r) => r.d).join(", ")}`);
+  }
+});
+
+// --------------------------------------------------------------------------
+// 0059 · supervision
+// --------------------------------------------------------------------------
+const supervisee = aClin;
+
+await check("a clinician-supervision note cannot carry a client id", async () => {
+  await insertRaises(
+    `insert into supervision_notes (clinic_id, kind, supervisee_id, client_id, supervisor_id, observations)
+     values ('${clinicA}','clinician','${supervisee}',${maya},'${aSuper}','Observed session')`,
+    "clinician note naming a client");
+  await insertRaises(
+    `insert into supervision_notes (clinic_id, kind, supervisee_id, supervisor_id, observations)
+     values ('${clinicA}','client','${supervisee}','${aSuper}','Observed session')`,
+    "client note naming no client");
+});
+
+const note = (await db.query(
+  `insert into supervision_notes (clinic_id, kind, supervisee_id, supervisor_id,
+                                  observations, action_items, next_steps, setting)
+   values ('${clinicA}','clinician','${supervisee}','${aSuper}',
+           'Strong pairing; prompt fading was late on three trials.',
+           'Review prompt hierarchy before Thursday.',
+           'Re-observe in two weeks.', 'In-person, clinic')
+   returning id`)).rows[0].id;
+
+await check("a supervisee reads what was written about them without asking", async () => {
+  await as(supervisee, async () =>
+    eq(await count(`select count(*)::int n from supervision_notes where id='${note}'`), 1, "own note"));
+});
+
+await check("another clinician cannot read someone else's supervision", async () => {
+  await as(aOtherClin, async () =>
+    eq(await count(`select count(*)::int n from supervision_notes where id='${note}'`), 0, "someone else's"));
+});
+
+await check("a supervisee acknowledges, and that is not agreement", async () => {
+  await as(supervisee, async () =>
+    await db.exec(`update supervision_notes set acknowledged_at = now() where id='${note}'`));
+  const r = await one(`select acknowledged_at, signed_at from supervision_notes where id='${note}'`);
+  if (!r.acknowledged_at) throw new Error("acknowledgement not recorded");
+  // Reading it does not sign it. Only the supervisor does that.
+  if (r.signed_at) throw new Error("acknowledging set the signature");
+});
+
+await check("a supervisee cannot edit the note they are acknowledging", async () => {
+  // The UPDATE policy that lets them acknowledge necessarily admits the row,
+  // and RLS cannot restrict which columns an admitted row exposes - so this is
+  // enforced by the trigger, which raises rather than quietly ignoring the
+  // change. The first version of this test asserted the update matched a row
+  // and then read the content back, which is how the hole was found.
+  await as(supervisee, () => insertRaises(
+    `update supervision_notes set observations='Actually it went perfectly' where id='${note}'`,
+    "a supervisee rewriting their own review"));
+  const r = await one(`select observations from supervision_notes where id='${note}'`);
+  if (r.observations.includes("perfectly")) throw new Error("the review was rewritten");
+  // Acknowledging still works.
+  await as(supervisee, async () =>
+    await db.exec(`update supervision_notes set acknowledged_at = now() where id='${note}'`));
+});
+
+await check("a signed note stops changing", async () => {
+  await as(aSuper, async () =>
+    await db.exec(`update supervision_notes set signed_at = now(), signed_name = 'A Supervisor'
+                    where id='${note}'`));
+  await insertRaises(
+    `update supervision_notes set observations = 'rewritten' where id='${note}'`,
+    "editing a signed note");
+});
+
+await check("a supervisor cannot file a note under someone else's name", async () => {
+  await as(aSuper, () => insertRaises(
+    `insert into supervision_notes (clinic_id, kind, supervisee_id, supervisor_id, observations)
+     values ('${clinicA}','clinician','${supervisee}','${aAdmin}','Not mine to write')`,
+    "note filed under another supervisor"));
+});
+
+await check("client supervision needs the clinical action, not the HR one", async () => {
+  // 0024 refuses one action that exposes both PHI and HR confidences, so
+  // these are two actions and the policies pick by the note's kind.
+  const both = (await db.query(`
+    select count(*)::int n from permission_actions
+     where action in ('hr.supervision.manage','clinical.supervision.manage')`)).rows[0].n;
+  eq(both, 2, "both actions exist");
+  const dual = (await db.query(`
+    select count(*)::int n from permission_actions
+     where exposes_phi and exposes_hr_confidential`)).rows[0].n;
+  eq(dual, 0, "no action exposes both");
+});
+
+await check("a material is confirmed by the supervisee and nobody else", async () => {
+  const m = (await db.query(
+    `insert into supervision_materials (clinic_id, note_id, title, kind)
+     values ('${clinicA}','${note}','Prompt hierarchy refresher','training_module')
+     returning id`)).rows[0].id;
+  await as(aOtherClin, () => updateAffects(
+    `update supervision_materials set confirmed_at = now() where id='${m}'`,
+    0, "an unrelated clinician confirming"));
+  await as(supervisee, async () =>
+    await db.exec(`update supervision_materials set confirmed_at = now() where id='${m}'`));
+  const r = await one(`select confirmed_at from supervision_materials where id='${m}'`);
+  if (!r.confirmed_at) throw new Error("the supervisee could not confirm their own material");
+});
+
+await check("a family cannot read supervision of any kind", async () => {
+  await as(parentA, async () => {
+    eq(await count(`select count(*)::int n from supervision_notes`), 0, "notes");
+    eq(await count(`select count(*)::int n from supervision_materials`), 0, "materials");
+    eq(await count(`select count(*)::int n from my_supervision`), 0, "view");
+  });
+});
+
+// --------------------------------------------------------------------------
+// 0060-0061 · the lesson plan bank
+// --------------------------------------------------------------------------
+const lessonProgram = (await db.query(
+  `insert into lesson_programs (id, clinic_id, name, status)
+   values ('lp-test','${clinicA}','Test Cooking Group','Approved') returning id`)).rows[0].id;
+await db.exec(`insert into lesson_resources (id, clinic_id, program_id, name, kind, contains_client_info)
+               values ('lr-blank','${clinicA}','${lessonProgram}','Blank datasheet','datasheet', false),
+                      ('lr-filled','${clinicA}','${lessonProgram}','Completed datasheet','datasheet', true)`);
+
+await check("a blank template is staff material; one naming a client is not", async () => {
+  // aSched2 holds no clinical.client.read.
+  const scheduler = await mkUser("a_sched3", "scheduler", clinicA);
+  await as(scheduler, async () => {
+    eq(await count(`select count(*)::int n from lesson_resources where id='lr-blank'`), 1, "blank");
+    eq(await count(`select count(*)::int n from lesson_resources where id='lr-filled'`), 0, "with client info");
+  });
+  await as(aClin, async () =>
+    eq(await count(`select count(*)::int n from lesson_resources where id='lr-filled'`), 1, "clinician"));
+});
+
+await check("a family cannot read the lesson plan bank", async () => {
+  await as(parentA, async () => {
+    eq(await count(`select count(*)::int n from lesson_programs`), 0, "programs");
+    eq(await count(`select count(*)::int n from lesson_resources`), 0, "resources");
+    eq(await count(`select count(*)::int n from lesson_plan_catalogue`), 0, "catalogue");
+  });
+});
+
+await check("a second clinic cannot read this clinic's lesson bank", async () => {
+  await as(bAdmin, async () =>
+    eq(await count(`select count(*)::int n from lesson_programs where id='${lessonProgram}'`), 0, "cross-tenant"));
+});
+
+await check("the catalogue counts every resource, including ones the reader cannot open", async () => {
+  // Hiding the count would misrepresent the programme rather than protect
+  // anything: the resource's existence is not the sensitive part.
+  await as(aClin, async () => {
+    const r = await one(`select resource_count from lesson_plan_catalogue where id='${lessonProgram}'`);
+    eq(r.resource_count, 2, "resource count");
+  });
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
