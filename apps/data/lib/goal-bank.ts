@@ -67,6 +67,13 @@ export function provenanceLabel(e: BankEntry): string {
   return "Source not recorded";
 }
 
+/** How a step's prompt level reads. "independent prompt" is a contradiction:
+ *  independent is the absence of one. */
+export function promptLabel(level: PromptLevel | null): string | null {
+  if (!level) return null;
+  return level === "independent" ? "independent" : `${level} prompt`;
+}
+
 /** Whether this entry can go on a client's program right now. */
 export function assignable(e: BankEntry): boolean {
   return e.status === "approved";

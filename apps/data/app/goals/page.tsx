@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import {
-  assignable, getSteps, listDomains, provenanceLabel, searchBank, whyNotAssignable,
+  assignable, getSteps, listDomains, promptLabel, provenanceLabel, searchBank,
+  whyNotAssignable,
   type BankEntry, type BankStep,
 } from "@/lib/goal-bank";
 
@@ -147,7 +148,7 @@ export default function GoalBankPage() {
                   </p>
                   <p className="sub" style={{ margin: "0 0 10px" }}>
                     <b>Mastery:</b> {e.masteryCriteria}
-                    {e.promptLevel ? ` · starts at ${e.promptLevel} prompt` : ""}
+                    {e.promptLevel ? ` · starts at ${promptLabel(e.promptLevel)}` : ""}
                   </p>
 
                   {e.teachingProcedure ? (
@@ -175,7 +176,7 @@ export default function GoalBankPage() {
                         <li key={s.id} style={{ lineHeight: 1.5 }}>
                           {s.description}
                           {s.promptLevel ? (
-                            <span className="sub"> · {s.promptLevel} prompt</span>
+                            <span className="sub"> · {promptLabel(s.promptLevel)}</span>
                           ) : null}
                         </li>
                       ))}
