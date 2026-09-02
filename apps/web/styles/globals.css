@@ -186,13 +186,16 @@ html { scroll-behavior: smooth; }
 
 @media (max-width: 780px) {
   .mobile-nav-toggle { display: inline-flex; }
-  /* "Log in" repeats the toggle's own function once the dropdown carries
-     both nav links and — via that dropdown or the header itself — a path to
-     sign in; keeping just "Get started" plus the toggle on one row is what
-     actually stops recrimping at narrow phone widths (measured next to the
-     780px cutover above, same method that cutover's own comment used). The
-     link still exists for anyone tabbing through by keyboard or landing here
-     via a wider bumped-down width. */
+  /* Keeping just "Get started" plus the toggle on one row is what stops
+     recrimping at narrow phone widths (measured next to the 780px cutover
+     above, same method that cutover's own comment used). display:none, not
+     visibility:hidden, so this is not just visually gone but out of the tab
+     order and accessibility tree too — PublicNav.tsx's mobile dropdown
+     panel carries its own "Log in" link for exactly that reason (added
+     2026-09-02: this comment used to claim the dropdown "already carries...
+     a path to sign in," but it didn't — confirmed live, rendering the open
+     mobile menu, that a phone visitor had no way to reach /login short of
+     typing the URL). */
   .pubnav-login { display: none; }
 }
 

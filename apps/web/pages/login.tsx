@@ -1,4 +1,5 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
+import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { ROLE_REDIRECTS } from '../lib/role-redirects'
 import { withTimeout } from '../lib/withTimeout'
@@ -6,6 +7,19 @@ import { describeAuthError } from '../lib/authErrors'
 import AuthCard from '../components/auth/AuthCard'
 import FormField from '../components/auth/FormField'
 import SubmitButton from '../components/auth/SubmitButton'
+
+// Both /api/auth/confirm and /auth/callback redirect a failed
+// verification/reset link here as `?error=<message>` - this page used to
+// never read that param, so a broken confirmation link (expired, already
+// used, tampered) silently dropped the user on a plain, blank login form
+// with no explanation of what just happened.
+function readRedirectError(query: Record<string, string | string[] | undefined>): string {
+  const raw = query.error
+  const value = Array.isArray(raw) ? raw[0] : raw
+  if (!value) return ''
+  if (value === 'missing_token') return 'That link is missing required information. Please request a new one.'
+  return value
+}
 
 const AUTH_TIMEOUT_MS = 15000
 
@@ -21,11 +35,21 @@ function validatePassword(value: string) {
 }
 
 export default function Login() {
+  const router = useRouter()
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
   const [formError, setFormError]     = useState('')
   const [loading, setLoading]         = useState(false)
+
+  // router.query is empty on the very first render (Next hasn't parsed the
+  // URL yet); it's populated a tick later without changing the URL itself,
+  // so this fires once the query is actually available.
+  useEffect(() => {
+    if (!router.isReady) return
+    const message = readRedirectError(router.query)
+    if (message) setFormError(message)
+  }, [router.isReady, router.query])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
