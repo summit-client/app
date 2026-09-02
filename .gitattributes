@@ -1,1 +1,15 @@
 * text=auto eol=lf
+
+# Generated data imports. Written by supabase/tools/import-goal-bank.py and by
+# the lesson-library import; 19,000 of the 34,000 lines in the pull request that
+# introduced them are these two files, and none of it is written by hand.
+#
+# `linguist-generated` collapses them in GitHub's diff view by default, so a
+# reviewer sees the migrations and application code rather than scrolling past
+# 17,000 INSERT statements to reach them. The files are still in the diff and
+# still expand on request - this changes what leads, not what is shown.
+#
+# Review the importer, not its output.
+supabase/migrations/0061_import_2026_goal_bank.sql linguist-generated=true
+supabase/migrations/0066_import_lesson_library.sql linguist-generated=true
+supabase/tools/goal-bank-drafts.json              linguist-generated=true

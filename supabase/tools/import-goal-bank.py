@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Turn the organization's Goal Bank spreadsheet into migration 0061.
+Turn the organization's Goal Bank spreadsheet into the goal bank import migration.
 
   python3 supabase/tools/import-goal-bank.py "path/to/Goal Bank.xlsx"
 
@@ -360,7 +360,20 @@ def main():
             + ", ".join(f"{c} x{n}" for c, n in sorted(clashes.items())))
 
     header = (here.parent / "tools" / "goal-bank-header.sql").read_text(encoding="utf8")
-    emit(entries, here.parent / "migrations" / "0056_import_2026_goal_bank.sql", header)
+    # Found by an audit: this was still 0056, the number the migration had
+    # before a merge with main renumbered it to 0061. Re-running the importer
+    # therefore wrote a SECOND copy of 578 goals at the old number, and the
+    # duplicate applied cleanly - two migrations inserting the same rows, the
+    # first one orphaned. Resolved by name here so a future renumber breaks
+    # loudly rather than quietly forking the file.
+    out = here.parent / "migrations"
+    matches = sorted(out.glob("[0-9][0-9][0-9][0-9]_import_2026_goal_bank.sql"))
+    if len(matches) != 1:
+        raise SystemExit(
+            f"expected exactly one *_import_2026_goal_bank.sql in {out}, found {len(matches)}: "
+            + ", ".join(m.name for m in matches))
+    emit(entries, matches[0], header)
+    print("wrote", matches[0].name)
 
     print(f"{len(entries)} entries, {sum(len(g['steps']) for g in entries)} steps")
     print(f"domains: {len({g['domain'] for g in entries})}, "

@@ -28,6 +28,10 @@ const out = join("tests", ".tmp-proxy-auth.mjs");
 await esbuild.build({
   entryPoints: ["index.ts"], bundle: true, outfile: out,
   format: "esm", platform: "neutral",
+  // index.ts imports @supabase/ssr, and esbuild cannot resolve it under
+  // platform:"neutral". The dependency is not what this suite tests, so it is
+  // left unbundled - the same thing every suite here that passes already does.
+  external: ["@supabase/ssr"],
 });
 process.on("exit", () => { try { unlinkSync(out); } catch { /* gone */ } });
 
