@@ -32,6 +32,13 @@ export type RecordType = "client_document" | "family_milestone" | "session_note"
 export interface ShareableRecord {
   recordType: RecordType;
   recordId: string;
+  /**
+   * Carried because a grant insert has to supply it: 0069's write policy
+   * requires clinic_id = auth_clinic_id(). The first version of this file
+   * dropped clinic_id from the type and passed "" at the call site, so every
+   * real insert would have been refused by RLS while preview mode kept working.
+   */
+  clinicId: string;
   clientId: number | null;
   clientName: string | null;
   label: string;
@@ -115,18 +122,18 @@ export const RECORD_TYPE_LABEL: Record<RecordType, string> = {
 const mem: { records: ShareableRecord[]; grants: Record<string, string[]> } = {
   records: [
     {
-      recordType: "client_document", recordId: "d-1", clientId: 1, clientName: "Maya",
+      recordType: "client_document", recordId: "d-1", clinicId: "c-1", clientId: 1, clientName: "Maya",
       label: "Assessment report — Spring 2026", visibility: "family",
       setBy: null, setByName: null, setAt: null, namedGuardians: 0,
     },
     {
-      recordType: "client_document", recordId: "d-2", clientId: 1, clientName: "Maya",
+      recordType: "client_document", recordId: "d-2", clinicId: "c-1", clientId: 1, clientName: "Maya",
       label: "Custody arrangement correspondence", visibility: "specific",
       setBy: "u-super", setByName: "R. Okafor", setAt: "2026-08-28T10:00:00.000Z",
       namedGuardians: 1,
     },
     {
-      recordType: "family_milestone", recordId: "m-1", clientId: 2, clientName: "Noah",
+      recordType: "family_milestone", recordId: "m-1", clinicId: "c-1", clientId: 2, clientName: "Noah",
       label: "First independent request", visibility: "internal",
       setBy: null, setByName: null, setAt: null, namedGuardians: 0,
     },
@@ -144,13 +151,14 @@ export async function getShareableRecords(): Promise<ShareableRecord[]> {
   if (IS_PREVIEW) return mem.records;
   const { data, error } = await sb()
     .from("record_visibility_summary")
-    .select("record_type, record_id, client_id, label, visibility, visibility_set_by, visibility_set_at, named_guardians, clients(name), profiles!visibility_set_by(full_name)")
+    .select("record_type, record_id, clinic_id, client_id, label, visibility, visibility_set_by, visibility_set_at, named_guardians, clients(name), profiles!visibility_set_by(full_name)")
     .order("visibility_set_at", { ascending: false, nullsFirst: false })
     .limit(500);
   if (error) throw new Error(error.message);
   return (data ?? []).map((r: Record<string, unknown>) => ({
     recordType: r.record_type as RecordType,
     recordId: String(r.record_id),
+    clinicId: String(r.clinic_id ?? ""),
     clientId: r.client_id == null ? null : Number(r.client_id),
     clientName: pickName(r.clients),
     label: (r.label as string) ?? "Untitled",
@@ -244,6 +252,11 @@ export async function setGrant(
     const r = mem.records.find((x) => x.recordId === id);
     if (r) r.namedGuardians = cur.size;
     return;
+  }
+  if (!clinicId) {
+    // Sending "" here produces an RLS refusal whose message says nothing about
+    // the real cause. Failing here names it.
+    throw new Error("This record has no clinic on it, so it cannot be shared.");
   }
   const client = sb();
   if (granted) {

@@ -81,7 +81,7 @@ export default function SharingPage() {
   async function toggleGuardian(r: ShareableRecord, g: GuardianOption, on: boolean) {
     setBusy(true); setNotice(null);
     try {
-      await setGrant(r.recordType, r.recordId, "", g.userId, on);
+      await setGrant(r.recordType, r.recordId, r.clinicId, g.userId, on);
       const next = new Set(granted);
       if (on) next.add(g.userId); else next.delete(g.userId);
       setGranted(next);

@@ -42,7 +42,7 @@ const t = (name, cond) => {
 };
 
 const rec = (over = {}) => ({
-  recordType: "client_document", recordId: "r-1", clientId: 1, clientName: "Maya",
+  recordType: "client_document", recordId: "r-1", clinicId: "c-1", clientId: 1, clientName: "Maya",
   label: "A document", visibility: "family", setBy: null, setByName: null,
   setAt: null, namedGuardians: 0, ...over,
 });
