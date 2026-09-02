@@ -1615,6 +1615,64 @@ await check("every branch of family_tasks still produces its own kind", async ()
 });
 
 
+// --------------------------------------------------------------------------
+// 0050 · the care team
+// --------------------------------------------------------------------------
+await check("a family still cannot read the staff table itself", async () => {
+  // The whole reason my_care_team() is a function: a policy here would return
+  // capacity, specialties and location alongside the name.
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from staff`), 0, "staff rows"));
+});
+
+await check("the care team names the people who actually deliver the sessions", async () => {
+  const st = (await db.query(
+    `insert into staff (name, role, capacity, clinic_id)
+     values ('Dana Okafor', 'Behaviour Therapist', 12, '${clinicA}') returning id`)).rows[0].id;
+  await db.exec(`insert into sessions (clinic_id, client_id, employee_id, session_date, hour, status, type)
+                 values ('${clinicA}', ${maya}, ${st}, current_date - 7, 10, 'completed', 'Session'),
+                        ('${clinicA}', ${maya}, ${st}, current_date + 5, 10, 'scheduled', 'Session')`);
+  await as(parentA, async () => {
+    const row = await one(`select staff_name, staff_role, sessions_delivered, last_seen_on, next_on
+                             from public.my_care_team() where staff_id = ${st}`);
+    eq(row.staff_name, "Dana Okafor", "name");
+    eq(row.staff_role, "Behaviour Therapist", "role");
+    eq(row.sessions_delivered, 1, "delivered");
+    if (!row.last_seen_on) throw new Error("no last seen date");
+    if (!row.next_on) throw new Error("no next date");
+  });
+});
+
+await check("the care team returns a name and a title, and nothing operational", async () => {
+  const cols = (await db.query(
+    `select p.proname, pg_get_function_result(p.oid) r from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname='public' and p.proname='my_care_team'`)).rows[0].r;
+  for (const leaked of ["capacity", "specialt", "location_id"]) {
+    if (cols.includes(leaked)) throw new Error(`my_care_team exposes ${leaked}`);
+  }
+});
+
+await check("a guardian without view_appointments learns no clinician's name", async () => {
+  await as(silent, async () =>
+    eq(await count(`select count(*)::int n from public.my_care_team()`), 0, "care team"));
+});
+
+await check("an unrelated family sees no care team", async () => {
+  await as(outsider, async () =>
+    eq(await count(`select count(*)::int n from public.my_care_team()`), 0, "care team"));
+});
+
+await check("a cancelled session does not put someone on the care team", async () => {
+  const st = (await db.query(
+    `insert into staff (name, clinic_id) values ('Only Cancelled', '${clinicA}') returning id`)).rows[0].id;
+  await db.exec(`insert into sessions (clinic_id, client_id, employee_id, session_date, hour, status, type)
+                 values ('${clinicA}', ${maya}, ${st}, current_date - 2, 9, 'cancelled', 'Session')`);
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_care_team() where staff_id = ${st}`),
+       0, "cancelled-only staff"));
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

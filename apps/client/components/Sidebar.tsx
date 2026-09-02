@@ -13,6 +13,7 @@ type SidebarIconName =
   | "message"
   | "document"
   | "consent"
+  | "family"
   | "settings"
   | "logout";
 
@@ -72,6 +73,14 @@ function SidebarIcon({
         <path d="M14 2v6h6M9 13h8M9 17h8" />
       </>
     ),
+    family: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <circle cx="17" cy="10" r="2.4" />
+        <path d="M3.5 19v-1.2A4.3 4.3 0 0 1 7.8 13.5h2.4a4.3 4.3 0 0 1 4.3 4.3V19" />
+        <path d="M16 19v-.8a3.4 3.4 0 0 1 2.6-3.3" />
+      </>
+    ),
     consent: (
       <>
         <path d="M6 3h12v18H6z" />
@@ -119,6 +128,7 @@ const navItems: NavItem[] = [
   { label: "Messages", icon: "message", href: "/messages" },
   { label: "Documents", icon: "document", href: "/documents" },
   { label: "Forms & consents", icon: "consent", href: "/forms" },
+  { label: "Your family", icon: "family", href: "/family" },
   { label: "Settings", icon: "settings", comingSoon: true },
 ];
 
