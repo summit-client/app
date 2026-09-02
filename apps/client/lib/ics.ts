@@ -20,18 +20,6 @@ export type IcsSession = {
 
 const ICS_LINE_MAX_OCTETS = 75;
 
-/**
- * A session's exact duration isn't available anywhere this app has
- * confirmed access to (no session_types join, no duration column in what
- * pages/appointments.tsx has ever queried) - `@summit/settings` has a real
- * per-org `org.defaultSessionDuration` (default "120" minutes) that would
- * be the right source, but apps/client doesn't depend on that package (see
- * BLOCKED-client.md). Using a conservative estimate and saying so in the
- * event description, rather than asserting a duration this app doesn't
- * actually know.
- */
-const DEFAULT_SESSION_DURATION_MINUTES = 60;
-
 /** RFC 5545 §3.3.11: backslash, semicolon, comma and newline must be
  *  escaped in TEXT values. Backslash first, or escaping the other
  *  characters would double-escape the backslash this function itself
@@ -95,7 +83,7 @@ function addDays(dateStr: string, days: number): string {
   ).padStart(2, "0")}`;
 }
 
-function buildEvent(session: IcsSession, dtstamp: string): string[] {
+function buildEvent(session: IcsSession, dtstamp: string, durationMinutes: number): string[] {
   // Stable per session id, not regenerated per download - a calendar app
   // re-importing this feed later updates the existing event instead of
   // creating a duplicate.
@@ -123,13 +111,20 @@ function buildEvent(session: IcsSession, dtstamp: string): string[] {
   } else {
     const minute = session.minute ?? 0;
     const start = clinicWallTimeToUtc(session.session_date, session.hour, minute);
-    const end = new Date(start.getTime() + DEFAULT_SESSION_DURATION_MINUTES * 60_000);
+    const end = new Date(start.getTime() + durationMinutes * 60_000);
     lines.push(`DTSTART:${formatUtcStamp(start)}`);
     lines.push(`DTEND:${formatUtcStamp(end)}`);
     lines.push(`SUMMARY:${summary}`);
     lines.push(
       `DESCRIPTION:${escapeText(
-        `Estimated ${DEFAULT_SESSION_DURATION_MINUTES}-minute duration - exact length isn't available here. Check the Summit Client Portal or contact your clinic to confirm.`
+        // durationMinutes is the org's own configured default
+        // (org.defaultSessionDuration via lib/org-settings.ts), not this
+        // specific session's actual length - no session_types join or
+        // duration column is available anywhere this app queries, only the
+        // org-wide default this event falls back to. Still says
+        // "estimated" for that reason, not because the number itself is a
+        // guess.
+        `Estimated ${durationMinutes}-minute duration (your clinic's default session length) - exact length isn't available here. Check the Summit Client Portal or contact your clinic to confirm.`
       )}`
     );
   }
@@ -142,11 +137,23 @@ function buildEvent(session: IcsSession, dtstamp: string): string[] {
  * Builds a complete RFC 5545 iCalendar document for a client's upcoming
  * appointments - CRLF line endings, folded at 75 octets, text values
  * escaped. `sessions` should already be filtered to upcoming/non-cancelled
- * (pages/api/calendar.ics.ts does this at the query level, matching
- * pages/index.tsx's "Upcoming Sessions" query) - this function doesn't
- * filter anything itself, it exports whatever it's given.
+ * (pages/api/calendar.ics.ts and pages/api/calendar/feed/[token].ics.ts
+ * both do this at the query level, matching pages/index.tsx's "Upcoming
+ * Sessions" query) - this function doesn't filter anything itself, it
+ * exports whatever it's given.
+ *
+ * `durationMinutes` - the org's configured default session length
+ * (lib/org-settings.ts's `readDefaultSessionDurationMinutes()`), applied to
+ * every timed event alike since no per-session duration is available here.
+ * Passed in rather than read internally so this function stays a pure,
+ * synchronous builder - both callers already have it by the time they call
+ * this, from one query each makes anyway.
  */
-export function buildAppointmentsIcs(sessions: IcsSession[], clientName: string): string {
+export function buildAppointmentsIcs(
+  sessions: IcsSession[],
+  clientName: string,
+  durationMinutes: number
+): string {
   const dtstamp = formatUtcStamp(new Date());
 
   const lines: string[] = [
@@ -162,7 +169,7 @@ export function buildAppointmentsIcs(sessions: IcsSession[], clientName: string)
   ];
 
   for (const session of sessions) {
-    lines.push(...buildEvent(session, dtstamp));
+    lines.push(...buildEvent(session, dtstamp, durationMinutes));
   }
 
   lines.push("END:VCALENDAR");

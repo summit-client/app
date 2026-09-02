@@ -12,7 +12,7 @@ import { gapsOverlap, parseTimeSetting, toDateStr, todayDateStr } from "../compo
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 import { refreshUrl } from "@summit/portals";
-import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../lib/checkSlotConflict";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../lib/checkSlotConflict";
 import { useFocusTrap } from "../lib/useFocusTrap";
 
 const COLORS = {
@@ -1595,7 +1595,17 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       }
 
       const { error: err } = await supabase.from("sessions").insert(freshInserts);
-      if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
+      if (err) {
+        setBooking(false);
+        // The fresh pre-check above closes the overwhelming majority of
+        // cases, but not a write racing another one within this same round
+        // trip - migration 0045's DB constraint is what catches that. See
+        // lib/checkSlotConflict.ts's isBookingConflictError.
+        setError(isBookingConflictError(err)
+          ? "One of these slots was just booked by someone else - please review and try again."
+          : "Booking failed. Try again.");
+        return;
+      }
 
       // Auto-promote waitlist clients booked for Assessment
       const assessmentClientIds = [...new Set(
@@ -1660,7 +1670,16 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         is_home_visit: quickIsHome,
         home_address: quickIsHome ? (quickHomeAddress || null) : null,
       });
-      if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
+      if (err) {
+        setBooking(false);
+        // Same reasoning as handleConfirmAndBook above - migration 0045's DB
+        // constraint is the backstop for a write that races another one
+        // within this same round trip, past the fresh pre-check above.
+        setError(isBookingConflictError(err)
+          ? "That slot was just booked by someone else - pick another time."
+          : "Booking failed. Try again.");
+        return;
+      }
       setBooking(false);
       setPendingConflict(null);
       refreshBookings();
@@ -1753,7 +1772,17 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         }
 
         const { error: err } = await supabase.from("sessions").insert(freshInserts);
-        if (err) { setBooking(false); setError("Booking failed. Try again."); return; }
+        if (err) {
+          setBooking(false);
+          // Same reasoning as handleConfirmAndBook/insertQuickSlot above -
+          // migration 0045's DB constraint is the backstop past the fresh
+          // pre-check for a write that races another one within this same
+          // round trip.
+          setError(isBookingConflictError(err)
+            ? "One of these dates was just booked by someone else - please review and try again."
+            : "Booking failed. Try again.");
+          return;
+        }
 
         setBooking(false);
         refreshBookings();
@@ -2594,7 +2623,15 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
       hour: proposeHour,
     }).eq("id", rescheduleTarget.id);
     setRescheduleSaving(false);
-    if (err) { setRescheduleError("Reschedule failed. Please try again."); return; }
+    if (err) {
+      // Same reasoning as the other write sites in this file - migration
+      // 0045's DB constraint is the backstop for a write that races another
+      // one within this same round trip, past the fresh pre-check above.
+      setRescheduleError(isBookingConflictError(err)
+        ? "That slot was just booked by someone else - pick another time."
+        : "Reschedule failed. Please try again.");
+      return;
+    }
     refreshBookings();
     showToast("Session rescheduled");
     setRescheduleTarget(null);

@@ -1,4 +1,4 @@
--- 0042 · What the family still has to do, derived rather than stored
+-- 0047 · What the family still has to do, derived rather than stored
 --
 -- The brief asks for a "For You" list: what needs the parent's attention. The
 -- obvious implementation is a `reminders` table that something writes to.

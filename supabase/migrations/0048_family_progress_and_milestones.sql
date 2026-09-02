@@ -1,4 +1,4 @@
--- 0043 · One progress dataset, two ways of reading it
+-- 0048 · One progress dataset, two ways of reading it
 --
 -- The brief asks for a Clinical view and a Journey view, and is explicit that
 -- these must not become two conflicting representations of the same child. So

@@ -2,12 +2,24 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sessionFreshness, hasLoopGuard, LOOP_GUARD_COOKIE, LOOP_GUARD_MAX_AGE_SECONDS } from "@summit/proxy-auth";
-import { refreshUrl, urlFor } from "@summit/portals";
+import { loginUrl, refreshUrl, urlFor } from "@summit/portals";
 
-// Scheduler's sign-in page is same-origin (/login), unlike the other three
-// portals which bounce to apps/web. The refresh endpoint, though, only ever
-// lives at apps/web - see @summit/proxy-auth's file header for why no portal
-// is allowed to redeem a refresh token itself.
+/**
+ * Auth gate for the scheduler portal (apps/scheduler, port 3000) — Next 16: file `proxy.ts`, export `proxy`.
+ * Uses getUser() so the JWT is verified server-side, not just read from the
+ * cookie.
+ *
+ * Scheduler used to have its own same-origin /login page — the only one of
+ * the four portals that did, the other three always bounced to apps/web.
+ * That page's "Send Magic Link" button called signInWithOtp() with no
+ * shouldCreateUser guard, on a route proxy.ts had to exempt from the auth
+ * gate (a login page can't require a session to reach it) — so it was a
+ * second, unauthenticated, self-registration-capable entry point sitting
+ * next to the one apps/web already owned. Removed; scheduler now bounces to
+ * the shared hub like the other three, matching apps/data and apps/client
+ * exactly.
+ */
+const LOGIN_URL = loginUrl();
 const REFRESH_URL = refreshUrl();
 // Behind nginx, req.url reflects the address the Next.js process itself is
 // bound to (http://localhost:3000) rather than the public hostname the
@@ -31,10 +43,7 @@ export async function proxy(req: NextRequest) {
   const freshness = await sessionFreshness(req.cookies.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
 
   if (freshness === "missing") {
-    if (req.nextUrl.pathname !== "/login") {
-      return NextResponse.redirect(new URL("/login", req.url));
-    }
-    return NextResponse.next();
+    return NextResponse.redirect(new URL(LOGIN_URL));
   }
 
   if (freshness === "stale") {
@@ -42,7 +51,7 @@ export async function proxy(req: NextRequest) {
     // @summit/proxy-auth's LOOP_GUARD_COOKIE doc. Don't try again; a real
     // login is a better failure mode than a silent redirect loop.
     if (hasLoopGuard(req.cookies.getAll())) {
-      return NextResponse.redirect(new URL("/login", req.url));
+      return NextResponse.redirect(new URL(LOGIN_URL));
     }
     const refresh = new URL(REFRESH_URL);
     refresh.searchParams.set("return_to", PUBLIC_ORIGIN + req.nextUrl.pathname + req.nextUrl.search);
@@ -82,12 +91,8 @@ export async function proxy(req: NextRequest) {
   // reads the cookie, which is enough to spoof a stale or forged session.
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user && req.nextUrl.pathname !== "/login") {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-
-  if (user && req.nextUrl.pathname === "/login") {
-    return NextResponse.redirect(new URL("/", req.url));
+  if (!user) {
+    return NextResponse.redirect(new URL(LOGIN_URL));
   }
 
   return res;

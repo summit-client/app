@@ -1133,7 +1133,7 @@ await check("a thread's clinic is derived from the child, never taken from the r
 
 await check("staff messaging is gated on the care-team action, not on client-file access", async () => {
   // A scheduler may read a client file; the family's care conversation is not
-  // part of that. Main's action catalogue says so and now governs 0044's
+  // part of that. Main's action catalogue says so and now governs 0049's
   // tables too.
   const scheduler = await mkUser("a_sched2", "scheduler", clinicA);
   await as(scheduler, async () => {

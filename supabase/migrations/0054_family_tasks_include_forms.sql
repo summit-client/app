@@ -1,9 +1,9 @@
--- 0049 · An outstanding form is a task
+-- 0054 · An outstanding form is a task
 --
 -- 0042 built `family_tasks` as a view over live entities, precisely so a new
 -- kind of outstanding thing could be added by teaching the view about it
 -- rather than by writing rows into an inbox and remembering to unwrite them.
--- This is the first time that pays off: forms arrived in 0048 and become a
+-- This is the first time that pays off: forms arrived in 0053 and become a
 -- task here with no backfill, no reconciliation, and nothing to clear when a
 -- family completes one. A cancelled or completed assignment is simply absent
 -- from the source query.
@@ -20,7 +20,7 @@
 --
 -- So the existing definition is read back from the catalogue and the new
 -- branch appended to it. Nothing that already works passes through a keyboard.
--- The same reasoning as 0046's diagnostic views, and for the same reason: a
+-- The same reasoning as 0051's diagnostic views, and for the same reason: a
 -- forty-line view transcribed by hand is where a predicate quietly changes
 -- meaning.
 do $$

@@ -1,7 +1,7 @@
 /**
  * Forms and consents, shaped for the portal.
  *
- * The field definitions live in the template as JSON (migration 0048), which
+ * The field definitions live in the template as JSON (migration 0053), which
  * means this file has to treat them as untrusted-ish input: a template written
  * by a clinic can be malformed, and a form that renders half its questions is
  * worse than one that refuses to render.

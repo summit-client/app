@@ -21,7 +21,7 @@ import { isAvailable, hasSessionConflict } from "./suggestions";
 import type { AvailabilityRow, ExistingSession } from "./suggestions";
 import { sessionDuration } from "./types";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
-import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf } from "../../lib/checkSlotConflict";
+import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../../lib/checkSlotConflict";
 import { useFocusTrap } from "../../lib/useFocusTrap";
 
 interface ClientAvailabilityRow { client_id: number; day: string; start_time: string; end_time: string }
@@ -188,7 +188,16 @@ export function RescheduleModal({
       recurrence_id: recurrenceId,
     }).eq("id", session.id);
 
-    if (err) { setSaving(false); setError("Save failed. Try again."); return; }
+    if (err) {
+      // Same reasoning as the fresh pre-check above - migration 0045's DB
+      // constraint is the backstop for a write that races another one
+      // within this same round trip. See lib/checkSlotConflict.ts.
+      setError(isBookingConflictError(err)
+        ? "That slot was just booked by someone else - pick another time."
+        : "Save failed. Try again.");
+      setSaving(false);
+      return;
+    }
 
     if (willRepeat) {
       // Additive only: new rows for the future occurrences, starting the

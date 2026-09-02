@@ -456,7 +456,7 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
               id: p.id as string, name: p.name as string, version: p.version as string,
               effectiveDate: p.effective_date as string, owner: (p.owner as string) ?? "",
               url: (p.document_url as string | null) ?? null,
-              // `body` (migration 0053). This was hardcoded null, which read
+              // `body` (migration 0058). This was hardcoded null, which read
               // like an oversight and was not one: hr_policies had no column
               // to read. Every policy an administrator wrote into Summit
               // previewed as "not attached yet" until the column existed.

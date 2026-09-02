@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Turn the organization's Goal Bank spreadsheet into migration 0056.
+Turn the organization's Goal Bank spreadsheet into migration 0061.
 
   python3 supabase/tools/import-goal-bank.py "path/to/Goal Bank.xlsx"
 

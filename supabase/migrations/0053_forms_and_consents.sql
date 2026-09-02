@@ -1,4 +1,4 @@
--- 0048 · Forms and consents
+-- 0053 · Forms and consents
 --
 -- The portal's sidebar has advertised "Consents · Soon" since its first pass.
 -- This is the schema behind it, and behind the forms half of the family
@@ -386,7 +386,7 @@ where a.cancelled_at is null;
 comment on view my_forms is
   'Forms assigned to this family, with the version of the wording each was '
   'assigned against and the submission if there is one. security_invoker so '
-  'the caller''s own policies apply - see 0046.';
+  'the caller''s own policies apply - see 0051.';
 
 /**
  * Live consents per child, and the history behind them.

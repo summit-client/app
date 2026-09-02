@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export default function PublicNav() {
   const [scrolled, setScrolled] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
@@ -9,6 +12,39 @@ export default function PublicNav() {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  // Mobile menu behaviour: close on Escape (returning focus to the toggle),
+  // close on an outside click, and close if the viewport is resized back up
+  // past the desktop breakpoint (e.g. rotating a tablet) so the panel can't
+  // get stuck open underneath the now-visible desktop links. All three only
+  // need to run while the menu is actually open.
+  useEffect(() => {
+    if (!mobileOpen) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileOpen(false)
+        toggleRef.current?.focus()
+      }
+    }
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (panelRef.current?.contains(target) || toggleRef.current?.contains(target)) return
+      setMobileOpen(false)
+    }
+    const onResize = () => {
+      if (window.innerWidth > 780) setMobileOpen(false)
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('resize', onResize)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [mobileOpen])
 
   const links = [
     { label: 'Features', href: '/#features' },
@@ -62,9 +98,12 @@ export default function PublicNav() {
           ))}
         </div>
 
-        {/* CTAs */}
+        {/* CTAs + mobile menu toggle. The toggle sits with the CTAs rather
+            than beside the logo so it lands on the same side a thumb already
+            is on a phone; it's CSS-hidden above 780px (see .mobile-nav-toggle
+            in globals.css) so it never appears alongside the desktop links. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <a href="/login" style={{
+          <a href="/login" className="pubnav-login" style={{
             fontFamily: "'Outfit',sans-serif",
             fontSize: 15, fontWeight: 500, color: '#1A3F5C',
             textDecoration: 'none', padding: '8px 16px', whiteSpace: 'nowrap'
@@ -80,8 +119,52 @@ export default function PublicNav() {
           }}>
             Get started
           </a>
+          <button
+            ref={toggleRef}
+            type="button"
+            className="mobile-nav-toggle"
+            aria-expanded={mobileOpen}
+            aria-controls="pubnav-mobile-menu"
+            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            onClick={() => setMobileOpen(open => !open)}
+          >
+            {mobileOpen ? (
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+                <path d="M4 4L18 18M18 4L4 18" stroke="#1A3F5C" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+                <path d="M3 6H19M3 11H19M3 16H19" stroke="#1A3F5C" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
+
+      {/* Mobile dropdown panel. Only mounted while open, so a closed menu's
+          links are genuinely out of the tab order rather than merely hidden
+          with CSS — no separate aria-hidden/inert bookkeeping needed. */}
+      {mobileOpen && (
+        <div
+          id="pubnav-mobile-menu"
+          ref={panelRef}
+          className="mobile-nav-panel"
+          role="dialog"
+          aria-modal="false"
+          aria-label="Site menu"
+        >
+          {links.map(l => (
+            <a
+              key={l.href}
+              href={l.href}
+              className="mobile-nav-link"
+              onClick={() => setMobileOpen(false)}
+            >
+              {l.label}
+            </a>
+          ))}
+        </div>
+      )}
     </nav>
   )
 }

@@ -1,4 +1,4 @@
--- 0055 · The goal bank gains codes, teaching steps and provenance
+-- 0060 · The goal bank gains codes, teaching steps and provenance
 --
 -- `goal_bank_entries` (0002) holds a name, a domain, an operational definition
 -- and a teaching procedure. The organization's actual bank carries three more
@@ -163,4 +163,4 @@ from goal_bank_entries e;
 
 comment on view goal_bank_catalogue is
   'What the Goal Generator searches and lists. security_invoker so the '
-  'caller''s own policies apply - see 0046.';
+  'caller''s own policies apply - see 0051.';

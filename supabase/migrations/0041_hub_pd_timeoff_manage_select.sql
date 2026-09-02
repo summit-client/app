@@ -1,11 +1,10 @@
--- 0036 · hub_pd_records / hub_time_off_requests: manage-scoped SELECT
+-- 0041 · hub_pd_records / hub_time_off_requests: manage-scoped SELECT
 --
--- Migration 0006 gave hub_task_progress and hub_certificates a
--- "..._manage_select" SELECT policy (clinic-wide for admin, linked-team for a
--- supervisor, via hub_can_manage()) alongside their own-row SELECT policy -
--- but hub_pd_records and hub_time_off_requests only ever got the UPDATE half
--- of that pair (hub_pd_manage / hub_timeoff_manage). Neither table has ever
--- had a SELECT policy that lets a manager read someone else's row, only their
+-- Migration 0006 gave hub_task_progress and hub_certificates a "..._manage_select" SELECT
+-- policy (clinic-wide for admin, linked-team for a supervisor, via hub_can_manage()) -
+-- but hub_pd_records and hub_time_off_requests only ever got the UPDATE half of
+-- that pair (hub_pd_manage / hub_timeoff_manage). Neither table has ever had
+-- a SELECT policy that lets a manager read someone else's row, only their
 -- own (hub_pd_own / hub_timeoff_own). A supervisor or admin could therefore
 -- already *decide* another employee's PD verification or time-off request
 -- (the UPDATE policy allows it), but could never SEE one to decide on in the
@@ -21,6 +20,10 @@
 -- hub_can_manage() helper (0006: admin sees the whole clinic, a supervisor
 -- sees their linked team via profiles.supervisor_id) that the existing
 -- UPDATE policies on these same two tables already use.
+--
+-- Renamed from 0036 to 0041 - PR #132 merged this file as 0036, colliding with
+-- 0036_client_documents.sql (itself a renumber from an earlier 0035 collision).
+-- Same content, just the next free number on `main` as of this fix.
 --
 -- NOT YET APPLIED to the live database - the Supabase MCP configured for this
 -- project is read-only by design (see CLAUDE.md's "Supabase access for

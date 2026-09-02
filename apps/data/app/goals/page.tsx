@@ -12,7 +12,7 @@ import {
  *
  * 578 goals with codes, teaching procedures and prompt-fading ladders, plus
  * everything clinicians have contributed by writing a goal for a client
- * (migration 0057). This is where you search it; assigning to a specific child
+ * (migration 0062). This is where you search it; assigning to a specific child
  * happens from that child's Programs tab, which is where the client is already
  * in hand.
  *

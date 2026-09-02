@@ -308,7 +308,7 @@ export async function createGoal(g: NewGoal, clientId: number): Promise<void> {
     .from("profiles").select("clinic_id").eq("id", user.id).maybeSingle();
   if (!profile?.clinic_id) throw new Error("Couldn't resolve your clinic.");
 
-  // No goal_bank_id: that is what tells 0057's trigger this is a new goal, and
+  // No goal_bank_id: that is what tells 0062's trigger this is a new goal, and
   // what makes it contribute a draft entry back to the bank.
   const { error } = await client.from("programs").insert({
     clinic_id: profile.clinic_id,

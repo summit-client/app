@@ -8,29 +8,35 @@ inspection to already be correct. Recorded so none of it is silently dropped.
 
 ## Blocked: needs a `packages/` or product change
 
-### 1. BrightHR tenant id is a clinic-specific value in code
+### 1. BrightHR tenant id is a clinic-specific value in code — fixed this session
 
-`lib/content-server.ts` falls back to Mount Etna's own BrightHR tenant UUID
-when `BRIGHTHR_TENANT_ID` is unset. Marked temporary in the file this session,
-per CLAUDE.md's standing instruction, but not fixed.
+Was: `lib/content-server.ts` fell back to Mount Etna's own BrightHR tenant
+UUID when `BRIGHTHR_TENANT_ID` was unset, and `COURSE_LINKS` hardcoded Mount
+Etna's own eight BrightHR/BrightSafe course slugs. This session had
+`packages/settings` in scope (additive only), so the upstream change this
+item asked for is now done: a `training.brighthr` org-scoped
+`@summit/settings` group — `training.brighthr.tenantId` plus one
+`training.brighthr.courses.<courseKey>` entry per course (`BRIGHTHR_TENANT_DEFAULT`/
+`BRIGHTHR_COURSE_DEFAULTS` in `packages/settings/index.ts`) — seeded with
+exactly the old hardcoded values as the default, so Mount Etna is
+byte-identical with no override set. `lib/content-server.ts` now resolves
+both from `getSetting()` instead of the removed fallback/`COURSE_LINKS`
+object; the vendor (BrightHR vs BrightSafe) and URL shape per course key stay
+in code as structural routing, not tenant data.
 
-**Why it isn't a same-session fix.** An environment variable can express one
-tenant per deployment, and the objective is several clinics on one
-subscription. The real shape is a per-clinic setting — but it is not only the
-id: the eight course slugs in `COURSE_LINKS` are Mount Etna's own BrightHR
-catalogue, so a second clinic needs its own course list, not just its own
-`?tid=`. That makes it a `@summit/settings` key plus a data model for
-per-clinic training catalogues, and `packages/settings` is read-only to this
-session.
-
-**Upstream change wanted.** A `training.brighthr` org-scoped settings group
-holding `{ tenantId, courses: Record<courseKey, slug> }`, so
-`lib/content-server.ts` resolves both from settings and keeps the current
-values as the seeded default for the anchor client.
-
-**Interim risk if a second clinic onboards first:** they would be sent to
-Mount Etna's BrightHR tenant. The links would resolve and the wrong
-organization's training would be recorded.
+**Residual gap, not fixed here:** `getSetting()` in a Route Handler (this
+file's only caller) always reads the settings registry's static default,
+never a real org's override — `@summit/settings`' live cache is only ever
+populated by `initSettings()`, called client-side. This is the same
+limitation `app/layout.tsx` and `app/certificates/[id]/page.tsx` already
+carry for `getSetting("org.name")`, logged as open in `apps/data`'s
+`BLOCKED-data.md`. So a second clinic's override, once one exists, would not
+yet actually change what this route resolves to — this session gives that
+clinic a place to put its tenant ID and course slugs and removes Mount
+Etna's values from code, but a Route Handler actually reading a live
+override needs the server-side settings read that's already tracked as open
+elsewhere. Not re-logged here to avoid two open items for the same root
+cause.
 
 ---
 
@@ -222,7 +228,7 @@ losing its error object entirely would be worse, and narrowing it to
 `error.code` is a judgement call about diagnosability that belongs with whoever
 owns the audit trail.
 
-## Policies (migration 0053)
+## Policies (migration 0058)
 
 - **`hr_policies` has no write path anywhere in this app.** The Policies
   screen reads the table; nothing in apps/employee ever inserts or

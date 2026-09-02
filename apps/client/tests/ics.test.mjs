@@ -44,7 +44,8 @@ const s = (over = {}) => ({
 });
 
 console.log("A single-child export");
-const one = I.buildAppointmentsIcs([s()], "Maya");
+const DURATION = 120;   // the org default; the value is not what this suite tests
+const one = I.buildAppointmentsIcs([s()], "Maya", DURATION);
 t("is a valid calendar", one.startsWith("BEGIN:VCALENDAR") && one.trimEnd().endsWith("END:VCALENDAR"));
 t("names the child once, in the calendar name", one.includes("Maya - Summit Appointments"));
 t("does not repeat the child in every event title",
@@ -53,7 +54,7 @@ t("does not repeat the child in every event title",
 console.log("\nA family export");
 const many = I.buildAppointmentsIcs(
   [s({ id: 1, childName: "Maya" }), s({ id: 2, childName: "Noah", session_date: "2026-09-16" })],
-  "Yankov Family");
+  "Yankov Family", DURATION);
 t("carries every child's sessions, not just the first",
   (many.match(/BEGIN:VEVENT/g) || []).length === 2);
 t("each event says whose it is, because the summary is often all that fits",
@@ -64,15 +65,15 @@ console.log("\nIdentity and escaping");
 t("UIDs are stable per session, so a re-import updates rather than duplicates",
   many.includes("UID:session-1@summitclient.io") && many.includes("UID:session-2@summitclient.io"));
 t("a name with a comma is escaped, not left to break the line", (() => {
-  const out = I.buildAppointmentsIcs([s({ childName: "Smith, Jr" })], "F");
+  const out = I.buildAppointmentsIcs([s({ childName: "Smith, Jr" })], "F", DURATION);
   return out.includes("Smith\\, Jr");
 })());
 t("a session with no time still appears, as an all-day entry", (() => {
-  const out = I.buildAppointmentsIcs([s({ hour: null, minute: null, childName: "Maya" })], "F");
+  const out = I.buildAppointmentsIcs([s({ hour: null, minute: null, childName: "Maya" })], "F", DURATION);
   return out.includes("DTSTART;VALUE=DATE:20260915") && out.includes("SUMMARY:Maya - Therapy Session");
 })());
 t("a null childName behaves exactly like a single-child export", (() => {
-  const out = I.buildAppointmentsIcs([s({ childName: null })], "Maya");
+  const out = I.buildAppointmentsIcs([s({ childName: null })], "Maya", DURATION);
   return out.includes("SUMMARY:Therapy Session");
 })());
 

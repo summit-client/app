@@ -1,4 +1,4 @@
--- 0059 · Supervision
+-- 0064 · Supervision
 --
 -- Two things a supervisor writes, and they are not the same record:
 --
@@ -320,4 +320,4 @@ comment on view my_supervision is
   'supervisor, or their clinic''s if they hold the action matching the note''s '
   'kind - hr.supervision.manage for clinician supervision, '
   'clinical.supervision.manage for client supervision. '
-  'security_invoker so those policies apply - see 0046.';
+  'security_invoker so those policies apply - see 0051.';

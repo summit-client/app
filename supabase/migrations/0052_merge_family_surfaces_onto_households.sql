@@ -1,4 +1,4 @@
--- 0047 · Merging two parallel builds of the same portal
+-- 0052 · Merging two parallel builds of the same portal
 --
 -- Two branches built family-facing features at the same time. Main added
 -- care-team messaging (0035), documents (0036), home-program activities (0038)
@@ -169,12 +169,12 @@ create policy client_messages_family_read on client_messages for select
 
 comment on table client_messages is
   'ARCHIVE. The flat one-thread-per-child model that message_threads/messages '
-  'replaced in 0047. Rows were carried forward; the write policies are gone, '
+  'replaced in 0052. Rows were carried forward; the write policies are gone, '
   'so nothing new lands here. Kept readable rather than dropped so the original '
   'record stays inspectable.';
 
 -- Main's two messaging actions are more precise than the clinical.client.read
--- that 0044's staff policies were written against: a scheduler who may look at
+-- that 0049's staff policies were written against: a scheduler who may look at
 -- a client file has no business in the family's care conversation. Adopting
 -- them here also means main's role matrix — admin/supervisor/clinician true,
 -- scheduler/hr_admin/payroll_admin false — actually governs something.
@@ -262,7 +262,7 @@ create trigger messages_clinic
   for each row execute function public.messages_derive_clinic();
 
 -- ---------------------------------------------------------------------------
--- 6. Re-run the view sweep from 0046
+-- 6. Re-run the view sweep from 0051
 --
 -- 0046 turned security_invoker on for every view that existed when it ran.
 -- Main's migrations sort before it, so those are covered — but this is the

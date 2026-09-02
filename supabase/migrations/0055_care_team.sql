@@ -1,4 +1,4 @@
--- 0050 · Who actually works with this child
+-- 0055 · Who actually works with this child
 --
 -- The appointments page has always rendered a clinician name beside each
 -- session. A family cannot read `staff` — there is no policy admitting them —
@@ -14,7 +14,7 @@
 -- without also returning the operational fields beside it.
 --
 -- So this is a `security definer` function that selects three columns. It is
--- also the only shape that survives 0046's sweep, which forces
+-- also the only shape that survives 0051's sweep, which forces
 -- security_invoker on every view and would undo a definer view.
 --
 -- WHY IT IS DERIVED FROM SESSIONS

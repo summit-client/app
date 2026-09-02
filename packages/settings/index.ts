@@ -93,6 +93,32 @@ export const TERMINOLOGY_DEFAULTS: Record<string, string> = {
   supervisor: "Supervisor",
 };
 
+/* ---- BrightHR training catalogue (My HR module) ------------------------------ */
+
+/**
+ * TEMPORARY clinic-specific defaults, per CLAUDE.md's standing instruction to
+ * say so. Both are Mount Etna's own real BrightHR/BrightSafe values — the
+ * only real tenant today — so an org with no override resolves to exactly
+ * today's links. A second clinic overrides `training.brighthr.tenantId` and
+ * its own `training.brighthr.courses.*` keys with its own tenant ID and
+ * course catalogue; the vendor (BrightHR vs BrightSafe) and URL shape per
+ * course key stay in code as structural routing, not tenant data — see
+ * apps/employee/lib/content-server.ts, the one reader, and
+ * apps/employee/BLOCKED-employee.md item 1 for why a single env var couldn't
+ * express this.
+ */
+export const BRIGHTHR_TENANT_DEFAULT = "2a856fee-a895-436b-89c6-96ade3116943";
+export const BRIGHTHR_COURSE_DEFAULTS: Record<string, string> = {
+  "cc-aoda-accessibility": "aoda-awareness",
+  "cc-working-together": "workingtogether-the-code-the-aoda",
+  "cc-ohsa": "getting-to-know-the-ohsa-in-ontario",
+  "cc-whmis": "whmis-v2",
+  "cc-violence-harassment": "workplace-violence-and-harassment",
+  "cc-hs-four-steps": "worker-health-safety-awareness-four-steps",
+  "cc-hazardous-substances": "hazardoussubstances",
+  "cc-wellbeing": "wellbeing-at-work",
+};
+
 export const TERMINOLOGY_SUGGESTIONS: Record<string, string[]> = {
   client: ["Client", "Patient", "Learner", "Student", "Participant"],
   caregiver: ["Caregiver", "Parent", "Guardian", "Family"],
@@ -298,6 +324,21 @@ export const SETTINGS: SettingDef[] = [
     type: "text",
     default: TERMINOLOGY_DEFAULTS[k],
     keywords: ["terminology", "wording", k],
+  })),
+
+  /* Training — BrightHR/BrightSafe catalogue (My HR module). No Settings UI
+     yet, mechanism only — see BRIGHTHR_TENANT_DEFAULT/BRIGHTHR_COURSE_DEFAULTS
+     above for why the defaults are Mount Etna's own real values. */
+  { key: "training.brighthr.tenantId", label: "BrightHR tenant ID", description: "TEMPORARY clinic-specific default (CLAUDE.md) — seeded to Mount Etna's own real BrightHR tenant, the only real tenant today. A second clinic overrides this with its own tenant ID.", section: "integrations", scope: "org", type: "text", default: BRIGHTHR_TENANT_DEFAULT, keywords: ["brighthr", "brightsafe", "training", "tenant", "elearning"] },
+  ...Object.keys(BRIGHTHR_COURSE_DEFAULTS).map((k): SettingDef => ({
+    key: `training.brighthr.courses.${k}`,
+    label: `BrightHR course slug: ${k}`,
+    description: "TEMPORARY clinic-specific default (CLAUDE.md) — seeded to Mount Etna's own BrightHR/BrightSafe course catalogue. A second clinic overrides this with its own course slug.",
+    section: "integrations",
+    scope: "org",
+    type: "text",
+    default: BRIGHTHR_COURSE_DEFAULTS[k],
+    keywords: ["brighthr", "brightsafe", "training", "course", k],
   })),
 ];
 
