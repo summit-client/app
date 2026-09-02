@@ -1,1 +1,36 @@
-LS0gMDA0MSDCtyBodWJfcGRfcmVjb3JkcyAvIGh1Yl90aW1lX29mZl9yZXF1ZXN0czogbWFuYWdlLXNjb3BlZCBTRUxFQ1QKLS0KLS0gTWlncmF0aW9uIDAwMDYgZ2F2ZSBodWJfdGFza19wcm9ncmVzcyBhbmQgaHViX2NlcnRpZmljYXRlcyBhICIuLi5fbWFuYWdlX3NlbGVjdCIgU0VMRUNUCi0tIHBvbGljeSAoY2xpbmljLXdpZGUgZm9yIGFkbWluLCBsaW5rZWQtdGVhbSBmb3IgYSBzdXBlcnZpc29yLCB2aWEgaHViX2Nhbl9tYW5hZ2UoKSkgLQotLSBidXQgaHViX3BkX3JlY29yZHMgYW5kIGh1Yl90aW1lX29mZl9yZXF1ZXN0cyBvbmx5IGV2ZXIgZ290IHRoZSBVUERBVEUgaGFsZiBvZgotLSB0aGF0IHBhaXIgKGh1Yl9wZF9tYW5hZ2UgLyBodWJfdGltZW9mZl9tYW5hZ2UpLiBOZWl0aGVyIHRhYmxlIGhhcyBldmVyIGhhZAotLSBhIFNFTEVDVCBwb2xpY3kgdGhhdCBsZXRzIGEgbWFuYWdlciByZWFkIHNvbWVvbmUgZWxzZSdzIHJvdywgb25seSB0aGVpcgotLSBvd24gKGh1Yl9wZF9vd24gLyBodWJfdGltZW9mZl9vd24pLiBBIHN1cGVydmlzb3Igb3IgYWRtaW4gY291bGQgdGhlcmVmb3JlCi0tIGFscmVhZHkgKmRlY2lkZSogYW5vdGhlciBlbXBsb3llZSdzIFBEIHZlcmlmaWNhdGlvbiBvciB0aW1lLW9mZiByZXF1ZXN0Ci0tICh0aGUgVVBEQVRFIHBvbGljeSBhbGxvd3MgaXQpLCBidXQgY291bGQgbmV2ZXIgU0VFIG9uZSB0byBkZWNpZGUgb24gaW4gdGhlCi0tIGZpcnN0IHBsYWNlIC0gUkxTIHJldHVybnMgYW4gZW1wdHkgc2V0LCBub3QgYW4gZXJyb3IsIHNvIGEgY29ycmVjdGVkIGNsaWVudAotLSBxdWVyeSBhZ2FpbnN0IGVpdGhlciB0YWJsZSB3b3VsZCBoYXZlIHNpbGVudGx5IHNob3duIG5vdGhpbmcgKENMQVVERS5tZCdzCi0tICJSTFMgcmV0dXJucyBlbXB0eSBzZXRzLCBub3QgZXJyb3JzIiB0cmFwKSwgd2hpY2ggaXMgZXhhY3RseSB0aGUgYnVnIHRoaXMKLS0gd2FzIHdyaXR0ZW4gdG8gY2xvc2UgYmVmb3JlIGFwcHMvZW1wbG95ZWUncyBhZG1pbiBjb25zb2xlIHF1ZXJpZXMgZWl0aGVyCi0tIHRhYmxlIGNsaW5pYy13aWRlLgotLQotLSBTaGFwZSBtYXRjaGVzIGh1Yl9jZXJ0c19tYW5hZ2Vfc2VsZWN0IC8gaHViX3Byb2dyZXNzX21hbmFnZV9zZWxlY3QgZXhhY3RseToKLS0gb25lIGNvbW1hbmQgKHNlbGVjdCwgbmV2ZXIgYGZvciBhbGxgKSwgZ2F0ZWQgb24KLS0gYGNsaW5pY19pZCA9IGF1dGhfY2xpbmljX2lkKCkgYW5kIGh1Yl9jYW5fbWFuYWdlKHVzZXJfaWQpYCwgdXNpbmcgdGhlIHNhbWUKLS0gaHViX2Nhbl9tYW5hZ2UoKSBoZWxwZXIgKDAwMDY6IGFkbWluIHNlZXMgdGhlIHdob2xlIGNsaW5pYywgYSBzdXBlcnZpc29yCi0tIHNlZXMgdGhlaXIgbGlua2VkIHRlYW0gdmlhIHByb2ZpbGVzLnN1cGVydmlzb3JfaWQpIHRoYXQgdGhlIGV4aXN0aW5nCi0tIFVQREFURSBwb2xpY2llcyBvbiB0aGVzZSBzYW1lIHR3byB0YWJsZXMgYWxyZWFkeSB1c2UuCi0tCi0tIFJlbmFtZWQgZnJvbSAwMDM2IHRvIDAwNDEgLSBQUiAjMTMyIG1lcmdlZCB0aGlzIGZpbGUgYXMgMDAzNiwgY29sbGlkaW5nIHdpdGgKLS0gMDAzNl9jbGllbnRfZG9jdW1lbnRzLnNxbCAoaXRzZWxmIGEgcmVudW1iZXIgZnJvbSBhbiBlYXJsaWVyIDAwMzUgY29sbGlzaW9uKS4KLS0gU2FtZSBjb250ZW50LCBqdXN0IHRoZSBuZXh0IGZyZWUgbnVtYmVyIG9uIGBtYWluYCBhcyBvZiB0aGlzIGZpeC4KLS0KLS0gTk9UIFlFVCBBUFBMSUVEIHRvIHRoZSBsaXZlIGRhdGFiYXNlIC0gdGhlIFN1cGFiYXNlIE1DUCBjb25maWd1cmVkIGZvciB0aGlzCi0tIHByb2plY3QgaXMgcmVhZC1vbmx5IGJ5IGRlc2lnbiAoc2VlIENMQVVERS5tZCdzICJTdXBhYmFzZSBhY2Nlc3MgZm9yCi0tIENsYXVkZSBzZXNzaW9ucyIpLiBBIGh1bWFuIG5lZWRzIHRvIHJ1biB0aGlzIG1pZ3JhdGlvbi4KCmNyZWF0ZSBwb2xpY3kgaHViX3BkX21hbmFnZV9zZWxlY3Qgb24gaHViX3BkX3JlY29yZHMgZm9yIHNlbGVjdAogIHVzaW5nIChjbGluaWNfaWQgPSBhdXRoX2NsaW5pY19pZCgpIGFuZCBodWJfY2FuX21hbmFnZSh1c2VyX2lkKSk7CgpjcmVhdGUgcG9saWN5IGh1Yl90aW1lb2ZmX21hbmFnZV9zZWxlY3Qgb24gaHViX3RpbWVfb2ZmX3JlcXVlc3RzIGZvciBzZWxlY3QKICB1c2luZyAoY2xpbmljX2lkID0gYXV0aF9jbGluaWNfaWQoKSBhbmQgaHViX2Nhbl9tYW5hZ2UodXNlcl9pZCkpOwo=
+-- 0041 · hub_pd_records / hub_time_off_requests: manage-scoped SELECT
+--
+-- Migration 0006 gave hub_task_progress and hub_certificates a "..._manage_select" SELECT
+-- policy (clinic-wide for admin, linked-team for a supervisor, via hub_can_manage()) -
+-- but hub_pd_records and hub_time_off_requests only ever got the UPDATE half of
+-- that pair (hub_pd_manage / hub_timeoff_manage). Neither table has ever had
+-- a SELECT policy that lets a manager read someone else's row, only their
+-- own (hub_pd_own / hub_timeoff_own). A supervisor or admin could therefore
+-- already *decide* another employee's PD verification or time-off request
+-- (the UPDATE policy allows it), but could never SEE one to decide on in the
+-- first place - RLS returns an empty set, not an error, so a corrected client
+-- query against either table would have silently shown nothing (CLAUDE.md's
+-- "RLS returns empty sets, not errors" trap), which is exactly the bug this
+-- was written to close before apps/employee's admin console queries either
+-- table clinic-wide.
+--
+-- Shape matches hub_certs_manage_select / hub_progress_manage_select exactly:
+-- one command (select, never `for all`), gated on
+-- `clinic_id = auth_clinic_id() and hub_can_manage(user_id)`, using the same
+-- hub_can_manage() helper (0006: admin sees the whole clinic, a supervisor
+-- sees their linked team via profiles.supervisor_id) that the existing
+-- UPDATE policies on these same two tables already use.
+--
+-- Renamed from 0036 to 0041 - PR #132 merged this file as 0036, colliding with
+-- 0036_client_documents.sql (itself a renumber from an earlier 0035 collision).
+-- Same content, just the next free number on `main` as of this fix.
+--
+-- NOT YET APPLIED to the live database - the Supabase MCP configured for this
+-- project is read-only by design (see CLAUDE.md's "Supabase access for
+-- Claude sessions"). A human needs to run this migration.
+
+create policy hub_pd_manage_select on hub_pd_records for select
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
+
+create policy hub_timeoff_manage_select on hub_time_off_requests for select
+  using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));
