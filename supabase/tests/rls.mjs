@@ -1352,6 +1352,269 @@ await check("a change request naming a different child than its session is refus
     "change request with a mismatched child"));
 });
 
+// --------------------------------------------------------------------------
+// 0048 · Forms and consents
+//
+// The two decisions worth testing: a published template cannot change under a
+// family that already answered it, and a consent is a window rather than an
+// answer - so withdrawal keeps the history instead of editing it away.
+// --------------------------------------------------------------------------
+await db.exec(`select set_config('request.jwt.claim.sub','${aAdmin}',false)`);
+const tmpl = (await db.query(
+  `insert into form_templates (clinic_id, key, version, title, kind, fields, status, published_at, created_by)
+   values ('${clinicA}', 'intake', 1, 'Intake questionnaire', 'form',
+           '[{"id":"allergies","label":"Any allergies?","type":"text","required":true}]'::jsonb,
+           'published', now(), '${aAdmin}')
+   returning id`)).rows[0].id;
+const consentTmpl = (await db.query(
+  `insert into form_templates (clinic_id, key, version, title, kind, consent_statement, status, published_at, created_by)
+   values ('${clinicA}', 'photography', 1, 'Photography', 'consent',
+           'Photographs of my child may be used in session materials.',
+           'published', now(), '${aAdmin}')
+   returning id`)).rows[0].id;
+
+await check("a published template cannot be edited under the families who answered it", async () => {
+  await insertRaises(
+    `update form_templates set fields = '[]'::jsonb where id = '${tmpl}'`,
+    "editing a published template");
+  await insertRaises(
+    `update form_templates set title = 'Reworded' where id = '${tmpl}'`,
+    "retitling a published template");
+});
+
+await check("retiring a published template is allowed, because it changes no wording", async () => {
+  const t2 = (await db.query(
+    `insert into form_templates (clinic_id, key, version, title, status, published_at, created_by)
+     values ('${clinicA}','retire-me',1,'Old form','published', now(),'${aAdmin}') returning id`)).rows[0].id;
+  await db.exec(`update form_templates set status='retired' where id='${t2}'`);
+  eq((await one(`select status from form_templates where id='${t2}'`)).status, 'retired', "retired");
+});
+
+await check("a consent template must actually say what is being consented to", async () => {
+  await insertRaises(
+    `insert into form_templates (clinic_id, key, version, title, kind, status, created_by)
+     values ('${clinicA}','empty-consent',1,'Consent','consent','draft','${aAdmin}')`,
+    "consent template with no statement");
+});
+
+const assign = (await db.query(
+  `insert into form_assignments (clinic_id, template_id, client_id, assigned_by, is_required)
+   values ('${clinicA}', '${tmpl}', ${maya}, '${aAdmin}', true) returning id`)).rows[0].id;
+
+await check("a family sees the form assigned to their child, and the wording it was assigned against", async () => {
+  await as(parentA, async () => {
+    const row = await one(`select title, version, fields from my_forms where assignment_id='${assign}'`);
+    eq(row.title, "Intake questionnaire", "title");
+    eq(row.version, 1, "version");
+  });
+});
+
+await check("an unassigned template is not browsable by a family", async () => {
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from form_templates where key='retire-me'`), 0,
+       "unassigned template"));
+});
+
+await check("a draft template is unreachable even once assigned", async () => {
+  const draft = (await db.query(
+    `insert into form_templates (clinic_id, key, version, title, status, created_by)
+     values ('${clinicA}','draft-form',1,'Not ready','draft','${aAdmin}') returning id`)).rows[0].id;
+  await db.exec(`insert into form_assignments (clinic_id, template_id, client_id, assigned_by)
+                 values ('${clinicA}','${draft}',${maya},'${aAdmin}')`);
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from form_templates where key='draft-form'`), 0, "draft"));
+});
+
+await check("completing a form needs complete_forms, not merely view_forms", async () => {
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'complete_forms'
+                    and relationship_id in (select id from guardian_relationships
+                                             where user_id='${parentB}' and client_id=${maya})`);
+  await as(parentB, () => insertRaises(
+    `insert into form_submissions (clinic_id, assignment_id, template_id, client_id, answers, submitted_by, signed_name)
+     values ('${clinicA}','${assign}','${tmpl}',${maya},'{"allergies":"none"}'::jsonb,'${parentB}','Ian')`,
+    "submission without complete_forms"));
+  // Reading it is still fine.
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from my_forms where assignment_id='${assign}'`), 1, "read"));
+});
+
+await check("submitting closes the assignment without any page having to", async () => {
+  await as(parentA, async () =>
+    await db.exec(`insert into form_submissions
+                     (clinic_id, assignment_id, template_id, client_id, answers, submitted_by, signed_name)
+                   values ('${clinicA}','${assign}','${tmpl}',${maya},
+                           '{"allergies":"none"}'::jsonb,'${parentA}','Adina')`));
+  eq((await one(`select completed_at is not null c from form_assignments where id='${assign}'`)).c,
+     true, "assignment closed");
+});
+
+await check("the same assignment cannot be answered twice", async () => {
+  await as(parentA, () => insertRaises(
+    `insert into form_submissions (clinic_id, assignment_id, template_id, client_id, answers, submitted_by)
+     values ('${clinicA}','${assign}','${tmpl}',${maya},'{"allergies":"changed"}'::jsonb,'${parentA}')`,
+    "second submission"));
+});
+
+await check("a submitted answer cannot be edited after the clinic has it", async () => {
+  await as(parentA, () => updateAffects(
+    `update form_submissions set answers = '{"allergies":"rewritten"}'::jsonb
+      where assignment_id='${assign}'`, 0, "family editing a submission"));
+});
+
+await check("a family cannot answer another family's form", async () => {
+  await as(outsider, () => insertRaises(
+    `insert into form_submissions (clinic_id, assignment_id, template_id, client_id, answers, submitted_by)
+     values ('${clinicA}','${assign}','${tmpl}',${maya},'{}'::jsonb,'${outsider}')`,
+    "submission by an unrelated user"));
+});
+
+// --- consents -------------------------------------------------------------
+const consent = (await db.query(
+  `insert into consent_records (clinic_id, client_id, template_id, granted_by, signed_name)
+   values ('${clinicA}', ${maya}, '${consentTmpl}', '${parentA}', 'Adina') returning id`)).rows[0].id;
+
+await check("a child cannot hold two live consents for the same thing", async () => {
+  await insertRaises(
+    `insert into consent_records (clinic_id, client_id, template_id, granted_by)
+     values ('${clinicA}', ${maya}, '${consentTmpl}', '${parentA}')`,
+    "a second live consent");
+});
+
+await check("withdrawing keeps the window rather than editing it away", async () => {
+  await as(parentA, async () =>
+    await db.exec(`update consent_records
+                      set withdrawn_at = now(), withdrawn_by = '${parentA}',
+                          withdrawal_reason = 'Changed our minds'
+                    where id = '${consent}'`));
+  const row = await one(`select granted_at, withdrawn_at, is_active from my_consents
+                          where consent_id='${consent}'`);
+  if (!row.granted_at) throw new Error("the grant date was lost");
+  if (!row.withdrawn_at) throw new Error("the withdrawal was not recorded");
+  eq(row.is_active, false, "active");
+});
+
+await check("a withdrawn consent cannot be quietly reinstated", async () => {
+  await insertRaises(
+    `update consent_records set withdrawn_at = null, withdrawn_by = null where id='${consent}'`,
+    "reinstating a withdrawn consent");
+});
+
+await check("the grant on a consent is immutable", async () => {
+  await insertRaises(
+    `update consent_records set granted_by = '${parentB}' where id='${consent}'`,
+    "rewriting who consented");
+});
+
+await check("re-consenting after withdrawal is a new row, so both windows survive", async () => {
+  await as(parentA, async () =>
+    await db.exec(`insert into consent_records (clinic_id, client_id, template_id, granted_by, signed_name)
+                   values ('${clinicA}', ${maya}, '${consentTmpl}', '${parentA}', 'Adina')`));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from my_consents where client_id=${maya}`), 2, "both windows"));
+});
+
+await check("an unrelated family reaches no form, submission or consent", async () => {
+  await as(outsider, async () => {
+    for (const t of ["form_assignments", "form_submissions", "consent_records", "my_forms", "my_consents"]) {
+      eq(await count(`select count(*)::int n from public.${t}`), 0, t);
+    }
+  });
+});
+
+// --------------------------------------------------------------------------
+// 0049 · forms become tasks
+// --------------------------------------------------------------------------
+
+await check("an unanswered required form reaches the family as a task", async () => {
+  const t = (await db.query(
+    `insert into form_templates (clinic_id, key, version, title, status, published_at, created_by)
+     values ('${clinicA}','consent-check',1,'Media consent','published', now(), '${aAdmin}')
+     returning id`)).rows[0].id;
+  const a = (await db.query(
+    `insert into form_assignments (clinic_id, template_id, client_id, assigned_by, due_on, is_required)
+     values ('${clinicA}','${t}',${noah},'${aAdmin}', current_date + 1, true) returning id`)).rows[0].id;
+
+  await as(parentA, async () => {
+    const row = await one(`select title, href, priority from public.my_family_tasks()
+                            where task_id = 'form:${a}'`);
+    eq(row.title, "Form to complete", "title");
+    eq(row.href, `/forms?form=${a}`, "href");
+    // Due tomorrow, so it leads.
+    eq(row.priority, "high", "priority");
+  });
+});
+
+await check("an optional form is not chased, so it is not a task", async () => {
+  const t = (await db.query(
+    `insert into form_templates (clinic_id, key, version, title, status, published_at, created_by)
+     values ('${clinicA}','optional-survey',1,'Survey','published', now(), '${aAdmin}') returning id`)).rows[0].id;
+  const a = (await db.query(
+    `insert into form_assignments (clinic_id, template_id, client_id, assigned_by, is_required)
+     values ('${clinicA}','${t}',${noah},'${aAdmin}', false) returning id`)).rows[0].id;
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where task_id='form:${a}'`),
+       0, "optional form as a task"));
+});
+
+await check("completing a form removes its task, with nothing to clear", async () => {
+  const t = (await db.query(
+    `insert into form_templates (clinic_id, key, version, title, status, published_at, created_by)
+     values ('${clinicA}','vanishing',1,'Vanishing form','published', now(),'${aAdmin}') returning id`)).rows[0].id;
+  const a = (await db.query(
+    `insert into form_assignments (clinic_id, template_id, client_id, assigned_by)
+     values ('${clinicA}','${t}',${noah},'${aAdmin}') returning id`)).rows[0].id;
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where task_id='form:${a}'`),
+       1, "before"));
+  await as(parentA, async () =>
+    await db.exec(`insert into form_submissions
+                     (clinic_id, assignment_id, template_id, client_id, answers, submitted_by)
+                   values ('${clinicA}','${a}','${t}',${noah},'{}'::jsonb,'${parentA}')`));
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where task_id='form:${a}'`),
+       0, "after"));
+});
+
+await check("a form task needs view_forms, and a guardian without it never sees one", async () => {
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'view_forms'
+                    and relationship_id in (select id from guardian_relationships
+                                             where user_id='${silent}')`);
+  await as(silent, async () =>
+    eq(await count(`select count(*)::int n from public.my_family_tasks() where kind='form'`),
+       0, "form tasks without view_forms"));
+});
+
+await check("a form task reaches the notification centre too", async () => {
+  await as(parentA, async () => {
+    const n = await count(
+      `select count(*)::int n from public.my_notifications() where source='task' and title like '%Form%'`);
+    if (n === 0) throw new Error("no form task reached my_notifications()");
+  });
+});
+
+await check("every branch of family_tasks still produces its own kind", async () => {
+  // Not a count. The first draft of 0049 retyped the funding branch and
+  // changed `status = 'ACTIVE'` to lowercase; every funding task silently
+  // vanished, and the two tests that only asked whether *a* task existed
+  // still passed. Naming the kinds is what makes a lost branch visible.
+  //
+  // Read as a guardian rather than as the superuser: family_tasks is scoped by
+  // auth_accessible_client_ids(), so an unauthenticated read is empty by
+  // design and would assert nothing.
+  await as(parentA, async () => {
+    const kinds = (await db.query(
+      `select distinct kind from public.my_family_tasks() order by 1`)).rows.map((r) => r.kind);
+    for (const k of ["form", "funding"]) {
+      if (!kinds.includes(k)) {
+        throw new Error(`no ${k} task reached a guardian (kinds: ${kinds.join(", ") || "none"})`);
+      }
+    }
+  });
+});
+
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
