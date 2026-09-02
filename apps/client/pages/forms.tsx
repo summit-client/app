@@ -3,7 +3,7 @@ import type {
 } from "next";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { LoadErrorNotice } from "../components/load-error-notice";
@@ -47,6 +47,12 @@ type PageProps =
 export default function Forms(
   props: InferGetServerSidePropsType<typeof getServerSideProps>
 ) {
+  // Every hook in this component runs before the `mode` early-returns below.
+  // sortForms() was a useMemo placed after them, which meant React saw one
+  // hook count on the forms branch and another on no-access or error - "Rendered
+  // more hooks than during the previous render", a crash rather than a wrong
+  // render. It sorts at most a few dozen rows, so calling it directly costs
+  // nothing and removes the trap.
   const router = useRouter();
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [signedName, setSignedName] = useState("");
@@ -87,7 +93,7 @@ export default function Forms(
   const { family, forms, consents, today, loadError, openId } = props;
   const open = openId ? forms.find((f) => f.assignmentId === openId) ?? null : null;
 
-  const ordered = useMemo(() => sortForms(forms, today), [forms, today]);
+  const ordered = sortForms(forms, today);
   const childName = (clientId: number) => {
     const c = childById(family, clientId);
     return c ? displayName(c) : "your family";

@@ -50,10 +50,32 @@ type PageProps =
  * except domains here come from whatever the data actually contains, never
  * a hardcoded list), filterable by status.
  */
+/** Stable empty array for the non-progress branches: an inline `[]` would be a
+ *  new reference every render, so every useMemo below would recompute. */
+const EMPTY_GOALS: GoalProgress[] = [];
+
 export default function Progress(
   props: InferGetServerSidePropsType<typeof getServerSideProps>
 ) {
+  // EVERY hook runs before the mode branches below.
+  //
+  // React counts hooks per render, so a hook placed after an early return is
+  // called on one branch and not another - "Rendered more hooks than during the
+  // previous render" the moment a mount changes mode, which a router.replace()
+  // or an expiring session can do. The `problem` and `error` branches return
+  // before any of this is used, so the goals array is read defensively here.
   const [statusFilter, setStatusFilter] = useState<string>("All");
+
+  // Clinical is the default. Journey is the friendlier reading, but a
+  // parent arriving at a page called Progress is usually looking for a
+  // specific number, and defaulting to the softer view puts an extra click
+  // in front of it. The brief allows a clinic to configure this; until
+  // there is a setting to read, the honest default is the fuller one.
+  const [mode, setMode] = useState<ProgressMode>("clinical");
+
+  const goalsForHooks = props.mode === "progress" ? props.goals : EMPTY_GOALS;
+  const glance = useMemo(() => atAGlance(goalsForHooks), [goalsForHooks]);
+  const journeyDomains = useMemo(() => byDomain(goalsForHooks), [goalsForHooks]);
 
   if (props.mode === "problem") {
     return <AccountProblemNotice problem={props.problem} />;
@@ -65,29 +87,22 @@ export default function Progress(
 
   const { programs, programsError, goals, goalsError, clientName, isAdminViewingAs } = props;
 
-  // Clinical is the default. Journey is the friendlier reading, but a
-  // parent arriving at a page called Progress is usually looking for a
-  // specific number, and defaulting to the softer view puts an extra click
-  // in front of it. The brief allows a clinic to configure this; until
-  // there is a setting to read, the honest default is the fuller one.
-  const [mode, setMode] = useState<ProgressMode>("clinical");
-
-  const glance = useMemo(() => atAGlance(goals), [goals]);
-  const journeyDomains = useMemo(() => byDomain(goals), [goals]);
-
   // Only offer a filter tab for a status this client actually has at least
   // one goal in - not the full universe of possible statuses, and ordered
   // the same family-relevant way sortProgramsForFamily prioritizes them
   // rather than the DB's own row order.
-  const availableStatuses = useMemo(() => {
+  const availableStatuses = (() => {
     const present = new Set(programs.map((program) => program.status));
     return PROGRAM_STATUS_ORDER.filter((status) => present.has(status));
-  }, [programs]);
+  })();
 
   const filteredPrograms =
     statusFilter === "All" ? programs : programs.filter((program) => program.status === statusFilter);
 
-  const domainGroups = useMemo(() => groupProgramsByDomain(filteredPrograms), [filteredPrograms]);
+  // Plain calls, not useMemo: both sit after the mode branches above, where a
+  // hook would be called on one render path and not another. Grouping a
+  // client's programs is trivial work next to the crash that was risking.
+  const domainGroups = groupProgramsByDomain(filteredPrograms);
 
   return (
     <>

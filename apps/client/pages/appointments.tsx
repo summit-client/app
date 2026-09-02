@@ -73,6 +73,10 @@ function childName(family: Family, clientId: number): string {
 type Filter = "All" | "Scheduled" | "Completed" | "Cancelled";
 type ViewMode = "list" | "calendar";
 
+/** Stable empty family for the non-appointments branches: an inline object
+ *  would be a new reference every render and re-fire the effect below. */
+const EMPTY_FAMILY: Family = { householdId: null, householdName: null, children: [] };
+
 export default function Appointments(
   props: InferGetServerSidePropsType<typeof getServerSideProps>
 ) {
@@ -87,6 +91,18 @@ export default function Appointments(
   // remembered choice is applied in an effect - reading localStorage during
   // render would give the server and the browser different first paints.
   const [view, setView] = useState<FamilyView>({ kind: "family" });
+
+  // Hoisted above the mode branches below, along with the calendar memo further
+  // down. React counts hooks per render: one placed after an early return runs
+  // on the appointments branch and not on problem or error, which throws
+  // "Rendered more hooks than during the previous render" the moment a mount
+  // changes mode. Reads props defensively because the other branches return
+  // before any of this is used.
+  const familyForHooks = props.mode === "appointments" ? props.family : EMPTY_FAMILY;
+  const memoryKey = familyForHooks.householdId ?? "anon";
+  useEffect(() => {
+    setView(recallView(memoryKey, familyForHooks));
+  }, [memoryKey, familyForHooks]);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>(
@@ -118,9 +134,6 @@ export default function Appointments(
   const legacyAccount = family.children.length === 0;
   const mayManage = (clientId: number) =>
     legacyAccount || can(childById(family, clientId), "manage_appointments");
-
-  const memoryKey = family.householdId ?? "anon";
-  useEffect(() => { setView(recallView(memoryKey, family)); }, [memoryKey, family]);
 
   function onSwitch(next: FamilyView) {
     setView(next);
@@ -161,8 +174,11 @@ export default function Appointments(
   // for scheduled/completed/cancelled, computed once here rather than
   // re-derived inside CalendarMonth (which stays presentation-only, no
   // knowledge of what "completed" means).
-  const calendarEntries: CalendarEntry[] = useMemo(
-    () =>
+  // Was a useMemo, which sat after the early returns and had the same
+  // hook-order problem. Mapping a few hundred sessions per render is cheaper
+  // than the bug it was causing.
+  const calendarEntries: CalendarEntry[] = (
+    (() =>
       filteredSessions.map((session) => ({
         id: session.id,
         session_date: session.session_date,
@@ -173,8 +189,7 @@ export default function Appointments(
         label: view.kind === "family" && family.children.length > 1
           ? `${childName(family, session.client_id)} · ${formatSessionTime(session.hour, session.minute)}`
           : `${formatSessionTime(session.hour, session.minute)} ${session.type || "Session"}`,
-      })),
-    [filteredSessions, todayDateStr, view, family]
+      })))()
   );
 
   // Calendar mode's day-click narrows the list below to just that date, on

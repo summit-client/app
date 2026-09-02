@@ -16,6 +16,7 @@ type SidebarIconName =
   | "document"
   | "consent"
   | "family"
+  | "updates"
   | "settings"
   | "logout";
 
@@ -83,6 +84,12 @@ function SidebarIcon({
         <path d="M16 19v-.8a3.4 3.4 0 0 1 2.6-3.3" />
       </>
     ),
+    updates: (
+      <>
+        <path d="M4 5.5h16v13H8l-4 3z" />
+        <path d="M8 10h8M8 13.5h5" />
+      </>
+    ),
     consent: (
       <>
         <path d="M6 3h12v18H6z" />
@@ -128,6 +135,12 @@ const navItems: NavItem[] = [
   { label: "Home Program", icon: "activities", href: "/activities" },
   { label: "Funding", icon: "funding", href: "/statement" },
   { label: "Messages", icon: "message", href: "/messages" },
+  // Care Updates was reachable only from one "View all" link on the dashboard.
+  // That was survivable while it held session notes; it is not now that it also
+  // carries the clinic's announcements and the notification centre links here.
+  // A family who scrolled past the dashboard strip had no way back to a closure
+  // notice.
+  { label: "Care Updates", icon: "updates", href: "/updates" },
   { label: "Documents", icon: "document", href: "/documents" },
   { label: "Forms & consents", icon: "consent", href: "/forms" },
   { label: "Your family", icon: "family", href: "/family" },
