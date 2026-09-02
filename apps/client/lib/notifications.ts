@@ -1,7 +1,7 @@
 /**
  * The notification centre, and clinic announcements.
  *
- * `my_notifications()` (migration 0050) assembles everything waiting on a
+ * `my_notifications()` (migration 0051) assembles everything waiting on a
  * family from live rows at read time: unread replies, unread announcements,
  * and the tasks `family_tasks` derives. Nothing is stored, so a notification
  * cannot outlive the thing that caused it — an appointment that gets cancelled

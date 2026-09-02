@@ -1,7 +1,7 @@
 /**
  * The family a signed-in parent can see.
  *
- * One query against `my_family` (migration 0046), which resolves the children,
+ * One query against `my_family` (migration 0047), which resolves the children,
  * the household and the permissions held over each. Not assembled from four
  * queries in the page: the permission join is the part that is easy to get
  * subtly wrong, and getting it wrong in one screen out of eight is how a family

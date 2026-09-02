@@ -1,4 +1,4 @@
--- 0058 · A policy can hold its own text
+-- 0059 · A policy can hold its own text
 --
 -- The Policies & Handbook screen previews a policy two ways: an embedded
 -- document when the policy has a URL, and the policy's text when it does not.

@@ -6,7 +6,7 @@
  * render it. Journey does not receive different data, or softer data — it
  * receives the same numbers and chooses to say fewer of them.
  *
- * Everything comes from `client_goal_progress` (migration 0048), which does the
+ * Everything comes from `client_goal_progress` (migration 0049), which does the
  * arithmetic in SQL. Nothing is recomputed here, so the portal cannot disagree
  * with a clinician looking at the same goal.
  */

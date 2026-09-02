@@ -1,10 +1,10 @@
--- 0066 · Import the Mount Etna lesson plan library
+-- 0067 · Import the Mount Etna lesson plan library
 --
 -- 8 clusters, 22 programmes, 66 resources and 42 group goals from the
 -- organization's curated lesson library.
 --
 -- The 11 resources the library flags as containing personal information keep
--- that flag, and 0065's read policy gates them on clinical.client.read.
+-- that flag, and 0066's read policy gates them on clinical.client.read.
 -- Importing them alongside blank templates with no distinction would have
 -- turned a curated boundary back into a shared folder.
 --

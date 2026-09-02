@@ -136,7 +136,7 @@ export async function resolveViewedClient(
     }
 
     // No direct link means a guardian on a household record, which is the
-    // normal case since migration 0046. Without this fallback every page that
+    // normal case since migration 0047. Without this fallback every page that
     // resolves a client here - the dashboard, appointments, funding, documents,
     // home program, the calendar export - reports NO_CLIENT_LINK to a parent
     // whose account is perfectly fine, because `clients.user_id` is the

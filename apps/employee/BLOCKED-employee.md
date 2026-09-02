@@ -228,7 +228,7 @@ losing its error object entirely would be worse, and narrowing it to
 `error.code` is a judgement call about diagnosability that belongs with whoever
 owns the audit trail.
 
-## Policies (migration 0058)
+## Policies (migration 0059)
 
 - **`hr_policies` has no write path anywhere in this app.** The Policies
   screen reads the table; nothing in apps/employee ever inserts or

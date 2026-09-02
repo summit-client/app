@@ -1,4 +1,4 @@
--- 0051 · Two security fixes found by executing, not by reading
+-- 0052 · Two security fixes found by executing, not by reading
 --
 -- ===========================================================================
 -- BUG 1 · Every view in this schema bypassed row-level security

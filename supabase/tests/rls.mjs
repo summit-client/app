@@ -1133,7 +1133,7 @@ await check("a thread's clinic is derived from the child, never taken from the r
 
 await check("staff messaging is gated on the care-team action, not on client-file access", async () => {
   // A scheduler may read a client file; the family's care conversation is not
-  // part of that. Main's action catalogue says so and now governs 0049's
+  // part of that. Main's action catalogue says so and now governs 0050's
   // tables too.
   const scheduler = await mkUser("a_sched2", "scheduler", clinicA);
   await as(scheduler, async () => {
@@ -2076,6 +2076,115 @@ await check("the catalogue counts every resource, including ones the reader cann
     const r = await one(`select resource_count from lesson_plan_catalogue where id='${lessonProgram}'`);
     eq(r.resource_count, 2, "resource count");
   });
+});
+
+// --------------------------------------------------------------------------
+// 0046 · clinician access to apps/scheduler - read parity clinic-wide,
+// write power scoped to the clinician's own linked staff row only.
+//
+// aClin/aOtherClin and their employment_records rows (empClin/empOther)
+// already exist from the fixture above; this links each to a distinct
+// `staff` row (staff1/staff2) the way an admin would via the employee
+// portal's Settings -> Workforce screen, and adds a third clinician who is
+// deliberately left unlinked to prove read parity does not depend on the
+// link but booking power does.
+// --------------------------------------------------------------------------
+const staff1 = (await db.query(
+  `insert into staff (name, role, clinic_id) values ('Staff One','RBT','${clinicA}') returning id`)).rows[0].id;
+const staff2 = (await db.query(
+  `insert into staff (name, role, clinic_id) values ('Staff Two','RBT','${clinicA}') returning id`)).rows[0].id;
+await db.exec(`update employment_records set staff_id = ${staff1} where id = '${empClin}'`);
+await db.exec(`update employment_records set staff_id = ${staff2} where id = '${empOther}'`);
+
+const aSched = await mkUser("a_sched", "scheduler", clinicA);
+const aUnlinked = await mkUser("a_unlinked", "clinician", clinicA);
+
+const locA = (await db.query(`insert into locations (name, clinic_id) values ('Loc A','${clinicA}') returning id`)).rows[0].id;
+await db.exec(`insert into locations (name, clinic_id) values ('Loc B','${clinicB}')`);
+const typeA = (await db.query(`insert into session_types (name, clinic_id) values ('Direct Therapy','${clinicA}') returning id`)).rows[0].id;
+const calA = (await db.query(`insert into calendars (name, date_start, date_end, status, clinic_id) values ('Cal A','2026-01-01','2026-12-31','active','${clinicA}') returning id`)).rows[0].id;
+await db.exec(`insert into client_availability (client_id, clinic_id, day, start_time, end_time) values (${clientA}, '${clinicA}', 'Mon', '09:00', '17:00')`);
+await db.exec(`insert into staff_availability (staff_id, clinic_id, day, start_time, end_time) values (${staff1}, '${clinicA}', 'Mon', '09:00', '17:00')`);
+
+// sess1: aClin's own session (staff1). sess2: aOtherClin's (staff2) -
+// untouched by aClin in every negative test below. sess3: a second session
+// of aClin's, kept separate so the reassignment test doesn't interact with
+// sess1's own reschedule/cancel lifecycle.
+const sess1 = (await db.query(`insert into sessions (client_id, employee_id, clinic_id, session_date, hour, minute, type, status)
+  values (${clientA}, ${staff1}, '${clinicA}', '2026-04-01', 9, 0, 'Direct Therapy', 'scheduled') returning id`)).rows[0].id;
+const sess2 = (await db.query(`insert into sessions (client_id, employee_id, clinic_id, session_date, hour, minute, type, status)
+  values (${clientA}, ${staff2}, '${clinicA}', '2026-04-01', 9, 0, 'Direct Therapy', 'scheduled') returning id`)).rows[0].id;
+const sess3 = (await db.query(`insert into sessions (client_id, employee_id, clinic_id, session_date, hour, minute, type, status)
+  values (${clientA}, ${staff1}, '${clinicA}', '2026-04-05', 9, 0, 'Direct Therapy', 'scheduled') returning id`)).rows[0].id;
+
+await check("clinician gains clinic-wide read on the five tables 0046 adds (session_types/locations/calendars/availability)", async () => {
+  await as(aClin, async () => {
+    eq(await visible("session_types", `id = ${typeA}`), 1, "session_types");
+    eq(await visible("locations", `id = ${locA}`), 1, "locations");
+    eq(await visible("calendars", `id = ${calA}`), 1, "calendars");
+    eq(await visible("client_availability"), 1, "client_availability");
+    eq(await visible("staff_availability"), 1, "staff_availability");
+  });
+});
+
+await check("clinician's new read access stays clinic-scoped, same as every other table here", async () => {
+  await as(aClin, async () => eq(await visible("locations", `clinic_id = '${clinicB}'`), 0, "clinic B's locations"));
+});
+
+await check("a clinician linked via employment_records can book, reschedule and cancel their OWN session", async () => {
+  await as(aClin, async () => {
+    const r = await db.query(`insert into sessions (client_id, employee_id, clinic_id, session_date, hour, minute, type, status)
+      values (${clientA}, ${staff1}, '${clinicA}', '2026-04-02', 10, 0, 'Direct Therapy', 'scheduled') returning id`);
+    if (!r.rows[0]?.id) throw new Error("booking a session for themselves was not allowed");
+    await updateAffects(`update sessions set hour = 11 where id = ${sess1}`, 1, "own reschedule");
+    await updateAffects(`update sessions set status = 'cancelled' where id = ${sess1}`, 1, "own cancel");
+  });
+});
+
+await check("a clinician cannot create a session for a colleague", async () => {
+  await as(aClin, () => insertRaises(
+    `insert into sessions (client_id, employee_id, clinic_id, session_date, hour, minute, type, status)
+     values (${clientA}, ${staff2}, '${clinicA}', '2026-04-03', 9, 0, 'Direct Therapy', 'scheduled')`,
+    "booking a session for a colleague"));
+});
+
+await check("a clinician cannot reschedule or cancel a colleague's session - it visibly exists, but no write reaches it", async () => {
+  await as(aClin, async () => {
+    eq(await visible("sessions", `id = ${sess2}`), 1, "colleague's session is still readable (full visibility rule)");
+    await updateAffects(`update sessions set hour = 15 where id = ${sess2}`, 0, "reschedule a colleague's session");
+    await updateAffects(`update sessions set status = 'cancelled' where id = ${sess2}`, 0, "cancel a colleague's session");
+  });
+});
+
+await check("a clinician cannot reassign their own session to a colleague", async () => {
+  await as(aClin, async () => {
+    let raised = false;
+    try { await db.exec(`update sessions set employee_id = ${staff2} where id = ${sess3}`); }
+    catch { raised = true; }
+    if (!raised) throw new Error("the reassignment away from the caller's own staff row was allowed");
+  });
+  // Untouched: still assigned to staff1, exactly as the rejected write left it.
+  eq((await db.query(`select employee_id from sessions where id = ${sess3}`)).rows[0].employee_id, staff1,
+    "session's employee_id after the rejected reassignment");
+});
+
+await check("an unlinked clinician (no employment_records.staff_id) keeps full read parity but has zero booking power", async () => {
+  await as(aUnlinked, async () => {
+    eq(await visible("session_types", `id = ${typeA}`), 1, "still reads session_types clinic-wide");
+    eq(await visible("sessions", `id = ${sess1}`), 1, "still reads every session clinic-wide, same as a linked clinician");
+  });
+  await as(aUnlinked, () => insertRaises(
+    `insert into sessions (client_id, employee_id, clinic_id, session_date, hour, minute, type, status)
+     values (${clientA}, ${staff1}, '${clinicA}', '2026-04-04', 9, 0, 'Direct Therapy', 'scheduled')`,
+    "unlinked clinician booking against a real, existing staff_id"));
+  await as(aUnlinked, () => updateAffects(
+    `update sessions set hour = 16 where id = ${sess1}`, 0, "unlinked clinician rescheduling someone else's session"));
+});
+
+await check("admin and scheduler keep full, unscoped session writes - 0046 only adds, never narrows, their access", async () => {
+  await as(aAdmin, () => updateAffects(`update sessions set status = 'cancelled' where id = ${sess2}`, 1, "admin cancels any session"));
+  await as(aSched, () => updateAffects(`update sessions set hour = 13 where id = ${sess3}`, 1, "scheduler reschedules any session"));
+
 });
 
 console.log(out.join("\n"));

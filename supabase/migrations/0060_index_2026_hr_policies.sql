@@ -1,4 +1,4 @@
--- 0059 · Index the 2026 HR policy documents
+-- 0060 · Index the 2026 HR policy documents
 --
 -- The six documents the organization supplied, loaded into `hr_policies` so
 -- the Policies & Handbook screen has something to show. Until now that table

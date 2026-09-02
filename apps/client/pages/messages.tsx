@@ -43,7 +43,7 @@ type PageProps =
  * a reply about tomorrow's session is often on a bad connection.
  *
  * Nothing on this page decides what a family may read. Internal staff notes are
- * excluded by migration 0054's row-level policy, not by a filter here — see the
+ * excluded by migration 0056's row-level policy, not by a filter here — see the
  * note at the top of that migration for why that distinction is the whole
  * design.
  */

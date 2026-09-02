@@ -1,4 +1,4 @@
--- 0056 · Reads that admitted families to staff data
+-- 0057 · Reads that admitted families to staff data
 --
 -- Found by a sweep rather than by inspection: read every table in the schema
 -- as a signed-in family member with no relationship to anyone, and see what

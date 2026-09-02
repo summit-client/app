@@ -1,4 +1,4 @@
--- 0062 · A goal written for one client becomes a goal the clinic owns
+-- 0063 · A goal written for one client becomes a goal the clinic owns
 --
 -- Programs already point at the bank: `programs.goal_bank_id` records that a
 -- program came from a bank entry. Nothing has ever gone the other way, so a

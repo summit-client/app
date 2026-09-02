@@ -3,19 +3,27 @@ import { useRouter } from "next/router";
 // Roles are `profiles.role` values — see UserRole in lib/useUser.ts. This
 // list used to also admit "staff" (never a real role), then later
 // supervisor/clinician/client alongside admin/scheduler for the first three
-// items - all now unreachable dead configuration: @summit/portals'
-// ACCESS.scheduler is ["admin", "scheduler"] only, and pages/_app.tsx gates
-// the entire app on that before Sidebar ever renders (see
-// lib/explainProblem.ts's ROLE_EXCLUDED case). Every item here is
-// admin/scheduler by definition now; only "settings" narrows further.
+// items - all unreachable dead configuration at the time, because
+// @summit/portals' ACCESS.scheduler was ["admin", "scheduler"] only and
+// pages/_app.tsx gates the entire app on that before Sidebar ever renders
+// (see lib/explainProblem.ts's ROLE_EXCLUDED case).
+//
+// 2026-09-02: ACCESS.scheduler now admits "clinician" too (migration 0046 +
+// full read parity on every table this portal reads), so "clinician" is
+// real here again for the items a clinician actually needs to book,
+// reschedule and cancel their own sessions: Dashboard, Calendar, Sessions,
+// Create. "employees" (Staff) and "sessiontypes" (Session Types) stay
+// admin/scheduler-only deliberately - those are roster/config *management*
+// screens, not booking, and 0046's RLS gives clinician no write there at
+// all. "clients" and "settings" are unchanged for the same reason.
 const NAV = [
-  { id: "dashboard", label: "Dashboard", icon: "▦", roles: ["admin", "scheduler"] },
-  { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler"] },
-  { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler"] },
+  { id: "dashboard", label: "Dashboard", icon: "▦", roles: ["admin", "scheduler", "clinician"] },
+  { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler", "clinician"] },
+  { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler", "clinician"] },
   { id: "clients",   label: "Clients",   icon: "⊙", roles: ["admin", "scheduler"] },
   { id: "employees", label: "Staff",     icon: "◎", roles: ["admin", "scheduler"] },
   { id: "sessiontypes", label: "Session Types", icon: "◈", roles: ["admin", "scheduler"] },
-  { id: "create",    label: "Create",    icon: "✦", roles: ["admin", "scheduler"] },
+  { id: "create",    label: "Create",    icon: "✦", roles: ["admin", "scheduler", "clinician"] },
   { id: "settings",  label: "Settings",  icon: "⚙", roles: ["admin"] },
 ];
 

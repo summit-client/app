@@ -1,4 +1,4 @@
--- 0063 · The seeded goal bank rows join the same domain vocabulary
+-- 0064 · The seeded goal bank rows join the same domain vocabulary
 --
 -- 0002 seeded seven entries for the Functional Requesting cluster, with the
 -- domains "Expressive communication" and "Receptive communication". The 2026

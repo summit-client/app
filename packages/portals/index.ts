@@ -157,7 +157,18 @@ export function signOutUrl(): string {
  * renders-then-empty portal the comment above warns about.
  */
 const ACCESS: Record<PortalKey, readonly AppRole[]> = {
-  scheduler: ["admin", "scheduler"],
+  // "clinician" added 2026-09-02: full clinic-wide read parity with
+  // scheduler (migration 0046 gives clinician the same clinic-scoped select
+  // on session_types/locations/calendars/client_availability/
+  // staff_availability that sessions/clients/staff already had), but
+  // create/reschedule/cancel writes on `sessions` are scoped at the database
+  // to the clinician's own linked staff row only (via employment_records) -
+  // see that migration's header. Not the renders-then-empty trap this file's
+  // own comment above warns about: every read this portal needs is covered.
+  // `supervisor` is deliberately NOT added here - a separate, not-yet-made
+  // product decision (0039's own "PORTAL ACCESS NOTE" already anticipated
+  // this).
+  scheduler: ["admin", "scheduler", "clinician"],
   clinician: ["admin", "supervisor", "clinician"],
   employee: ["admin", "supervisor", "clinician", "scheduler"],
   // "admin" added 2026-08-28 so admins can reach the family portal from the

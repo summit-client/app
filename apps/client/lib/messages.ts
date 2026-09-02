@@ -2,7 +2,7 @@
  * Secure messaging, shaped for the family portal.
  *
  * Everything here is presentation. The one rule that actually protects a family
- * from reading an internal staff note lives in migration 0054's RLS policy, not
+ * from reading an internal staff note lives in migration 0056's RLS policy, not
  * in this file — deliberately, because a filter written here would be one
  * forgotten `.eq()` away from a leak. If a message reaches this code, the
  * database has already decided the reader may see it.

@@ -119,7 +119,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  // RLS (session_change_requests_family_insert, migration 0052) independently
+  // RLS (session_change_requests_family_insert, migration 0053) independently
   // re-checks that this session belongs to this client and clinic, and that
   // the caller holds manage_appointments for that child - seeing a sibling's
   // calendar is not the same as being allowed to move it.

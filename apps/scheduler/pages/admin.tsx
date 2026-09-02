@@ -463,6 +463,50 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  // This page has no gate of its own - it never needed one, because until
+  // 2026-09-02 @summit/portals' ACCESS.scheduler admitted only admin and
+  // scheduler, so _app.tsx's portal-wide `problem`/ROLE_EXCLUDED check
+  // (see that file) already kept every other role out of the entire portal,
+  // /admin included. Migration 0046 + that ACCESS.scheduler change gave
+  // clinician a real reason to reach OTHER pages in this app (their own
+  // booking), but not this one - staff/client/location/session-type/
+  // calendar management stays admin/scheduler-only by design (this task's
+  // explicit scope: booking parity, not administrative parity), and
+  // clinician's `sessions`/`staff`/`clients` write policies (0046, all
+  // scoped to their own linked staff row or read-only) don't cover any of
+  // what this page writes. Without this check a clinician could navigate
+  // here directly (Sidebar's "settings" item stays admin-only, but that
+  // only hides the link, not the route) and see fully-enabled staff/client
+  // forms whose Save would just fail against auth_is_scheduling_staff()'s
+  // RLS - exactly the "don't offer an action that will just fail" trap this
+  // whole change is otherwise careful about. Mirrors explainProblem's
+  // ROLE_EXCLUDED tone; a local check because InvitePanel already has one
+  // (line ~515) and neither reads through @summit/portals' admits().
+  if (appUser && appUser.role !== 'admin' && appUser.role !== 'scheduler') {
+    return (
+      <>
+        <input type="checkbox" id="nav-toggle" className="nav-toggle-input" />
+        <div className="mobile-topbar">
+          <label htmlFor="nav-toggle" className="nav-toggle-btn" aria-label="Open menu">
+            <span /><span /><span />
+          </label>
+          <span className="mobile-topbar-title">Summit Scheduler</span>
+        </div>
+        <label htmlFor="nav-toggle" className="nav-toggle-backdrop" aria-hidden="true" />
+        <div className="scheduler-shell" style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-background-tertiary)', fontFamily: 'Inter, sans-serif', fontSize: 16 }}>
+          <Sidebar view="admin" onNavigate={() => {}} appUser={appUser} bookings={bookings} calendars={calendars} />
+          <div style={{ flex: 1, maxWidth: 640, margin: '48px auto', padding: '0 24px' }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Admin is not for your role</h1>
+            <p style={{ color: '#6B7280', fontSize: 15 }}>
+              This screen manages staff, client, location and session-type records - admin and scheduler only.
+              Your own schedule is under Dashboard, Calendar and Sessions in the sidebar.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       {/* Mobile sidebar drawer toggle - see the comment on .scheduler-sidebar

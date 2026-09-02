@@ -1,7 +1,7 @@
 /**
  * Family messaging, from the clinic's side.
  *
- * The family half shipped first (apps/client, migration 0049), which left
+ * The family half shipped first (apps/client, migration 0050), which left
  * families able to send messages that nobody at the clinic could read. This is
  * the other end of that: the queue, the reply, and the internal note.
  *
@@ -19,7 +19,7 @@
  * It does not compute unread counts for staff. `my_message_threads` counts
  * unread per reader for a family; a staff queue wants "who has not been
  * answered", which is thread status, not read state. Status is maintained by
- * the trigger in 0049 whenever anyone posts, so it is already true.
+ * the trigger in 0050 whenever anyone posts, so it is already true.
  */
 import { createBrowserClient } from "@supabase/ssr";
 
@@ -221,7 +221,7 @@ export async function getMessages(threadId: string): Promise<Message[]> {
 /**
  * Post a reply, or an internal note.
  *
- * `clinic_id` is not supplied: the trigger in 0052 derives it from the thread,
+ * `clinic_id` is not supplied: the trigger in 0053 derives it from the thread,
  * so a caller cannot put a message in the wrong clinic's queue by getting a
  * field wrong.
  */

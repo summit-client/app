@@ -1,4 +1,4 @@
--- 0061 · The 2026 goal bank
+-- 0062 · The 2026 goal bank
 --
 -- 554 goals with 2,325 teaching steps from the organization's own bank, plus
 -- 24 drafted to fill four thin domains. Loaded into goal_bank_entries and

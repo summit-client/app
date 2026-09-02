@@ -556,7 +556,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       )
     `)
     // Every child this guardian may see, not just the one the portal is
-    // pointed at. RLS (sessions_family_read, migration 0046) already limits
+    // pointed at. RLS (sessions_family_read, migration 0047) already limits
     // this to children they hold view_appointments for; the .in() is the app
     // not asking for what the database would refuse.
     .in("client_id", accessibleIds)
