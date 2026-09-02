@@ -43,6 +43,7 @@ type PageProps =
       clientName: string;
       budgets: ClientBudget[];
       entries: BudgetEntry[];
+      budgetsError: boolean;
       isAdminViewingAs: boolean;
       generatedOn: string;
     }
@@ -69,6 +70,7 @@ export default function Statement(
 
   const budgets = props.mode === "statement" ? props.budgets : [];
   const entries = props.mode === "statement" ? props.entries : [];
+  const budgetsError = props.mode === "statement" ? props.budgetsError : false;
 
   const selected = budgets.find((b) => b.id === budgetId) ?? budgets[0] ?? null;
 
@@ -134,10 +136,13 @@ export default function Statement(
 
           {budgets.length === 0 ? (
             <div style={panel}>
-              <strong style={{ color: INK }}>No budget on file yet</strong>
+              <strong style={{ color: INK }}>
+                {budgetsError ? "Couldn't load your funding statement" : "No budget on file yet"}
+              </strong>
               <p style={{ margin: "8px 0 0", color: MUTED, fontSize: 14 }}>
-                When your clinic records a funding allocation for {clientName}, the total,
-                the amount spent to date and this statement will appear here.
+                {budgetsError
+                  ? "Something went wrong loading this page. Try refreshing - if it keeps happening, contact your clinic."
+                  : `When your clinic records a funding allocation for ${clientName}, the total, the amount spent to date and this statement will appear here.`}
               </p>
             </div>
           ) : (
@@ -470,13 +475,17 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
 
   // Closed budgets stay on the statement: a reconciliation that hides last
   // year's spending is not a reconciliation.
-  const { data: budgetRows } = await supabase
+  const { data: budgetRows, error: budgetRowsError } = await supabase
     .from("client_budgets")
     .select(
       "id, client_id, name, funding_source, reference, allocated_amount, currency, period_start, period_end, status, notes"
     )
     .eq("client_id", viewed.clientId)
     .order("period_start", { ascending: false });
+
+  if (budgetRowsError) {
+    console.error("Failed to load client budgets for statement:", budgetRowsError.message);
+  }
 
   const budgets: ClientBudget[] = (budgetRows ?? []).map((r) => ({
     id: r.id as string,
@@ -493,7 +502,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
   }));
 
   const ids = budgets.map((b) => b.id);
-  const { data: entryRows } = ids.length
+  const { data: entryRows, error: entryRowsError } = ids.length
     ? await supabase
         .from("budget_entries")
         .select(
@@ -501,7 +510,11 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
         )
         .in("budget_id", ids)
         .order("entry_date", { ascending: true })
-    : { data: [] };
+    : { data: [], error: null };
+
+  if (entryRowsError) {
+    console.error("Failed to load budget entries for statement:", entryRowsError.message);
+  }
 
   const entries: BudgetEntry[] = (entryRows ?? []).map((r) => ({
     id: r.id as string,
@@ -523,6 +536,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
       clientName: viewed.clientName || "your child",
       budgets,
       entries,
+      budgetsError: Boolean(budgetRowsError),
       isAdminViewingAs: viewed.isAdminViewingAs,
       generatedOn: new Date().toISOString().slice(0, 10),
     },
