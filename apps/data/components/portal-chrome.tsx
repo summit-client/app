@@ -44,6 +44,7 @@ export function PortalNav() {
     // Families could send messages before there was anywhere to read them.
     { href: "/messages", label: "Family Messages", id: "Family Messages", icon: "✉", group: "Clinic" },
     { href: "/supervision", label: "Supervision Notes", id: "Supervision Notes", icon: "◉", group: "Clinic" },
+    { href: "/sharing", label: "What Families See", id: "What Families See", icon: "◐", group: "Clinic" },
 
     { href: "/goals", label: "Goal Bank", id: "Goal Bank", icon: "◇", group: "Library" },
     { href: "/lessons", label: "Lesson Plan Bank", id: "Lesson Plan Bank", icon: "▤", group: "Library" },
