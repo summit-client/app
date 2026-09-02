@@ -46,11 +46,11 @@ export interface HubBackend {
    *  the caller's. */
   listPendingCertificatesToIssue(): Promise<PendingCertificate[]>;
   /** Time-off requests still REQUESTED, across the caller's manageable scope.
-   *  See migration 0036's hub_timeoff_manage_select (not yet applied live -
+   *  See migration 0041's hub_timeoff_manage_select (not yet applied live -
    *  see that migration's header). */
   listPendingTimeOffRequests(): Promise<PendingTimeOff[]>;
   /** PD records not yet verified, across the caller's manageable scope. See
-   *  migration 0036's hub_pd_manage_select (not yet applied live - see that
+   *  migration 0041's hub_pd_manage_select (not yet applied live - see that
    *  migration's header). */
   listPendingPdVerifications(): Promise<PendingPd[]>;
   /** Everyone in the caller's manageable scope, with onboarding % and
