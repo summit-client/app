@@ -4,6 +4,15 @@ import type { ProgramFacts, SessionPoint } from "@summit/analytics";
  * Synthetic preview caseload — engineered to exercise every analytics bucket
  * (the thesis's own worked examples). Directive-free and dependency-light so
  * BOTH server routes and client components can import it safely.
+ *
+ * clientId here must match preview-data.ts's previewClients ids (101-104,
+ * Arjun S./Maya T./Leo K./Sofia R.) - app/attention/page.tsx's "Review case"
+ * links straight to `/clients/${clientId}/supervision`. This previously used
+ * 201-204 (plus "Alex R.", a name that matches none of previewClients at
+ * all) - a leftover from the thesis write-up this was adapted from, never
+ * reconciled with the actual preview fixtures - so every one of the five
+ * flagged cards on the Attention screen linked to a client that doesn't
+ * exist in preview mode.
  */
 
 function daysAgo(n: number): string {
@@ -17,7 +26,7 @@ function series(specs: [number, number, number][]): SessionPoint[] {
 const PREVIEW_FACTS: ProgramFacts[] = [
   {
     // The thesis's Alex R. case: 37-day plateau, high integrity, prompt-dependency notes.
-    programId: "f-alex-req", clientId: 201, clientName: "Alex R.",
+    programId: "f-alex-req", clientId: 101, clientName: "Arjun S.",
     goalName: "Functional Requesting", domain: "Communication",
     targetDirection: "increase", masteryPct: 80, masteryConsecutive: 3,
     series: series([[37, 51, 18], [33, 52, 16], [29, 50, 17], [25, 53, 15], [21, 51, 18], [17, 52, 16], [12, 53, 17], [8, 51, 15], [4, 52, 16]]),
@@ -32,7 +41,7 @@ const PREVIEW_FACTS: ProgramFacts[] = [
   },
   {
     // Mastery candidate: one more qualifying session required.
-    programId: "f-alex-wait", clientId: 201, clientName: "Alex R.",
+    programId: "f-alex-wait", clientId: 101, clientName: "Arjun S.",
     goalName: "Waiting", domain: "Self-regulation",
     targetDirection: "increase", masteryPct: 80, masteryConsecutive: 3,
     series: series([[20, 61, 8], [16, 70, 8], [12, 76, 9], [8, 84, 8], [4, 88, 9]]),
@@ -43,7 +52,7 @@ const PREVIEW_FACTS: ProgramFacts[] = [
   },
   {
     // Regression after a phase change.
-    programId: "f-maya-tact", clientId: 202, clientName: "Maya T.",
+    programId: "f-maya-tact", clientId: 102, clientName: "Maya T.",
     goalName: "Tacting Actions", domain: "Communication",
     targetDirection: "increase", masteryPct: 80, masteryConsecutive: 3,
     series: series([[30, 74, 12], [26, 76, 14], [22, 71, 12], [18, 58, 13], [14, 52, 12], [10, 49, 12], [5, 47, 14]]),
@@ -55,7 +64,7 @@ const PREVIEW_FACTS: ProgramFacts[] = [
   },
   {
     // Mastered, no next-step goal programmed.
-    programId: "f-leo-mand", clientId: 203, clientName: "Leo K.",
+    programId: "f-leo-mand", clientId: 103, clientName: "Leo K.",
     goalName: "Request Preferred Item", domain: "Communication",
     targetDirection: "increase", masteryPct: 80, masteryConsecutive: 3,
     series: series([[24, 82, 10], [20, 85, 12], [16, 88, 11], [12, 91, 10]]),
@@ -66,7 +75,7 @@ const PREVIEW_FACTS: ProgramFacts[] = [
   },
   {
     // Sparse data.
-    programId: "f-sofia-social", clientId: 204, clientName: "Sofia R.",
+    programId: "f-sofia-social", clientId: 104, clientName: "Sofia R.",
     goalName: "Peer Initiation", domain: "Social engagement",
     targetDirection: "increase", masteryPct: 80, masteryConsecutive: 3,
     series: series([[26, 44, 6], [19, 47, 5]]),
@@ -76,7 +85,7 @@ const PREVIEW_FACTS: ProgramFacts[] = [
   },
   {
     // Progressing normally (control case).
-    programId: "f-maya-engage", clientId: 202, clientName: "Maya T.",
+    programId: "f-maya-engage", clientId: 102, clientName: "Maya T.",
     goalName: "Group Engagement", domain: "Social engagement",
     targetDirection: "increase", masteryPct: 80, masteryConsecutive: 3,
     series: series([[21, 55, 20], [17, 60, 20], [13, 64, 20], [9, 69, 20], [5, 73, 20], [2, 76, 20]]),

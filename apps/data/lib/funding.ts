@@ -11,6 +11,8 @@
  * module reads the view and writes the atoms.
  */
 import { createBrowserClient } from "@supabase/ssr";
+import { clientSessionFreshness } from "@summit/proxy-auth/client";
+import { loginUrl, refreshUrl } from "@summit/portals";
 
 export const IS_PREVIEW =
   process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
@@ -20,6 +22,28 @@ function sb() {
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
   );
+}
+
+/**
+ * Same cross-portal refresh-token-race guard as apps/data/lib/data.ts's
+ * ensureFreshSession() (see that file's header for the full rationale) -
+ * this file also calls sb().auth.getUser() directly from the browser
+ * (myClinicId(), saveBudget(), postEntry(), reconcile() below) and was
+ * flagged in BLOCKED-data.md as having the same unguarded gap.
+ */
+async function ensureFreshSession(): Promise<void> {
+  const freshness = await clientSessionFreshness(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (freshness === "fresh") return;
+  if (typeof window === "undefined") return;
+
+  if (freshness === "missing") {
+    window.location.href = loginUrl();
+  } else {
+    const refresh = new URL(refreshUrl());
+    refresh.searchParams.set("return_to", window.location.href);
+    window.location.href = refresh.toString();
+  }
+  await new Promise<never>(() => {});
 }
 
 export type BudgetStatus = "ACTIVE" | "EXHAUSTED" | "CLOSED";
@@ -67,15 +91,19 @@ export type Entry = {
 // --- preview fixtures ------------------------------------------------------
 // Enough to exercise every state the screen has to render: a healthy budget, a
 // nearly-exhausted one, reconciled and unreconciled entries, a credit.
+// clientId 101 matches preview-data.ts's Arjun S. (the other preview fixtures
+// use ids 101-104 — this file previously used bare `1`, which is none of
+// them, so the Funding tab silently showed "No budget recorded" for every
+// preview client regardless of which one you opened it on.
 const previewBudgets: Budget[] = [
   {
-    id: "pv-b1", clientId: 1, name: "2026 Service Allocation", fundingSource: "Provincial program",
+    id: "pv-b1", clientId: 101, name: "2026 Service Allocation", fundingSource: "Provincial program",
     reference: "PF-2026-0431", allocatedAmount: 22000, currency: "CAD",
     periodStart: "2026-01-01", periodEnd: "2026-12-31", status: "ACTIVE",
     notes: "Renewal confirmed by the funder in November.",
   },
   {
-    id: "pv-b2", clientId: 1, name: "Private pay — additional hours", fundingSource: "Family",
+    id: "pv-b2", clientId: 101, name: "Private pay — additional hours", fundingSource: "Family",
     reference: null, allocatedAmount: 3000, currency: "CAD",
     periodStart: "2026-03-01", periodEnd: null, status: "ACTIVE", notes: null,
   },
@@ -189,6 +217,7 @@ export async function getEntries(budgetIds: string[]): Promise<Entry[]> {
 // --- writes ----------------------------------------------------------------
 
 async function myClinicId(): Promise<string | null> {
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   if (!user) return null;
   const { data } = await sb().from("profiles").select("clinic_id").eq("id", user.id).single();
@@ -226,6 +255,7 @@ export async function saveBudget(b: Omit<Budget, "id"> & { id?: string }): Promi
   }
 
   row.clinic_id = await myClinicId();
+  await ensureFreshSession();
   row.created_by = (await sb().auth.getUser()).data.user?.id ?? null;
   const { data, error } = await sb().from("client_budgets").insert(row).select("id").single();
   if (error) throw new Error(error.message);
@@ -264,8 +294,10 @@ export async function postEntry(input: {
     return created;
   }
 
+  const clinicId = await myClinicId();
+  await ensureFreshSession();
   const { data, error } = await sb().from("budget_entries").insert({
-    clinic_id: await myClinicId(),
+    clinic_id: clinicId,
     budget_id: input.budgetId,
     entry_date: input.entryDate,
     kind: input.kind,
@@ -300,6 +332,7 @@ export async function reconcile(entryIds: string[]): Promise<void> {
     mem.entries = mem.entries.map((e) => (entryIds.includes(e.id) ? { ...e, reconciled: true } : e));
     return;
   }
+  await ensureFreshSession();
   const { error } = await sb()
     .from("budget_entries")
     .update({ reconciled: true, reconciled_at: new Date().toISOString(),

@@ -1,16 +1,83 @@
-# Blocked items — apps/data hardening pass (round 3)
+# Blocked items — apps/data hardening pass (round 4)
 
 Items that could not be fixed inside `apps/data` because the real fix
 requires a `packages/`, `supabase/migrations/`, or other shared-file change,
 out of scope for this branch by instruction. Logged here instead of fixed.
 
-Round 3 closed the largest item round 2 explicitly deferred: the
-session-history views (Sessions/Timeline/Graphs tabs, the client overview,
-the "Resume session" badge) were reading exclusively from a per-browser
-local mirror instead of the client's real, clinic-wide history. See the PR
-description for what changed. What's below is what remains genuinely
-blocked, carried forward from round 1 (`#99`) and round 2 (`#104`) — still
-true, nothing in `packages/` or `supabase/migrations/` changed since either.
+**Round 4 was a full pre-demo audit and stress test** (2026-09-02, ahead of
+tomorrow's demo — employee portal is the focus, but web/scheduler/data/client
+are all shown), not just a re-read: RLS re-verified against a real scratch
+Postgres (not just code review), every screen driven with Playwright in
+preview mode as clinician/supervisor/admin, and a full write→sign→countersign
+walkthrough exercised end to end. Summary of what changed this round:
+
+- **Closed the last two `getUser()`-freshness gaps** `lib/data.ts`'s BLOCKED
+  note already flagged: `lib/workforce.ts` and `lib/funding.ts` now call the
+  same `ensureFreshSession()` guard before every direct
+  `sb().auth.getUser()` call, exactly the two-line shape the note said it
+  would be. No architectural change.
+- **Re-verified migration `0043` (supervisor-gated status transitions)
+  actually blocks a clinician's raw `.update()` call, not just the UI
+  button** — see "Verified" section below for how and what was tested. It
+  holds. The "Carried over, HIGH" RLS gap this round 3's doc still listed is
+  now closed and the section below reflects that.
+- **Fixed a real infinite-hang bug**: `app/clients/[id]/layout.tsx` had no
+  way to distinguish "still loading" from "no such client" — a bad,
+  cross-clinic-blocked-by-RLS, or deleted client id spun on "Loading
+  client…" forever with no way out. Now shows a "Client not found" screen
+  with a link back to the caseload once the lookup genuinely comes back
+  empty.
+- **Fixed a genuine demo-breaker**: `lib/preview-facts.ts` (the Attention
+  screen's synthetic caseload) used `clientId` 201-204 and named one client
+  "Alex R." — none of which match `preview-data.ts`'s real preview clients
+  (101-104: Arjun S./Maya T./Leo K./Sofia R.). Every one of the five flagged
+  cards on `/attention`'s "Review case" button linked to a client that
+  doesn't exist in preview mode. `lib/preview-report.ts` had the same `202`
+  literal baked into its incident branch. Both fixed; verified all five
+  links now resolve to a real client record.
+- **Fixed a second, narrower instance of the same fixture-id bug**:
+  `lib/funding.ts`'s preview budgets used `clientId: 1` (none of the real
+  preview clients), so the Funding tab showed "No budget recorded" for
+  every demo client regardless of which one was open. Now `101` (Arjun S.).
+- **Minor UX fix**: `.client-tabs` scrolls horizontally instead of wrapping
+  (by design, see CLAUDE.md's design-system section) — but nothing scrolled
+  the active tab into view, so landing directly on a tab late in the list
+  (Timeline, Case Review, Report) could put it off-screen with no visible
+  indication which tab was current. Added a `scrollIntoView` on the active
+  tab's ref.
+- Everything below not marked "Fixed" or "Verified" this round was
+  re-checked against current `main` and is still exactly as described —
+  nothing in `packages/` or `supabase/migrations/` touched any of it since
+  round 3.
+
+---
+
+## Verified this round — migration `0043`'s supervisor gate actually holds at the database
+
+Round 3 logged this as the "Carried over, HIGH" gap below; migration `0043`
+(merged the same night as this audit) is the fix it called for. Re-verified
+independently rather than trusting the migration's own comment: built a
+scratch Postgres (local `postgresql-16`, not the live project — per
+CLAUDE.md, a migration is verified against scratch, never applied live from
+here), ran the actual migration files (`0000`, `0001`, `0004`, `0021`,
+`0043` — unmodified, straight from `supabase/migrations/`) against it with a
+minimal stub of Supabase's `auth.uid()`/`auth.users`, seeded one clinician
+and one supervisor profile, and issued raw `update` statements as each role
+(`set role authenticated; set request.jwt.claim.sub = '<uuid>'`) — no app
+code involved, exactly the "devtools, a script, curl with their own JWT"
+threat model `0043`'s own header names.
+
+Result: a clinician's direct `update session_notes set status =
+'countersigned' ...` / `update programs set status = 'active' ...` /
+`update client_sessions set status = 'locked' ...` against their own
+clinic's rows all raise the expected `raise exception` from `0043`'s
+triggers. The same three statements as the supervisor succeed. A follow-up
+check confirmed the migration is narrowly scoped as its header claims: a
+clinician's *other* legitimate writes on the same three tables (planning →
+active, draft → signed → awaiting_countersign, draft → pending_signoff)
+are untouched and still succeed for a clinician. This closes the "Carried
+over, HIGH" item round 3 logged — see that item's history immediately below
+for the original gap description, kept for the record.
 
 ---
 
@@ -47,40 +114,43 @@ actually true of the current file, not the round-2 list verbatim. `@summit/sessi
 `resolve()` was deliberately **not** touched — the fix above is fully additive
 and narrow enough not to need it.
 
-**Not covered by this round, same shape of gap, found while fixing the
-above:** `apps/data/lib/workforce.ts` and `apps/data/lib/funding.ts` also
-call `sb().auth.getUser()` directly from the browser (own `createBrowserClient()`
-instances, not `lib/data.ts`'s) with no freshness check. They were out of
-scope for this dispatch (scoped to `packages/proxy-auth` plus the specific
-`lib/data.ts` call sites the round-2/3 note already tracked), but the fix is
-now a two-line addition per call site (`import { clientSessionFreshness }
-from "@summit/proxy-auth/client"` and the same `ensureFreshSession()`-shaped
-guard `lib/data.ts` now has) rather than a new architectural decision.
+**Fixed this round (round 4):** `apps/data/lib/workforce.ts` and
+`apps/data/lib/funding.ts` also called `sb().auth.getUser()` directly from
+the browser (own `createBrowserClient()` instances, not `lib/data.ts`'s)
+with no freshness check. Round 3 confirmed the fix was a two-line addition
+per call site and left it for a future pass; round 4 made that pass — both
+files now have their own `ensureFreshSession()` (same shape as
+`lib/data.ts`'s), called before every direct `.auth.getUser()` call
+(`workforce.ts`'s `myClinicId()`; `funding.ts`'s `myClinicId()`,
+`saveBudget()`, `postEntry()`, `reconcile()`). No architectural change, as
+predicted.
 
 ---
 
-## Carried over, HIGH — `session_notes`/`client_sessions`/`programs` RLS grants clinician the same write rights as supervisor
+## Closed (round 4) — `session_notes`/`client_sessions`/`programs` RLS grants clinician the same write rights as supervisor
+
+Closed by migration `0043` (merged the same night as round 4's audit) —
+`auth_is_supervisor_or_admin()` plus three narrowly-scoped `before update`
+triggers, exactly the shape this section originally asked for. Independently
+re-verified against a scratch Postgres, not just read — see "Verified this
+round" near the top of this file for how and what was tested. Original gap
+description kept below for the record.
 
 The root cause behind two things round 2 made functional (the Review
 Queue and the Programs sign-off action): `auth_is_staff()`-shaped RLS
 policies (`clinic_id = auth_clinic_id() and auth_is_staff()`) admit
 `admin`, `supervisor` and `clinician` identically on every table this
 applies to, with no primitive anywhere in the schema for "staff at or
-above supervisor." Both features work correctly cross-user, but the
-actual countersign/activate writes are still gated by app code only
+above supervisor." Both features worked correctly cross-user, but the
+actual countersign/activate writes were gated by app code only
 (`identity.appRole` checks in `review/page.tsx` and `programs/page.tsx`),
-not by the database. A clinician who knows the API surface could still
-call the same Supabase update directly and have RLS allow it. The real
-fix is a migration — either a new `auth_is_supervisor_or_admin()` helper
-function plus a `with check` on the specific status transitions that
-matter, or an equivalent — applied to `session_notes`, `client_sessions`
-and `programs` together, since it's one root cause showing up in three
-places, not three separate bugs.
+not by the database — a clinician who knew the API surface could call the
+same Supabase update directly and have RLS allow it.
 
-Round 3 does not add a fourth instance: the newly-hydrated tables
+Round 3 didn't add a fourth instance: the newly-hydrated tables
 (`behaviour_incidents`, `session_program_summaries`) are read-only from
-`apps/data`'s side (hydration never writes), so there's no new write path
-for this same gap to show up on.
+`apps/data`'s side (hydration never writes), so there was no new write path
+for this same gap to show up on. Still true — round 4 didn't add one either.
 
 ---
 
@@ -97,7 +167,7 @@ re-litigate what's already recorded elsewhere.
 
 ---
 
-## New this round — `trial_events` (raw per-trial observations) still isn't hydrated
+## Carried over — `trial_events` (raw per-trial observations) still isn't hydrated
 
 `hydrateClientHistory()` (see the PR description) pulls in a client's real
 `client_sessions`, `session_notes`, `behaviour_incidents` and
@@ -123,7 +193,7 @@ closing properly, the right shape is probably a per-session aggregate
 
 ---
 
-## New this round — hydration runs more than once per page view
+## Carried over — hydration runs more than once per page view
 
 `app/clients/[id]/layout.tsx` calls `hydrateClientHistory(clientId)` on
 every route change within a client (so the header's "Resume
