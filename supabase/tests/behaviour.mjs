@@ -540,6 +540,106 @@ await check("the derived charge moves the family's spent-to-date", async () => {
   eq(b.remaining, 7980, "remaining");
 });
 
+// --------------------------------------------------------------------------
+// 0045 · sessions double-booking guard (BLOCKED-scheduler.md item 1)
+//
+// Nothing exercised this trigger/index anywhere in the suite before now -
+// apply.mjs only proved 0045's DDL parses and attaches, not that it actually
+// refuses a conflicting write. Own staff/session-type fixtures (not staffId/
+// stype above) and a date range nothing else in this file touches, so this
+// section can't collide with an unrelated test's session regardless of
+// ordering.
+// --------------------------------------------------------------------------
+const dbStaff = (await one(
+  `insert into staff (name, clinic_id) values ('Double-Book Test Clinician','${clinic}') returning id`)).id;
+const dbOtherStaff = (await one(
+  `insert into staff (name, clinic_id) values ('Other Clinician','${clinic}') returning id`)).id;
+// duration 60 (the app's own fallback for a null/unrecognized type, and
+// distinct from the 0031 section's 120-minute 'Direct Therapy' above) so the
+// exact-slot and overlap cases below stay easy to reason about in minutes.
+const dbType = (await one(
+  `insert into session_types (name, duration, price, clinic_id)
+   values ('DB Test Type', 60, 0, '${clinic}') returning id`)).id;
+const mkDbSession = async (date, hour, minute, staff = dbStaff, status = "scheduled") => (await one(
+  `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+   values (${client}, ${staff}, '${date}', ${hour}, ${minute}, 'DB Test Type', '${status}', '${clinic}')
+   returning id`)).id;
+
+await check("exact-slot double-booking is refused (layer 1/2 - the overlap trigger fires first)", async () => {
+  await mkDbSession("2026-07-01", 9, 0);
+  await throws(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${client}, ${dbStaff}, '2026-07-01', 9, 0, 'DB Test Type', 'scheduled', '${clinic}')`,
+    /already has an overlapping session|sessions_no_exact_double_book/,
+    "exact duplicate slot",
+  );
+});
+
+await check("a later session starting inside an earlier one's duration overlaps", async () => {
+  // 9:00 + 60min duration ends 10:00; 9:30 starts inside that window.
+  await mkDbSession("2026-07-02", 9, 0);
+  await throws(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${client}, ${dbStaff}, '2026-07-02', 9, 30, 'DB Test Type', 'scheduled', '${clinic}')`,
+    /already has an overlapping session/,
+    "9:30 start overlapping a 9:00-10:00 session",
+  );
+});
+
+await check("back-to-back sessions that only touch at the boundary are allowed", async () => {
+  await mkDbSession("2026-07-03", 9, 0);
+  // 9:00-10:00 then 10:00-11:00: tsrange '[)' makes 10:00 the free instant.
+  await db.exec(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${client}, ${dbStaff}, '2026-07-03', 10, 0, 'DB Test Type', 'scheduled', '${clinic}')`);
+  eq((await one(`select count(*)::int n from sessions where employee_id=${dbStaff} and session_date='2026-07-03'`)).n,
+    2, "both back-to-back sessions present");
+});
+
+await check("a cancelled session frees its slot for a real re-book", async () => {
+  const sid = await mkDbSession("2026-07-04", 9, 0);
+  await db.exec(`update sessions set status='cancelled' where id=${sid}`);
+  await db.exec(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${client}, ${dbStaff}, '2026-07-04', 9, 0, 'DB Test Type', 'scheduled', '${clinic}')`);
+  eq((await one(`select count(*)::int n from sessions
+                  where employee_id=${dbStaff} and session_date='2026-07-04' and status<>'cancelled'`)).n,
+    1, "one live session after the cancelled slot was reused");
+});
+
+await check("two different clinicians at the identical slot never conflict", async () => {
+  await mkDbSession("2026-07-05", 9, 0, dbStaff);
+  await db.exec(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${client}, ${dbOtherStaff}, '2026-07-05', 9, 0, 'DB Test Type', 'scheduled', '${clinic}')`);
+  eq((await one(`select count(*)::int n from sessions where session_date='2026-07-05' and hour=9 and minute=0`)).n,
+    2, "one session per clinician, same slot, no conflict");
+});
+
+await check("a null/unrecognized type falls back to the app's own 60-minute default", async () => {
+  await mkDbSession("2026-07-06", 9, 0, dbStaff);
+  // type doesn't match any session_types row for this clinic -> the
+  // trigger's `coalesce(v_duration, 60)` path, same fallback
+  // `quickType.duration_minutes ?? quickType.duration ?? 60` uses app-side.
+  await throws(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${client}, ${dbStaff}, '2026-07-06', 9, 30, 'Nonexistent Type', 'scheduled', '${clinic}')`,
+    /already has an overlapping session/,
+    "unrecognized type still overlaps under the 60-minute fallback",
+  );
+});
+
+await check("an unassigned session (employee_id null) never conflicts with anything", async () => {
+  await db.exec(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${client}, null, '2026-07-07', 9, 0, 'DB Test Type', 'scheduled', '${clinic}')`);
+  await db.exec(
+    `insert into sessions (client_id, employee_id, session_date, hour, minute, type, status, clinic_id)
+     values (${client}, null, '2026-07-07', 9, 0, 'DB Test Type', 'scheduled', '${clinic}')`);
+  eq((await one(`select count(*)::int n from sessions where session_date='2026-07-07' and employee_id is null`)).n,
+    2, "unassigned sessions never collide with each other");
+});
+
 await check("the catch-up view names why each stuck session is stuck", async () => {
   const rows = (await db.query(
     `select blocked_by, count(*)::int n from underived_sessions
