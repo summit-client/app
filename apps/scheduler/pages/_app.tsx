@@ -1,14 +1,16 @@
 import { useEffect, useReducer } from "react";
+import { useRouter } from "next/router";
 import "../styles/globals.css";
 import { useUser } from "../lib/useUser";
 import { UserContext } from "../lib/UserContext";
 import { explainProblem } from "../lib/explainProblem";
-import { AppNav } from '@summit/nav';
+import { AppNav, SupportButton, DEFAULT_SUPPORT_EMAIL } from '@summit/nav';
 import { parseVisiblePortals } from "@summit/portals";
 import { getSetting, initSettings, onSettingsChange } from "@summit/settings";
 
 export default function App({ Component, pageProps }) {
   const { user, problem, loading, signOut } = useUser();
+  const router = useRouter();
 
   // Working hours (calendar.workStart/workEnd/workDays) are org settings now,
   // not the calendar tab's own never-persisted state - first use of
@@ -53,6 +55,16 @@ export default function App({ Component, pageProps }) {
       <UserContext.Provider value={user}>
         <Component {...pageProps} signOut={signOut} />
       </UserContext.Provider>
+      {/* Floating rather than in a nav column: this app's chrome is a
+          horizontal AppNav with no sidebar to put it in. router.pathname
+          (not asPath) so a report names the route, not one client's id. */}
+      <SupportButton
+        to={String(getSetting("support.devEmail") ?? "").trim() || DEFAULT_SUPPORT_EMAIL}
+        brand={String(getSetting("org.name") ?? "").trim() || "Summit"}
+        moduleName="Scheduler (apps/scheduler)"
+        pathname={router.pathname}
+        placement="floating"
+      />
     </>
   );
 }

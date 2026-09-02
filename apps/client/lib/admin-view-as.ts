@@ -25,6 +25,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * this is a support-session convenience, not a standing setting.
  */
 export const VIEW_AS_COOKIE = "admin_view_as_client";
+
+/**
+ * Which child a guardian is currently looking at.
+ *
+ * The family switcher already remembers this in localStorage for the pages it
+ * renders, but a page resolved on the server cannot read localStorage - so a
+ * parent who switched to their second child would switch back on any page that
+ * resolves through here. This cookie carries the same choice server-side.
+ *
+ * A preference, not a permission. The value is checked against `my_family`,
+ * which RLS already limits to this guardian's own children, so a forged cookie
+ * selects nothing the caller could not already open.
+ */
+export const VIEWED_CHILD_COOKIE = "summit_viewed_child";
 const VIEW_AS_MAX_AGE_SECONDS = 60 * 60 * 4; // 4 hours - one support session
 
 export interface ViewedClient {
@@ -101,6 +115,8 @@ export async function resolveViewedClient(
       return { kind: "account-problem", problem: "NO_CLINIC" };
     }
 
+    // The legacy direct link first, so a single-child family that predates
+    // households resolves exactly as it always did.
     const { data: client, error: clientError } = await supabase
       .from("clients")
       .select("id, name")
@@ -112,13 +128,49 @@ export async function resolveViewedClient(
       return { kind: "error" };
     }
 
-    if (!client) {
+    if (client) {
+      return {
+        kind: "viewing",
+        viewed: { clientId: client.id, clientName: client.name ?? "Client", isAdminViewingAs: false },
+      };
+    }
+
+    // No direct link means a guardian on a household record, which is the
+    // normal case since migration 0047. Without this fallback every page that
+    // resolves a client here - the dashboard, appointments, funding, documents,
+    // home program, the calendar export - reports NO_CLIENT_LINK to a parent
+    // whose account is perfectly fine, because `clients.user_id` is the
+    // one-child link the household model replaced.
+    const { data: family, error: familyError } = await supabase
+      .from("my_family")
+      .select("client_id, client_name, preferred_name")
+      .order("client_name", { ascending: true });
+
+    if (familyError) {
+      console.error("resolveViewedClient: family lookup failed:", familyError.message);
+      return { kind: "error" };
+    }
+
+    const children = family ?? [];
+    if (children.length === 0) {
       return { kind: "account-problem", problem: "NO_CLIENT_LINK" };
     }
 
+    // Which child the parent last chose. The cookie is a preference, never a
+    // grant: an id that is not in `my_family` is ignored, and `my_family` is
+    // already scoped to this guardian by RLS, so a forged cookie selects
+    // nothing it could not already reach.
+    const remembered = req.cookies[VIEWED_CHILD_COOKIE];
+    const chosen =
+      children.find((c) => String(c.client_id) === remembered) ?? children[0];
+
     return {
       kind: "viewing",
-      viewed: { clientId: client.id, clientName: client.name ?? "Client", isAdminViewingAs: false },
+      viewed: {
+        clientId: String(chosen.client_id),
+        clientName: chosen.preferred_name || chosen.client_name || "Client",
+        isAdminViewingAs: false,
+      },
     };
   }
 

@@ -33,22 +33,53 @@ export function PortalNav() {
   // enforcement (the page-level check is), same distinction as the rest of
   // this app's role gating.
   const NAV = [
-    { href: "/", label: "Today", id: "Today", icon: "▦" },
-    { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙" },
-    { href: "/attention", label: "Attention", id: "Attention", icon: "◈" },
-    { href: "/tasks", label: "My Tasks", id: "My Tasks", icon: "☑" },
-    ...(identity?.appRole === "clinician" ? [] : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" }]),
+    { href: "/", label: "Today", id: "Today", icon: "▦", group: "Workspace" },
+    { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙", group: "Workspace" },
+    { href: "/attention", label: "Attention", id: "Attention", icon: "◈", group: "Workspace" },
+    { href: "/tasks", label: "My Tasks", id: "My Tasks", icon: "☑", group: "Workspace" },
+    ...(identity?.appRole === "clinician"
+      ? []
+      : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎", group: "Workspace" }]),
+
+    // Families could send messages before there was anywhere to read them.
+    { href: "/messages", label: "Family Messages", id: "Family Messages", icon: "✉", group: "Clinic" },
+    { href: "/supervision", label: "Supervision Notes", id: "Supervision Notes", icon: "◉", group: "Clinic" },
+    { href: "/sharing", label: "What Families See", id: "What Families See", icon: "◐", group: "Clinic" },
+
+    { href: "/goals", label: "Goal Bank", id: "Goal Bank", icon: "◇", group: "Library" },
+    { href: "/lessons", label: "Lesson Plan Bank", id: "Lesson Plan Bank", icon: "▤", group: "Library" },
   ];
+
+  // Four new destinations arrived at once and went under the single
+  // "Workspace" heading, which made a nine-item flat list where the first five
+  // are today's work and the last four are not. Grouped by what a person is
+  // actually doing: Workspace is my queue, Clinic is people, Library is
+  // reference material I search rather than work through.
+  //
+  // Review Queue moves up into Workspace where it belongs - it is a personal
+  // queue, and it was only last because it is conditionally rendered.
+  const GROUPS = ["Workspace", "Clinic", "Library"] as const;
+  const visible = NAV.filter((n) => !hidden.includes(n.id));
 
   return (
     <nav aria-label="Portal">
-      <span className="nav-group">Workspace</span>
-      {NAV.filter((n) => !hidden.includes(n.id)).map((n) => (
-        <Link key={n.href} href={n.href} className="nav-item">
-          <span className="nav-icon" aria-hidden>{n.icon}</span>
-          <span>{n.label}</span>
-        </Link>
-      ))}
+      {GROUPS.map((group) => {
+        const items = visible.filter((n) => n.group === group);
+        // A heading with nothing under it reads as a section that failed to
+        // load. Hiding every item in a group hides its heading too.
+        if (items.length === 0) return null;
+        return (
+          <React.Fragment key={group}>
+            <span className="nav-group">{group}</span>
+            {items.map((n) => (
+              <Link key={n.href} href={n.href} className="nav-item">
+                <span className="nav-icon" aria-hidden>{n.icon}</span>
+                <span>{n.label}</span>
+              </Link>
+            ))}
+          </React.Fragment>
+        );
+      })}
     </nav>
   );
 }

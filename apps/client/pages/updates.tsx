@@ -15,6 +15,10 @@ import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
+import {
+  announcementCategoryLabel, announcementsFromRows, sortAnnouncements,
+  type Announcement,
+} from "../lib/notifications";
 
 /** Same shape as design-b.tsx's DashboardSoapNote - kept local rather than
  *  imported since this page's query selects the identical columns for a
@@ -33,6 +37,8 @@ type PageProps =
       mode: "updates";
       notes: Note[];
       notesError: boolean;
+      /** Clinic-wide and household notices. See migration 0045. */
+      announcements: Announcement[];
       clientName: string;
       isAdminViewingAs: boolean;
     }
@@ -59,7 +65,7 @@ export default function Updates(
     return <LoadErrorNotice />;
   }
 
-  const { notes, notesError, clientName, isAdminViewingAs } = props;
+  const { notes, notesError, announcements, clientName, isAdminViewingAs } = props;
 
   return (
     <>
@@ -73,9 +79,60 @@ export default function Updates(
             <p className={styles.eyebrow}>CLIENT PORTAL</p>
             <h1 style={{ margin: "0 0 6px", color: "var(--ink)" }}>Care Updates</h1>
             <p style={{ margin: 0, color: "var(--muted)" }}>
-              Notes from {clientName}&apos;s clinical team, most recent first.
+              Notices from the clinic, and notes from {clientName}&apos;s clinical team.
             </p>
           </header>
+
+          {/* Clinic notices sit above the clinical notes rather than in a
+              separate page. They are the thing most likely to be time-bound -
+              a closure, a policy change - and a family should not have to know
+              which of two pages a message landed on. Nothing here is
+              per-child: an announcement is addressed to the household. */}
+          {announcements.length > 0 ? (
+            <section aria-label="Notices from the clinic" style={{ marginBottom: 28 }}>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 }}>
+                {announcements.map((a) => (
+                  <li
+                    key={a.announcementId}
+                    id={`announcement-${a.announcementId}`}
+                    style={{
+                      // Urgent is a heavier left rule and a word, never colour
+                      // alone: the label below says "Urgent" in text.
+                      borderLeft: `3px solid ${a.isUrgent ? "#8A3B22" : "#0C5350"}`,
+                      background: a.isUnread ? "#F7FBFA" : "#fff",
+                      border: "1px solid #dce8ee",
+                      borderLeftWidth: 3,
+                      borderLeftColor: a.isUrgent ? "#8A3B22" : "#0C5350",
+                      borderRadius: 10,
+                      padding: "14px 16px",
+                    }}
+                  >
+                    <p style={{
+                      margin: "0 0 6px", fontSize: 12, letterSpacing: ".04em",
+                      textTransform: "uppercase", fontWeight: 700,
+                      color: a.isUrgent ? "#8A3B22" : "var(--muted)",
+                    }}>
+                      {a.isUrgent ? "Urgent · " : ""}{announcementCategoryLabel(a.category)}
+                    </p>
+                    <h2 style={{ margin: "0 0 6px", fontSize: 16, color: "var(--ink)" }}>
+                      {a.title}
+                    </h2>
+                    <p style={{
+                      margin: 0, color: "var(--ink)", lineHeight: 1.65,
+                      whiteSpace: "pre-line", overflowWrap: "anywhere",
+                    }}>
+                      {a.body}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          <h2 style={{ fontSize: 15, margin: "0 0 12px", color: "var(--muted)",
+                       letterSpacing: ".03em", textTransform: "uppercase" }}>
+            Session notes
+          </h2>
 
           {notesError ? (
             <div className={styles.emptyBox}>
@@ -188,9 +245,21 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     console.error("Failed to load updates page notes:", notesError.message);
   }
 
+  // Announcements are addressed to the household, so unlike the notes above
+  // they are not filtered to the child being viewed. A load failure here is
+  // deliberately not fatal to the page: a family should still get their
+  // clinical notes if the notice board is having a bad day.
+  const { data: annRows, error: annError } = await supabase
+    .from("my_announcements")
+    .select("announcement_id, title, body, category, is_urgent, publish_at, is_unread");
+  if (annError) {
+    console.error("Failed to load announcements:", annError.message);
+  }
+
   return {
     props: {
       mode: "updates",
+      announcements: sortAnnouncements(announcementsFromRows(annRows ?? [])),
       notes: mostRecentFirst((notes ?? []) as Note[]),
       notesError: Boolean(notesError),
       clientName: viewed.clientName || "Client",

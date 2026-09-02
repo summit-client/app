@@ -312,7 +312,7 @@ export const SETTINGS: SettingDef[] = [
   { key: "bonus.enabled", label: "Monthly bonus eligibility", description: "Eligibility only; monetary amounts are never stored in Summit.", section: "ecosystem", scope: "org", type: "toggle", default: true, keywords: ["bonus"] },
   { key: "bonus.minScore", label: "Minimum Ecosystem Score for bonus eligibility", section: "ecosystem", scope: "org", type: "number", default: 80 },
   { key: "career.ladder", label: "Career development pathway (arrow-separated roles)", section: "ecosystem", scope: "org", type: "text", default: "Supervised Clinician > Lead Clinician > Supervisor Candidate > Clinical Leadership > Regional Leadership", keywords: ["pathway", "roles"] },
-  { key: "support.devEmail", label: "Developer support email", description: "Troubleshoot and feature-request reports from the portals send here.", section: "ecosystem", scope: "org", type: "text", default: "dev@summitclient.io", keywords: ["support", "bugs", "feedback"] },
+  { key: "support.devEmail", label: "Developer support email", description: "Troubleshoot and feature-request reports from the portals send here.", section: "ecosystem", scope: "org", type: "text", default: "info@summitclient.io", keywords: ["support", "bugs", "feedback"] },
   { key: "eco.values", label: "Organizational values (comma-separated)", section: "ecosystem", scope: "org", type: "text", default: "Collaboration, Reciprocity, Learning, Reliability, Respect, Client Care, Mentorship", keywords: ["values", "serviceberry"] },
 
   /* Terminology (rendered by the custom Language section) */

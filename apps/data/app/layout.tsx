@@ -6,6 +6,7 @@ import "./app.css";
 import { themeInitScript } from "@summit/design";
 import { PortalNav, SettingsEffects } from "@/components/portal-chrome";
 import { PortalBar, SessionGate, SessionProvider } from "@/components/session-provider";
+import { ClinicianSupportButton } from "@/components/support-button";
 
 export const metadata: Metadata = {
   title: "Summit Clinician",
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
               <PortalNav />
               <div className="sidebar-foot">
+                <ClinicianSupportButton />
                 {process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" ? <span className="pill warn">Preview data</span> : null}
               </div>
             </aside>

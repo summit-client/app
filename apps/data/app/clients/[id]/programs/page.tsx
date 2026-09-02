@@ -6,6 +6,7 @@ import { activateProgram, createProgram, getPrograms } from "@/lib/data";
 import { masteryCheck, trendArrow } from "@/lib/mastery";
 import { useIdentity } from "@/components/session-provider";
 import { MODE_LABEL, PROMPT_ORDER, type Program } from "@/lib/types";
+import { GoalBankPicker } from "@/components/goal-bank-picker";
 
 const ARROW = { up: "▲", down: "▼", flat: "■" } as const;
 
@@ -21,6 +22,7 @@ export default function ProgramsPage() {
   const canSignOff = identity.appRole === "admin" || identity.appRole === "supervisor";
   const [programs, setPrograms] = React.useState<Program[]>([]);
   const [showForm, setShowForm] = React.useState(false);
+  const [showBank, setShowBank] = React.useState(false);
   const [activatingId, setActivatingId] = React.useState<string | null>(null);
   const [activateError, setActivateError] = React.useState<string | null>(null);
 
@@ -47,10 +49,25 @@ export default function ProgramsPage() {
         <p className="sub" style={{ marginTop: 0 }}>
           Clinical programming configuration. Changes here are versioned and take effect for future sessions.
         </p>
-        <button className="btn" onClick={() => setShowForm((v) => !v)}>
-          {showForm ? "Close" : "+ New goal"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {/* Two ways in, side by side. Writing a goal from scratch also
+              contributes it back to the bank as a draft (migration 0057), so
+              the bank grows with the work rather than only at import. */}
+          <button className="btn ghost" onClick={() => { setShowBank((v) => !v); setShowForm(false); }}>
+            {showBank ? "Close" : "Find in Goal Bank"}
+          </button>
+          <button className="btn" onClick={() => { setShowForm((v) => !v); setShowBank(false); }}>
+            {showForm ? "Close" : "+ New goal"}
+          </button>
+        </div>
       </div>
+
+      {showBank ? (
+        <GoalBankPicker
+          clientId={clientId}
+          onAssigned={() => { void getPrograms(clientId).then(setPrograms); }}
+        />
+      ) : null}
 
       {showForm ? <NewGoalForm clientId={clientId} onSaved={(p) => { setPrograms((x) => [...x, p]); setShowForm(false); }} /> : null}
 
