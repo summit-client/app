@@ -163,6 +163,21 @@ export default function PublicNav() {
               {l.label}
             </a>
           ))}
+          {/* .pubnav-login (the header's own "Log in" link) is display:none
+              below 780px - genuinely gone from layout, the accessibility
+              tree and the tab order, not just visually hidden - so without
+              this, a phone visitor had no way to reach /login at all short
+              of typing the URL or going via /signup's "Already have an
+              account?" link. Confirmed live by rendering the mobile menu:
+              the comment on .pubnav-login in globals.css claims the dropdown
+              already carries "a path to sign in" - it didn't. */}
+          <a
+            href="/login"
+            className="mobile-nav-link"
+            onClick={() => setMobileOpen(false)}
+          >
+            Log in
+          </a>
         </div>
       )}
     </nav>
