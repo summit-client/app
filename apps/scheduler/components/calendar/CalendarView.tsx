@@ -416,7 +416,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     // "Session rescheduled" and reloaded the grid as though nothing had
     // gone wrong, leaving the session silently unmoved.
     let failed = false;
-    // Set when the failure above was migration 0044's DB constraint
+    // Set when the failure above was migration 0045's DB constraint
     // (unique index or overlap trigger) specifically, so the toast below can
     // show the same friendly conflict message the fresh pre-check above
     // already shows, rather than a raw "reschedule failed."

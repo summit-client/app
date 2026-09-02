@@ -189,7 +189,7 @@ export function RescheduleModal({
     }).eq("id", session.id);
 
     if (err) {
-      // Same reasoning as the fresh pre-check above - migration 0044's DB
+      // Same reasoning as the fresh pre-check above - migration 0045's DB
       // constraint is the backstop for a write that races another one
       // within this same round trip. See lib/checkSlotConflict.ts.
       setError(isBookingConflictError(err)
