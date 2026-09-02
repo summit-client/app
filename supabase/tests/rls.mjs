@@ -1673,6 +1673,159 @@ await check("a cancelled session does not put someone on the care team", async (
        0, "cancelled-only staff"));
 });
 
+// --------------------------------------------------------------------------
+// Phase 12 · the sweep nobody has to remember
+//
+// Everything above tests a table someone chose to test. These walk every table
+// in the schema and ask the two questions that have to be true of all of them,
+// so a table added later is covered without anyone adding a test for it.
+// --------------------------------------------------------------------------
+
+/** Tables with a clinic_id, which is every multi-tenant one. */
+const tenantTables = (await db.query(`
+  select c.relname as name
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = c.oid and a.attname = 'clinic_id' and a.attnum > 0
+   where n.nspname = 'public' and c.relkind = 'r'
+   order by c.relname`)).rows.map((r) => r.name);
+
+await check(`every clinic-scoped table has row security switched on (${tenantTables.length} tables)`, async () => {
+  const off = (await db.query(`
+    select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname='public' and c.relkind='r' and not c.relrowsecurity
+       and exists (select 1 from pg_attribute a
+                    where a.attrelid = c.oid and a.attname='clinic_id' and a.attnum > 0)`)).rows;
+  if (off.length) throw new Error(`RLS off: ${off.map((r) => r.relname).join(", ")}`);
+});
+
+await check("no table has policies that are not doing anything", async () => {
+  // 0032 fixed 39 of these. This is what stops the 40th.
+  const inert = (await db.query(`
+    select c.relname, count(p.polname)::int n
+      from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+      left join pg_policy p on p.polrelid = c.oid
+     where ns.nspname='public' and c.relkind='r' and not c.relrowsecurity
+     group by c.relname having count(p.polname) > 0`)).rows;
+  if (inert.length) {
+    throw new Error(`policies with RLS off: ${inert.map((r) => `${r.relname}(${r.n})`).join(", ")}`);
+  }
+});
+
+await check("no clinic-scoped table hands a row to a second clinic's admin", async () => {
+  const leaks = [];
+  for (const t of tenantTables) {
+    await as(bAdmin, async () => {
+      let n = 0;
+      try { n = await count(`select count(*)::int n from public.${t} where clinic_id = '${clinicA}'`); }
+      catch { return; }   // a table B's admin cannot read at all is fine
+      if (n > 0) leaks.push(`${t}(${n})`);
+    });
+  }
+  if (leaks.length) throw new Error(`clinic A rows visible to clinic B: ${leaks.join(", ")}`);
+});
+
+await check("no table hands a row to a signed-in family with no relationship to anyone", async () => {
+  // The catalogue tables are the deliberate exceptions and are named, not
+  // pattern-matched, so adding a table cannot silently join the allow-list.
+  // Named, not pattern-matched, so adding a table cannot silently join the
+  // allow-list. Each one is a vocabulary with no subject: it describes what
+  // kinds of thing exist, never a person or a clinic's operations. `clinics`
+  // is here because the policy is `id = auth_clinic_id()` - a family reading
+  // their own clinic's name and address, which is on their letters already.
+  const CATALOGUES = new Set([
+    "permission_actions",          // the action vocabulary; per-caller grants live elsewhere
+    "guardian_permission_kinds",   // the permission vocabulary the portal renders
+    "role_permissions",            // which role holds which action - not per person
+    "pay_codes", "activity_types", // clinic-wide reference data with no subject
+    "clinics",                     // their own clinic only
+  ]);
+  const tables = (await db.query(`
+    select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname='public' and c.relkind='r' order by 1`)).rows.map((r) => r.relname);
+  const leaks = [];
+  for (const t of tables) {
+    if (CATALOGUES.has(t)) continue;
+    await as(outsider, async () => {
+      // `profiles` is not excluded, because excluding it is what let it leak
+      // in the first place: a family must reach exactly their own row, and a
+      // sweep that skipped the table would not have noticed it returning
+      // twelve. Asserted by shape rather than by absence.
+      if (t === "profiles") {
+        const rows = (await db.query(`select id from profiles`)).rows;
+        if (rows.length > 1 || (rows[0] && rows[0].id !== outsider)) {
+          leaks.push(`profiles(${rows.length}, not just their own)`);
+        }
+        return;
+      }
+      let n = 0;
+      try { n = await count(`select count(*)::int n from public.${t}`); } catch { return; }
+      if (n > 0) leaks.push(`${t}(${n})`);
+    });
+  }
+  if (leaks.length) throw new Error(`visible to an unrelated family: ${leaks.join(", ")}`);
+});
+
+await check("no security definer function has a mutable search_path", async () => {
+  // A definer function without a pinned search_path can be made to call
+  // someone else's function by putting a schema in front of public - the
+  // hardening 0009 did by hand, asserted here for every function since.
+  const loose = (await db.query(`
+    select p.proname
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.prosecdef
+       and not exists (
+         select 1 from unnest(coalesce(p.proconfig, '{}')) cfg
+          where cfg like 'search_path=%')`)).rows;
+  if (loose.length) {
+    throw new Error(`security definer without search_path: ${loose.map((r) => r.proname).join(", ")}`);
+  }
+});
+
+await check("every security definer function names pg_temp last", async () => {
+  // pg_temp ahead of public lets a caller shadow a function the definer body
+  // resolves unqualified. 0009 fixed this; nothing was stopping the next one.
+  const bad = (await db.query(`
+    select p.proname, cfg
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
+           unnest(coalesce(p.proconfig, '{}')) cfg
+     where n.nspname='public' and p.prosecdef and cfg like 'search_path=%'
+       and cfg not like '%pg_temp'`)).rows;
+  if (bad.length) {
+    throw new Error(`pg_temp not last: ${bad.map((r) => `${r.proname} [${r.cfg}]`).join(", ")}`);
+  }
+});
+
+await check("a family session cannot write to any table it should only read", async () => {
+  // Reads are covered above. This checks the other direction on the tables a
+  // family is closest to: an insert with no permission behind it must fail,
+  // not silently land.
+  const readOnlyForFamilies = [
+    ["programs",      `insert into programs (clinic_id, client_id, name, status) values ('${clinicA}', ${maya}, 'Self-assigned goal', 'active')`],
+    ["session_notes", `insert into session_notes (clinic_id, client_id, status) values ('${clinicA}', ${maya}, 'signed')`],
+    ["client_budgets",`insert into client_budgets (clinic_id, client_id, name, allocated_amount) values ('${clinicA}', ${maya}, 'Extra funding', 99999)`],
+    ["announcements", `insert into announcements (clinic_id, audience, title, body, created_by) values ('${clinicA}','all_families','From a parent','x','${aAdmin}')`],
+    ["form_templates",`insert into form_templates (clinic_id, key, version, title, created_by) values ('${clinicA}','mine',1,'My form','${aAdmin}')`],
+  ];
+  for (const [table, sql] of readOnlyForFamilies) {
+    await as(parentA, () => insertRaises(sql, `family write to ${table}`));
+  }
+});
+
+await check("a family cannot escalate their own permissions", async () => {
+  await as(parentA, () => updateAffects(
+    `update relationship_permissions set granted = true`, 0, "granting themselves everything"));
+  await as(parentA, () => insertRaises(
+    `insert into guardian_relationships (clinic_id, user_id, client_id, status)
+     values ('${clinicA}','${parentA}', ${maya}, 'ACTIVE')`,
+    "adding a relationship"));
+  // Raises rather than matching nothing: 0032's profiles_guard_privileges
+  // trigger rejects a self-role-change outright, which is stronger than an
+  // RLS filter and needs a different assertion.
+  await as(parentA, () => insertRaises(
+    `update profiles set role = 'admin' where id = '${parentA}'`, "self-promotion"));
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
