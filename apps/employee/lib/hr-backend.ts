@@ -340,7 +340,17 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
           db.from("development_goals").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
           db.from("employee_credentials").select("*").eq("user_id", uid),
           db.from("pd_activities").select("*").eq("user_id", uid).order("completion_date", { ascending: false }),
-          db.from("pd_credit_allocations").select("*"),
+          // Scoped at the query level via the FK to pd_activities, not just
+          // relied on through RLS (allocations_own_select, migration 0007) -
+          // see BLOCKED-employee.md's former item #8. pd_credit_allocations has
+          // no user_id of its own, so this reaches the caller through the one
+          // FK it has (activity_id -> pd_activities.id), which PostgREST
+          // resolves without needing a !fkey hint since it's the only such FK.
+          // Verified against a scratch PGlite Postgres: the join+filter shape
+          // returns exactly the rows RLS alone already scoped to, and - the
+          // actual point of a second layer - keeps excluding another
+          // employee's row even with RLS simulated as fully open.
+          db.from("pd_credit_allocations").select("*, pd_activities!inner(user_id)").eq("pd_activities.user_id", uid),
           db.from("hr_policies").select("*").eq("clinic_id", clinic).order("effective_date", { ascending: false }),
           db.from("policy_acknowledgements").select("*").eq("user_id", uid),
           db.from("forum_posts").select("*").order("created_at", { ascending: false }).limit(100),
@@ -400,6 +410,9 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
         commentsByPost.set(c.post_id as string, list);
       }
 
+      // Second, independent layer on top of the query-level filter above and
+      // RLS below it: even if either of those ever regressed, an allocation
+      // whose activity isn't in this caller's own `acts` never renders.
       const activityIds = new Set((acts.data ?? []).map((a) => a.id as string));
 
       return {
@@ -471,7 +484,9 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
         })),
         audit: (audit.data ?? []).map((a) => ({
           id: String(a.id), action: a.action as string,
-          detail: typeof a.detail === "string" ? a.detail : JSON.stringify(a.detail ?? {}),
+          detail: (a.reason as string | null) ?? "",
+          previous: (a.previous_value as string | null) ?? undefined,
+          next: (a.new_value as string | null) ?? undefined,
           who: resolveName(a.actor as string | null), at: a.at as string,
         })),
         sites: [],
@@ -599,9 +614,20 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
     },
 
     async audit(a) {
+      // hr_audit_log (migration 0007) has previous_value/new_value/reason/
+      // source columns, not a jsonb "detail" - this insert targeted a column
+      // that has never existed, so every write here failed with a
+      // schema-cache error and was swallowed by the console.warn below.
+      // Nothing renders this table today (no screen reads hr()'s .audit), so
+      // the effect was invisible, but the compliance audit trail for the
+      // whole My HR module - credentials, PD, goals, recognition, policy
+      // acks, scorecard ratings, peer feedback, forum posts - has never
+      // actually been written. Verified against a scratch PGlite Postgres:
+      // the old insert fails with `column "detail" of relation
+      // "hr_audit_log" does not exist`; this one succeeds.
       const res = await sb().from("hr_audit_log").insert(scoped({
         actor: uid, subject: uid, action: a.action,
-        detail: { note: a.detail, previous: a.previous, next: a.next },
+        reason: a.detail, previous_value: a.previous ?? null, new_value: a.next ?? null,
       }));
       if (res.error) console.warn("hr audit write failed", res.error);
     },
