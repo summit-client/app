@@ -43,6 +43,20 @@ export interface SessionDetailProps {
    *  see TimeGrid.tsx's colorOverride prop. */
   colorOverride?: string;
   isDraft: boolean;
+  /**
+   * Whether the signed-in viewer may cancel/reschedule THIS session -
+   * admin/scheduler always; a clinician only when session.employee_id is
+   * their own linked staff row (2026-09-02, migration 0046 + full read
+   * parity for the scheduler portal). Both callers (CalendarView.tsx,
+   * pages/index.jsx's SessionsView) compute this per-session and pass it in
+   * rather than this component re-deriving it, since it already needs
+   * appUser identity it doesn't otherwise hold. When false, both action
+   * buttons are omitted entirely (not just disabled) - the same "don't
+   * offer an action that will just fail" rule the Sessions list view
+   * applies, since an UPDATE this session's RLS policy excludes matches
+   * zero rows and reports success, not an error.
+   */
+  canManage: boolean;
   staffAvailability: AvailabilityRow[];
   clientAvailability: ClientAvailabilityRow[];
   clinicId: string;
@@ -59,7 +73,7 @@ export interface SessionDetailProps {
 export function SessionDetail({
   session, clients, employees, locations, sessionTypes, typeColors, colorOverride, isDraft,
   staffAvailability, clientAvailability, clinicId, workStartHour, workEndHour, incrementMinutes,
-  onClose, onCancelled, onReschedule,
+  onClose, onCancelled, onReschedule, canManage,
 }: SessionDetailProps) {
   useEscapeToClose(onClose);
   const trapRef = useFocusTrap<HTMLDivElement>();
@@ -108,12 +122,16 @@ export function SessionDetail({
         </button>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
-          <button onClick={handleCancel} disabled={cancelling} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: cancelling ? "not-allowed" : "pointer", background: "#FCE8E8", color: "#A33A3A" }}>
-            {cancelling ? "Cancelling..." : "Cancel session"}
-          </button>
-          <button onClick={() => onReschedule()} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: "pointer", background: "#5DCAA5", color: "#fff" }}>
-            Reschedule
-          </button>
+          {canManage && (
+            <>
+              <button onClick={handleCancel} disabled={cancelling} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: cancelling ? "not-allowed" : "pointer", background: "#FCE8E8", color: "#A33A3A" }}>
+                {cancelling ? "Cancelling..." : "Cancel session"}
+              </button>
+              <button onClick={() => onReschedule()} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: "pointer", background: "#5DCAA5", color: "#fff" }}>
+                Reschedule
+              </button>
+            </>
+          )}
           <button onClick={onClose} style={navBtn}>Close</button>
         </div>
       </div>
@@ -132,6 +150,7 @@ export function SessionDetail({
           incrementMinutes={incrementMinutes}
           onClose={() => setShowSchedules(false)}
           onProposeSlot={(dateStr, hour, minute) => { setShowSchedules(false); onReschedule({ dateStr, hour, minute }); }}
+          canPropose={canManage}
         />
       )}
     </div>

@@ -54,6 +54,17 @@ interface Props {
    *  which is expected to open RescheduleModal pre-filled with it. This
    *  panel never writes to `sessions` itself. */
   onProposeSlot: (dateStr: string, hour: number, minute: number) => void;
+  /**
+   * Whether the viewer may propose a new time for THIS session at all -
+   * mirrors SessionDetail's `canManage` (2026-09-02, migration 0046): false
+   * for a clinician viewing a colleague's session. Defaults to true so
+   * every existing caller (admin/scheduler, always true) needs no change.
+   * When false, the dual-schedule comparison itself still renders in full
+   * (this is a read, and clinician has full read parity) - only the
+   * slot-picker and "Continue to reschedule" are omitted, since picking a
+   * slot here hands off to RescheduleModal, which actually writes.
+   */
+  canPropose?: boolean;
 }
 
 type SlotState = "open" | "clinician-only" | "client-only" | "neither" | "booked";
@@ -78,7 +89,7 @@ const slotColors: Record<SlotState, { bg: string; text: string; label: string }>
 
 export function SessionSchedulesPanel({
   session, client, employee, sessionTypes, staffAvailability, clientAvailability,
-  clinicId, workStartHour, workEndHour, incrementMinutes, onClose, onProposeSlot,
+  clinicId, workStartHour, workEndHour, incrementMinutes, onClose, onProposeSlot, canPropose = true,
 }: Props) {
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -297,55 +308,61 @@ export function SessionSchedulesPanel({
               {workStartHour}:00 – {workEndHour}:00, {WEEKDAY_ABBR[parseDateStr(selectedDate).getDay()]} {selectedDate}
             </div>
 
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Pick an open slot to propose a new time:</div>
-            <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6, flexWrap: "wrap" }}>
-              {(Object.keys(slotColors) as SlotState[]).map((k) => (
-                <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: slotColors[k].bg, border: "0.5px solid var(--color-border-tertiary)" }} />
-                  {slotColors[k].label}
-                </span>
-              ))}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, maxHeight: 140, overflowY: "auto" }}>
-              {slots.map((s, i) => {
-                const isSel = proposed?.hour === s.hour && proposed?.minute === s.minute;
-                const c = slotColors[s.state];
-                const disabled = s.state === "booked";
-                return (
-                  <button
-                    key={i}
-                    disabled={disabled}
-                    onClick={() => setProposed({ hour: s.hour, minute: s.minute })}
-                    style={{
-                      flex: "1 1 58px", minWidth: 58, padding: "6px 4px", borderRadius: 6, fontSize: 11.5,
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      border: `1.5px solid ${isSel ? "#5DCAA5" : "transparent"}`,
-                      background: c.bg, color: c.text, fontWeight: isSel ? 600 : 400,
-                      opacity: disabled ? 0.55 : 1,
-                    }}
-                  >
-                    {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")}
-                  </button>
-                );
-              })}
-            </div>
+            {canPropose && (
+              <>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Pick an open slot to propose a new time:</div>
+                <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6, flexWrap: "wrap" }}>
+                  {(Object.keys(slotColors) as SlotState[]).map((k) => (
+                    <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: slotColors[k].bg, border: "0.5px solid var(--color-border-tertiary)" }} />
+                      {slotColors[k].label}
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, maxHeight: 140, overflowY: "auto" }}>
+                  {slots.map((s, i) => {
+                    const isSel = proposed?.hour === s.hour && proposed?.minute === s.minute;
+                    const c = slotColors[s.state];
+                    const disabled = s.state === "booked";
+                    return (
+                      <button
+                        key={i}
+                        disabled={disabled}
+                        onClick={() => setProposed({ hour: s.hour, minute: s.minute })}
+                        style={{
+                          flex: "1 1 58px", minWidth: 58, padding: "6px 4px", borderRadius: 6, fontSize: 11.5,
+                          cursor: disabled ? "not-allowed" : "pointer",
+                          border: `1.5px solid ${isSel ? "#5DCAA5" : "transparent"}`,
+                          background: c.bg, color: c.text, fontWeight: isSel ? 600 : 400,
+                          opacity: disabled ? 0.55 : 1,
+                        }}
+                      >
+                        {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </>
         )}
 
-        {proposed && (
+        {canPropose && proposed && (
           <div style={{ padding: "10px 12px", borderRadius: 8, background: "#5DCAA512", border: "0.5px solid #5DCAA544", marginBottom: 12, fontSize: 13, color: "var(--color-text-primary)" }}>
             Proposed: {formatFullRange(selectedDate, proposed.hour, proposed.minute, duration)}
           </div>
         )}
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={() => proposed && onProposeSlot(selectedDate, proposed.hour, proposed.minute)}
-            disabled={!proposed}
-            style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: proposed ? "pointer" : "not-allowed", fontSize: 14, fontWeight: 500, opacity: proposed ? 1 : 0.6 }}
-          >
-            Continue to reschedule
-          </button>
+          {canPropose && (
+            <button
+              onClick={() => proposed && onProposeSlot(selectedDate, proposed.hour, proposed.minute)}
+              disabled={!proposed}
+              style={{ flex: 1, padding: "9px 0", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: proposed ? "pointer" : "not-allowed", fontSize: 14, fontWeight: 500, opacity: proposed ? 1 : 0.6 }}
+            >
+              Continue to reschedule
+            </button>
+          )}
           <button onClick={onClose} style={navBtnSmall}>Close</button>
         </div>
       </div>

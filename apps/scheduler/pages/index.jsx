@@ -1314,6 +1314,30 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [step, setStep] = useState("calendar");
   const [trail, setTrail] = useState([]);
 
+  // A clinician's booking power is scoped to themselves only (RLS, migration
+  // 0046 - an insert whose employee_id isn't their own linked staff row is
+  // rejected outright) - so every staff-ASSIGNMENT candidate pool in this
+  // wizard (the quickSlot step's Clinician picker, the multi-step wizard's
+  // "Staff preference?" step, and both the single- and multi-client AI-match
+  // prompts in runMatch below) is narrowed to just that one row, rather than
+  // offering a picker - or letting the AI recommend someone - that would
+  // just fail at the final insert. `myStaffId` null (never linked yet, see
+  // that migration's header) correctly narrows this to an empty list, same
+  // as apps/data's caseload feature behaves for the equivalent gap - not a
+  // bug. admin/scheduler are unaffected (assignableEmployees === employees).
+  //
+  // Deliberately NOT applied to the many other `employees.find(...)` lookups
+  // elsewhere in this file that resolve an EXISTING session's employee_id
+  // back to a name for display (conflict messages, the Sessions list, this
+  // wizard's own suggestion cards) - a clinician has full read parity
+  // (migration 0046) and needs to see who an existing or conflicting session
+  // actually belongs to even when it isn't themselves.
+  const isClinicianUser = appUser?.role === "clinician";
+  const myStaffId = appUser?.staffId ?? null;
+  const assignableEmployees = isClinicianUser
+    ? employees.filter(e => e.id === myStaffId)
+    : employees;
+
   const [editingCalId, setEditingCalId] = useState(null);
   const [editingCalName, setEditingCalName] = useState("");
   const [hoveredCalId, setHoveredCalId] = useState(null);
@@ -1838,10 +1862,16 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       workStartHour: parseTimeSetting(String(getSetting("calendar.workStart"))), workEndHour: parseTimeSetting(String(getSetting("calendar.workEnd"))),
       incrementMinutes,
     });
+    // assignableEmployees, not employees: suggesting a DIFFERENT clinician's
+    // open slot is meaningless for a clinician user (they cannot book it) -
+    // excludeEmployeeId already removes quickStaff itself, so this
+    // naturally comes back empty for a clinician (assignableEmployees is at
+    // most just quickStaff) rather than recommending a colleague they'd
+    // then be unable to act on.
     const differentClinician = suggestDifferentClinicianSameSlot({
       dateStr: prefill.dateStr, hour: prefill.hour, minute: prefill.minute, durationMinutes: duration,
       locationId: quickStaff.location_id ?? null, excludeEmployeeId: quickStaff.id,
-      employees: employees.filter(e => e.specialties?.includes(quickType.name)), sessions: existing, staffAvailability,
+      employees: assignableEmployees.filter(e => e.specialties?.includes(quickType.name)), sessions: existing, staffAvailability,
     });
     setPendingConflict({ message, suggestions: [...sameClinician, ...differentClinician] });
   }
@@ -1851,7 +1881,11 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     let prompt, maxTokens;
 
     if (type === "single" || type === "one") {
-      const eligible = employees.filter(e =>
+      // assignableEmployees, not employees: the AI's candidate pool can
+      // never include anyone but the signed-in clinician's own staff row
+      // (or nobody, if unlinked) - it would otherwise recommend a colleague
+      // for a clinician to book, which the final insert rejects outright.
+      const eligible = assignableEmployees.filter(e =>
         e.specialties?.includes(selectedSessionType.name) &&
         e.booked < e.capacity &&
         e.location_id === selectedClient.location_id &&
@@ -1874,7 +1908,15 @@ Respond ONLY with valid JSON — no extra text:
       const matchDays = AVAIL_DAYS.filter(d => workDays.includes(d));
       const matchTimeSlots = generateTimeSlots(workStart, workEnd);
       const clientMatches = multiClients.map(({ client, session_type }) => {
-        const eligible = employees
+        // assignableEmployees, not employees - same reason as the
+        // single-client branch above. For a clinician this correctly
+        // narrows every client's candidate list to just themselves (or
+        // none): the multi-client matcher exists to spread several clients
+        // across the roster, which isn't a thing a clinician's own booking
+        // power can do, so each client here either matches the clinician's
+        // own schedule or comes back with no match, rather than a
+        // colleague's slot that would fail to book.
+        const eligible = assignableEmployees
           .filter(e =>
             e.specialties?.includes(session_type) &&
             e.booked < e.capacity &&
@@ -1950,8 +1992,12 @@ finally { setLoading(false); }
   if (step === "quickSlot" && prefill) {
     const fmtHour = h => { const ap = h >= 12 ? "PM" : "AM"; const h12 = ((h + 11) % 12) + 1; return `${h12}:${String(prefill.minute).padStart(2, "0")} ${ap}`; };
     const eligibleClients = clients.filter(c => c.status === "active");
+    // assignableEmployees, not employees - a clinician's own Clinician
+    // picker on this click-to-create step offers only themselves (or
+    // nobody, if not yet linked to a staff row), never a colleague who
+    // would just fail the insert.
     const eligibleStaff = quickType && quickClient
-      ? employees.filter(e => e.specialties?.includes(quickType.name) && e.location_id === quickClient.location_id)
+      ? assignableEmployees.filter(e => e.specialties?.includes(quickType.name) && e.location_id === quickClient.location_id)
       : [];
     const allThreeChosen = !!(quickClient && quickType && quickStaff);
     const ready = allThreeChosen && recurring && (recurring === "no" || (endType && (endType === "date" ? endDate : endCount)));
@@ -2034,7 +2080,11 @@ finally { setLoading(false); }
                 !quickClient || !quickType
                   ? "Pick a client and a session type above to see qualified clinicians here - filtering stays live as you choose either one."
                   : !eligibleStaff.length
-                    ? "No clinician at this client's location is qualified for this session type."
+                    ? (isClinicianUser && myStaffId == null
+                        ? "Your account isn't linked to a staff record yet, so you have nothing to book against - ask an admin to link it (Employee Hub → Settings → Workforce)."
+                        : isClinicianUser
+                          ? "You aren't qualified for this session type at this client's location, so there's no one to pick here - a clinician can only book their own sessions."
+                          : "No clinician at this client's location is qualified for this session type.")
                     : undefined
               }
             >
@@ -2246,7 +2296,13 @@ finally { setLoading(false); }
   );
 
   if (step === "staff") {
-    const eligible = employees.filter(e => e.specialties?.includes(selectedSessionType?.name) && e.booked < e.capacity && e.location_id === selectedClient?.location_id);
+    // assignableEmployees, not employees - same reason as the quickSlot
+    // step and runMatch above: a clinician only ever sees themselves here
+    // (or nobody, if unlinked), and "Any" degrades to the same thing via
+    // runMatch's own assignableEmployees-filtered candidate list rather than
+    // silently being able to pick a colleague from this list who'd fail the
+    // final insert.
+    const eligible = assignableEmployees.filter(e => e.specialties?.includes(selectedSessionType?.name) && e.booked < e.capacity && e.location_id === selectedClient?.location_id);
     return (
       <div>{PH}<Trail steps={trail} onBack={goBack} />
         <StepCard question="Staff preference?">
@@ -2458,6 +2514,25 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   const role = appUser?.role || "client";
   const isAdminOrScheduler = role === "admin" || role === "scheduler";
   const clinicId = appUser?.clinic_id || "";
+
+  // A clinician reaching this view (2026-09-02, migration 0046 +
+  // ACCESS.scheduler) sees every session clinic-wide (full read parity) but
+  // may only create/reschedule/cancel a session where they themselves are
+  // the assigned staff member - RLS enforces this at the database, but the
+  // UI still needs to not OFFER an action that will just fail or silently
+  // no-op (CLAUDE.md's "RLS returns empty sets, not errors" trap applies to
+  // writes too: an UPDATE a policy's USING clause excludes matches zero rows
+  // and reports success, not an error). `staffId` is undefined until
+  // useUser.ts's employment_records lookup resolves, and stays `null`
+  // forever for a clinician whose employment record has no staff_id linked
+  // yet (a real, expected state - see migration 0046's header) - both cases
+  // correctly deny every write below.
+  const myStaffId = appUser?.staffId ?? null;
+  function canManageSession(b) {
+    if (isAdminOrScheduler) return true;
+    if (role === "clinician") return myStaffId != null && b.employee_id === myStaffId;
+    return false;
+  }
   const incrementMinutes = Number(getSetting("calendar.gridIncrementMinutes")) || 15;
 
   // The session click-popup, shared with the real calendar tab (see
@@ -2675,7 +2750,11 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           <option value="all">All types</option>
           {(sessionTypes || []).map(st => <option key={st.id} value={st.name}>{st.name}</option>)}
         </select>
-        {isAdminOrScheduler && (
+        {/* Read-only filter, so it follows the read-parity rule, not the
+            write-scoping one: a clinician sees every staff member's
+            sessions clinic-wide (0046), so filtering by staff is exactly as
+            safe for them as it is for admin/scheduler. */}
+        {(isAdminOrScheduler || role === "clinician") && (
           <select value={staffFilter} onChange={e => setStaffFilter(e.target.value)} style={selInput}>
             <option value="all">All staff</option>
             {(employees || []).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -2750,20 +2829,41 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                 </span>
               </div>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                {!isCancelled && (
+                {/* Both buttons require canManageSession(b), not just
+                    isAdminOrScheduler: admin/scheduler still get both on
+                    every session (unchanged), and a clinician now gets both
+                    but ONLY on a session whose employee_id is their own
+                    linked staff row - RLS (migration 0046) enforces the
+                    same boundary at the database, this is the UI half so a
+                    clinician is never offered an action on a colleague's
+                    session that would just silently no-op (an UPDATE a
+                    policy's USING clause excludes matches zero rows, not an
+                    error - see CLAUDE.md's "RLS returns empty sets, not
+                    errors" trap). The previous "Reschedule"/"Propose
+                    reschedule" ternary here was unreachable dead code (only
+                    admin/scheduler could ever reach this view) and is
+                    dropped rather than kept: now that the button only
+                    renders when the viewer can actually act, "Propose" never
+                    applies - investigated wiring a real propose flow for a
+                    clinician viewing a COLLEAGUE's session instead (the
+                    session_change_requests table from migration 0040), but
+                    that table is family-initiated only (no staff-side
+                    insert policy at all) and its staff read/action policies
+                    gate on the 'scheduling.session.book' action, which
+                    clinician does not hold (0024's seed) - not a trivial
+                    reuse, so left out of scope rather than guessed at. */}
+                {!isCancelled && canManageSession(b) && (
                   <>
-                    <button title={isAdminOrScheduler ? "Reschedule" : "Propose reschedule"}
-                      aria-label={isAdminOrScheduler ? "Reschedule session" : "Propose reschedule"}
+                    <button title="Reschedule"
+                      aria-label="Reschedule session"
                       onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); setRescheduleError(null); }}
                       style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer", fontSize: 14 }}>✎</button>
-                    {isAdminOrScheduler && (
-                      <button title="Cancel" aria-label="Cancel session" onClick={async () => {
-                        if (!confirm(lateCancel ? `Within the ${CANCEL_HOURS}-hour window. Cancel anyway?` : "Cancel this session?")) return;
-                        const { error: err } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id);
-                        refreshBookings();
-                        showToast(err ? "Cancel failed. Please try again." : "Session cancelled");
-                      }} style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 14 }}>✕</button>
-                    )}
+                    <button title="Cancel" aria-label="Cancel session" onClick={async () => {
+                      if (!confirm(lateCancel ? `Within the ${CANCEL_HOURS}-hour window. Cancel anyway?` : "Cancel this session?")) return;
+                      const { error: err } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", b.id);
+                      refreshBookings();
+                      showToast(err ? "Cancel failed. Please try again." : "Session cancelled");
+                    }} style={{ width: 28, height: 28, borderRadius: 7, border: `0.5px solid #F7C1C1`, background: COLORS.bg, color: "#E24B4A", cursor: "pointer", fontSize: 14 }}>✕</button>
                   </>
                 )}
               </div>
@@ -2820,6 +2920,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           isDraft={(calendars || []).find(c => c.id === detailSession.calendar_id)?.status === "draft"}
           staffAvailability={staffAvailability || []} clientAvailability={clientAvailability || []}
           clinicId={clinicId} workStartHour={workStart} workEndHour={workEnd} incrementMinutes={incrementMinutes}
+          canManage={canManageSession(detailSession)}
           onClose={() => setDetailSession(null)}
           onReschedule={proposedSlot => { setRescheduleInitialSlot(proposedSlot || null); setReschedulingSession(detailSession); setDetailSession(null); }}
           onCancelled={() => { setDetailSession(null); refreshBookings(); showToast("Session cancelled"); }}
@@ -2835,6 +2936,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           staffAvailability={staffAvailability || []} clientAvailability={clientAvailability || []}
           clinicId={clinicId} workStartHour={workStart} workEndHour={workEnd} orgIncrementMinutes={incrementMinutes}
           initialSlot={rescheduleInitialSlot}
+          lockEmployeeId={role === "clinician"}
           onClose={() => { setReschedulingSession(null); setRescheduleInitialSlot(null); }}
           onSaved={message => { setReschedulingSession(null); setRescheduleInitialSlot(null); refreshBookings(); showToast(message); }}
         />
@@ -2955,7 +3057,20 @@ export default function Scheduler() {
   }
 
   const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
-  const ViewComp = views[view];
+  // Sidebar's NAV list controls which LINKS a clinician sees (2026-09-02,
+  // migration 0046) - it does not, by itself, stop `?view=employees` (or
+  // any of these ids) from being typed straight into the URL, which the
+  // effect above (validViews) happily accepts regardless of role. Before
+  // this change that never mattered: every other role was already excluded
+  // from the whole portal by _app.tsx's ACCESS.scheduler gate. Now that
+  // clinician is admitted, this is the actual enforcement point - same
+  // reasoning as the new gate on pages/admin.tsx - for the management
+  // screens this task's scope explicitly keeps admin/scheduler-only:
+  // Clients, Staff, Session Types, Settings. Falls back to Dashboard rather
+  // than rendering a components a clinician has no business seeing.
+  const CLINICIAN_EXCLUDED_VIEWS = new Set(["clients", "employees", "sessiontypes", "settings"]);
+  const effectiveView = (appUser?.role === "clinician" && CLINICIAN_EXCLUDED_VIEWS.has(view)) ? "dashboard" : view;
+  const ViewComp = views[effectiveView];
 
   return (
     <>

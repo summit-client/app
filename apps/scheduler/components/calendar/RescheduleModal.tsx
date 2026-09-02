@@ -47,13 +47,25 @@ interface Props {
   initialSlot?: { dateStr: string; hour: number; minute: number } | null;
   onClose: () => void;
   onSaved: (message: string) => void;
+  /**
+   * True when the caller is a clinician acting on their OWN session
+   * (2026-09-02, migration 0046 - this modal is only ever reachable for a
+   * clinician when SessionDetail/the Sessions list already confirmed
+   * ownership). Disables the Clinician dropdown rather than leaving it free
+   * to pick a colleague: the underlying RLS policy requires employee_id to
+   * still be the caller's own linked staff row after the write, so
+   * reassigning away would be rejected at save time - locking the field
+   * here means that never happens, instead of happening and failing.
+   * admin/scheduler never set this.
+   */
+  lockEmployeeId?: boolean;
 }
 
 type SlotState = "open" | "clinician-only" | "client-only" | "neither" | "booked";
 
 export function RescheduleModal({
   session, client, employees, locations, sessionTypes, liveSessions, staffAvailability, clientAvailability,
-  clinicId, workStartHour, workEndHour, orgIncrementMinutes, initialSlot, onClose, onSaved,
+  clinicId, workStartHour, workEndHour, orgIncrementMinutes, initialSlot, onClose, onSaved, lockEmployeeId = false,
 }: Props) {
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -251,7 +263,8 @@ export function RescheduleModal({
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 8 }}>
           <Field label="Clinician">
-            <select value={employeeId} onChange={(e) => setEmployeeId(Number(e.target.value))} style={selectStyle}>
+            <select value={employeeId} onChange={(e) => setEmployeeId(Number(e.target.value))} style={selectStyle}
+              disabled={lockEmployeeId} title={lockEmployeeId ? "You can only reschedule your own sessions" : undefined}>
               {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
           </Field>

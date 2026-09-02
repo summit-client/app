@@ -32,6 +32,24 @@ export interface AppUser {
    * scoping the way this column does.
    */
   clinic_id: string;
+  /**
+   * The clinician's own `staff.id`, resolved via `employment_records` the
+   * same way apps/data/lib/data.ts's myEmployeeId() already does for the
+   * equivalent clinician-facing lookup in that portal - `staff` itself has
+   * no `user_id` column to join on directly (the staff_id/user_id gap
+   * migration 0026's header describes).
+   *
+   * Only ever resolved for role "clinician" - admin/scheduler don't need it,
+   * since their write access on `sessions` isn't scoped to a staff row.
+   * `null` means the lookup ran and found no CURRENT (end_date is null)
+   * employment_records row with a staff_id set - a real, expected state
+   * (see migration 0046's header): an admin has to link this manually via
+   * the employee portal's Settings -> Workforce screen before a clinician
+   * can book/reschedule/cancel anything here. `undefined` means either the
+   * signed-in user isn't a clinician (the lookup never runs) or it just
+   * hasn't resolved yet.
+   */
+  staffId?: number | null;
 }
 
 /**
@@ -89,6 +107,35 @@ export function useUser() {
         }
 
         const p = profile as AppUser;
+
+        // Resolve the clinician's own staff row before publishing the user -
+        // the Sessions/Calendar/Create views gate their write buttons on
+        // staffId being present, so setting it after setUser(p) would let a
+        // first render see own-session actions as unresolved (== not theirs)
+        // for one frame. admin/scheduler skip this entirely; their access
+        // was never scoped to a staff row.
+        if (p.role === "clinician") {
+          try {
+            const { data: er, error: erError } = await withTimeout(
+              supabase.from("employment_records").select("staff_id")
+                .eq("user_id", session.user.id)
+                .is("end_date", null)
+                .not("staff_id", "is", null)
+                .order("start_date", { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+              8000,
+              "employment_records lookup"
+            );
+            if (cancelled) return;
+            if (erError) console.error("[useUser] employment_records lookup failed", erError);
+            p.staffId = er?.staff_id == null ? null : Number(er.staff_id);
+          } catch (err) {
+            console.error("[useUser] employment_records lookup failed", err);
+            p.staffId = null;
+          }
+        }
+
         setUser(p);
         setProblem(
           !p.clinic_id ? "NO_CLINIC" :

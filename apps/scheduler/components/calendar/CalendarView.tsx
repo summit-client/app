@@ -95,6 +95,19 @@ interface Props {
 export function CalendarView({ clients, employees, locations, sessionTypes, typeColors, calendars, setCalendars, staffAvailability, clientAvailability, showToast, onRequestCreate, focus = null, onConsumedFocus, refreshSignal }: Props) {
   const appUser = useAppUser();
   const clinicId = appUser?.clinic_id || "";
+
+  // Same rule pages/index.jsx's SessionsView enforces (2026-09-02, migration
+  // 0046): admin/scheduler can drag/reschedule/cancel any session on this
+  // grid; a clinician can only ever act on a session whose employee_id is
+  // their own linked staff row (appUser.staffId, resolved by useUser.ts via
+  // employment_records). Read access to every session, including a
+  // colleague's, is unaffected - only the write affordances are scoped.
+  const canManageSession = React.useCallback((s: CalSession | null | undefined): boolean => {
+    if (!s || !appUser) return false;
+    if (appUser.role === "admin" || appUser.role === "scheduler") return true;
+    if (appUser.role === "clinician") return appUser.staffId != null && s.employee_id === appUser.staffId;
+    return false;
+  }, [appUser]);
   const [mode, setMode] = React.useState<ViewMode>("week");
   const [weekendsInView, setWeekendsInView] = React.useState(false);
   const [nDays, setNDays] = React.useState(3);
@@ -531,6 +544,18 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     const session = mergedSessions.find((s) => s.id === sessionId);
     if (!session) return;
     if (session.session_date === dateStr && session.hour === hour && session.minute === minute) return;
+    // The grid's drag handles don't yet stop a clinician from PICKING UP a
+    // colleague's block (see this file's own note on that, below the
+    // component) - this is the actual write gate, so the drop always either
+    // succeeds for real or explains itself, rather than the RLS policy's
+    // USING clause quietly excluding the row and the drop looking like it
+    // worked (an UPDATE it excludes matches zero rows and reports success,
+    // not an error - CLAUDE.md's "RLS returns empty sets, not errors" trap
+    // applies to writes too).
+    if (!canManageSession(session)) {
+      showToast("You can only reschedule your own sessions.");
+      return;
+    }
     if (session.recurrence_id) {
       setPendingDrag({ session, dateStr, hour, minute });
     } else {
@@ -679,6 +704,19 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
         />
       ) : (
         <div ref={gridAreaRef} style={{ height: "calc(100vh - var(--portalnav-h, 51px) - 230px)", minHeight: 320 }}>
+          {/* TimeGrid's session blocks are unconditionally `draggable` -
+              every block on this grid, including a clinician viewing a
+              colleague's session (full read parity, migration 0046), can
+              still be picked up and dragged. handleDropSession above is the
+              real gate (a colleague's drop is rejected with a clear toast,
+              never a silent no-op), so this is UX polish, not a security
+              gap - but a clinician can currently start a drag on a session
+              that will just bounce back on drop rather than the grid simply
+              not offering the gesture at all. Threading a per-session
+              draggable predicate down through DayColumn/SessionBlock/
+              StackedPill was left out of this change as a bigger surface
+              than this task's scope (booking parity, not a grid rewrite);
+              noted here and in the PR rather than silently left unnoticed. */}
           <TimeGrid
             days={range.days} sessions={mergedSessions} clients={clients} employees={employees} locations={locations}
             sessionTypes={sessionTypes} typeColors={typeColors} workStartHour={workStartHour} workEndHour={workEndHour}
@@ -700,6 +738,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           session={selected} clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes} typeColors={typeColors}
           colorOverride={sessionColorOverrides[selected.id]}
           isDraft={draftSessionIds.has(selected.id)}
+          canManage={canManageSession(selected)}
           staffAvailability={staffAvailability} clientAvailability={clientAvailability}
           clinicId={clinicId} workStartHour={workStartHour} workEndHour={workEndHour} incrementMinutes={orgIncrementMinutes}
           onClose={() => setSelected(null)}
@@ -733,6 +772,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           clinicId={clinicId}
           workStartHour={workStartHour} workEndHour={workEndHour} orgIncrementMinutes={orgIncrementMinutes}
           initialSlot={rescheduleInitialSlot}
+          lockEmployeeId={appUser?.role === "clinician"}
           onClose={() => { setRescheduling(null); setRescheduleInitialSlot(null); }}
           onSaved={(message) => { setRescheduling(null); setRescheduleInitialSlot(null); void refreshAll(); showToast(message); }}
         />
