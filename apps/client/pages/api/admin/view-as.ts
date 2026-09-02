@@ -4,10 +4,10 @@ import { setViewAsCookie } from "../../../lib/admin-view-as";
 
 /**
  * Sets the admin_view_as_client cookie so an admin can simulate what a
- * specific family sees. Only ever called from the picker at
- * pages/admin/select-client.tsx, but re-checks everything itself rather than
- * trusting that caller - the clientId in the request body is untrusted input
- * regardless of which page happened to submit it.
+ * specific family sees. Only ever called from the picker rendered inline on
+ * pages/index.tsx (components/select-client.tsx), but re-checks everything
+ * itself rather than trusting that caller - the clientId in the request body
+ * is untrusted input regardless of which page happened to submit it.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {

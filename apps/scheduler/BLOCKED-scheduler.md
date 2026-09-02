@@ -4,12 +4,133 @@ Things that need a migration, a `packages/` change, or a new dependency,
 which this session is not allowed to make. Each entry says what was done
 instead, if anything.
 
+## 2026-09-02 full audit pass — summary
+
+Full audit + stress test ahead of tomorrow's demo (booking, calendars,
+matching, RLS, dead code, leak tests). Re-verified migrations `0045`
+(double-booking) and `0046` (clinician self-only booking access) — both are
+correct and hold under a real, RLS-enforcing Postgres, but **neither has
+been applied to the live database yet** (see the bold warning under item 1
+below - this is the single most important thing in this file for tomorrow).
+Found one new, real compliance gap (item 0, below - PHI sent to Anthropic)
+that needs a product/legal call, not a code fix from this pass. Deleted
+`dump.txt`/`index_dump.txt` (item 6 - confirmed no unique value, see that
+item for how). Added automated test coverage that didn't exist before
+tonight: `supabase/tests/behaviour.mjs` gained 8 checks directly exercising
+migration `0045`'s trigger and unique index (exact duplicate, duration-aware
+overlap, back-to-back boundary, cancelled-slot reuse, cross-clinician
+independence, null-type fallback, unassigned-session non-conflict) - nothing
+in the suite touched this migration before, `apply.mjs` only proved the DDL
+parses. Full harness re-run clean: `apply.mjs` 46/46, `behaviour.mjs` 68/68
+(61 + 8 new), `rls.mjs` 41/41 (unchanged - already covered 0046 thoroughly).
+Everything else audited and found solid: every `.from(` call in the app maps
+to a covered RLS policy; every clinician-facing write button (`SessionDetail`,
+`SessionsView`, `CalendarView` drag-to-reschedule) is gated by the same
+`canManageSession`-shaped ownership check and *omits* the button rather than
+disabling it; the `?view=` router param, `pages/admin.tsx`, and the AI
+matching candidate pool are all correctly narrowed for a clinician (the
+"second `/admin`-shaped bug" this task asked to check for - not found, this
+one's already handled); no PHI in URLs, `localStorage`, or console logs; no
+orphaned components or TODO/FIXME markers; conflict messages are friendly
+text, not raw Postgres errors; required-field guards and double-click
+protection (`booking`/`saving` state disabling the button synchronously)
+are in place on every write path. No Playwright/mock-Supabase-server
+harness exists anywhere in this repo yet (checked `git log` per this task's
+own instruction before assuming one did) - stress-testing here was done by
+reading every write path plus the real-Postgres RLS/trigger suites above,
+not a browser session; flagging that gap explicitly rather than silently
+skipping the ask.
+
+## 0. AI matching sends a client's real name to Anthropic — compliance gap, not fixed here
+
+**Found this pass, not introduced by it - pre-existing on `main`.** CLAUDE.md's
+hard constraints are explicit: *"Never send identifiable data to a
+third-party model without a signed agreement covering it. `packages/clinical-ai`
+routes PHI to Azure OpenAI by default for this reason; Anthropic is only used
+for non-PHI scheduler matching."* The single-client branch of `runMatch()`
+(`pages/index.jsx:1897`) violates that:
+
+```js
+prompt = `You are an ABA scheduling assistant. Find the best staff match for a client.
+CALENDAR: ${selectedCalendar.name} (${selectedCalendar.date_start} to ${selectedCalendar.date_end})
+CLIENT: ${selectedClient.name} | SESSION: ${selectedSessionType.name} (${selectedSessionType.duration}min)
+...
+```
+
+`selectedClient.name` - a real client's real name, i.e. "this named person
+receives ABA therapy at this clinic," which is PHI under PHIPA - goes straight
+into the prompt body, which `/api/match` forwards verbatim to
+`api.anthropic.com`. This is exactly the failure mode the "non-PHI scheduler
+matching" line in CLAUDE.md is written to prevent, and it's live in
+production right now (this branch is what "Find matches" hits for a single
+client; nothing gates it behind a flag).
+
+**Not a leak from *this* app's UI/RLS layer to *this* app's own users** - the
+audit's other leak tests (URLs, console, cross-clinic, cross-role) all came
+back clean. This is a leak to a third party the clinic hasn't signed a PHI
+agreement with, which is a different and arguably worse category.
+
+**Why this pass didn't just fix it:** the mechanical fix (drop
+`selectedClient.name` from the prompt, matching text) is easy, but *what to
+send instead* is a product call, not a coding one - the recommendation text
+the AI returns currently references the client by name too
+(`"recommendation":"..."`), and the UI likely expects that. Options range
+from "send a non-identifying placeholder and re-substitute the real name
+client-side after the response comes back" to "route this call through
+`packages/clinical-ai`'s Azure path instead of Anthropic, like every other
+PHI-adjacent AI call in this codebase already does" - the latter looks like
+the more correct fix on its face (it's the exact mechanism CLAUDE.md
+describes existing for this reason) but changes which service and API key
+this feature bills against, which isn't this session's call to make
+unilaterally the night before a demo. The multi-client branch of the same
+wizard (`type !== "single"`) is NOT affected - it never calls `/api/match`
+at all, matching is done entirely client-side there.
+
+**Suggested next step for whoever picks this up:** decide whether
+single-client AI match should (a) route through `packages/clinical-ai` /
+Azure instead of the direct Anthropic call in `pages/api/match.ts`, or (b)
+stay on Anthropic but strip every identifying field from the prompt
+(`selectedClient.name`, and check `selectedCalendar.name` too if clinics ever
+name calendars after clients) and reattach the real name client-side to the
+response before display. Either way, `match.ts`'s own header comment
+("Anthropic... non-PHI scheduler matching") already states the intended
+invariant; this is the one call site that doesn't meet it.
+
 ## 1. Booking-integrity: no DB constraint against double-booking a clinician
 
-**Migration written this session (`supabase/migrations/0045_sessions_no_double_booking.sql`) - NOT YET APPLIED.** This session's Supabase MCP access is
-also read-only, same limit as the pass that wrote this item originally, so a
-human still needs to run this migration against the live database before it
-does anything. Implements exactly the two layers sketched below: the partial
+**Re-verified 2026-09-02 (full audit pass): the migration is correct, and it
+is STILL NOT APPLIED TO THE LIVE DATABASE.** This is the single most
+important line in this file for tomorrow's demo. `supabase/migrations/0045_sessions_no_double_booking.sql`'s
+own header says so explicitly ("NOT applied by this session - the Supabase
+MCP available here is read-only. A human needs to run this migration against
+the live database.") and nothing in this repo's history since shows a human
+having done that - this session's own Supabase MCP access was also
+unavailable (see CLAUDE.md's "If `ToolSearch` for 'supabase' comes back
+empty" note; confirmed empty again this pass), so there was no way to check
+the live schema directly either. **Assume the double-booking race is still
+live in production until someone confirms otherwise** by running
+`select indexname from pg_indexes where tablename='sessions' and indexname='sessions_no_exact_double_book'`
+(or just applying the migration - every statement in it is `if not exists`/
+`create or replace`, safe to run twice).
+
+What's newly true this pass: the migration now has real automated test
+coverage, which it didn't before tonight - `supabase/tests/behaviour.mjs`
+gained 8 checks that apply the full 46-migration chain to a fresh Postgres
+(via PGlite) and exercise the trigger and unique index directly: exact-slot
+duplicate refused, a 9:30 start correctly overlaps a 9:00-10:00 session,
+back-to-back sessions touching exactly at the boundary are allowed, a
+cancelled session frees its slot, two different clinicians at the identical
+slot never conflict, an unrecognized `type` falls back to the same 60-minute
+default the app uses, and an unassigned (`employee_id is null`) session never
+conflicts with anything. All 8 pass (`npm run behaviour` in `supabase/tests`,
+68/68 total including the pre-existing 61). This replaces the previous ad
+hoc, uncommitted verification the item below describes ("a minimal mirror of
+the real schema... NOT the live Supabase project") with something that runs
+again on every future change to this table.
+
+**Original verification note, kept for context (this pass didn't need to
+redo it, just add automated coverage for it):** Implements exactly the two
+layers sketched below: the partial
 unique index for the exact-slot case, and a `before insert or update` trigger
 (plain plpgsql, not `security definer`, matching migration `0016`'s four
 trigger functions on this same table) for the overlapping-but-not-identical
@@ -88,6 +209,40 @@ tsrange(...) with &&) where (status <> 'cancelled')`) or a
 `before insert or update` trigger that queries for any overlapping row and
 raises, mirroring `0016`'s style. Either is a real migration, not something
 this session can write per the task's constraints - logging it here instead.
+
+## 1a. Migration `0046` (clinician self-only booking access) is ALSO not applied live
+
+Same status as item 1's migration, checked the same way this pass: `supabase/migrations/0046_clinician_scheduler_access.sql`'s
+own closing comment says "APPLY MANUALLY... no Claude session, including the
+one that wrote this file, has run this against the live database." Nothing
+found in `git log` or either doc in `docs/context/` since PR #148 merged
+tonight suggests a human has run it either. Until it is applied, the live
+database still has the pre-`0046` policy set: a clinician has **zero**
+read access to `session_types`, `locations`, `calendars`,
+`client_availability` and `staff_availability` (those five tables' clinician
+`select` policies don't exist yet), and **zero** write access to `sessions`
+at all (the two new clinician-scoped insert/update policies don't exist
+yet). That means a clinician signing into the live scheduler portal right
+now would hit exactly the "RLS returns empty sets, not errors" trap CLAUDE.md
+warns about on five of eight tables, and every booking/reschedule/cancel
+attempt would silently no-op (RLS matches zero rows) rather than succeed -
+this is a **materially worse demo failure** than a missing double-booking
+guard, because it means the newly-shipped clinician-facing feature this
+migration exists for doesn't actually work live yet, full stop, regardless
+of how correct the app code and the migration file both are.
+
+Re-verified via the same real-Postgres harness as item 1 (not new to this
+pass - `supabase/tests/clinician_scheduler_access.sql`, added alongside the
+migration, already covered this; this pass's contribution was re-running it
+clean and confirming the harness itself is sound): `npm run rls` in
+`supabase/tests` - 41/41, including six checks specifically on 0046's read
+parity and write scoping (own-session allowed, colleague's session
+invisible-to-write, no self-reassignment to a colleague, unlinked clinician
+has read but zero write, admin/scheduler unaffected). The code and the
+migration are correct. **The gap is purely operational: someone with
+database access needs to run both `0045` and `0046` against the live project
+before tomorrow's demo**, ideally together since they're both scheduler-table
+changes from the same tonight and worth reviewing as one batch.
 
 ## 2. Recurring drag-to-reschedule only conflict-checks the anchor slot
 
@@ -202,8 +357,55 @@ concept.
 
 ## 6. `apps/scheduler/dump.txt` and `index_dump.txt`
 
-Pre-existing, unrelated to this pass. `docs/context/environments.md`
-already flags these as tracked-in-git-despite-being-gitignored and
-containing the pre-PR#40 vulnerable `match.ts`. Left alone - out of this
-session's scope and not safe to delete without confirming with Yanko first
-given they're already flagged as a known items elsewhere.
+**DELETED 2026-09-02 (full audit pass), with explicit confirmation to do so
+carried by this pass's own task instructions.** Read both files in full
+before deleting, per the standing "not safe to delete without confirming
+with Yanko first" note below (kept for the record): both are a single
+Windows-path-prefixed concatenation of the scheduler's pre-hardening source
+tree (`// === FILE: C:\Users\y_yan\Projects\summit-scheduler\...`,
+mojibake-corrupted from an encoding mismatch), including the exact
+pre-PR#40 `pages/api/match.ts` this repo's docs already flagged - an
+unauthenticated open proxy to `api.anthropic.com` using the server's own API
+key, no allowlist, no rate limit, no payload cap. Confirmed superseded and
+of no unique value before deleting: the live `pages/api/match.ts` is now
+fully hardened (auth + role allowlist + per-user rate limit + pinned
+model/token cap, with its own header comment describing exactly what the
+dump's version got wrong), the dump's `Sidebar.tsx`/`useUser.ts` reference
+the retired `"staff"` role and pre-`clinician`/`supervisor` vocabulary
+CLAUDE.md's "One role vocabulary" section documents as long superseded, and
+a repo-wide grep turned up zero references to either file from any script,
+config, or app code - only the three docs (this file, `AUDIT-2026-08-31.md`,
+`docs/context/environments.md`) that flagged them as tracked-despite-
+gitignored. Both were already in `apps/scheduler/.gitignore` (added, never
+honoured because the files were already tracked before the ignore rule was
+added) - `git rm` clears that mismatch too.
+
+**Original note, kept for the record:** Pre-existing, unrelated to the pass
+that first flagged this. `docs/context/environments.md` already flags these
+as tracked-in-git-despite-being-gitignored and containing the pre-PR#40
+vulnerable `match.ts`. Left alone at the time - out of that session's scope
+and not safe to delete without confirming with Yanko first given they were
+already flagged as a known item elsewhere.
+
+## 7. `lib/useUser.ts` calls `auth.getSession()`, not `getUser()` — cross-referenced, not new
+
+Already found and triaged in `apps/employee/AUDIT-2026-08-31.md` ("Open, not
+fixed here"): `useUser.ts`'s initial identity load calls
+`supabase.auth.getSession()` rather than `getUser()`, which CLAUDE.md's hard
+constraints call out by name ("Auth gates use `getUser()`, never
+`getSession()`"). That other audit's own conclusion still holds and this
+pass re-confirms it rather than re-litigating it: **not a hole** -
+`proxy.ts` has already gated the request server-side with `getUser()` before
+any page renders, and every actual data operation goes through RLS
+regardless of what this hook believes the client's role is, so this only
+affects what buttons/labels render, never what a write is allowed to do. It
+does carry the cross-portal refresh-token race CLAUDE.md documents elsewhere
+(a `getSession()` on a possibly-stale session can redeem a refresh token
+and invalidate another portal's) - `pages/api/match.ts` already guards
+against exactly that race with `sessionFreshness()` before its own
+`getUser()` call, and the same guard would close this one too, but that's a
+change to shared client-identity code this app doesn't own alone (`useUser.ts`
+is scheduler-specific, but the fix pattern and the race itself are
+cross-portal). Logging the cross-reference here so this app's own checklist
+doesn't look silent on something CLAUDE.md flags by name - not re-fixing it,
+same call the other audit made.

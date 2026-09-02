@@ -91,16 +91,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  // RLS (session_change_requests_client_insert, migration 0035) independently
-  // re-checks that this session actually belongs to this client and clinic -
-  // this insert simply fails with an RLS error if sessionId points at
-  // someone else's session, which the catch below turns into the same
-  // generic message as any other insert failure.
+  // The child is read off the session, not off whichever child the portal
+  // happens to be pointed at. Since the calendar became family-wide, a parent
+  // can act on a sibling's session without switching first - and pinning
+  // client_id to the resolved view would then name the wrong child. RLS would
+  // catch it (the insert policy re-checks that the session belongs to the
+  // named client) but only as an opaque row-level-security failure on a
+  // request the parent was entitled to make.
+  //
+  // Read through the caller's own session, so RLS decides whether this session
+  // exists for them at all. A session they cannot see comes back as "not
+  // found" rather than "forbidden": the difference between those two answers
+  // would confirm that someone else's session id is real.
+  const { data: session, error: sessionError } = await supabase
+    .from("sessions")
+    .select("id, client_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    console.error("request-change: session lookup failed:", sessionError.message);
+    res.status(500).json({ error: "Couldn't submit your request. Try again." });
+    return;
+  }
+  if (!session) {
+    res.status(404).json({ error: "That appointment is not available." });
+    return;
+  }
+
+  // RLS (session_change_requests_family_insert, migration 0053) independently
+  // re-checks that this session belongs to this client and clinic, and that
+  // the caller holds manage_appointments for that child - seeing a sibling's
+  // calendar is not the same as being allowed to move it.
   const { data: request, error: insertError } = await supabase
     .from("session_change_requests")
     .insert({
       clinic_id: profile.clinic_id,
-      client_id: resolved.viewed.clientId,
+      client_id: session.client_id,
       session_id: sessionId,
       request_type: requestType,
       note: note || null,

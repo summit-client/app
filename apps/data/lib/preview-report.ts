@@ -37,7 +37,7 @@ export async function getPreviewRetrieval(clientId: number): Promise<RetrievedCl
     clinicId: null,
     facts,
     notes,
-    incidents: clientId === 202
+    incidents: clientId === 102
       ? [{ id: "inc-1", date: facts[0]?.series.at(-1)?.date ?? "", suspectedFunction: "escape_avoidance" }]
       : [],
     clinicalEvents: [],

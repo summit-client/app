@@ -37,6 +37,11 @@ const outIndex = join("tests", ".tmp-proxy-auth-index.mjs");
 await esbuild.build({
   entryPoints: ["client.ts"], bundle: true, outfile: outClient,
   format: "esm", platform: "neutral",
+  // client.ts imports @supabase/ssr, and esbuild cannot resolve it under
+  // platform:"neutral". The dependency is not what this suite tests, so it is
+  // left unbundled - the same fix already applied to loop-guard.test.mjs and
+  // course-link.test.mjs for the identical reason.
+  external: ["@supabase/ssr"],
 });
 await esbuild.build({
   entryPoints: ["index.ts"], bundle: true, outfile: outIndex,

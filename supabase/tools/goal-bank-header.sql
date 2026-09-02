@@ -1,0 +1,79 @@
+-- 0062 · The 2026 goal bank
+--
+-- 554 goals with 2,325 teaching steps from the organization's own bank, plus
+-- 24 drafted to fill four thin domains. Loaded into goal_bank_entries and
+-- goal_bank_steps (0061): what the Goal Generator searches, and what populates
+-- a client's program.
+--
+-- WHAT A STEP IS, AND THE BUG THAT NEARLY WASN'T
+--
+-- Each goal carries a short prompt-fading ladder, usually three to six rungs.
+-- The first import read every row under a goal as a step and produced ten for
+-- almost every goal - because the spreadsheet has trailing rows holding bare
+-- numbers left over from cell references. They imported as steps reading "59."
+-- and "21.", which would have shipped 3,187 pieces of nonsense into a clinical
+-- bank that populates client programs. A step row is now recognised by having
+-- a step number in column B, and its text must be prose rather than a number.
+--
+-- WHAT WAS CLEANED
+--
+--   * 29 distinct domain strings became 16. "Expressive Comunication" was a
+--     typo; "Expressive" and "Expressive Communication" were one domain spelled
+--     two ways; eleven "Fluency Plus Program: X Target" strings and four
+--     spellings of "Literacy - Decoding" were sub-domains that had become
+--     domains. Two goals had the literal domain "Blank" and were placed from
+--     their code prefix.
+--   * FP, PP, GP, VP and MP are expanded in the step text. "After a FP to turn
+--     head" is not a step a new therapist can follow, and the prompt level is
+--     recorded in its own column so it can be filtered and reported on.
+--   * 168 goals stated their mastery criteria inside the definition
+--     ("... Measured across 3 consecutive sessions and 2 clinicians"). Those are
+--     separated out, so the definition is the behaviour and the criteria are
+--     the criteria. The other 386 carry the organization's standard criteria,
+--     which is what the column already defaults to.
+--   * Sentence case and terminal punctuation throughout.
+--
+-- WHAT WAS NOT REWRITTEN
+--
+-- The clinical content of any goal. 22 entries are flagged
+-- needs_clinical_review with a stated reason: 14 define the target with a
+-- mentalist verb ("understands", "knows") that is not a countable behaviour,
+-- and 8 are too short for another clinician to replicate. Both fail the
+-- behavioural and technological dimensions. They are imported as written, with
+-- the original kept in original_definition, because a machine can tell that
+-- "the child understands turn-taking" is not measurable and cannot tell what
+-- the clinician meant by it.
+--
+-- An earlier pass also flagged 347 goals for "no measurable criterion". That
+-- was wrong and is not in this import: the column already defaults to the
+-- organization's standard criteria, so a goal without its own has one. A review
+-- list containing two thirds of the bank is not a review list.
+--
+-- 26 goals have no teaching steps in the source. They import without a ladder
+-- rather than with an invented one.
+--
+-- PROVENANCE
+--
+-- The codes are the organization's own, not ABLLS-R, VB-MAPP or AFLS codes, and
+-- nothing in the source names an assessment. 37 goals sit in domains that name
+-- a published curriculum (Zones of Regulation, Social Thinking) and are
+-- attributed to it. The other 517 are recorded as the organization's own bank.
+-- No assessment is inferred from a domain: a goal's stated source travels into
+-- progress reports and funding claims, and a wrong one is worse than a blank.
+--
+-- THE 24 DRAFTS
+--
+-- Behaviour had 6 goals, Joint Attention 8, Emotional Regulation 8, Literacy 8.
+-- Six drafts were added to each, as status='draft' so they cannot go on a
+-- client's program until a BCBA approves each one, and flagged with the reason
+-- they exist.
+--
+-- Guarded on the clinic existing, keyed on (clinic_id, code) so a re-run
+-- updates rather than duplicates.
+do $seed$
+declare v_entry uuid;
+begin
+if not exists (select 1 from clinics where id = 'ee78d13c-eec9-4512-98bc-d00bca2d08c9') then
+  raise notice 'Mount Etna clinic not present; skipping the goal bank import.';
+  return;
+end if;

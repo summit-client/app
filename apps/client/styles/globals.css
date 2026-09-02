@@ -31,3 +31,20 @@ select {
      background: white button, on a phone with system dark mode on. */
   color: inherit;
 }
+
+/* Available to a screen reader, invisible on screen.
+   The family switcher announces "Now viewing Maya" into a live region when the
+   selected child changes: a sighted parent sees every figure on the page
+   update, and without this a screen-reader user gets nothing at all. Without
+   the class the announcement would simply render as stray text. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

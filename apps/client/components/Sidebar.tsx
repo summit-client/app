@@ -2,6 +2,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
 import { signOutUrl } from "@summit/portals";
+import { SupportButton, DEFAULT_SUPPORT_EMAIL } from "@summit/nav";
+import { getSetting } from "@summit/settings";
 import styles from "../styles/design-b.module.css";
 
 type SidebarIconName =
@@ -13,6 +15,8 @@ type SidebarIconName =
   | "message"
   | "document"
   | "consent"
+  | "family"
+  | "updates"
   | "settings"
   | "logout";
 
@@ -72,6 +76,20 @@ function SidebarIcon({
         <path d="M14 2v6h6M9 13h8M9 17h8" />
       </>
     ),
+    family: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <circle cx="17" cy="10" r="2.4" />
+        <path d="M3.5 19v-1.2A4.3 4.3 0 0 1 7.8 13.5h2.4a4.3 4.3 0 0 1 4.3 4.3V19" />
+        <path d="M16 19v-.8a3.4 3.4 0 0 1 2.6-3.3" />
+      </>
+    ),
+    updates: (
+      <>
+        <path d="M4 5.5h16v13H8l-4 3z" />
+        <path d="M8 10h8M8 13.5h5" />
+      </>
+    ),
     consent: (
       <>
         <path d="M6 3h12v18H6z" />
@@ -117,8 +135,15 @@ const navItems: NavItem[] = [
   { label: "Home Program", icon: "activities", href: "/activities" },
   { label: "Funding", icon: "funding", href: "/statement" },
   { label: "Messages", icon: "message", href: "/messages" },
+  // Care Updates was reachable only from one "View all" link on the dashboard.
+  // That was survivable while it held session notes; it is not now that it also
+  // carries the clinic's announcements and the notification centre links here.
+  // A family who scrolled past the dashboard strip had no way back to a closure
+  // notice.
+  { label: "Care Updates", icon: "updates", href: "/updates" },
   { label: "Documents", icon: "document", href: "/documents" },
-  { label: "Consents", icon: "consent", comingSoon: true },
+  { label: "Forms & consents", icon: "consent", href: "/forms" },
+  { label: "Your family", icon: "family", href: "/family" },
   { label: "Settings", icon: "settings", comingSoon: true },
 ];
 
@@ -231,6 +256,19 @@ export default function Sidebar() {
           paddingTop: 20,
         }}
       >
+        {/* Families had no way to report a problem at all - this control
+            existed only in the staff HR portal. The people least able to work
+            around a broken screen were the ones with nowhere to say so.
+            router.pathname rather than asPath, so a report names the route and
+            not a thread or form id. */}
+        <SupportButton
+          to={String(getSetting("support.devEmail") ?? "").trim() || DEFAULT_SUPPORT_EMAIL}
+          brand={String(getSetting("org.name") ?? "").trim() || "Summit"}
+          moduleName="Family portal (apps/client)"
+          pathname={router.pathname}
+          placement="sidebar"
+        />
+
         <button
           type="button"
           onClick={handleLogout}

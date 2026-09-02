@@ -93,12 +93,60 @@ function PoliciesScreen() {
             <b style={{ fontSize: "var(--text-sm)" }}>{preview.name}</b>
             <button className="btn ghost" onClick={() => setPreview(null)}>Close</button>
           </div>
-          {preview.url ? (
-            <iframe src={preview.url} title={`Preview of ${preview.name}`} style={{ width: "100%", height: "70vh", border: 0, display: "block" }} />
+          {/* Text first when the policy has it. A policy written into Summit
+              is the policy; an attached document is a second copy of it, and
+              showing the copy in preference to the original meant every
+              text-only policy previewed as though nothing had been written. */}
+          {preview.content ? (
+            <div className="card-pad" style={{ maxWidth: "72ch" }}>
+              {/* preserve-line so paragraph breaks in a policy survive, with no
+                  dangerouslySetInnerHTML anywhere near text an administrator typed. */}
+              <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7, whiteSpace: "pre-line" }}>
+                {preview.content}
+              </p>
+              {preview.url ? (
+                <p style={{ marginTop: 12 }}>
+                  <a href={preview.url} target="_blank" rel="noopener noreferrer">
+                    Open the signed document
+                  </a>
+                </p>
+              ) : null}
+            </div>
+          ) : preview.url ? (
+            <>
+              <iframe
+                src={preview.url}
+                title={`Preview of ${preview.name}`}
+                style={{ width: "100%", height: "70vh", border: 0, display: "block" }}
+              />
+              {/* Always shown, not a fallback rendered on error - a
+                  cross-origin frame that refuses to load fires no event this
+                  page can see, so a Drive file that is not shared "anyone with
+                  the link" renders as a blank rectangle with nothing to click.
+                  A link that always works is the honest answer to a frame that
+                  sometimes does not. */}
+              <div className="card-pad" style={{ borderTop: "1px solid var(--line)" }}>
+                <p className="trend" style={{ margin: 0 }}>
+                  Not loading? The document may need permission.{" "}
+                  <a href={preview.url} target="_blank" rel="noopener noreferrer">
+                    Open it in a new tab
+                  </a>
+                  .
+                </p>
+              </div>
+            </>
           ) : (
             <div className="card-pad" style={{ maxWidth: "72ch" }}>
-              <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{preview.content ?? "This policy's document has not been attached yet."}</p>
-              <p className="trend" style={{ marginTop: 12 }}>Starter text. The signed organizational document replaces it when an administrator attaches it.</p>
+              {/* Says which of the two things is missing, and who fixes it.
+                  "Not attached yet" was shown for a policy with text as well as
+                  for one with neither, so it never told anybody anything. */}
+              <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>
+                This policy has no text and no attached document yet.
+              </p>
+              <p className="trend" style={{ marginTop: 12 }}>
+                An administrator can add either from the policy record. You can still
+                acknowledge the version once the content is here.
+              </p>
             </div>
           )}
         </div>

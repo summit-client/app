@@ -20,6 +20,19 @@ import { AccountProblemNotice } from "../components/account-problem-notice";
 import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
 import { homeUrlFor } from "@summit/portals";
+import { notificationsFromRows, sortNotifications, type Notification } from "../lib/notifications";
+import { familyFromRows, type Family } from "../lib/family";
+
+export type FamilyTask = {
+  taskId: string;
+  clientId: number;
+  kind: string;
+  title: string;
+  detail: string;
+  dueOn: string | null;
+  priority: string;
+  href: string;
+};
 
 type DashboardProps = {
   mode: "dashboard";
@@ -37,6 +50,16 @@ type DashboardProps = {
     count: number;
   } | null;
   budgetError: boolean;
+  /** Every child this signed-in guardian may see, for the family switcher. */
+  family: Family;
+  /** What still needs their attention, derived in the database (0036). */
+  tasks: FamilyTask[];
+  /**
+   * Unread replies and clinic notices. Deliberately excludes tasks: those
+   * already have their own per-child panel, and the same item in two lists is
+   * a list a parent stops trusting.
+   */
+  alerts: Notification[];
   isAdminViewingAs: boolean;
 };
 
@@ -258,9 +281,45 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     ? `${clientLastName} Family`
     : profile?.full_name || "Family";
 
+  // The family behind this login. Read from `my_family` (0035) rather than
+  // assembled here: that view already resolves the household and the
+  // permissions held over each child, and doing the permission join in the
+  // page is how one screen ends up disagreeing with another.
+  const { data: familyRows, error: familyError } = await supabase
+    .from("my_family")
+    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, permissions");
+
+  // Tasks come from the function, not the view: the function applies the
+  // per-child permission filter, so a guardian without billing access is never
+  // handed a funding task to render.
+  const { data: taskRows, error: tasksError } = await supabase.rpc("my_family_tasks");
+
+  // The notification centre (migration 0045). Assembled from live rows, so
+  // nothing here can outlive the thing that caused it. Filtered to the two
+  // sources the per-child task panel below cannot carry: a message thread and
+  // a clinic notice belong to the household, not to one child.
+  const { data: alertRows, error: alertsError } = await supabase.rpc("my_notifications");
+  if (alertsError) console.error("Failed to load notifications:", alertsError.message);
+
+  if (familyError) console.error("Failed to load family:", familyError.message);
+  if (tasksError) console.error("Failed to load family tasks:", tasksError.message);
+
   return {
     props: {
       mode: "dashboard",
+      family: familyFromRows(familyRows ?? []),
+      alerts: sortNotifications(
+        notificationsFromRows(alertRows ?? []).filter((n) => n.source !== "task")),
+      tasks: (taskRows ?? []).map((t: Record<string, unknown>) => ({
+        taskId: t.task_id as string,
+        clientId: Number(t.client_id),
+        kind: t.kind as string,
+        title: t.title as string,
+        detail: t.detail as string,
+        dueOn: (t.due_on as string) ?? null,
+        priority: (t.priority as string) ?? "normal",
+        href: t.href as string,
+      })),
       familyName,
       clientName: viewed.clientName || "Client",
       sessions: (sessions ?? []) as DashboardSession[],

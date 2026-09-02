@@ -14,6 +14,8 @@
  *    with a stated reason. This is where somebody clears them.
  */
 import { createBrowserClient } from "@supabase/ssr";
+import { clientSessionFreshness } from "@summit/proxy-auth/client";
+import { loginUrl, refreshUrl } from "@summit/portals";
 
 export const IS_PREVIEW =
   process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
@@ -23,6 +25,28 @@ function sb() {
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
   );
+}
+
+/**
+ * Same cross-portal refresh-token-race guard as apps/data/lib/data.ts's
+ * ensureFreshSession() (see that file's header for the full rationale) -
+ * this file also calls sb().auth.getUser() directly from the browser
+ * (myClinicId() below) and was flagged in BLOCKED-data.md as having the
+ * same unguarded gap.
+ */
+async function ensureFreshSession(): Promise<void> {
+  const freshness = await clientSessionFreshness(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (freshness === "fresh") return;
+  if (typeof window === "undefined") return;
+
+  if (freshness === "missing") {
+    window.location.href = loginUrl();
+  } else {
+    const refresh = new URL(refreshUrl());
+    refresh.searchParams.set("return_to", window.location.href);
+    window.location.href = refresh.toString();
+  }
+  await new Promise<never>(() => {});
 }
 
 /** A person who can log in, with their employment and scheduler link if any. */
@@ -254,6 +278,7 @@ export async function derivePending(): Promise<{ derived: number; stillBlocked: 
 }
 
 async function myClinicId(): Promise<string | null> {
+  await ensureFreshSession();
   const user = (await sb().auth.getUser()).data.user;
   if (!user) return null;
   const { data } = await sb().from("profiles").select("clinic_id").eq("id", user.id).single();

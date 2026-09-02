@@ -4,7 +4,7 @@ import type {
   NextApiRequest,
   NextApiResponse,
 } from "next";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { ActivityStatusBadge } from "../components/activity-status-badge";
@@ -65,10 +65,12 @@ export default function Activities(
 
   const { activitiesError, goalsById, clientName, isAdminViewingAs } = props;
 
-  const groups = useMemo(
-    () => groupActivitiesByGoal(sortActivitiesForFamily(activities), goalsById),
-    [activities, goalsById]
-  );
+  // A plain call, not useMemo. This sits below the `problem` and `error`
+  // early-returns above, so as a hook it ran on the activities branch and not
+  // on the other two - React counts hooks per render and throws "Rendered more
+  // hooks than during the previous render" the moment a mount changes mode.
+  // Grouping a client's home-program activities is trivial next to that.
+  const groups = groupActivitiesByGoal(sortActivitiesForFamily(activities), goalsById);
 
   async function markStatus(activityId: string, status: ActivityStatus) {
     setPendingId(activityId);

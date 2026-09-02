@@ -33,6 +33,10 @@ const out = join("tests", ".tmp-content-server.mjs");
 await esbuild.build({
   entryPoints: ["lib/content-server.ts"], bundle: true, outfile: out,
   format: "esm", platform: "neutral",
+  // content-server.ts reaches @supabase/ssr through its imports, and esbuild cannot resolve it under
+  // platform:"neutral". The dependency is not what this suite tests, so it is
+  // left unbundled - the same thing every suite here that passes already does.
+  external: ["@supabase/ssr"],
 });
 temps.push(out);
 process.on("exit", () => temps.forEach((f) => { try { unlinkSync(f); } catch { /* gone */ } }));

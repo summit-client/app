@@ -1,0 +1,1058 @@
+[
+ {
+  "code": "DRAFT-BX01",
+  "name": "Requests a break using a taught response",
+  "domain": "Behaviour",
+  "sub_domain": null,
+  "definition": "Given a task the child has previously escaped, the child requests a break using their taught response (vocal, sign or card) before engaging in the interfering behaviour.",
+  "mastery": null,
+  "procedure": "Contrive a low-demand task, prompt the break response at the earliest sign of escalation, and honour every request immediately during acquisition.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Requests a break using a taught response: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Requests a break using a taught response: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Requests a break using a taught response: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Requests a break using a taught response: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Requests a break using a taught response: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-BX02",
+  "name": "Waits for a preferred item after a request",
+  "domain": "Behaviour",
+  "sub_domain": null,
+  "definition": "After requesting a preferred item, the child waits without interfering behaviour for a delay that increases from 2 to 30 seconds.",
+  "mastery": null,
+  "procedure": "Begin at a delay the child already tolerates, deliver the item on the count, and increase the delay only after three consecutive successes.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Waits for a preferred item after a request: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Waits for a preferred item after a request: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Waits for a preferred item after a request: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Waits for a preferred item after a request: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Waits for a preferred item after a request: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-BX03",
+  "name": "Accepts a denied request",
+  "domain": "Behaviour",
+  "sub_domain": null,
+  "definition": "When told 'not right now', the child responds without interfering behaviour and re-engages with an available activity within 10 seconds.",
+  "mastery": null,
+  "procedure": "Pair the denial with an immediately available alternative; thin the alternative once the response is stable.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Accepts a denied request: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Accepts a denied request: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Accepts a denied request: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Accepts a denied request: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Accepts a denied request: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-BX04",
+  "name": "Transitions between activities on a signal",
+  "domain": "Behaviour",
+  "sub_domain": null,
+  "definition": "Given a two-minute warning and a transition signal, the child stops the current activity and moves to the next within 30 seconds.",
+  "mastery": null,
+  "procedure": "Use the same warning and signal every time; begin with transitions to preferred activities before transitioning away from them.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Transitions between activities on a signal: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Transitions between activities on a signal: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Transitions between activities on a signal: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Transitions between activities on a signal: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Transitions between activities on a signal: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-BX05",
+  "name": "Follows a single-step instruction during a demand",
+  "domain": "Behaviour",
+  "sub_domain": null,
+  "definition": "Within a task, the child follows a single-step instruction within 5 seconds of it being given.",
+  "mastery": null,
+  "procedure": "Use instructions the child can already perform in isolation before embedding new ones.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Follows a single-step instruction during a demand: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Follows a single-step instruction during a demand: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Follows a single-step instruction during a demand: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Follows a single-step instruction during a demand: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Follows a single-step instruction during a demand: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-BX06",
+  "name": "Hands over a preferred item when asked",
+  "domain": "Behaviour",
+  "sub_domain": null,
+  "definition": "When asked for a preferred item, the child hands it to the adult within 5 seconds and without interfering behaviour.",
+  "mastery": null,
+  "procedure": "Return the item quickly during acquisition so handing it over predicts getting it back.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Hands over a preferred item when asked: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Hands over a preferred item when asked: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Hands over a preferred item when asked: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Hands over a preferred item when asked: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Hands over a preferred item when asked: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-JA01",
+  "name": "Follows a point to a distal object",
+  "domain": "Joint Attention",
+  "sub_domain": null,
+  "definition": "When an adult points to an object more than one metre away, the child looks at the object within 3 seconds.",
+  "mastery": null,
+  "procedure": "Start with the object in the child's visual field and increase distance as responding stabilises.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Follows a point to a distal object: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Follows a point to a distal object: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Follows a point to a distal object: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Follows a point to a distal object: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Follows a point to a distal object: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-JA02",
+  "name": "Alternates gaze between an object and an adult",
+  "domain": "Joint Attention",
+  "sub_domain": null,
+  "definition": "During a shared activity, the child looks at an object and then at the adult's face within 5 seconds, at least once per activity.",
+  "mastery": null,
+  "procedure": "Use a wind-up or cause-and-effect toy that pauses, so looking at the adult is the way to continue.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Alternates gaze between an object and an adult: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Alternates gaze between an object and an adult: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Alternates gaze between an object and an adult: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Alternates gaze between an object and an adult: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Alternates gaze between an object and an adult: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-JA03",
+  "name": "Shows an object to an adult",
+  "domain": "Joint Attention",
+  "sub_domain": null,
+  "definition": "The child holds up or extends an object toward an adult while looking at them, without being asked.",
+  "mastery": null,
+  "procedure": "Reinforce with attention and comment rather than by taking the object.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Shows an object to an adult: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Shows an object to an adult: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Shows an object to an adult: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Shows an object to an adult: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Shows an object to an adult: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-JA04",
+  "name": "Points to request a distal object",
+  "domain": "Joint Attention",
+  "sub_domain": null,
+  "definition": "The child points to an out-of-reach item and looks at the adult within 3 seconds.",
+  "mastery": null,
+  "procedure": "Place preferred items in sight and out of reach; prompt the point, then fade to the natural setup.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Points to request a distal object: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Points to request a distal object: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Points to request a distal object: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Points to request a distal object: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Points to request a distal object: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-JA05",
+  "name": "Points to comment on an object of interest",
+  "domain": "Joint Attention",
+  "sub_domain": null,
+  "definition": "The child points to an object of interest with no request function and looks at the adult.",
+  "mastery": null,
+  "procedure": "Respond by commenting on the object, never by giving it: the reinforcer here is the shared attention.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Points to comment on an object of interest: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Points to comment on an object of interest: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Points to comment on an object of interest: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Points to comment on an object of interest: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Points to comment on an object of interest: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-JA06",
+  "name": "Responds to their name during an activity",
+  "domain": "Joint Attention",
+  "sub_domain": null,
+  "definition": "When their name is called during a preferred activity, the child orients to the speaker within 3 seconds.",
+  "mastery": null,
+  "procedure": "Call once, at conversational volume, and follow with something worth turning for.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Responds to their name during an activity: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Responds to their name during an activity: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Responds to their name during an activity: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Responds to their name during an activity: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Responds to their name during an activity: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-ER01",
+  "name": "Labels their own emotional state",
+  "domain": "Emotional Regulation",
+  "sub_domain": null,
+  "definition": "Given a prompt to check in, the child labels their current state using their taught vocabulary within 10 seconds.",
+  "mastery": null,
+  "procedure": "Teach labelling in calm states first; a first label attempted at peak escalation teaches nothing.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Labels their own emotional state: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Labels their own emotional state: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Labels their own emotional state: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Labels their own emotional state: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Labels their own emotional state: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-ER02",
+  "name": "Chooses a regulation strategy from a menu",
+  "domain": "Emotional Regulation",
+  "sub_domain": null,
+  "definition": "When escalation is observed, the child selects a strategy from their menu and begins it within 30 seconds.",
+  "mastery": null,
+  "procedure": "Build the menu with the child from strategies they have already used successfully.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Chooses a regulation strategy from a menu: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Chooses a regulation strategy from a menu: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Chooses a regulation strategy from a menu: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Chooses a regulation strategy from a menu: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Chooses a regulation strategy from a menu: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-ER03",
+  "name": "Uses a taught breathing sequence on request",
+  "domain": "Emotional Regulation",
+  "sub_domain": null,
+  "definition": "When prompted, the child completes three slow breaths using the taught sequence.",
+  "mastery": null,
+  "procedure": "Practise daily outside of escalation so the sequence is fluent before it is needed.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Uses a taught breathing sequence on request: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Uses a taught breathing sequence on request: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Uses a taught breathing sequence on request: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Uses a taught breathing sequence on request: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Uses a taught breathing sequence on request: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-ER04",
+  "name": "Identifies an emotion from a facial expression",
+  "domain": "Emotional Regulation",
+  "sub_domain": null,
+  "definition": "Shown a photograph or a person's face, the child names the emotion.",
+  "mastery": null,
+  "procedure": "Use photographs of familiar people before stock images or drawings.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Identifies an emotion from a facial expression: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Identifies an emotion from a facial expression: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Identifies an emotion from a facial expression: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Identifies an emotion from a facial expression: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Identifies an emotion from a facial expression: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-ER05",
+  "name": "Asks an adult for help when frustrated",
+  "domain": "Emotional Regulation",
+  "sub_domain": null,
+  "definition": "When a task becomes difficult, the child asks for help using their taught response before leaving the task or escalating.",
+  "mastery": null,
+  "procedure": "Contrive tasks that are just past the child's independent level so the request has a genuine occasion.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Asks an adult for help when frustrated: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Asks an adult for help when frustrated: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Asks an adult for help when frustrated: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Asks an adult for help when frustrated: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Asks an adult for help when frustrated: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-ER06",
+  "name": "Returns to an activity after a regulation break",
+  "domain": "Emotional Regulation",
+  "sub_domain": null,
+  "definition": "After a regulation break, the child returns to the activity within 2 minutes of the break ending.",
+  "mastery": null,
+  "procedure": "Keep the break short and unremarkable; a long or highly preferred break competes with the activity.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Returns to an activity after a regulation break: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Returns to an activity after a regulation break: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Returns to an activity after a regulation break: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Returns to an activity after a regulation break: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Returns to an activity after a regulation break: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-LIT01",
+  "name": "Identifies the first sound in a spoken word",
+  "domain": "Literacy",
+  "sub_domain": "Phonological Awareness",
+  "definition": "Given a spoken word, the child says the first sound within 5 seconds.",
+  "mastery": null,
+  "procedure": "Use continuous sounds (m, s, f) before stop sounds (b, t, k).",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Identifies the first sound in a spoken word: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Identifies the first sound in a spoken word: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Identifies the first sound in a spoken word: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Identifies the first sound in a spoken word: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Identifies the first sound in a spoken word: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-LIT02",
+  "name": "Blends spoken sounds into a word",
+  "domain": "Literacy",
+  "sub_domain": "Phonological Awareness",
+  "definition": "Given three sounds spoken with a one-second gap, the child says the whole word.",
+  "mastery": null,
+  "procedure": "Begin with two sounds and consonant-vowel words before three-sound words.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Blends spoken sounds into a word: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Blends spoken sounds into a word: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Blends spoken sounds into a word: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Blends spoken sounds into a word: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Blends spoken sounds into a word: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-LIT03",
+  "name": "Reads consonant-vowel-consonant words aloud",
+  "domain": "Literacy",
+  "sub_domain": "Decoding",
+  "definition": "Shown a printed CVC word, the child reads it aloud within 5 seconds.",
+  "mastery": null,
+  "procedure": "Teach letter sounds to fluency before blending them in print.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Reads consonant-vowel-consonant words aloud: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Reads consonant-vowel-consonant words aloud: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Reads consonant-vowel-consonant words aloud: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Reads consonant-vowel-consonant words aloud: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Reads consonant-vowel-consonant words aloud: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-LIT04",
+  "name": "Answers a literal question about a read passage",
+  "domain": "Literacy",
+  "sub_domain": "Reading Comprehension",
+  "definition": "After a passage is read aloud, the child answers a literal 'who', 'what' or 'where' question about it.",
+  "mastery": null,
+  "procedure": "Ask about the most recent sentence first, then increase the distance between the answer and the question.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Answers a literal question about a read passage: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Answers a literal question about a read passage: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Answers a literal question about a read passage: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Answers a literal question about a read passage: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Answers a literal question about a read passage: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-LIT05",
+  "name": "Retells a short story in sequence",
+  "domain": "Literacy",
+  "sub_domain": "Reading Comprehension",
+  "definition": "After a short story, the child retells at least three events in the order they happened.",
+  "mastery": null,
+  "procedure": "Use a visual sequence strip during acquisition and fade it card by card.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Retells a short story in sequence: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Retells a short story in sequence: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Retells a short story in sequence: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Retells a short story in sequence: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Retells a short story in sequence: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ },
+ {
+  "code": "DRAFT-LIT06",
+  "name": "Writes their own name legibly",
+  "domain": "Literacy",
+  "sub_domain": "Writing",
+  "definition": "Given a pencil and paper, the child writes their first name legibly enough for an unfamiliar adult to read.",
+  "mastery": null,
+  "procedure": "Fade from tracing to a dotted model to a written model to no model.",
+  "assessment": "Mount Etna internal goal bank",
+  "assessment_source": "internal",
+  "default_prompt_level": "physical",
+  "status": "draft",
+  "needs_review": true,
+  "review_reason": "drafted to fill a thin domain during the 2026 goal bank import; not written or approved by a BCBA",
+  "original": null,
+  "uses_default_mastery": true,
+  "steps": [
+   {
+    "n": 1,
+    "text": "Writes their own name legibly: Full physical prompt throughout.",
+    "level": "physical"
+   },
+   {
+    "n": 2,
+    "text": "Writes their own name legibly: Partial physical prompt.",
+    "level": "physical"
+   },
+   {
+    "n": 3,
+    "text": "Writes their own name legibly: Model prompt.",
+    "level": "model"
+   },
+   {
+    "n": 4,
+    "text": "Writes their own name legibly: Gestural prompt only.",
+    "level": "gestural"
+   },
+   {
+    "n": 5,
+    "text": "Writes their own name legibly: Independently, no prompt.",
+    "level": "independent"
+   }
+  ]
+ }
+]
