@@ -37,6 +37,8 @@ export function PortalNav() {
     { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙" },
     { href: "/attention", label: "Attention", id: "Attention", icon: "◈" },
     { href: "/tasks", label: "My Tasks", id: "My Tasks", icon: "☑" },
+    // Families could send messages before there was anywhere to read them.
+    { href: "/messages", label: "Family Messages", id: "Family Messages", icon: "✉" },
     ...(identity?.appRole === "clinician" ? [] : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎" }]),
   ];
 
