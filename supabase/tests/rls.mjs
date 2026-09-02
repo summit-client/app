@@ -2330,6 +2330,145 @@ await check("another clinic's staff see none of it", async () => {
        0, "cross-tenant audit"));
 });
 
+// --------------------------------------------------------------------------
+// 0069 · record visibility
+//
+// internal / family / specific, chosen by an admin or supervisor. Narrows what
+// the permission grid already allows; never widens it.
+// --------------------------------------------------------------------------
+const visDoc = (await db.query(
+  `insert into client_documents (clinic_id, client_id, file_path, title, direction, uploaded_by)
+   values ('${clinicA}', ${maya}, 'x/report.pdf', 'Assessment report', 'staff_to_client', '${aClin}')
+   returning id`)).rows[0].id;
+
+await check("a document is visible to the family by default, as it was before", async () => {
+  // The migration must not change who sees what on the day it runs.
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from client_documents where id='${visDoc}'`), 1, "parentA"));
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from client_documents where id='${visDoc}'`), 1, "parentB"));
+});
+
+await check("only an admin or supervisor can change what a family sees", async () => {
+  // A clinician writes the clinical record; deciding who outside the team
+  // reads it is a supervisory judgement.
+  //
+  // Two mechanisms stop them, on different tables, and both are checked:
+  //
+  //   client_documents - the only update policy is gated on
+  //     clinical.record.share, so a clinician's update matches no rows. RLS
+  //     filters rather than raising, which is why this is updateAffects(0) and
+  //     not insertRaises.
+  //   session_notes - a clinician CAN update, through clinical.client.write.
+  //     There the trigger is what refuses, and it raises.
+  await as(aClin, () => updateAffects(
+    `update client_documents set visibility='internal' where id='${visDoc}'`,
+    0, "clinician changing a document's visibility"));
+  await as(parentA, () => updateAffects(
+    `update client_documents set visibility='internal' where id='${visDoc}'`,
+    0, "family changing a document's visibility"));
+
+  const noteSession = (await db.query(
+    `insert into sessions (clinic_id, client_id, session_date, hour, status, type)
+     values ('${clinicA}', ${maya}, current_date, 11, 'completed', 'Session') returning id`)).rows[0].id;
+  const n = (await db.query(
+    `insert into session_notes (clinic_id, client_id, session_id, clinician_id, body, status)
+     values ('${clinicA}', ${maya}, ${noteSession}, '${aClin}',
+             '{"familyUpdate":"Good session."}'::jsonb, 'signed') returning id`)).rows[0].id;
+  await as(aClin, () => insertRaises(
+    `update session_notes set visibility='internal' where id='${n}'`,
+    "clinician changing a note's visibility"));
+
+  await as(aSuper, async () =>
+    await db.exec(`update client_documents set visibility='internal' where id='${visDoc}'`));
+});
+
+await check("internal means no family member sees it, whatever their permissions", async () => {
+  // parentA holds every permission including view_shared_documents.
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from client_documents where id='${visDoc}'`), 0, "parentA"));
+  await as(aClin, async () =>
+    eq(await count(`select count(*)::int n from client_documents where id='${visDoc}'`), 1, "staff still see it"));
+});
+
+await check("who set it, and when, is recorded", async () => {
+  const r = await one(`select visibility_set_by, visibility_set_at from client_documents
+                        where id='${visDoc}'`);
+  eq(r.visibility_set_by, aSuper, "set_by");
+  if (!r.visibility_set_at) throw new Error("no timestamp recorded");
+});
+
+await check("specific means the named guardian and nobody else", async () => {
+  await as(aSuper, async () =>
+    await db.exec(`update client_documents set visibility='specific' where id='${visDoc}'`));
+  await db.exec(`insert into record_visibility_grants
+                   (clinic_id, record_type, record_id, guardian_user_id, granted_by)
+                 values ('${clinicA}','client_document','${visDoc}','${parentA}','${aSuper}')`);
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from client_documents where id='${visDoc}'`), 1, "named guardian"));
+  await as(parentB, async () =>
+    eq(await count(`select count(*)::int n from client_documents where id='${visDoc}'`), 0, "the other parent"));
+});
+
+await check("a family cannot enumerate who else a record was shared with", async () => {
+  // The grant rows are themselves information about the household.
+  await as(parentA, async () =>
+    eq(await count(`select count(*)::int n from record_visibility_grants`), 0, "grants visible to a family"));
+});
+
+await check("naming a guardian does not hand them a surface they never had", async () => {
+  // Visibility narrows; it never widens. `silent` had view_shared_documents
+  // revoked earlier in this file.
+  await db.exec(`update relationship_permissions set granted = false
+                  where permission = 'view_shared_documents'
+                    and relationship_id in (select id from guardian_relationships
+                                             where user_id='${silent}')`);
+  await db.exec(`insert into record_visibility_grants
+                   (clinic_id, record_type, record_id, guardian_user_id, granted_by)
+                 values ('${clinicA}','client_document','${visDoc}','${silent}','${aSuper}')`);
+  await as(silent, async () =>
+    eq(await count(`select count(*)::int n from client_documents where id='${visDoc}'`), 0,
+       "grant without the permission"));
+});
+
+await check("a family cannot grant themselves a record", async () => {
+  await as(parentB, () => insertRaises(
+    `insert into record_visibility_grants
+       (clinic_id, record_type, record_id, guardian_user_id, granted_by)
+     values ('${clinicA}','client_document','${visDoc}','${parentB}','${aSuper}')`,
+    "family-written grant"));
+});
+
+await check("an unrecognised visibility fails closed", async () => {
+  // The check constraint refuses one, which is the point: a value the
+  // read function does not know must never render as visible.
+  await insertRaises(
+    `update client_documents set visibility='everyone' where id='${visDoc}'`,
+    "an unknown visibility value");
+});
+
+await check("the milestone boolean and the visibility column cannot disagree", async () => {
+  const m = (await db.query(
+    `insert into family_milestones (clinic_id, client_id, kind, title, occurred_on)
+     values ('${clinicA}', ${maya}, 'goal_mastered', 'Visibility sync check', current_date)
+     returning id, visibility`)).rows[0];
+  eq(m.visibility, "internal", "unshared milestone");
+  await db.exec(`update family_milestones
+                    set shared_with_family = true, shared_at = now(), shared_by = '${aSuper}'
+                  where id = '${m.id}'`);
+  eq((await one(`select visibility from family_milestones where id='${m.id}'`)).visibility,
+     "family", "sharing drives visibility");
+});
+
+await check("deleting a record takes its grants with it", async () => {
+  const before = await count(
+    `select count(*)::int n from record_visibility_grants where record_id='${visDoc}'`);
+  if (before === 0) throw new Error("no grants to clean up");
+  await db.exec(`delete from client_documents where id='${visDoc}'`);
+  eq(await count(`select count(*)::int n from record_visibility_grants where record_id='${visDoc}'`),
+     0, "orphaned grants");
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
