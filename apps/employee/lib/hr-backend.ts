@@ -379,7 +379,11 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
 
       const directory: Person[] = (people.data ?? []).map((r) => ({
         id: r.id as string,
-        name: (r.full_name as string | null) ?? "Unnamed",
+        // A null full_name shouldn't read as broken or impersonal. There's no
+        // email in this query to derive a nicer label from (profiles here
+        // only selects id/full_name/role/supervisor_id), so a soft static
+        // fallback is the pragmatic choice over a bare "Unnamed".
+        name: (r.full_name as string | null) ?? "Team member",
         jobTitle: null,
         accessLevel: ACCESS[(r.role as string) ?? ""] ?? "EMPLOYEE",
         supervisorId: (r.supervisor_id as string | null) ?? null,

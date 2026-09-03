@@ -6,7 +6,7 @@ import * as React from "react";
 import { getSetting } from "@summit/settings";
 import { getProfile } from "@/lib/hub";
 import { checkRecognition, reciprocalFlag, RECOGNITION_CATEGORIES } from "@/lib/ecosystem";
-import { currentCycle, hr, sendRecognition } from "@/lib/hr-store";
+import { currentCycle, directory, hr, sendRecognition } from "@/lib/hr-store";
 import { useHrAction, WriteError } from "@/components/hr-provider";
 import { EggToast, Sparks, useEasterEggs } from "@/components/grove";
 
@@ -42,7 +42,9 @@ function RecognitionScreen() {
   if (!ready) return <p className="sub">Loading…</p>;
 
   const s = hr();
-  const me = getProfile().name;
+  const profile = getProfile();
+  const me = profile.name;
+  const teammates = directory().filter((p) => p.id !== profile.id);
   const cycle = currentCycle();
   const month = s.recognition.filter((r) => r.date.slice(0, 7) === cycle);
   const allowance = Number(getSetting("recog.monthlyAllowance")) || 10;
@@ -90,7 +92,7 @@ function RecognitionScreen() {
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div className="field"><label htmlFor="r-to">Colleague</label>
             <input id="r-to" className="input" list="teammates" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} placeholder="Name" />
-            <datalist id="teammates">{s.team.filter((t) => t.name !== me).map((t) => <option key={t.name} value={t.name} />)}</datalist>
+            <datalist id="teammates">{teammates.map((t) => <option key={t.id} value={t.name} />)}</datalist>
           </div>
           <div className="field"><label htmlFor="r-cat">Category</label>
             <select id="r-cat" className="input" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>
