@@ -101,10 +101,20 @@ export function SupportButton({
   function send() {
     const trimmed = detail.trim();
     if (!trimmed) return;
-    window.location.href = supportMailto({
+    // A real, clicked <a> rather than window.location.href = "mailto:...".
+    // Reported live during the 2026-09-02 demo: on at least one mobile
+    // browser, setting location.href to a mailto: URL never opened Mail at
+    // all - it prompted a browser picker instead. That's consistent with
+    // some mobile WebViews and in-app browsers intercepting a script-set
+    // navigation to a non-http(s) scheme but honouring a user-gesture click
+    // on an anchor with the same href. The anchor is created, clicked and
+    // discarded immediately; nothing about it is visible.
+    const a = document.createElement("a");
+    a.href = supportMailto({
       to, brand, kind, detail: trimmed, moduleName, pathname,
       when: new Date().toISOString(),
     });
+    a.click();
     setOpen(false);
     setDetail("");
   }
