@@ -12,9 +12,31 @@ const isProduction = process.env.NODE_ENV === "production";
  * produced the duplicate host-only `sb-<ref>-auth-token` cookie on
  * scheduler.summitclient.io and the permanent "Loading..." deadlock.
  */
+/**
+ * Names the missing variable instead of letting supabase-js report a generic
+ * "Your project's URL and API key are required" from module scope.
+ *
+ * This client is built at module evaluation, so an unset variable throws while
+ * `_app.tsx` is still being imported - before any page, error boundary or
+ * getServerSideProps exists to catch it. Every route 500s and the stack points
+ * at this file with no indication of which portal is misconfigured or where its
+ * env file belongs. The `!` assertions were the cause: they satisfy TypeScript
+ * and do nothing at runtime.
+ */
+function required(name: string): string {
+  const value = process.env[name];
+  if (value) return value;
+  throw new Error(
+    `${name} is not set. @summit/db builds the shared Supabase client at module ` +
+    `load, so this throws while _app.tsx is still importing and every route ` +
+    `returns 500. Add it to this app's .env.local. NEXT_PUBLIC_DEV_PREVIEW=1 ` +
+    `does not help here - it gates each portal's auth bypass, not this client.`
+  );
+}
+
 export const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  required("NEXT_PUBLIC_SUPABASE_URL"),
+  required("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
   {
     auth: {
       // Must be a positive number. If this reaches navigatorLock as undefined,
