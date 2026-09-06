@@ -51,6 +51,9 @@ jobs:
       - name: Data inventory — every table classified
         run: node supabase/tests/data-inventory.mjs supabase/migrations
 
+      - name: Application-layer controls
+        run: node supabase/tests/app-controls.mjs
+
       - name: RLS and tenant-isolation tests
         run: node supabase/tests/rls.mjs supabase/migrations
 
@@ -73,6 +76,15 @@ jobs:
           if ! diff -u "$RUNNER_TEMP/matrix.committed" "$RUNNER_TEMP/matrix.stripped"; then
             echo "::error::CONTROL_MATRIX.md is stale. Regenerate it with:"
             echo "  node supabase/tests/controls.mjs supabase/migrations --matrix > docs/compliance/CONTROL_MATRIX.md"
+            exit 1
+          fi
+
+          node supabase/tests/app-controls.mjs --matrix > "$RUNNER_TEMP/app.md"
+          strip "$RUNNER_TEMP/app.md" "$RUNNER_TEMP/app.stripped"
+          strip docs/compliance/APP_CONTROL_MATRIX.md "$RUNNER_TEMP/app.committed"
+          if ! diff -u "$RUNNER_TEMP/app.committed" "$RUNNER_TEMP/app.stripped"; then
+            echo "::error::APP_CONTROL_MATRIX.md is stale. Regenerate it with:"
+            echo "  node supabase/tests/app-controls.mjs --matrix > docs/compliance/APP_CONTROL_MATRIX.md"
             exit 1
           fi
 
