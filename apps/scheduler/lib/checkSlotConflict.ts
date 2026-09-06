@@ -49,7 +49,11 @@ export async function fetchFreshConflict(
     // call right after this still has its own error handling, so a failed
     // pre-check degrades to "no worse than before this fix" rather than
     // blocking a legitimate booking on a transient read error.
-    console.error("[checkSlotConflict] fresh conflict check failed", error);
+    // error.message, not the object: a PostgREST error carries `details` and
+    // `hint` that can quote the offending row, so logging it whole writes the
+    // record into a server log - outside every access control the database
+    // enforces, retained, and shipped to whatever monitoring vendor is wired up.
+    console.error("[checkSlotConflict] fresh conflict check failed", error.message);
     return null;
   }
   return data && data.length > 0 ? data[0] : null;
@@ -79,7 +83,7 @@ export async function fetchFreshConflictKeys(candidates: SlotKey[]): Promise<Set
         .in("session_date", [...dates])
         .neq("status", "cancelled");
       if (error) {
-        console.error("[checkSlotConflict] fresh batch conflict check failed", error);
+        console.error("[checkSlotConflict] fresh batch conflict check failed", error.message);
         return;
       }
       (data || []).forEach((r: any) => {

@@ -103,7 +103,7 @@ export default function SharingPage() {
     <main style={{ padding: "28px 32px", maxWidth: 1100 }}>
       <header style={{ marginBottom: 22 }}>
         <h1 style={{ margin: "0 0 6px", fontSize: 22 }}>What families see</h1>
-        <p style={{ margin: 0, color: "var(--muted, #667085)", maxWidth: 640 }}>
+        <p style={{ margin: 0, color: "var(--muted)", maxWidth: 640 }}>
           Every record a family could read, and who can read it. Changing this
           needs an admin or supervisor.
         </p>
@@ -117,7 +117,7 @@ export default function SharingPage() {
       ) : null}
 
       {attention > 0 ? (
-        <div style={{ ...notice_style, background: "#fff8e6", borderColor: "#f0c36d" }}>
+        <div style={{ ...notice_style, background: "var(--warn-soft)", borderColor: "var(--warn)" }}>
           {attention === 1
             ? "One record is set to named guardians with nobody named, so no family member can see it."
             : `${attention} records are set to named guardians with nobody named, so no family member can see them.`}
@@ -125,11 +125,11 @@ export default function SharingPage() {
       ) : null}
 
       {loading ? (
-        <p style={{ color: "var(--muted, #667085)" }}>Loading…</p>
+        <p style={{ color: "var(--muted)" }}>Loading…</p>
       ) : ordered.length === 0 ? (
         <div style={emptyBox}>
           <p style={{ margin: "0 0 6px", fontWeight: 600 }}>Nothing to review yet.</p>
-          <p style={{ margin: 0, color: "var(--muted, #667085)" }}>
+          <p style={{ margin: 0, color: "var(--muted)" }}>
             Documents and milestones appear here once they exist.
           </p>
         </div>
@@ -142,7 +142,7 @@ export default function SharingPage() {
                 <div style={{ display: "flex", gap: 16, alignItems: "baseline", flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 320px", minWidth: 0 }}>
                     <p style={{ margin: "0 0 3px", fontWeight: 600 }}>{r.label}</p>
-                    <p style={{ margin: 0, fontSize: 13, color: "var(--muted, #667085)" }}>
+                    <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
                       {RECORD_TYPE_LABEL[r.recordType]}
                       {r.clientName ? ` · ${r.clientName}` : ""}
                       {r.setByName ? ` · last changed by ${r.setByName}` : ""}
@@ -150,7 +150,7 @@ export default function SharingPage() {
                   </div>
                   <p style={{
                     margin: 0, fontSize: 13,
-                    color: needsAttention(r) ? "#8a5a00" : "var(--muted, #667085)",
+                    color: needsAttention(r) ? "var(--warn)" : "var(--muted)",
                     fontWeight: needsAttention(r) ? 600 : 400,
                   }}>
                     {visibilitySummary(r)}
@@ -165,7 +165,7 @@ export default function SharingPage() {
                 </div>
 
                 {isOpen ? (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #e6e8ec" }}>
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
                     <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
                       <legend style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
                         Who can see this
@@ -182,7 +182,7 @@ export default function SharingPage() {
                           />
                           <span>
                             <span style={{ fontWeight: 600 }}>{o.label}</span>
-                            <span style={{ display: "block", fontSize: 13, color: "var(--muted, #667085)" }}>
+                            <span style={{ display: "block", fontSize: 13, color: "var(--muted)" }}>
                               {o.detail}
                             </span>
                           </span>
@@ -196,7 +196,7 @@ export default function SharingPage() {
                           Who to name
                         </p>
                         {guardians.length === 0 ? (
-                          <p style={{ margin: 0, fontSize: 13, color: "var(--muted, #667085)" }}>
+                          <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
                             No guardians are on this child&apos;s record yet.
                           </p>
                         ) : (
@@ -212,7 +212,7 @@ export default function SharingPage() {
                               <span>
                                 <span style={{ fontWeight: 600 }}>{g.name}</span>
                                 {g.relationship ? (
-                                  <span style={{ color: "var(--muted, #667085)" }}> · {g.relationship}</span>
+                                  <span style={{ color: "var(--muted)" }}> · {g.relationship}</span>
                                 ) : null}
                                 {/* Naming somebody who cannot reach the surface
                                     at all looks like sharing and results in
@@ -221,7 +221,7 @@ export default function SharingPage() {
                                     legitimate, and takes effect the moment the
                                     permission is granted. */}
                                 {!g.canReachSurface ? (
-                                  <span style={{ display: "block", fontSize: 13, color: "#8a5a00" }}>
+                                  <span style={{ display: "block", fontSize: 13, color: "var(--warn)" }}>
                                     Naming them has no effect until their permissions include this
                                     kind of record.
                                   </span>
@@ -234,7 +234,7 @@ export default function SharingPage() {
                     ) : null}
 
                     {notice ? (
-                      <p role="alert" style={{ margin: "10px 0 0", fontSize: 13, color: "#b42318" }}>
+                      <p role="alert" style={{ margin: "10px 0 0", fontSize: 13, color: "var(--danger)" }}>
                         {notice}
                       </p>
                     ) : null}
@@ -250,19 +250,26 @@ export default function SharingPage() {
 }
 
 const row: React.CSSProperties = {
-  border: "1px solid #e6e8ec", borderRadius: 10, padding: "14px 16px", marginBottom: 10,
+  border: "1px solid var(--line)", borderRadius: 10, padding: "14px 16px", marginBottom: 10,
 };
 const choice: React.CSSProperties = {
   display: "flex", gap: 10, alignItems: "flex-start", padding: "6px 0", cursor: "pointer",
 };
 const linkButton: React.CSSProperties = {
-  background: "none", border: 0, padding: 0, color: "#1f6feb", cursor: "pointer",
+  background: "none", border: 0, padding: 0, color: "var(--accent-strong)", cursor: "pointer",
   font: "inherit", textDecoration: "underline",
+  // Measured at 53x23 in the browser: one pixel under WCAG 2.5.8's 24x24
+  // minimum pointer target. inline-flex + minHeight rather than padding, so the
+  // underline stays on the text and the row's baseline alignment is unchanged.
+  //
+  // The radios and checkboxes measure 13x13 and are NOT a finding: each is
+  // wrapped in a label 245x35 or larger, and the label is the target.
+  display: "inline-flex", alignItems: "center", minHeight: 24,
 };
 const notice_style: React.CSSProperties = {
-  border: "1px solid #e6e8ec", background: "#f7f8fa", borderRadius: 8,
+  border: "1px solid var(--line)", background: "var(--surface)", borderRadius: 8,
   padding: "10px 12px", marginBottom: 14, fontSize: 14,
 };
 const emptyBox: React.CSSProperties = {
-  border: "1px dashed #d0d5dd", borderRadius: 10, padding: 20,
+  border: "1px dashed var(--line-strong)", borderRadius: 10, padding: 20,
 };

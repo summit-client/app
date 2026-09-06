@@ -40,6 +40,70 @@ jobs:
       - name: Typecheck
         run: pnpm -r --if-present run typecheck
 
+      # ---- Security gates -------------------------------------------------
+      # These fail the build. A control regression is not a warning: every one
+      # of them corresponds to a way PHI has actually been exposed on this
+      # schema before, or could be. See docs/compliance/README.md.
+
+      - name: Security control register
+        run: node supabase/tests/controls.mjs supabase/migrations
+
+      - name: Data inventory — every table classified
+        run: node supabase/tests/data-inventory.mjs supabase/migrations
+
+      - name: Application-layer controls
+        run: node supabase/tests/app-controls.mjs
+
+      - name: RLS and tenant-isolation tests
+        run: node supabase/tests/rls.mjs supabase/migrations
+
+      - name: Database behaviour tests
+        run: node supabase/tests/behaviour.mjs supabase/migrations
+
+      # A migration that changes the security posture must also change the
+      # committed matrix. Regenerating and diffing is what stops the matrix
+      # becoming the kind of stale document this whole layer exists to avoid.
+      - name: Compliance artefacts are up to date
+        run: |
+          # The date line differs on every run, so it is stripped before
+          # comparing. Temp files rather than process substitution: the latter
+          # is bash-only and fails under some sandboxes.
+          strip() { grep -v '^Generated' "$1" > "$2"; }
+
+          node supabase/tests/controls.mjs supabase/migrations --matrix > "$RUNNER_TEMP/matrix.md"
+          strip "$RUNNER_TEMP/matrix.md" "$RUNNER_TEMP/matrix.stripped"
+          strip docs/compliance/CONTROL_MATRIX.md "$RUNNER_TEMP/matrix.committed"
+          if ! diff -u "$RUNNER_TEMP/matrix.committed" "$RUNNER_TEMP/matrix.stripped"; then
+            echo "::error::CONTROL_MATRIX.md is stale. Regenerate it with:"
+            echo "  node supabase/tests/controls.mjs supabase/migrations --matrix > docs/compliance/CONTROL_MATRIX.md"
+            exit 1
+          fi
+
+          node supabase/tests/app-controls.mjs --matrix > "$RUNNER_TEMP/app.md"
+          strip "$RUNNER_TEMP/app.md" "$RUNNER_TEMP/app.stripped"
+          strip docs/compliance/APP_CONTROL_MATRIX.md "$RUNNER_TEMP/app.committed"
+          if ! diff -u "$RUNNER_TEMP/app.committed" "$RUNNER_TEMP/app.stripped"; then
+            echo "::error::APP_CONTROL_MATRIX.md is stale. Regenerate it with:"
+            echo "  node supabase/tests/app-controls.mjs --matrix > docs/compliance/APP_CONTROL_MATRIX.md"
+            exit 1
+          fi
+
+          node supabase/tests/data-inventory.mjs supabase/migrations --md > "$RUNNER_TEMP/inv.md"
+          strip "$RUNNER_TEMP/inv.md" "$RUNNER_TEMP/inv.stripped"
+          strip docs/compliance/DATA_INVENTORY.md "$RUNNER_TEMP/inv.committed"
+          if ! diff -u "$RUNNER_TEMP/inv.committed" "$RUNNER_TEMP/inv.stripped"; then
+            echo "::error::DATA_INVENTORY.md is stale. Regenerate it with:"
+            echo "  node supabase/tests/data-inventory.mjs supabase/migrations --md > docs/compliance/DATA_INVENTORY.md"
+            exit 1
+          fi
+
+      - name: Dependency vulnerability scan
+        # Advisory rather than blocking, deliberately: a transitive advisory
+        # with no patch would otherwise block every unrelated deploy, and a
+        # gate people routinely override is worse than one that reports.
+        continue-on-error: true
+        run: pnpm audit --audit-level high
+
       - name: Detect changed apps
         id: changes
         shell: bash

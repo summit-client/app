@@ -34,7 +34,23 @@ const REFRESH_URL = refreshUrl();
 // than a fifth hardcoded copy of this app's own host.
 const PUBLIC_ORIGIN = urlFor("scheduler");
 
+/**
+ * NEXT_PUBLIC_DEV_PREVIEW=1 lets the portal be explored on fixtures with no
+ * Supabase project, matching apps/data, apps/employee and apps/client.
+ * Without it this portal cannot be rendered locally at all - every route
+ * redirects to apps/web's login - which is why its screens go unlooked-at
+ * despite CLAUDE.md asking for UI work to be rendered.
+ *
+ * Gated twice: the flag must be "1" AND the build must not be production. The
+ * flag alone would mean one stray env value on the droplet opens the whole
+ * schedule - every client's name and appointment time - to the internet.
+ */
+const PREVIEW_BYPASS =
+  process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
+
 export async function proxy(req: NextRequest) {
+  if (PREVIEW_BYPASS) return NextResponse.next();
+
   // All four portals share one .summitclient.io session cookie. If this
   // session is within 90s of expiry, getUser() below would attempt to
   // redeem the refresh token itself - the exact race that sends another

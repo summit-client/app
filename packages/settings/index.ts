@@ -597,7 +597,11 @@ export async function setSetting(
   } catch (err) {
     if (previous == null) delete layer[key]; else layer[key] = previous;
     notify();
-    console.error(`Failed to save ${def.label}:`, err);
+    // error.message, not the object: a PostgREST error carries `details` and
+    // `hint` that can quote the offending row, so logging it whole writes the
+    // record into a server log - outside every access control the database
+    // enforces, retained, and shipped to whatever monitoring vendor is wired up.
+    console.error(`Failed to save ${def.label}:`, err instanceof Error ? err.message : String(err));
     throw err;
   }
 
@@ -611,7 +615,7 @@ export async function setSetting(
   // a rejection here would mean something is genuinely wrong, worth logging.
   void client.from("settings_audit").insert({
     clinic_id: identity.clinicId, actor: identity.userId, level, key, previous, next: value,
-  }).then(({ error }) => { if (error) console.error("Failed to record settings audit entry:", error); });
+  }).then(({ error }) => { if (error) console.error("Failed to record settings audit entry:", error.message); });
 }
 
 export function readAudit(): SettingsAuditEntry[] {
