@@ -48,6 +48,23 @@ const PUBLIC_ORIGIN = urlFor("scheduler");
 const PREVIEW_BYPASS =
   process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
 
+/**
+ * An unset variable here throws supabase-js's generic "Your project's URL and
+ * Key are required to create a Supabase client!" from inside this auth gate -
+ * it names no variable, no file, and no app, and it fires on every route.
+ * The `!` assertions below were the cause: they satisfy TypeScript and do
+ * nothing at runtime. Same fix as @summit/proxy-auth's storageKeyFor() and
+ * @summit/db's own required() - one unset variable should say which one.
+ */
+function required(name: string): string {
+  const value = process.env[name];
+  if (value) return value;
+  throw new Error(
+    `${name} is not set. Add it to apps/scheduler/.env.local with ` +
+    `NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.`
+  );
+}
+
 export async function proxy(req: NextRequest) {
   if (PREVIEW_BYPASS) return NextResponse.next();
 
@@ -85,8 +102,8 @@ export async function proxy(req: NextRequest) {
   const res = NextResponse.next();
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    required("NEXT_PUBLIC_SUPABASE_URL"),
+    required("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     {
       cookies: {
   getAll: () => req.cookies.getAll(),

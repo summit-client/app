@@ -2,9 +2,26 @@ import { createBrowserClient } from '@supabase/ssr'
 
 const isProduction = process.env.NODE_ENV === 'production'
 
+/**
+ * This client is built at module evaluation, so an unset variable throws
+ * while the page is still importing - before any component or error boundary
+ * exists to catch it, and every route fails with a message that names neither
+ * the variable nor this file. The `!` assertions below were the cause: they
+ * satisfy TypeScript and do nothing at runtime. Same fix as @summit/db's and
+ * apps/client's own required().
+ */
+function required(name: string): string {
+  const value = process.env[name]
+  if (value) return value
+  throw new Error(
+    `${name} is not set. Add it to apps/web/.env.local with ` +
+    `NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.`
+  )
+}
+
 export const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  required('NEXT_PUBLIC_SUPABASE_URL'),
+  required('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
   {
     cookies: {
       getAll() {
