@@ -110,7 +110,7 @@ insert into lesson_programs
 values ('rhythm-rangers', 'ee78d13c-eec9-4512-98bc-d00bca2d08c9', 'movement-music', 'Rhythm Rangers', 'rhythm-rangers',
         'Music / instrument play', 'A music and instrument social-skills group. Sessions center on a target instrument (e.g., shakers/maracas) with a welcome song, deep-breathing warm-up, instrument introduction and group instrument activity, snack, calm-down relaxation, and themed coloring.', null,
         'In-person group music class', null, 'Group room with adjoining snack/coloring room',
-        '1.5 hours/session', 'Not specified in source material.', 'Naturalistic ABA + music routines',
+        '1.5 hours/session', null, 'Naturalistic ABA + music routines',
         'Saturday, 1.5 hrs', 'Approved',
         'https://drive.google.com/drive/folders/10rSU3zL2MnKDvfSoxkobnV5dJsv3btzP', 'Only one detailed session outline (Class 1 Shakers) was located. No standalone goals bank — the ''Rhythm Rangers'' spreadsheets are client data-sheet templates (PII), not goals. A full week-by-week curriculum should be authored.')
 on conflict (id) do update
@@ -127,7 +127,7 @@ insert into lesson_programs
 values ('piano-lessons', 'ee78d13c-eec9-4512-98bc-d00bca2d08c9', 'movement-music', 'Piano Lessons', 'piano-lessons',
         'Individualized (1:1) piano instruction', 'ABA-based individualized (1:1) piano instruction for autistic/neurodivergent learners, with goals inspired by ABLLS-R and AFLS across imitation, motor/praxis, visual performance, receptive/expressive language, play & leisure, social interaction, functional academics, executive functioning, and self-management. Includes a baseline assessment intake.', null,
         '1:1 individualized lessons', 'Individual / 1:1', null,
-        null, 'Not specified in source material.', '1:1 ABA (ABLLS-R / AFLS aligned)',
+        null, null, '1:1 ABA (ABLLS-R / AFLS aligned)',
         null, 'Approved',
         'https://drive.google.com/drive/folders/10rSU3zL2MnKDvfSoxkobnV5dJsv3btzP', 'Goals bank doc: ''IA_ABA-Based Piano Lesson Goals Inspired by ABLLS and AFLS''. Two baseline assessment docs contain client PII and are excluded. This is an individualized program (not a group) — a session/lesson structure is not yet documented.')
 on conflict (id) do update
@@ -263,7 +263,7 @@ insert into lesson_programs
 values ('school-is-cool', 'ee78d13c-eec9-4512-98bc-d00bca2d08c9', 'executive-functioning', 'School is Cool', 'school-is-cool',
         'School readiness', null, null,
         'Tuesday/Thursday sessions, Toronto (per folder title)', null, 'Toronto',
-        null, 'Not specified in source material.', null,
+        null, null, null,
         null, 'Approved',
         'https://drive.google.com/drive/folders/10rSU3zL2MnKDvfSoxkobnV5dJsv3btzP', 'The assigned Drive folder is EMPTY. No curriculum, lesson, or goal documents were located. Program record is a placeholder pending upload of source material.')
 on conflict (id) do update
