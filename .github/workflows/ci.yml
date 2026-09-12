@@ -37,6 +37,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # supabase/tests is a standalone npm project (its own package.json +
+      # package-lock.json for @electric-sql/pglite), deliberately outside the
+      # pnpm workspace - see CLAUDE.md's apply.mjs note. `pnpm install` above
+      # never touches it, so every script below that imports pglite
+      # (controls.mjs, data-inventory.mjs, rls.mjs, behaviour.mjs) fails with
+      # ERR_MODULE_NOT_FOUND without this.
+      - name: Install supabase/tests dependencies
+        working-directory: supabase/tests
+        run: npm ci
+
       - name: Typecheck
         run: pnpm -r --if-present run typecheck
 
