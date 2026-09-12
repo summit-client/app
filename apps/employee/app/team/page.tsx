@@ -54,7 +54,6 @@ function TeamScreen() {
 }
 
 function TeamTab() {
-  const s = hr();
   const profile = getProfile();
   const [f, setF] = React.useState({ name: "", role: "", team: "Clinical Services" });
   const [, force] = React.useReducer((n: number) => n + 1, 0);
@@ -70,7 +69,7 @@ function TeamTab() {
       <div className="attn">
         <div><span>Primary location</span><span className="trend">{profile.location ?? "not set"}</span></div>
         <div><span>Supervisor</span><span className="trend">assigned in your Summit profile</span></div>
-        <div><span>Peer group</span><span className="trend">{s.team.length} member{s.team.length === 1 ? "" : "s"}</span></div>
+        <div><span>Peer group</span><span className="trend">{people.length} member{people.length === 1 ? "" : "s"}</span></div>
       </div>
 
       <h2 className="section-title">Peer group</h2>

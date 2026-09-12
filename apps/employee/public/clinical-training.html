@@ -38,6 +38,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .btn.ghost{background:transparent;color:var(--sage-deep);box-shadow:none;border:1.5px solid var(--line)}
 .btn.ghost:hover{background:var(--sage-mist);border-color:var(--sage)}
 .btn.gold{background:var(--gold);color:#3a3212}.btn.gold:hover{background:#a8923f}
+.btn.gold:disabled{background:#b7c3b3;color:#6b7568}.btn.gold:disabled:hover{background:#b7c3b3}
 :focus-visible{outline:3px solid var(--sage);outline-offset:2px;border-radius:4px}
 
 /* ============ top bar ============ */
@@ -341,7 +342,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   <div class="modal-inner">
     <div id="certCanvasWrap"></div>
     <div class="cert-actions">
-      <button class="btn gold" onclick="downloadCert()">Download certificate (PNG)</button>
+      <button class="btn gold" id="certDownloadBtn" disabled onclick="downloadCert()">Preparing certificate…</button>
       <button class="btn ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" onclick="closeCert()">Close</button>
     </div>
   </div>
@@ -383,17 +384,45 @@ window.__ASSETS__ = window.__ASSETS__ || {}; window.__ASSETS__.logo = "data:imag
 var GATE_SECONDS = 300;          // five-minute reading gate
 var PASS = 0.8;                  // 80% threshold
 
-/* ---------- session state (in-memory only; no browser storage per platform rules) ---------- */
+/* ---------- session state ----------
+   Module pass/fail and the reading-gate "met" flag are also persisted to
+   localStorage per learner name (see loadProgress/saveProgress below), so
+   progress survives a reload or in-app back-navigation instead of resetting
+   to 0%. Everything else here (in-progress quiz answers, the live gate
+   countdown) stays in-memory only, on purpose: it's fine for a half-answered
+   quiz to reset on reload, it's not fine for an earned certificate to. */
 var S = {
   name: null,
   nameLocked: false,
   reviewer: false,              // reviewer shortcut disables the gate
-  progress: {},                 // moduleNumber -> {passed:bool, pct:int}
+  progress: {},                 // moduleNumber -> {passed:bool, pct:int} (persisted)
+  gatesMet: {},                 // moduleNumber -> true once the reading gate has been met (persisted)
   cur: null,                    // current module
   answers: {},                  // qIndex -> answer payload
   gateTimer: null,
   gateLeft: GATE_SECONDS
 };
+
+/* ---------- training progress persistence (per learner name, this browser) ----------
+   Keyed by a normalized learner name rather than any account id - this tool
+   has no login, S.name typed at the welcome screen is the only identity it
+   has. Two different people who happen to type the same name share a bucket;
+   that's the same limitation the rest of this file already has (recognition,
+   the directory, etc. are all name-keyed here too), not a new one. */
+var PROGRESS_KEY_PREFIX='megba-progress-';
+function progressKey(name){ return PROGRESS_KEY_PREFIX+String(name||'').trim().toLowerCase().replace(/\s+/g,' '); }
+function loadProgress(name){
+  try{
+    var raw=localStorage.getItem(progressKey(name));
+    if(!raw) return {modules:{},gates:{}};
+    var parsed=JSON.parse(raw)||{};
+    return {modules:parsed.modules||{},gates:parsed.gates||{}};
+  }catch(e){ return {modules:{},gates:{}}; }
+}
+function saveProgress(){
+  if(!S.name) return;
+  try{ localStorage.setItem(progressKey(S.name),JSON.stringify({modules:S.progress,gates:S.gatesMet})); }catch(e){ /* unavailable */ }
+}
 
 /* ---------- tiny helpers ---------- */
 function el(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
@@ -465,12 +494,18 @@ function screenDash(){
     html+='<div class="block-group"><div class="block-head"><span class="bnum">'+bn+'</span><h3>'+esc(blockName(+bn))+'</h3></div><div class="mod-list">';
     blocks[bn].forEach(function(m){
       var p=S.progress[m.number];
-      var cls=p&&p.passed?'done':'';
-      var badge=p&&p.passed?'<span class="badge done">\u2713 Passed \u00b7 '+p.pct+'%</span>':'<span class="badge todo">Start</span>';
+      var passedMod=!!(p&&p.passed);
+      var cls=passedMod?'done':'';
+      var badge=passedMod?'<span class="badge done">\u2713 Passed \u00b7 '+p.pct+'%</span>':'<span class="badge todo">Start</span>';
+      // The pass-result screen (renderResult) is the only other place a
+      // learner ever sees showCert() - once they navigate away from it the
+      // certificate was previously unreachable without retaking the whole
+      // module. This gives an already-earned certificate a permanent home.
+      var certBtn=passedMod?'<button type="button" class="btn ghost cert-view-btn" data-mod="'+m.number+'" style="padding:6px 12px;font-size:12px;white-space:nowrap">View certificate</button>':'';
       html+='<div class="mod-card '+cls+'" data-mod="'+m.number+'">'+
         '<div class="mn">'+m.number+'</div>'+
         '<div class="mtitle"><div class="t">'+esc(m.title)+'</div><div class="m">'+esc(m.time)+' \u00b7 '+m.quiz.length+' questions</div></div>'+
-        badge+'</div>';
+        badge+certBtn+'</div>';
     });
     html+='</div></div>';
   });
@@ -833,6 +868,9 @@ function wireWelcome(){
     var v=inp.value.trim().replace(/\s+/g,' ');
     if(v.length<2){document.getElementById('lockMsg').style.display='block';document.getElementById('lockMsg').textContent='Please enter your name (at least 2 characters) before beginning.';inp.focus();return;}
     S.name=v; S.nameLocked=true;
+    var saved=loadProgress(v);
+    S.progress=saved.modules;
+    S.gatesMet=saved.gates;
     go('dash');
     toast('Welcome, '+v.split(' ')[0]+', your name is now locked for this session.');
   }
@@ -844,6 +882,13 @@ function wireDash(){
   document.querySelectorAll('.mod-card').forEach(function(c){
     if(c.classList.contains('locked'))return;
     c.addEventListener('click',function(){go('module',byNum(c.getAttribute('data-mod')));});
+  });
+  document.querySelectorAll('.cert-view-btn').forEach(function(b){
+    b.addEventListener('click',function(e){
+      e.stopPropagation();
+      var m=byNum(b.getAttribute('data-mod'));
+      if(m)showCert(m);
+    });
   });
   var hl=document.getElementById('homeLogo'); if(hl)hl.addEventListener('click',function(){go('dash');});
 }
@@ -892,6 +937,10 @@ function wireModule(m){
 /* ---------- reading gate ---------- */
 function startGate(){
   if(S.reviewer){unlockGate('Reviewer mode, gate skipped.');return;}
+  // Already met this gate before (this session or a prior one, same learner
+  // name, same browser) - don't make them sit through it again. This is what
+  // stops the timer resetting on in-app back-navigation or a page reload.
+  if(S.cur&&S.gatesMet[S.cur.number]){unlockGate('You already met the reading requirement for this module.');return;}
   S.gateLeft=GATE_SECONDS;
   tickGate();
   S.gateTimer=setInterval(tickGate,1000);
@@ -903,7 +952,12 @@ function tickGate(){
   num.textContent=mm+':'+(ss<10?'0':'')+ss;
   var frac=1-(S.gateLeft/GATE_SECONDS);
   if(ring)ring.style.strokeDashoffset=(138.2*(1-frac)).toFixed(1);
-  if(S.gateLeft<=0){stopGate();unlockGate();return;}
+  if(S.gateLeft<=0){
+    stopGate();
+    if(S.cur){ S.gatesMet[S.cur.number]=true; saveProgress(); }
+    unlockGate();
+    return;
+  }
   S.gateLeft--;
 }
 function stopGate(){if(S.gateTimer){clearInterval(S.gateTimer);S.gateTimer=null;}}
@@ -1150,6 +1204,7 @@ function submitQuiz(){
   var prev=S.progress[m.number];
   if(!prev||pct>prev.pct)S.progress[m.number]={passed:passed||(prev&&prev.passed),pct:Math.max(pct,prev?prev.pct:0)};
   if(passed)S.progress[m.number].passed=true;
+  saveProgress();
   if(passed)reportHubDone(m);
   renderResult(m,correct,pct,passed);
 }
@@ -1201,7 +1256,14 @@ function correctText(q){
    CERTIFICATE  (canvas render matching Adina's template)
 ===================================================================== */
 var CERT={m:null};
-function showCert(m){CERT.m=m;drawCert(m);document.getElementById('certModal').classList.add('show');}
+function showCert(m){
+  CERT.m=m;
+  CERT.canvas=null;
+  var btn=document.getElementById('certDownloadBtn');
+  if(btn){btn.disabled=true;btn.textContent='Preparing certificate…';}
+  drawCert(m);
+  document.getElementById('certModal').classList.add('show');
+}
 window.closeCert=function(){document.getElementById('certModal').classList.remove('show');};
 function fmtDate(d){var mo=['January','February','March','April','May','June','July','August','September','October','November','December'];return d.getDate()+' '+mo[d.getMonth()]+' '+d.getFullYear();}
 function drawCert(m){
@@ -1294,8 +1356,13 @@ function wrapText(x,text,cx,cy,maxW,lh){
 function finalizeCert(cv){
   var wrap=document.getElementById('certCanvasWrap');wrap.innerHTML='';wrap.appendChild(cv);
   CERT.canvas=cv;
+  var btn=document.getElementById('certDownloadBtn');
+  if(btn){btn.disabled=false;btn.textContent='Download certificate (PNG)';}
 }
 window.downloadCert=function(){
+  // Belt-and-braces: the button is disabled until CERT.canvas is set, but
+  // this guard is what actually stops the click from doing nothing silently
+  // if it's ever reachable before that (e.g. a stray keyboard activation).
   if(!CERT.canvas)return;
   var a=document.createElement('a');
   a.download='MEGBA_Certificate_'+(S.name.replace(/\s+/g,'_'))+'_Module'+CERT.m.number+'.png';

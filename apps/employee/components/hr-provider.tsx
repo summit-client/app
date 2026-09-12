@@ -84,6 +84,7 @@ export function useHrAction(): {
     setError(null);
     try {
       await fn();
+      reload();
     } catch (e: unknown) {
       setError(e instanceof HrWriteError ? e.message : e instanceof Error ? e.message : String(e));
       reload();

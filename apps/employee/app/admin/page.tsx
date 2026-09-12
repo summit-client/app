@@ -179,7 +179,16 @@ function AdminConsole() {
                     {nameOf(p.userId)} · Week {p.task?.week} · {p.task?.section}{p.notes ? ` · note: ${p.notes}` : ""}
                   </p>
                 </div>
-                <button className="btn" onClick={() => void signOffTask(p.taskKey, p.userId).then(reloadSignoffs)}>Sign off as completed</button>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    const title = p.task?.title ?? p.taskKey;
+                    if (!confirm(`Sign off "${title}" for ${nameOf(p.userId)}? This can't be undone.`)) return;
+                    void signOffTask(p.taskKey, p.userId).then(reloadSignoffs);
+                  }}
+                >
+                  Sign off as completed
+                </button>
               </div>
             ))}
             {!pendingSignoffs.length ? <div className="card card-pad"><p className="sub">Nothing awaiting sign-off.</p></div> : null}
