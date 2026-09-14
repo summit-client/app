@@ -8,7 +8,11 @@ import {
   CATEGORY_LABEL, computeCompliance, CREDENTIAL_LABEL, CREDENTIAL_RULES, maximizeMyCredits,
   type CredentialKind, type EmployeeCredential,
 } from "@/lib/credentials";
-import { hr, removeCredential, saveCredential } from "@/lib/hr-store";
+import {
+  EDUCATION_LEVEL_LABEL, educationLine, highestEducation as computeHighest,
+  type EducationLevel, type EmployeeEducation,
+} from "@/lib/education";
+import { hr, removeCredential, removeEducation, saveCredential, saveEducation } from "@/lib/hr-store";
 
 /**
  * My Credentials. One compliance tracker per credential, using the rule
@@ -29,6 +33,9 @@ function CredentialsScreen() {
   const [editing, setEditing] = React.useState<EmployeeCredential | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+  const [editingEdu, setEditingEdu] = React.useState<EmployeeEducation | null>(null);
+  const [busyEdu, setBusyEdu] = React.useState(false);
+  const [errEdu, setErrEdu] = React.useState<string | null>(null);
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading credentials…</p>;
 
@@ -38,6 +45,7 @@ function CredentialsScreen() {
     .filter((x): x is NonNullable<typeof x> => !!x);
   const maximize = maximizeMyCredits(compliances);
   const unitLabel = (u: string) => (u === "CPD_HOUR" ? "CPD hours" : `${u}s`);
+  const highest = computeHighest(s.education);
 
   return (
     <div>
@@ -134,6 +142,50 @@ function CredentialsScreen() {
         );
       })}
 
+      <h2 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        Education
+        <button className="btn secondary" style={{ fontSize: "var(--text-sm)" }} onClick={() => setEditingEdu(blankEducation())}>Add education</button>
+      </h2>
+      <div className="card card-pad">
+        <p className="sub" style={{ margin: 0 }}>
+          Academic education, separate from your regulatory credentials above — it has no renewal cycle and does not
+          expire. {highest ? <>Highest level achieved: <b style={{ color: "var(--ink)" }}>{educationLine(highest)}</b>.</> : "Nothing recorded yet."}
+        </p>
+
+        {errEdu ? <div role="alert" style={{ marginTop: 10, borderLeft: "3px solid var(--danger)", paddingLeft: 10 }}><p className="sub" style={{ color: "var(--ink)" }}>{errEdu}</p></div> : null}
+
+        {editingEdu ? (
+          <EducationForm
+            value={editingEdu}
+            busy={busyEdu}
+            onCancel={() => { setEditingEdu(null); setErrEdu(null); }}
+            onSave={async (e) => {
+              setBusyEdu(true); setErrEdu(null);
+              try { await saveEducation(e); setEditingEdu(null); }
+              catch (ex) { setErrEdu(ex instanceof Error ? ex.message : "Could not save this record."); }
+              finally { setBusyEdu(false); }
+            }}
+          />
+        ) : null}
+
+        {s.education.length ? (
+          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+            {s.education.map((e) => (
+              <div key={e.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap", borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+                <span>
+                  <b>{EDUCATION_LEVEL_LABEL[e.level]}</b>
+                  {e.fieldOfStudy ? <>, {e.fieldOfStudy}</> : null}
+                  {e.institution ? <span className="trend"> · {e.institution}</span> : null}
+                  {e.completedYear ? <span className="trend"> · {e.completedYear}</span> : null}
+                  {e.verification === "SELF_REPORTED" ? <span className="pill neutral" style={{ marginLeft: 8 }}>self-reported</span> : <span className="pill good" style={{ marginLeft: 8 }}>verified</span>}
+                </span>
+                <button className="btn ghost" style={{ padding: "3px 9px" }} onClick={() => setEditingEdu({ ...e })}>Edit</button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
       <h2 className="section-title">Maximize my credits</h2>
       <div className="card card-pad">
         {maximize.outstanding.length ? (
@@ -209,6 +261,87 @@ function blankCredential(): EmployeeCredential {
 }
 
 const KINDS: CredentialKind[] = ["BCBA", "BCaBA", "RBT", "ONT_RBA", "IBA_PRECERT", "IBA_RECERT", "IBT"];
+
+/** An education record the employee has not saved yet. */
+function blankEducation(): EmployeeEducation {
+  return {
+    id: `new-${Date.now().toString(36)}`, level: "bachelor",
+    fieldOfStudy: "", institution: "", completedYear: null, verification: "SELF_REPORTED",
+  };
+}
+
+const EDUCATION_LEVELS: EducationLevel[] = [
+  "doctorate", "master", "bachelor", "associate", "diploma", "high_school", "other",
+];
+
+/**
+ * Add or edit one academic education entry. Self-reported by default: this
+ * is not something Summit can independently confirm the way a registration
+ * number can be, so the record says so rather than implying HR checked it.
+ */
+function EducationForm({
+  value, busy, onSave, onCancel,
+}: {
+  value: EmployeeEducation;
+  busy: boolean;
+  onSave: (e: EmployeeEducation) => void;
+  onCancel: () => void;
+}) {
+  const [f, setF] = React.useState<EmployeeEducation>(value);
+  React.useEffect(() => setF(value), [value]);
+  const isNew = f.id.startsWith("new-");
+  const set = <K extends keyof EmployeeEducation>(k: K, v: EmployeeEducation[K]) => setF((x) => ({ ...x, [k]: v }));
+  const thisYear = new Date().getFullYear();
+
+  return (
+    <div className="card card-pad" style={{ marginTop: 12, display: "grid", gap: 12 }}>
+      <b>{isNew ? "Add education" : `Edit ${EDUCATION_LEVEL_LABEL[f.level]}`}</b>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div className="field" style={{ minWidth: 200 }}>
+          <label htmlFor="ed-level">Level</label>
+          <select id="ed-level" className="input" value={f.level}
+            onChange={(e) => set("level", e.target.value as EducationLevel)}>
+            {EDUCATION_LEVELS.map((k) => <option key={k} value={k}>{EDUCATION_LEVEL_LABEL[k]}</option>)}
+          </select>
+        </div>
+        <div className="field" style={{ minWidth: 200 }}>
+          <label htmlFor="ed-field">Field of study</label>
+          <input id="ed-field" className="input" value={f.fieldOfStudy} placeholder="e.g. Special Education"
+            onChange={(e) => set("fieldOfStudy", e.target.value)} />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div className="field" style={{ minWidth: 200 }}>
+          <label htmlFor="ed-institution">Institution</label>
+          <input id="ed-institution" className="input" value={f.institution} placeholder="optional"
+            onChange={(e) => set("institution", e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="ed-year">Year completed</label>
+          <input id="ed-year" type="number" className="input" style={{ width: 110 }}
+            min={1950} max={thisYear + 1} value={f.completedYear ?? ""} placeholder="optional"
+            onChange={(e) => set("completedYear", e.target.value ? Number(e.target.value) : null)} />
+        </div>
+      </div>
+      <p className="trend">
+        Self-reported — Summit has no way to independently confirm an academic record the way it can a registration
+        number, so this is shown as self-reported rather than verified.
+      </p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button className="btn" disabled={busy} onClick={() => onSave(f)}>
+          {busy ? "Saving…" : "Save education"}
+        </button>
+        <button className="btn secondary" onClick={onCancel} disabled={busy}>Cancel</button>
+        {!isNew ? (
+          <button className="btn ghost" style={{ marginLeft: "auto", color: "var(--danger)" }} disabled={busy}
+            onClick={() => { void removeEducation(f.id); onCancel(); }}>
+            Remove
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Add or edit a credential. The registration number is the field auditors and
