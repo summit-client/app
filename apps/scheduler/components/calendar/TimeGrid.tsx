@@ -163,6 +163,7 @@ function Tooltip({
       <Row icon={<ClientIcon size={11} />} text={client?.name || "Unknown client"} />
       <Row icon={<SessionTypeDot size={9} color={color} />} text={session.type} />
       {session.recurrence_id && <Row icon={<RecurringIcon size={11} />} text="Recurring" />}
+      {session.status === "no_show" && <Row icon={<span style={{ color: "#EF9F27", fontSize: 10 }}>⚠</span>} text="No-show" />}
     </div>
   );
 }
@@ -199,6 +200,11 @@ function SessionBlock({
   const [hovered, setHovered] = React.useState(false);
   const client = clients.find((c) => c.id === session.client_id);
   const loc = locationLabel(session, locations);
+  // Amber, not draft's grey/dashed treatment or the list view's grey
+  // "cancelled" dimming - a no-show needs to read as its own thing at a
+  // glance (something that happened and needs follow-up), not as "same as
+  // draft" or "same as cancelled".
+  const isNoShow = session.status === "no_show";
   return (
     <div
       draggable
@@ -212,18 +218,19 @@ function SessionBlock({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onSessionClick(session); } }}
       tabIndex={0}
       role="button"
-      aria-label={`${client?.name || "Unknown client"}, ${session.type}, ${String(session.hour).padStart(2, "0")}:${String(session.minute).padStart(2, "0")}`}
+      aria-label={`${client?.name || "Unknown client"}, ${session.type}, ${String(session.hour).padStart(2, "0")}:${String(session.minute).padStart(2, "0")}${isNoShow ? ", no-show" : ""}`}
       style={{
         position: "absolute", top, height, left, width, zIndex: 10,
         borderRadius: 5, padding: "2px 5px", background: color + (isDraft ? "14" : "22"),
-        border: isDraft ? `1.5px dashed ${color}88` : "none", borderLeft: `2.5px solid ${color}`,
-        opacity: isDraft ? 0.75 : 1, cursor: "grab", overflow: "hidden", fontSize: 11.5,
+        border: isDraft ? `1.5px dashed ${color}88` : isNoShow ? "1.5px solid #EF9F2788" : "none", borderLeft: `2.5px solid ${color}`,
+        opacity: isDraft ? 0.75 : isNoShow ? 0.65 : 1, cursor: "grab", overflow: "hidden", fontSize: 11.5,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 600, color, lineHeight: 1.3 }}>
         {session.recurrence_id && <RecurringIcon size={10} color={color} />}
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client?.name || "Unknown"}</span>
         {isDraft && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color, opacity: 0.8, flexShrink: 0 }}>DRAFT</span>}
+        {isNoShow && <span title="No-show" style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color: "#8A5A1E", flexShrink: 0 }}>⚠ NO-SHOW</span>}
       </div>
       {height > 34 && (
         <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--color-text-secondary)", marginTop: 2 }}>
@@ -296,6 +303,7 @@ function StackedPill({
             const client = clients.find((c) => c.id === s.client_id);
             const c = sessionColorOverrides?.[s.id] ?? (typeColors[s.type] || "#888");
             const draft = draftSessionIds.has(s.id);
+            const noShow = s.status === "no_show";
             return (
               <div
                 key={s.id}
@@ -306,13 +314,14 @@ function StackedPill({
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onSessionClick(s); } }}
                 tabIndex={0}
                 role="button"
-                aria-label={`${client?.name || "Unknown client"}, ${s.type}, ${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}`}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", borderRadius: 6, cursor: "pointer", opacity: draft ? 0.7 : 1 }}
+                aria-label={`${client?.name || "Unknown client"}, ${s.type}, ${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}${noShow ? ", no-show" : ""}`}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", borderRadius: 6, cursor: "pointer", opacity: draft ? 0.7 : noShow ? 0.75 : 1 }}
               >
                 <SessionTypeDot size={8} color={c} />
                 {s.recurrence_id && <RecurringIcon size={10} />}
                 <span style={{ fontSize: 12, color: "var(--color-text-primary)" }}>{client?.name}</span>
                 {draft && <span style={{ fontSize: 9, fontWeight: 700, color: c }}>DRAFT</span>}
+                {noShow && <span title="No-show" style={{ fontSize: 9, fontWeight: 700, color: "#8A5A1E" }}>⚠</span>}
                 <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: "auto" }}>
                   {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")}
                 </span>
