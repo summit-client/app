@@ -16,6 +16,7 @@
 import * as React from "react";
 import { supabase } from "../../lib/supabase";
 import { SessionSchedulesPanel } from "./SessionSchedulesPanel";
+import { RecurrenceScopeModal } from "./RecurrenceScopeModal";
 import type { AvailabilityRow } from "./suggestions";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { useFocusTrap } from "../../lib/useFocusTrap";
@@ -80,16 +81,47 @@ export function SessionDetail({
   const [cancelling, setCancelling] = React.useState(false);
   const [cancelError, setCancelError] = React.useState<string | null>(null);
   const [showSchedules, setShowSchedules] = React.useState(false);
+  // Same this/following/all choice drag-to-reschedule and the Reschedule
+  // modal already offer (RecurrenceScopeModal) - only shown when the session
+  // being cancelled is part of a series (session.recurrence_id set); a
+  // one-time session skips straight to executeCancel("this"), unchanged from
+  // before this was added.
+  const [showCancelScopePicker, setShowCancelScopePicker] = React.useState(false);
   const client = clients.find((c) => c.id === session.client_id);
   const emp = employees.find((e) => e.id === session.employee_id);
   const loc = locations.find((l) => l.id === session.location_id);
   const color = colorOverride ?? (typeColors[session.type] || "#888");
 
-  async function handleCancel() {
-    if (!confirm("Cancel this session?")) return;
+  function handleCancel() {
+    if (session.recurrence_id) {
+      setShowCancelScopePicker(true);
+      return;
+    }
+    void executeCancel("this");
+  }
+
+  async function executeCancel(scope: "this" | "following" | "all") {
+    const confirmMsg = scope === "this"
+      ? "Cancel this session?"
+      : scope === "following"
+        ? "Cancel this and every future session in the series?"
+        : "Cancel every session in the series?";
+    if (!confirm(confirmMsg)) return;
     setCancelling(true);
     setCancelError(null);
-    const { error } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", session.id);
+    // Pure status-flip, no date-shift math needed (unlike the reschedule
+    // case) - "following"/"all" widen which rows the same update touches,
+    // scoped by recurrence_id and, for "following", session_date >= this
+    // occurrence's own date.
+    let q = supabase.from("sessions").update({ status: "cancelled" });
+    if (scope === "this") {
+      q = q.eq("id", session.id);
+    } else if (scope === "following") {
+      q = q.eq("recurrence_id", session.recurrence_id).gte("session_date", session.session_date);
+    } else {
+      q = q.eq("recurrence_id", session.recurrence_id);
+    }
+    const { error } = await q;
     setCancelling(false);
     if (error) { setCancelError("Cancel failed. Please try again."); return; }
     onCancelled();
@@ -151,6 +183,15 @@ export function SessionDetail({
           onClose={() => setShowSchedules(false)}
           onProposeSlot={(dateStr, hour, minute) => { setShowSchedules(false); onReschedule({ dateStr, hour, minute }); }}
           canPropose={canManage}
+        />
+      )}
+
+      {showCancelScopePicker && (
+        <RecurrenceScopeModal
+          title="Cancel recurring session"
+          prompt="This session repeats. What should cancelling apply to?"
+          onPick={(scope) => { setShowCancelScopePicker(false); void executeCancel(scope); }}
+          onCancel={() => setShowCancelScopePicker(false)}
         />
       )}
     </div>

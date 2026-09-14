@@ -30,7 +30,7 @@ import { TimeGrid } from "./TimeGrid";
 import { MonthGrid } from "./MonthGrid";
 import { FilterPanel, CalendarPicker, CalendarFilters, emptyFilters, activeFilterCount, matchesFilters } from "./FilterPanel";
 import { StaffOverlayPicker, OverlayLegend, overlayColorFor } from "./StaffOverlayPicker";
-import { RecurringIcon } from "./icons";
+import { RecurrenceScopeModal } from "./RecurrenceScopeModal";
 import { RescheduleModal } from "./RescheduleModal";
 import { SessionDetail } from "./SessionDetail";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
@@ -838,31 +838,6 @@ function ModeButton({ active, label, onClick }: { active: boolean; label: string
     >
       {label}
     </button>
-  );
-}
-
-function RecurrenceScopeModal({ onPick, onCancel }: { onPick: (scope: "this" | "following" | "all") => void; onCancel: () => void }) {
-  useEscapeToClose(onCancel);
-  const trapRef = useFocusTrap<HTMLDivElement>();
-  return (
-    <div style={overlayStyle} onClick={onCancel}>
-      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Move recurring session" style={modalStyle} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, marginBottom: 4, color: "var(--color-text-primary)" }}>
-          <RecurringIcon size={16} /> Move recurring session
-        </div>
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 14px" }}>This session repeats. What should the new time apply to?</p>
-        {[
-          { key: "this", label: "This session only" },
-          { key: "following", label: "This and following sessions" },
-          { key: "all", label: "All sessions in the series" },
-        ].map((o) => (
-          <button key={o.key} onClick={() => onPick(o.key as any)} style={{ ...navBtn, width: "100%", textAlign: "left", marginBottom: 6 }}>
-            {o.label}
-          </button>
-        ))}
-        <button onClick={onCancel} style={{ ...navBtn, width: "100%", marginTop: 4, color: "var(--color-text-secondary)" }}>Cancel</button>
-      </div>
-    </div>
   );
 }
 
