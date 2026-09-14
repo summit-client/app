@@ -15,6 +15,7 @@ import { refreshUrl } from "@summit/portals";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../lib/checkSlotConflict";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { WaitlistView } from "../components/WaitlistView";
+import { FrontDeskFeedPanel } from "../components/FrontDeskFeedPanel";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -1437,6 +1438,18 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
               <Select value="3 years" onChange={() => {}} options={["1 year", "2 years", "3 years", "Indefinite"]} />
             </SettingRow>
           </div>
+
+          {/* Clinic-wide, admin-managed shared calendar link (calendar_feed_tokens,
+              kind='front_desk' - migration 0071). Distinct from "My calendar feed"
+              in the Sidebar (CalendarFeedPanel.tsx, kind='personal') - this one
+              belongs to no single person and shows every session in the clinic,
+              scrubbed to time + session type + location only. Lives here, not in
+              the Sidebar, because this tab is already admin-only
+              (Sidebar.tsx's roles: ["admin"] on the "settings" nav entry) and the
+              API route itself further restricts *generating* a front-desk token
+              to admin/scheduler (migration 0071's header). */}
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>CALENDAR FEEDS</div>
+          <FrontDeskFeedPanel />
         </div>
       )}
     </div>
