@@ -876,10 +876,106 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
 
 // ─── Clients view ─────────────────────────────────────────────────────────────
 
-function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast, workStart, workEnd, workDays }) {
+// Formats a plain "YYYY-MM-DD" session_date for display - deliberately not
+// reusing dateUtils' calendar-grid formatters, which are built around a Date
+// object with a time component; this only ever gets a date-only string.
+function formatSessionDate(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+// "Needs attention" leaderboard - see ClientsView's own comment above where
+// this is called for the full reasoning on what "last session" means here.
+function NeedsAttentionPanel({ clients, bookings, staleAfterDays, onNavigate }) {
+  // ── Why "last session" means max(session_date) where status != 'cancelled',
+  // NOT "last completed session" ──────────────────────────────────────────
+  // Nothing in this app ever sets sessions.status = 'completed' anywhere in
+  // its code (confirmed during the no-show-tracking phase of this same
+  // batch) - a session sits at 'scheduled' forever once its date passes, or
+  // moves to 'cancelled'/'no_show'. "Last completed session" would therefore
+  // show every active client as having zero completed sessions ever, which
+  // is useless as a staleness signal. Using the most recent non-cancelled
+  // session_date instead - whether it's in the past (they haven't been seen
+  // in a while) or the future (they have an upcoming session, so they are
+  // NOT stale) - is a deliberate workaround for that missing lifecycle, not
+  // an oversight. A future fix to the 'completed' lifecycle gap (tracked
+  // separately, not this task) should let this prefer status = 'completed'
+  // and narrow to past dates only; it shouldn't need to be re-derived from
+  // scratch when that happens.
+  function lastSessionFor(clientId) {
+    let best = null;
+    for (const b of bookings) {
+      if (b.client_id !== clientId || b.status === "cancelled" || !b.session_date) continue;
+      if (!best || b.session_date > best.session_date) best = b;
+    }
+    return best;
+  }
+
+  const rows = clients
+    .filter(c => c.status === "active")
+    .map(c => {
+      const last = lastSessionFor(c.id);
+      const daysSince = last ? Math.floor((Date.now() - new Date(`${last.session_date}T00:00:00`).getTime()) / 86400000) : null;
+      return { client: c, last, daysSince };
+    })
+    // A client with an upcoming-only last session gets a negative
+    // daysSince, which never clears a positive threshold - they're
+    // correctly excluded without a separate "is this in the future" check.
+    .filter(({ last, daysSince }) => !last || daysSince > staleAfterDays)
+    .sort((a, b) => (b.daysSince ?? Infinity) - (a.daysSince ?? Infinity));
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: COLORS.text, margin: 0 }}>Needs attention</h3>
+        <span style={{ fontSize: 12, color: COLORS.textT }}>
+          {rows.length} active client{rows.length !== 1 ? "s" : ""} with no session in the last {staleAfterDays} day{staleAfterDays !== 1 ? "s" : ""} (or never booked)
+        </span>
+      </div>
+      <div style={{ borderRadius: 10, background: COLORS.bgS, border: `0.5px solid ${COLORS.border}`, overflow: "hidden" }}>
+        {rows.map(({ client, last, daysSince }, i) => (
+          <div key={client.id} style={{
+            display: "flex", alignItems: "center", gap: 14, padding: "10px 16px", flexWrap: "wrap",
+            borderTop: i === 0 ? "none" : `0.5px solid ${COLORS.border}`,
+          }}>
+            <Avatar name={client.name} color="#E24B4A" />
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>{client.name}</div>
+              <div style={{ fontSize: 12, color: COLORS.textT }}>
+                {last ? `Last: ${formatSessionDate(last.session_date)} · ${last.type || "Unspecified type"}` : "Never booked"}
+              </div>
+            </div>
+            <Badge
+              label={daysSince === null ? "Never booked" : `${daysSince} day${daysSince !== 1 ? "s" : ""} since`}
+              color="#E24B4A"
+            />
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate("create")}
+                style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}
+              >
+                Book a session
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast, workStart, workEnd, workDays, bookings, onNavigate }) {
   const [expandedId, setExpandedId] = useState(null);
   const [search, setSearch] = useState("");
   const filtered = clients.filter(c => JSON.stringify(c).toLowerCase().includes(search.toLowerCase()));
+  // Re-renders whenever the settings-change subscription at the top of
+  // Scheduler() fires (see SettingsView's own comment on this same key) -
+  // no local subscription needed here for the same reason.
+  const staleAfterDays = Number(getSetting("clients.staleAfterDays"));
 
   function handleSave(clientId, newRanges) {
     setClientAvailability(prev => [...prev.filter(a => a.client_id !== clientId), ...newRanges]);
@@ -896,6 +992,9 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
         </div>
         <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 200 }} />
       </div>
+
+      <NeedsAttentionPanel clients={clients} bookings={bookings || []} staleAfterDays={staleAfterDays} onNavigate={onNavigate} />
+
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
   {clients.length === 0 && (
     <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
@@ -1105,6 +1204,14 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
 
 function SettingsView({ employees, clients, locations, typeColors, workDays, setWorkDays, workStart, setWorkStart, workEnd, setWorkEnd, showToast }) {
   const [tab, setTab] = useState("general");
+  // Not lifted to Scheduler() like workStart/workEnd/workDays are, since
+  // nothing else in this app currently reads it - see ClientsView's
+  // "Needs attention" leaderboard, the only other consumer, which reads it
+  // directly via getSetting() the same way. Re-renders on change via the
+  // same top-level onSettingsChange subscription in Scheduler() that
+  // already covers workStart/workEnd (any settings change re-renders this
+  // whole tree), so no separate subscription is needed here.
+  const staleAfterDays = Number(getSetting("clients.staleAfterDays"));
   const [timezone, setTimezone] = useState("America/Toronto");
   const [language, setLanguage] = useState("English");
   const [darkMode, setDarkMode] = useState(false);
@@ -1236,6 +1343,22 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
               </div>
               <input type="range" min={14} max={21} value={workEnd} onChange={e => { setWorkEnd(Number(e.target.value)); showToast("End time updated"); }}
                 style={{ width: "100%", accentColor: "#5DCAA5" }} />
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>CLIENT ENGAGEMENT</div>
+          <div style={{ background: COLORS.bgS, borderRadius: 12, padding: "18px 18px", border: `0.5px solid ${COLORS.border}`, marginBottom: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>Flag active clients as stale after</div>
+              <div style={{ fontSize: 13, color: COLORS.textS }}>{staleAfterDays} day{staleAfterDays !== 1 ? "s" : ""}</div>
+            </div>
+            <input
+              type="range" min={3} max={60} value={staleAfterDays}
+              onChange={e => { void setSetting("clients.staleAfterDays", Number(e.target.value), "org"); showToast("Stale-client threshold updated"); }}
+              style={{ width: "100%", accentColor: "#5DCAA5" }}
+            />
+            <div style={{ fontSize: 12, color: COLORS.textT, marginTop: 8 }}>
+              Drives the "Needs attention" list on the Clients screen — an active client with no session booked (past or upcoming, excluding cancelled) within this many days shows up there. Clinics differ on what's too long, so this is per-clinic, not a hardcoded rule.
             </div>
           </div>
         </div>

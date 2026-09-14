@@ -54,7 +54,32 @@ interface Client {
   location_id?: number | null;
   session_type?: string | null;
   created_at?: string | null;
+  // Migration 0071 - see that migration's header for why these live on
+  // `clients` rather than a separate waitlist-entries table.
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  referral_source?: string | null;
+  waitlist_notes?: string | null;
+  waitlist_priority?: string | null; // 'high' | 'normal' | 'low', not null in the db (default 'normal')
 }
+
+const PRIORITIES = ["high", "normal", "low"] as const;
+type Priority = typeof PRIORITIES[number];
+
+// Lower number sorts first. Anything unrecognized (shouldn't happen - the
+// db column is NOT NULL with a check constraint - but a stale client-side
+// cache mid-migration is cheap to guard against) falls in with 'normal'.
+const PRIORITY_RANK: Record<string, number> = { high: 0, normal: 1, low: 2 };
+const PRIORITY_COLORS: Record<string, string> = {
+  high: "#DC2626",
+  normal: "#6B7280",
+  low: "#94A3B8",
+};
+const PRIORITY_LABELS: Record<string, string> = {
+  high: "High priority",
+  normal: "Normal priority",
+  low: "Low priority",
+};
 
 interface Location {
   id: number;
@@ -87,18 +112,77 @@ function daysWaiting(createdAt?: string | null): number | null {
 
 export function WaitlistView({ clients, setClients, locations, showToast, onNavigate }: WaitlistViewProps) {
   const [promotingId, setPromotingId] = useState<number | null>(null);
+  const [priorityUpdatingId, setPriorityUpdatingId] = useState<number | null>(null);
+  // Which row's notes editor is expanded, and its in-progress draft text -
+  // keyed by client id so switching rows doesn't clobber an unsaved draft
+  // on another row still open (only one is rendered open at a time via the
+  // UI below, but keeping the draft keyed avoids surprises if that changes).
+  const [notesOpenId, setNotesOpenId] = useState<number | null>(null);
+  const [notesDraft, setNotesDraft] = useState<string>("");
+  const [savingNotesId, setSavingNotesId] = useState<number | null>(null);
 
-  // Oldest-first (FIFO) - the obvious, defensible default for a clinical
-  // waitlist. Deliberately no manual reordering/priority here; that's
-  // explicitly out of scope for this pass.
+  // Priority tier first (high, then normal, then low), oldest-created_at-
+  // first as the tiebreaker within each tier. This replaces the previous
+  // plain-FIFO sort - FIFO isn't gone, it's now the within-tier tiebreaker,
+  // per the account owner's explicit ask ("priority tier first... FIFO
+  // remains the tiebreaker, not replaced by it").
   const waitlisted = (clients || [])
     .filter(c => c.status === "waitlist")
     .slice()
     .sort((a, b) => {
+      const ar = PRIORITY_RANK[a.waitlist_priority || "normal"] ?? 1;
+      const br = PRIORITY_RANK[b.waitlist_priority || "normal"] ?? 1;
+      if (ar !== br) return ar - br;
       const at = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
       return at - bt;
     });
+
+  // .eq("status","waitlist") for the same reason promote() below guards on
+  // it - a stale row that already moved (promoted elsewhere) shouldn't have
+  // its priority silently rewritten by a screen that no longer applies to it.
+  async function updatePriority(client: Client, priority: Priority) {
+    const previous = client.waitlist_priority;
+    setPriorityUpdatingId(client.id);
+    // Optimistic - this is a low-stakes triage field editable inline on a
+    // busy list, not a clinical write; roll back on error rather than
+    // blocking the row on a round-trip.
+    setClients?.(prev => prev.map(c => c.id === client.id ? { ...c, waitlist_priority: priority } : c));
+    const { error } = await supabase
+      .from("clients")
+      .update({ waitlist_priority: priority })
+      .eq("id", client.id)
+      .eq("status", "waitlist");
+    setPriorityUpdatingId(null);
+    if (error) {
+      setClients?.(prev => prev.map(c => c.id === client.id ? { ...c, waitlist_priority: previous } : c));
+      showToast?.("Couldn't update priority. Please try again.");
+      return;
+    }
+    showToast?.(`${client.name} marked ${priority} priority`);
+  }
+
+  function openNotes(client: Client) {
+    setNotesOpenId(client.id);
+    setNotesDraft(client.waitlist_notes || "");
+  }
+
+  async function saveNotes(client: Client) {
+    setSavingNotesId(client.id);
+    const { error } = await supabase
+      .from("clients")
+      .update({ waitlist_notes: notesDraft.trim() || null })
+      .eq("id", client.id)
+      .eq("status", "waitlist");
+    setSavingNotesId(null);
+    if (error) {
+      showToast?.("Couldn't save notes. Please try again.");
+      return;
+    }
+    setClients?.(prev => prev.map(c => c.id === client.id ? { ...c, waitlist_notes: notesDraft.trim() || null } : c));
+    setNotesOpenId(null);
+    showToast?.("Notes saved");
+  }
 
   // Same operation as the existing Assessment-booking auto-promotion in
   // pages/index.jsx (CreateView, "Auto-promote waitlist clients booked for
@@ -145,6 +229,10 @@ export function WaitlistView({ clients, setClients, locations, showToast, onNavi
             const loc = locations?.find(l => l.id === client.location_id);
             const wait = daysWaiting(client.created_at);
             const isPromoting = promotingId === client.id;
+            const priority = (client.waitlist_priority || "normal") as Priority;
+            const isPriorityUpdating = priorityUpdatingId === client.id;
+            const notesOpen = notesOpenId === client.id;
+            const hasNotes = !!(client.waitlist_notes && client.waitlist_notes.trim());
             return (
               <div key={client.id} style={{
                 borderRadius: 10, background: COLORS.bgS,
@@ -152,15 +240,59 @@ export function WaitlistView({ clients, setClients, locations, showToast, onNavi
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", flexWrap: "wrap" }}>
                   <Avatar name={client.name} color="#EF9F27" />
-                  <div style={{ flex: 1, minWidth: 140 }}>
-                    <div style={{ fontSize: 15, fontWeight: 500, color: COLORS.text }}>{client.name}</div>
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 15, fontWeight: 500, color: COLORS.text }}>{client.name}</span>
+                      <Badge label={PRIORITY_LABELS[priority] || PRIORITY_LABELS.normal} color={PRIORITY_COLORS[priority] || PRIORITY_COLORS.normal} />
+                    </div>
                     <div style={{ fontSize: 13, color: COLORS.textS }}>{client.session_type || "Not specified"}</div>
                     {loc && <div style={{ fontSize: 12, color: COLORS.textT }}>{loc.name}</div>}
+                    {(client.contact_phone || client.contact_email) && (
+                      <div style={{ fontSize: 12, color: COLORS.textT, marginTop: 2 }}>
+                        {client.contact_phone}
+                        {client.contact_phone && client.contact_email ? " · " : ""}
+                        {client.contact_email}
+                      </div>
+                    )}
                   </div>
+
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.textT }}>
+                    Priority
+                    <select
+                      value={priority}
+                      disabled={isPriorityUpdating}
+                      onChange={e => updatePriority(client, e.target.value as Priority)}
+                      style={{
+                        padding: "4px 8px", borderRadius: 6, fontSize: 13,
+                        border: `0.5px solid ${COLORS.border}`, background: COLORS.bg,
+                        color: COLORS.text, cursor: isPriorityUpdating ? "not-allowed" : "pointer",
+                        opacity: isPriorityUpdating ? 0.6 : 1,
+                      }}
+                    >
+                      {PRIORITIES.map(p => (
+                        <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>
+                      ))}
+                    </select>
+                  </label>
+
                   <Badge
                     label={wait === null ? "Waiting" : `${wait} day${wait !== 1 ? "s" : ""} waiting`}
                     color="#EF9F27"
                   />
+
+                  <button
+                    type="button"
+                    onClick={() => notesOpen ? setNotesOpenId(null) : openNotes(client)}
+                    style={{
+                      padding: "5px 14px", borderRadius: 8, fontSize: 13,
+                      border: `0.5px solid ${hasNotes ? "#5DCAA5" : COLORS.border}`,
+                      background: hasNotes ? "#5DCAA522" : COLORS.bg,
+                      color: hasNotes ? "#3B8F6E" : COLORS.textS, cursor: "pointer",
+                    }}
+                  >
+                    {notesOpen ? "Close notes" : hasNotes ? "Notes" : "Add note"}
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => onNavigate?.("create")}
@@ -186,6 +318,51 @@ export function WaitlistView({ clients, setClients, locations, showToast, onNavi
                     {isPromoting ? "Promoting…" : "Promote to active"}
                   </button>
                 </div>
+
+                {notesOpen && (
+                  <div style={{
+                    padding: "0 16px 14px", display: "flex", flexDirection: "column", gap: 8,
+                    borderTop: `0.5px solid ${COLORS.border}`, paddingTop: 12,
+                  }}>
+                    <textarea
+                      value={notesDraft}
+                      onChange={e => setNotesDraft(e.target.value)}
+                      placeholder="Working notes for this waitlist entry - callback attempts, scheduling constraints, anything the next person on this screen should know."
+                      rows={3}
+                      style={{
+                        width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8,
+                        border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.text,
+                        fontSize: 13, fontFamily: "inherit", resize: "vertical",
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={() => setNotesOpenId(null)}
+                        style={{
+                          padding: "5px 14px", borderRadius: 8, fontSize: 13,
+                          border: `0.5px solid ${COLORS.border}`, background: COLORS.bg,
+                          color: COLORS.textS, cursor: "pointer",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveNotes(client)}
+                        disabled={savingNotesId === client.id}
+                        style={{
+                          padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500,
+                          border: "none", background: "#5DCAA5", color: "#fff",
+                          cursor: savingNotesId === client.id ? "not-allowed" : "pointer",
+                          opacity: savingNotesId === client.id ? 0.7 : 1,
+                        }}
+                      >
+                        {savingNotesId === client.id ? "Saving…" : "Save note"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
