@@ -1650,13 +1650,22 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       )];
       let promoted = 0;
       if (assessmentClientIds.length) {
-        const { count } = await supabase
+        // .select("id", {count:"exact",head:true}) after .update() doesn't
+        // type-check against the installed @supabase/postgrest-js version
+        // (.select() after a mutation only accepts a columns string, not an
+        // options object) and the options object was silently ignored at
+        // runtime too - count was always null here. Plain .select("id")
+        // returns the updated rows themselves; counting the array is the
+        // same information without relying on a signature this version
+        // doesn't support. Found while building the Waitlist view
+        // (2026-09-14), fixed here since it's the same auto-promotion path.
+        const { data: promotedRows } = await supabase
           .from("clients")
           .update({ status: "active" })
           .in("id", assessmentClientIds)
           .eq("status", "waitlist")
-          .select("id", { count: "exact", head: true });
-        promoted = count || 0;
+          .select("id");
+        promoted = promotedRows?.length || 0;
         if (promoted > 0) setClients(prev => prev.map(c => assessmentClientIds.includes(c.id) ? { ...c, status: "active" } : c));
       }
 
