@@ -744,6 +744,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
           onClose={() => setSelected(null)}
           onReschedule={(proposedSlot) => { setRescheduleInitialSlot(proposedSlot || null); setRescheduling(selected); setSelected(null); }}
           onCancelled={() => { setSelected(null); void refreshAll(); showToast("Session cancelled"); }}
+          onNoShow={() => { setSelected(null); void refreshAll(); showToast("Session marked as no-show"); }}
         />
       )}
 

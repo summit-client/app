@@ -739,6 +739,17 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
   const utilization = employees.length
     ? Math.round(employees.reduce((a, e) => a + e.booked / e.capacity, 0) / employees.length * 100) : 0;
 
+  // Denominator is sessions that have actually happened - completed +
+  // no_show, dated today or earlier - not every booking ever made.
+  // Including future "scheduled" sessions in the denominator would dilute
+  // the rate with sessions that haven't occurred yet (most of them, on any
+  // clinic with a full upcoming calendar), understating how often clients
+  // are actually failing to show up to past sessions.
+  const today = todayDateStr();
+  const pastBookings = bookings.filter(b => b.session_date && b.session_date <= today && (b.status === "completed" || b.status === "no_show"));
+  const noShowCount = pastBookings.filter(b => b.status === "no_show").length;
+  const noShowRate = pastBookings.length ? Math.round(noShowCount / pastBookings.length * 100) : 0;
+
   const typeBreakdown = Object.entries(
     activeBookings.reduce((acc, b) => { acc[b.type] = (acc[b.type] || 0) + 1; return acc; }, {})
   ).sort((a, b) => b[1] - a[1]);
@@ -749,11 +760,12 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
         <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Dashboard</h2>
         <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Overview of your scheduling activity</p>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 28 }}>
         <StatCard label="Total sessions" value={activeBookings.length} sub="across all calendars" accent="#378ADD" />
         <StatCard label="Active clients" value={clients.filter(c => c.status === "active").length} sub={`${clients.filter(c => c.status === "waitlist").length} waitlisted`} accent="#5DCAA5" />
         <StatCard label="Staff utilization" value={`${utilization}%`} sub="across all staff" accent="#EF9F27" />
         <StatCard label="Open slots" value={employees.reduce((a, e) => a + (e.capacity - e.booked), 0)} sub="available this week" accent="#D4537E" />
+        <StatCard label="No-show rate" value={`${noShowRate}%`} sub={pastBookings.length ? `${noShowCount} of ${pastBookings.length} past sessions` : "no past sessions yet"} accent="#8A5A1E" />
       </div>
       <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center" }}>
         <span style={{ fontSize: 13, color: COLORS.textS }}>Filter:</span>
@@ -2741,6 +2753,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           <option value="all">All statuses</option>
           <option value="scheduled">Scheduled</option>
           <option value="cancelled">Cancelled</option>
+          <option value="no_show">No-show</option>
         </select>
         <select value={calFilter} onChange={e => setCalFilter(e.target.value)} style={selInput}>
           <option value="all">All calendars</option>
@@ -2796,6 +2809,12 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           const col = typeColors[b.type] || "#888";
           const isSel = selected.has(b.id);
           const isCancelled = b.status === "cancelled";
+          const isNoShow = b.status === "no_show";
+          // Never a future session (no one can know yet that a client
+          // didn't show), and only while the session is still "scheduled" -
+          // same guard SessionDetail.tsx uses for its own "Mark no-show"
+          // button.
+          const canMarkNoShow = b.status === "scheduled" && b.session_date && b.session_date <= todayDateStr();
           const now = new Date();
           const sessionTime = b.session_date ? new Date(`${b.session_date}T${String(b.hour).padStart(2, "0")}:00:00`) : null;
           const lateCancel = sessionTime && (sessionTime - now) / 36e5 < CANCEL_HOURS;
@@ -2824,7 +2843,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                 <div style={{ fontSize: 12, color: COLORS.textT }}>{bDay} {b.hour}:00{lateCancel && !isCancelled ? <span title="Within cancellation window" style={{ color: "#EF9F27", marginLeft: 4 }}>⚠</span> : null}</div>
               </div>
               <div>
-                <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: isCancelled ? "#88888820" : "#5DCAA520", color: isCancelled ? COLORS.textT : "#5DCAA5", border: `0.5px solid ${isCancelled ? COLORS.border : "#5DCAA544"}` }}>
+                <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: isCancelled ? "#88888820" : isNoShow ? "#EF9F2720" : "#5DCAA520", color: isCancelled ? COLORS.textT : isNoShow ? "#8A5A1E" : "#5DCAA5", border: `0.5px solid ${isCancelled ? COLORS.border : isNoShow ? "#EF9F2744" : "#5DCAA544"}` }}>
                   {b.status}
                 </span>
               </div>
@@ -2854,6 +2873,14 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                     reuse, so left out of scope rather than guessed at. */}
                 {!isCancelled && canManageSession(b) && (
                   <>
+                    {canMarkNoShow && (
+                      <button title="Mark no-show" aria-label="Mark session as no-show" onClick={async () => {
+                        if (!confirm("Mark this session as a no-show?")) return;
+                        const { error: err } = await supabase.from("sessions").update({ status: "no_show" }).eq("id", b.id);
+                        refreshBookings();
+                        showToast(err ? "Mark no-show failed. Please try again." : "Session marked as no-show");
+                      }} style={{ width: 28, height: 28, borderRadius: 7, border: "0.5px solid #F0D5A8", background: COLORS.bg, color: "#8A5A1E", cursor: "pointer", fontSize: 14 }}>⚠</button>
+                    )}
                     <button title="Reschedule"
                       aria-label="Reschedule session"
                       onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); setRescheduleError(null); }}
@@ -2924,6 +2951,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           onClose={() => setDetailSession(null)}
           onReschedule={proposedSlot => { setRescheduleInitialSlot(proposedSlot || null); setReschedulingSession(detailSession); setDetailSession(null); }}
           onCancelled={() => { setDetailSession(null); refreshBookings(); showToast("Session cancelled"); }}
+          onNoShow={() => { setDetailSession(null); refreshBookings(); showToast("Session marked as no-show"); }}
         />
       )}
 

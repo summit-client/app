@@ -77,20 +77,26 @@ export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, 
               const client = clients.find((c) => c.id === s.client_id);
               const color = sessionColorOverrides?.[s.id] ?? (typeColors[s.type] || "#888");
               const draft = draftSessionIds.has(s.id);
+              // Distinct from the draft chip's grey dashed look - a no-show
+              // is amber, matching the same badge colour SessionDetail's
+              // "Mark no-show" button and TimeGrid's own no-show chip use.
+              const noShow = s.status === "no_show";
               return (
                 <div
                   key={s.id}
                   onClick={(e) => { e.stopPropagation(); onSessionClick(s); }}
+                  title={noShow ? "No-show" : undefined}
                   style={{
                     display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, padding: "1.5px 4px", marginBottom: 2, borderRadius: 4,
-                    background: color + (draft ? "12" : "22"), border: draft ? `1px dashed ${color}88` : "none",
-                    cursor: "pointer", overflow: "hidden", opacity: draft ? 0.75 : 1,
+                    background: color + (draft ? "12" : "22"), border: draft ? `1px dashed ${color}88` : noShow ? "1px solid #EF9F2788" : "none",
+                    cursor: "pointer", overflow: "hidden", opacity: draft ? 0.75 : noShow ? 0.7 : 1,
                   }}
                 >
                   <SessionTypeDot size={6} color={color} />
                   {s.recurrence_id && <RecurringIcon size={8} />}
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client?.name}</span>
                   {draft && <span style={{ fontSize: 8, fontWeight: 700, color, flexShrink: 0 }}>D</span>}
+                  {noShow && <span style={{ fontSize: 8, fontWeight: 700, color: "#8A5A1E", flexShrink: 0 }}>⚠</span>}
                 </div>
               );
             })}
