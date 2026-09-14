@@ -22,6 +22,7 @@ const NAV = [
   { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler", "clinician"] },
   { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler", "clinician"] },
   { id: "clients",   label: "Clients",   icon: "⊙", roles: ["admin", "scheduler"] },
+  { id: "waitlist",  label: "Waitlist",  icon: "⏱", roles: ["admin", "scheduler"] },
   { id: "employees", label: "Staff",     icon: "◎", roles: ["admin", "scheduler"] },
   { id: "sessiontypes", label: "Session Types", icon: "◈", roles: ["admin", "scheduler"] },
   { id: "create",    label: "Create",    icon: "✦", roles: ["admin", "scheduler", "clinician"] },

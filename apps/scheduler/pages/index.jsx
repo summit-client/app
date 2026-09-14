@@ -14,6 +14,7 @@ import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 import { refreshUrl } from "@summit/portals";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../lib/checkSlotConflict";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { WaitlistView } from "../components/WaitlistView";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -2955,7 +2956,7 @@ export default function Scheduler() {
   useEffect(() => {
     if (!router.isReady) return;
     const requestedView = router.query.view;
-    const validViews = ["dashboard", "calendar", "sessions", "clients", "employees", "sessiontypes", "create", "settings"];
+    const validViews = ["dashboard", "calendar", "sessions", "clients", "waitlist", "employees", "sessiontypes", "create", "settings"];
     if (typeof requestedView === "string" && validViews.includes(requestedView)) {
       setView(requestedView);
       void router.replace("/", undefined, { shallow: true });
@@ -3056,7 +3057,7 @@ export default function Scheduler() {
     if (label) showToast(`Calendar filtered to ${label}`);
   }
 
-  const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
+  const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, waitlist: WaitlistView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
   // Sidebar's NAV list controls which LINKS a clinician sees (2026-09-02,
   // migration 0046) - it does not, by itself, stop `?view=employees` (or
   // any of these ids) from being typed straight into the URL, which the
@@ -3068,7 +3069,7 @@ export default function Scheduler() {
   // screens this task's scope explicitly keeps admin/scheduler-only:
   // Clients, Staff, Session Types, Settings. Falls back to Dashboard rather
   // than rendering a components a clinician has no business seeing.
-  const CLINICIAN_EXCLUDED_VIEWS = new Set(["clients", "employees", "sessiontypes", "settings"]);
+  const CLINICIAN_EXCLUDED_VIEWS = new Set(["clients", "waitlist", "employees", "sessiontypes", "settings"]);
   const effectiveView = (appUser?.role === "clinician" && CLINICIAN_EXCLUDED_VIEWS.has(view)) ? "dashboard" : view;
   const ViewComp = views[effectiveView];
 
@@ -3123,6 +3124,7 @@ export default function Scheduler() {
           workEnd={workEnd} setWorkEnd={setWorkEnd}
           showToast={showToast}
           onRequestCreate={requestCreateAt}
+          onNavigate={setView}
           prefill={calendarPrefill}
           onConsumedPrefill={() => setCalendarPrefill(null)}
           onFocusPerson={focusPersonOnCalendar}
