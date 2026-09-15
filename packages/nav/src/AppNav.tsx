@@ -26,6 +26,15 @@ interface AppNavProps {
   /** When set, a settings cogwheel sits at the right of the bar. */
   settingsHref?: string;
   /**
+   * When set, a profile icon sits at the right of the bar (after settingsHref,
+   * before signOutHref). This should be the shared `profileUrl()` from
+   * @summit/portals - the centralized profile page lives in apps/web, same
+   * reasoning as signOutHref pointing at signOutUrl() rather than a local
+   * route. Every role can see this one; there is no admission question here
+   * the way there is for adminHref.
+   */
+  profileHref?: string;
+  /**
    * When set, a sign-out control sits at the far right of the bar (after the
    * settings cogwheel, if both are present). This must be the shared
    * `signOutUrl()` from @summit/portals, not a local supabase.auth.signOut()
@@ -63,7 +72,7 @@ interface AppNavProps {
  * Client so staff move between them from any screen. Colours come from the
  * shared tokens, so it follows the theme and accent like everything else.
  */
-export function AppNav({ activeKey, adminHref, settingsHref, signOutHref, role, visiblePortals }: AppNavProps) {
+export function AppNav({ activeKey, adminHref, settingsHref, profileHref, signOutHref, role, visiblePortals }: AppNavProps) {
   const visible = role == null
     ? portals.filter((p) => p.key === activeKey)
     : portalsFor(role, visiblePortals);
@@ -169,13 +178,39 @@ export function AppNav({ activeKey, adminHref, settingsHref, signOutHref, role, 
           </svg>
         </a>
       ) : null}
+      {profileHref ? (
+        <a
+          href={profileHref}
+          aria-label="Profile"
+          title="Profile"
+          style={{
+            marginLeft: adminHref || settingsHref ? 4 : 'auto',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 30,
+            height: 30,
+            flexShrink: 0,
+            borderRadius: 'var(--radius-full, 999px)',
+            color: 'oklch(100% 0 0 / 0.66)',
+            textDecoration: 'none',
+            transition: 'all var(--duration-fast, 110ms) var(--ease-out-quart, ease)',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21c0-4 4-6.5 8-6.5s8 2.5 8 6.5" />
+          </svg>
+        </a>
+      ) : null}
       {signOutHref ? (
         <a
           href={signOutHref}
           aria-label="Sign out"
           title="Sign out"
           style={{
-            marginLeft: adminHref || settingsHref ? 4 : 'auto',
+            marginLeft: adminHref || settingsHref || profileHref ? 4 : 'auto',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',

@@ -16,7 +16,10 @@
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "@summit/portals": "workspace:*"
+    "@summit/design": "workspace:*",
+    "@summit/nav": "workspace:*",
+    "@summit/portals": "workspace:*",
+    "@summit/session": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20",
