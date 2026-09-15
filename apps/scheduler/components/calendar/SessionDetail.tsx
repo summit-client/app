@@ -16,9 +16,11 @@
 import * as React from "react";
 import { supabase } from "../../lib/supabase";
 import { SessionSchedulesPanel } from "./SessionSchedulesPanel";
+import { RecurrenceScopeModal } from "./RecurrenceScopeModal";
 import type { AvailabilityRow } from "./suggestions";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { useFocusTrap } from "../../lib/useFocusTrap";
+import { todayDateStr } from "./dateUtils";
 
 interface ClientAvailabilityRow { client_id: number; day: string; start_time: string; end_time: string }
 
@@ -65,6 +67,10 @@ export interface SessionDetailProps {
   incrementMinutes: number;
   onClose: () => void;
   onCancelled: () => void;
+  /** Fired after a successful "Mark no-show" write, same shape as
+   *  onCancelled - see that callback's callers for what they do with it
+   *  (close the modal, refresh the list, toast). */
+  onNoShow: () => void;
   /** No slot: plain "Reschedule" click. With a slot: the dual-schedule panel
    *  proposed one - either way the caller opens RescheduleModal. */
   onReschedule: (proposedSlot?: { dateStr: string; hour: number; minute: number }) => void;
@@ -73,26 +79,75 @@ export interface SessionDetailProps {
 export function SessionDetail({
   session, clients, employees, locations, sessionTypes, typeColors, colorOverride, isDraft,
   staffAvailability, clientAvailability, clinicId, workStartHour, workEndHour, incrementMinutes,
-  onClose, onCancelled, onReschedule, canManage,
+  onClose, onCancelled, onNoShow, onReschedule, canManage,
 }: SessionDetailProps) {
   useEscapeToClose(onClose);
   const trapRef = useFocusTrap<HTMLDivElement>();
   const [cancelling, setCancelling] = React.useState(false);
   const [cancelError, setCancelError] = React.useState<string | null>(null);
+  const [markingNoShow, setMarkingNoShow] = React.useState(false);
+  const [noShowError, setNoShowError] = React.useState<string | null>(null);
   const [showSchedules, setShowSchedules] = React.useState(false);
+  // Same this/following/all choice drag-to-reschedule and the Reschedule
+  // modal already offer (RecurrenceScopeModal) - only shown when the session
+  // being cancelled is part of a series (session.recurrence_id set); a
+  // one-time session skips straight to executeCancel("this"), unchanged from
+  // before this was added.
+  const [showCancelScopePicker, setShowCancelScopePicker] = React.useState(false);
   const client = clients.find((c) => c.id === session.client_id);
   const emp = employees.find((e) => e.id === session.employee_id);
   const loc = locations.find((l) => l.id === session.location_id);
   const color = colorOverride ?? (typeColors[session.type] || "#888");
+  // Only offer "Mark no-show" for a session that has actually happened
+  // (today or earlier - never a future session, since no one can know yet
+  // that the client didn't show) and that hasn't already moved off
+  // "scheduled" (matches handleCancel's implicit assumption that cancelling
+  // an already-cancelled/completed/no-show session doesn't make sense).
+  const canMarkNoShow = session.status === "scheduled" && session.session_date <= todayDateStr();
 
-  async function handleCancel() {
-    if (!confirm("Cancel this session?")) return;
+  function handleCancel() {
+    if (session.recurrence_id) {
+      setShowCancelScopePicker(true);
+      return;
+    }
+    void executeCancel("this");
+  }
+
+  async function executeCancel(scope: "this" | "following" | "all") {
+    const confirmMsg = scope === "this"
+      ? "Cancel this session?"
+      : scope === "following"
+        ? "Cancel this and every future session in the series?"
+        : "Cancel every session in the series?";
+    if (!confirm(confirmMsg)) return;
     setCancelling(true);
     setCancelError(null);
-    const { error } = await supabase.from("sessions").update({ status: "cancelled" }).eq("id", session.id);
+    // Pure status-flip, no date-shift math needed (unlike the reschedule
+    // case) - "following"/"all" widen which rows the same update touches,
+    // scoped by recurrence_id and, for "following", session_date >= this
+    // occurrence's own date.
+    let q = supabase.from("sessions").update({ status: "cancelled" });
+    if (scope === "this") {
+      q = q.eq("id", session.id);
+    } else if (scope === "following") {
+      q = q.eq("recurrence_id", session.recurrence_id).gte("session_date", session.session_date);
+    } else {
+      q = q.eq("recurrence_id", session.recurrence_id);
+    }
+    const { error } = await q;
     setCancelling(false);
     if (error) { setCancelError("Cancel failed. Please try again."); return; }
     onCancelled();
+  }
+
+  async function handleNoShow() {
+    if (!confirm("Mark this session as a no-show?")) return;
+    setMarkingNoShow(true);
+    setNoShowError(null);
+    const { error } = await supabase.from("sessions").update({ status: "no_show" }).eq("id", session.id);
+    setMarkingNoShow(false);
+    if (error) { setNoShowError("Mark no-show failed. Please try again."); return; }
+    onNoShow();
   }
 
   return (
@@ -111,6 +166,7 @@ export function SessionDetail({
         <DetailRow label="Type" value={session.type} />
         <DetailRow label="Recurrence" value={session.recurrence_id ? "Recurring" : "One-time"} />
         {cancelError && <div style={{ fontSize: 13, color: "#A33A3A", marginTop: 8 }}>{cancelError}</div>}
+        {noShowError && <div style={{ fontSize: 13, color: "#8A5A1E", marginTop: 8 }}>{noShowError}</div>}
 
         <button
           onClick={() => setShowSchedules(true)}
@@ -124,6 +180,11 @@ export function SessionDetail({
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
           {canManage && (
             <>
+              {canMarkNoShow && (
+                <button onClick={handleNoShow} disabled={markingNoShow} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: markingNoShow ? "not-allowed" : "pointer", background: "#FDF0DC", color: "#8A5A1E" }}>
+                  {markingNoShow ? "Marking..." : "Mark no-show"}
+                </button>
+              )}
               <button onClick={handleCancel} disabled={cancelling} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, border: "none", cursor: cancelling ? "not-allowed" : "pointer", background: "#FCE8E8", color: "#A33A3A" }}>
                 {cancelling ? "Cancelling..." : "Cancel session"}
               </button>
@@ -151,6 +212,15 @@ export function SessionDetail({
           onClose={() => setShowSchedules(false)}
           onProposeSlot={(dateStr, hour, minute) => { setShowSchedules(false); onReschedule({ dateStr, hour, minute }); }}
           canPropose={canManage}
+        />
+      )}
+
+      {showCancelScopePicker && (
+        <RecurrenceScopeModal
+          title="Cancel recurring session"
+          prompt="This session repeats. What should cancelling apply to?"
+          onPick={(scope) => { setShowCancelScopePicker(false); void executeCancel(scope); }}
+          onCancel={() => setShowCancelScopePicker(false)}
         />
       )}
     </div>

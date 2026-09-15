@@ -14,6 +14,8 @@ import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 import { refreshUrl } from "@summit/portals";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../lib/checkSlotConflict";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { WaitlistView } from "../components/WaitlistView";
+import { FrontDeskFeedPanel } from "../components/FrontDeskFeedPanel";
 
 const COLORS = {
   bg: "var(--color-background-primary)",
@@ -739,6 +741,17 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
   const utilization = employees.length
     ? Math.round(employees.reduce((a, e) => a + e.booked / e.capacity, 0) / employees.length * 100) : 0;
 
+  // Denominator is sessions that have actually happened - completed +
+  // no_show, dated today or earlier - not every booking ever made.
+  // Including future "scheduled" sessions in the denominator would dilute
+  // the rate with sessions that haven't occurred yet (most of them, on any
+  // clinic with a full upcoming calendar), understating how often clients
+  // are actually failing to show up to past sessions.
+  const today = todayDateStr();
+  const pastBookings = bookings.filter(b => b.session_date && b.session_date <= today && (b.status === "completed" || b.status === "no_show"));
+  const noShowCount = pastBookings.filter(b => b.status === "no_show").length;
+  const noShowRate = pastBookings.length ? Math.round(noShowCount / pastBookings.length * 100) : 0;
+
   const typeBreakdown = Object.entries(
     activeBookings.reduce((acc, b) => { acc[b.type] = (acc[b.type] || 0) + 1; return acc; }, {})
   ).sort((a, b) => b[1] - a[1]);
@@ -749,11 +762,12 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
         <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Dashboard</h2>
         <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>Overview of your scheduling activity</p>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 28 }}>
         <StatCard label="Total sessions" value={activeBookings.length} sub="across all calendars" accent="#378ADD" />
         <StatCard label="Active clients" value={clients.filter(c => c.status === "active").length} sub={`${clients.filter(c => c.status === "waitlist").length} waitlisted`} accent="#5DCAA5" />
         <StatCard label="Staff utilization" value={`${utilization}%`} sub="across all staff" accent="#EF9F27" />
         <StatCard label="Open slots" value={employees.reduce((a, e) => a + (e.capacity - e.booked), 0)} sub="available this week" accent="#D4537E" />
+        <StatCard label="No-show rate" value={`${noShowRate}%`} sub={pastBookings.length ? `${noShowCount} of ${pastBookings.length} past sessions` : "no past sessions yet"} accent="#8A5A1E" />
       </div>
       <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center" }}>
         <span style={{ fontSize: 13, color: COLORS.textS }}>Filter:</span>
@@ -863,10 +877,106 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
 
 // ─── Clients view ─────────────────────────────────────────────────────────────
 
-function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast, workStart, workEnd, workDays }) {
+// Formats a plain "YYYY-MM-DD" session_date for display - deliberately not
+// reusing dateUtils' calendar-grid formatters, which are built around a Date
+// object with a time component; this only ever gets a date-only string.
+function formatSessionDate(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+// "Needs attention" leaderboard - see ClientsView's own comment above where
+// this is called for the full reasoning on what "last session" means here.
+function NeedsAttentionPanel({ clients, bookings, staleAfterDays, onNavigate }) {
+  // ── Why "last session" means max(session_date) where status != 'cancelled',
+  // NOT "last completed session" ──────────────────────────────────────────
+  // Nothing in this app ever sets sessions.status = 'completed' anywhere in
+  // its code (confirmed during the no-show-tracking phase of this same
+  // batch) - a session sits at 'scheduled' forever once its date passes, or
+  // moves to 'cancelled'/'no_show'. "Last completed session" would therefore
+  // show every active client as having zero completed sessions ever, which
+  // is useless as a staleness signal. Using the most recent non-cancelled
+  // session_date instead - whether it's in the past (they haven't been seen
+  // in a while) or the future (they have an upcoming session, so they are
+  // NOT stale) - is a deliberate workaround for that missing lifecycle, not
+  // an oversight. A future fix to the 'completed' lifecycle gap (tracked
+  // separately, not this task) should let this prefer status = 'completed'
+  // and narrow to past dates only; it shouldn't need to be re-derived from
+  // scratch when that happens.
+  function lastSessionFor(clientId) {
+    let best = null;
+    for (const b of bookings) {
+      if (b.client_id !== clientId || b.status === "cancelled" || !b.session_date) continue;
+      if (!best || b.session_date > best.session_date) best = b;
+    }
+    return best;
+  }
+
+  const rows = clients
+    .filter(c => c.status === "active")
+    .map(c => {
+      const last = lastSessionFor(c.id);
+      const daysSince = last ? Math.floor((Date.now() - new Date(`${last.session_date}T00:00:00`).getTime()) / 86400000) : null;
+      return { client: c, last, daysSince };
+    })
+    // A client with an upcoming-only last session gets a negative
+    // daysSince, which never clears a positive threshold - they're
+    // correctly excluded without a separate "is this in the future" check.
+    .filter(({ last, daysSince }) => !last || daysSince > staleAfterDays)
+    .sort((a, b) => (b.daysSince ?? Infinity) - (a.daysSince ?? Infinity));
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: COLORS.text, margin: 0 }}>Needs attention</h3>
+        <span style={{ fontSize: 12, color: COLORS.textT }}>
+          {rows.length} active client{rows.length !== 1 ? "s" : ""} with no session in the last {staleAfterDays} day{staleAfterDays !== 1 ? "s" : ""} (or never booked)
+        </span>
+      </div>
+      <div style={{ borderRadius: 10, background: COLORS.bgS, border: `0.5px solid ${COLORS.border}`, overflow: "hidden" }}>
+        {rows.map(({ client, last, daysSince }, i) => (
+          <div key={client.id} style={{
+            display: "flex", alignItems: "center", gap: 14, padding: "10px 16px", flexWrap: "wrap",
+            borderTop: i === 0 ? "none" : `0.5px solid ${COLORS.border}`,
+          }}>
+            <Avatar name={client.name} color="#E24B4A" />
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>{client.name}</div>
+              <div style={{ fontSize: 12, color: COLORS.textT }}>
+                {last ? `Last: ${formatSessionDate(last.session_date)} · ${last.type || "Unspecified type"}` : "Never booked"}
+              </div>
+            </div>
+            <Badge
+              label={daysSince === null ? "Never booked" : `${daysSince} day${daysSince !== 1 ? "s" : ""} since`}
+              color="#E24B4A"
+            />
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate("create")}
+                style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}
+              >
+                Book a session
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast, workStart, workEnd, workDays, bookings, onNavigate }) {
   const [expandedId, setExpandedId] = useState(null);
   const [search, setSearch] = useState("");
   const filtered = clients.filter(c => JSON.stringify(c).toLowerCase().includes(search.toLowerCase()));
+  // Re-renders whenever the settings-change subscription at the top of
+  // Scheduler() fires (see SettingsView's own comment on this same key) -
+  // no local subscription needed here for the same reason.
+  const staleAfterDays = Number(getSetting("clients.staleAfterDays"));
 
   function handleSave(clientId, newRanges) {
     setClientAvailability(prev => [...prev.filter(a => a.client_id !== clientId), ...newRanges]);
@@ -883,6 +993,9 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
         </div>
         <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 14, width: 200 }} />
       </div>
+
+      <NeedsAttentionPanel clients={clients} bookings={bookings || []} staleAfterDays={staleAfterDays} onNavigate={onNavigate} />
+
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
   {clients.length === 0 && (
     <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
@@ -1092,6 +1205,14 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
 
 function SettingsView({ employees, clients, locations, typeColors, workDays, setWorkDays, workStart, setWorkStart, workEnd, setWorkEnd, showToast }) {
   const [tab, setTab] = useState("general");
+  // Not lifted to Scheduler() like workStart/workEnd/workDays are, since
+  // nothing else in this app currently reads it - see ClientsView's
+  // "Needs attention" leaderboard, the only other consumer, which reads it
+  // directly via getSetting() the same way. Re-renders on change via the
+  // same top-level onSettingsChange subscription in Scheduler() that
+  // already covers workStart/workEnd (any settings change re-renders this
+  // whole tree), so no separate subscription is needed here.
+  const staleAfterDays = Number(getSetting("clients.staleAfterDays"));
   const [timezone, setTimezone] = useState("America/Toronto");
   const [language, setLanguage] = useState("English");
   const [darkMode, setDarkMode] = useState(false);
@@ -1225,6 +1346,22 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
                 style={{ width: "100%", accentColor: "#5DCAA5" }} />
             </div>
           </div>
+
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>CLIENT ENGAGEMENT</div>
+          <div style={{ background: COLORS.bgS, borderRadius: 12, padding: "18px 18px", border: `0.5px solid ${COLORS.border}`, marginBottom: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>Flag active clients as stale after</div>
+              <div style={{ fontSize: 13, color: COLORS.textS }}>{staleAfterDays} day{staleAfterDays !== 1 ? "s" : ""}</div>
+            </div>
+            <input
+              type="range" min={3} max={60} value={staleAfterDays}
+              onChange={e => { void setSetting("clients.staleAfterDays", Number(e.target.value), "org"); showToast("Stale-client threshold updated"); }}
+              style={{ width: "100%", accentColor: "#5DCAA5" }}
+            />
+            <div style={{ fontSize: 12, color: COLORS.textT, marginTop: 8 }}>
+              Drives the "Needs attention" list on the Clients screen — an active client with no session booked (past or upcoming, excluding cancelled) within this many days shows up there. Clinics differ on what's too long, so this is per-clinic, not a hardcoded rule.
+            </div>
+          </div>
         </div>
       )}
 
@@ -1301,6 +1438,18 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
               <Select value="3 years" onChange={() => {}} options={["1 year", "2 years", "3 years", "Indefinite"]} />
             </SettingRow>
           </div>
+
+          {/* Clinic-wide, admin-managed shared calendar link (calendar_feed_tokens,
+              kind='front_desk' - migration 0071). Distinct from "My calendar feed"
+              in the Sidebar (CalendarFeedPanel.tsx, kind='personal') - this one
+              belongs to no single person and shows every session in the clinic,
+              scrubbed to time + session type + location only. Lives here, not in
+              the Sidebar, because this tab is already admin-only
+              (Sidebar.tsx's roles: ["admin"] on the "settings" nav entry) and the
+              API route itself further restricts *generating* a front-desk token
+              to admin/scheduler (migration 0071's header). */}
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textT, letterSpacing: "0.06em", marginBottom: 4 }}>CALENDAR FEEDS</div>
+          <FrontDeskFeedPanel />
         </div>
       )}
     </div>
@@ -1637,13 +1786,22 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       )];
       let promoted = 0;
       if (assessmentClientIds.length) {
-        const { count } = await supabase
+        // .select("id", {count:"exact",head:true}) after .update() doesn't
+        // type-check against the installed @supabase/postgrest-js version
+        // (.select() after a mutation only accepts a columns string, not an
+        // options object) and the options object was silently ignored at
+        // runtime too - count was always null here. Plain .select("id")
+        // returns the updated rows themselves; counting the array is the
+        // same information without relying on a signature this version
+        // doesn't support. Found while building the Waitlist view
+        // (2026-09-14), fixed here since it's the same auto-promotion path.
+        const { data: promotedRows } = await supabase
           .from("clients")
           .update({ status: "active" })
           .in("id", assessmentClientIds)
           .eq("status", "waitlist")
-          .select("id", { count: "exact", head: true });
-        promoted = count || 0;
+          .select("id");
+        promoted = promotedRows?.length || 0;
         if (promoted > 0) setClients(prev => prev.map(c => assessmentClientIds.includes(c.id) ? { ...c, status: "active" } : c));
       }
 
@@ -2741,6 +2899,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           <option value="all">All statuses</option>
           <option value="scheduled">Scheduled</option>
           <option value="cancelled">Cancelled</option>
+          <option value="no_show">No-show</option>
         </select>
         <select value={calFilter} onChange={e => setCalFilter(e.target.value)} style={selInput}>
           <option value="all">All calendars</option>
@@ -2796,6 +2955,12 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           const col = typeColors[b.type] || "#888";
           const isSel = selected.has(b.id);
           const isCancelled = b.status === "cancelled";
+          const isNoShow = b.status === "no_show";
+          // Never a future session (no one can know yet that a client
+          // didn't show), and only while the session is still "scheduled" -
+          // same guard SessionDetail.tsx uses for its own "Mark no-show"
+          // button.
+          const canMarkNoShow = b.status === "scheduled" && b.session_date && b.session_date <= todayDateStr();
           const now = new Date();
           const sessionTime = b.session_date ? new Date(`${b.session_date}T${String(b.hour).padStart(2, "0")}:00:00`) : null;
           const lateCancel = sessionTime && (sessionTime - now) / 36e5 < CANCEL_HOURS;
@@ -2824,7 +2989,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                 <div style={{ fontSize: 12, color: COLORS.textT }}>{bDay} {b.hour}:00{lateCancel && !isCancelled ? <span title="Within cancellation window" style={{ color: "#EF9F27", marginLeft: 4 }}>⚠</span> : null}</div>
               </div>
               <div>
-                <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: isCancelled ? "#88888820" : "#5DCAA520", color: isCancelled ? COLORS.textT : "#5DCAA5", border: `0.5px solid ${isCancelled ? COLORS.border : "#5DCAA544"}` }}>
+                <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: isCancelled ? "#88888820" : isNoShow ? "#EF9F2720" : "#5DCAA520", color: isCancelled ? COLORS.textT : isNoShow ? "#8A5A1E" : "#5DCAA5", border: `0.5px solid ${isCancelled ? COLORS.border : isNoShow ? "#EF9F2744" : "#5DCAA544"}` }}>
                   {b.status}
                 </span>
               </div>
@@ -2854,6 +3019,14 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
                     reuse, so left out of scope rather than guessed at. */}
                 {!isCancelled && canManageSession(b) && (
                   <>
+                    {canMarkNoShow && (
+                      <button title="Mark no-show" aria-label="Mark session as no-show" onClick={async () => {
+                        if (!confirm("Mark this session as a no-show?")) return;
+                        const { error: err } = await supabase.from("sessions").update({ status: "no_show" }).eq("id", b.id);
+                        refreshBookings();
+                        showToast(err ? "Mark no-show failed. Please try again." : "Session marked as no-show");
+                      }} style={{ width: 28, height: 28, borderRadius: 7, border: "0.5px solid #F0D5A8", background: COLORS.bg, color: "#8A5A1E", cursor: "pointer", fontSize: 14 }}>⚠</button>
+                    )}
                     <button title="Reschedule"
                       aria-label="Reschedule session"
                       onClick={() => { setRescheduleTarget(b); setProposeDay(b.session_date ? dayFromDate(b.session_date) : "Mon"); setProposeHour(b.hour); setProposeDate(b.session_date || ""); setRescheduleError(null); }}
@@ -2924,6 +3097,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           onClose={() => setDetailSession(null)}
           onReschedule={proposedSlot => { setRescheduleInitialSlot(proposedSlot || null); setReschedulingSession(detailSession); setDetailSession(null); }}
           onCancelled={() => { setDetailSession(null); refreshBookings(); showToast("Session cancelled"); }}
+          onNoShow={() => { setDetailSession(null); refreshBookings(); showToast("Session marked as no-show"); }}
         />
       )}
 
@@ -2955,7 +3129,7 @@ export default function Scheduler() {
   useEffect(() => {
     if (!router.isReady) return;
     const requestedView = router.query.view;
-    const validViews = ["dashboard", "calendar", "sessions", "clients", "employees", "sessiontypes", "create", "settings"];
+    const validViews = ["dashboard", "calendar", "sessions", "clients", "waitlist", "employees", "sessiontypes", "create", "settings"];
     if (typeof requestedView === "string" && validViews.includes(requestedView)) {
       setView(requestedView);
       void router.replace("/", undefined, { shallow: true });
@@ -3056,7 +3230,7 @@ export default function Scheduler() {
     if (label) showToast(`Calendar filtered to ${label}`);
   }
 
-  const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
+  const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, waitlist: WaitlistView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
   // Sidebar's NAV list controls which LINKS a clinician sees (2026-09-02,
   // migration 0046) - it does not, by itself, stop `?view=employees` (or
   // any of these ids) from being typed straight into the URL, which the
@@ -3068,7 +3242,7 @@ export default function Scheduler() {
   // screens this task's scope explicitly keeps admin/scheduler-only:
   // Clients, Staff, Session Types, Settings. Falls back to Dashboard rather
   // than rendering a components a clinician has no business seeing.
-  const CLINICIAN_EXCLUDED_VIEWS = new Set(["clients", "employees", "sessiontypes", "settings"]);
+  const CLINICIAN_EXCLUDED_VIEWS = new Set(["clients", "waitlist", "employees", "sessiontypes", "settings"]);
   const effectiveView = (appUser?.role === "clinician" && CLINICIAN_EXCLUDED_VIEWS.has(view)) ? "dashboard" : view;
   const ViewComp = views[effectiveView];
 
@@ -3123,6 +3297,7 @@ export default function Scheduler() {
           workEnd={workEnd} setWorkEnd={setWorkEnd}
           showToast={showToast}
           onRequestCreate={requestCreateAt}
+          onNavigate={setView}
           prefill={calendarPrefill}
           onConsumedPrefill={() => setCalendarPrefill(null)}
           onFocusPerson={focusPersonOnCalendar}

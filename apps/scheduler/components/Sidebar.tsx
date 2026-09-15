@@ -1,4 +1,5 @@
 import { useRouter } from "next/router";
+import { CalendarFeedPanel } from "./CalendarFeedPanel";
 
 // Roles are `profiles.role` values — see UserRole in lib/useUser.ts. This
 // list used to also admit "staff" (never a real role), then later
@@ -21,6 +22,7 @@ const NAV = [
   { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler", "clinician"] },
   { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler", "clinician"] },
   { id: "clients",   label: "Clients",   icon: "⊙", roles: ["admin", "scheduler"] },
+  { id: "waitlist",  label: "Waitlist",  icon: "⏱", roles: ["admin", "scheduler"] },
   { id: "employees", label: "Staff",     icon: "◎", roles: ["admin", "scheduler"] },
   { id: "sessiontypes", label: "Session Types", icon: "◈", roles: ["admin", "scheduler"] },
   { id: "create",    label: "Create",    icon: "✦", roles: ["admin", "scheduler", "clinician"] },
@@ -226,6 +228,14 @@ function handleNav(id: string) {
             No active calendar
           </div>
         )}
+
+        {/* "My calendar feed" - personal webcal:// subscription link
+            (calendar_feed_tokens, migrations 0044 + 0070). Reachable by any
+            signed-in staff role this portal admits, not just admin/scheduler
+            - kept in this footer area, additive only, rather than folded
+            into the Settings view (admin-only, org-wide settings - wrong fit
+            both on access and on meaning for a personal link). */}
+        <CalendarFeedPanel />
       </div>
     </aside>
   );

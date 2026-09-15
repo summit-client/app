@@ -5,14 +5,19 @@
  * and session type on that one booking, plus a home-visit toggle matching
  * the quick-create step's own location model (migration 0018).
  *
- * Single-session only for who it belongs to - changing a whole recurring
- * series' clinician/type/location is a bigger decision than this pass
- * takes on (drag-to-reschedule's this/following/all prompt is deliberately
- * time-only for the same reason - see CalendarView's applyReschedule). The
- * one series-shaped thing this DOES do is let a still one-time session
- * start repeating going forward - a strictly additive change (new rows
- * only, this session's own row untouched apart from its date/time), not a
- * rewrite of an existing series' pattern, which stays out of scope.
+ * Clinician/type/location changes are single-session only - changing a whole
+ * recurring series' clinician/type/location is a bigger decision than this
+ * pass takes on. Date/time changes ARE series-aware, same this/following/all
+ * choice as drag-to-reschedule (RecurrenceScopeModal, shown via
+ * showScopePicker below when session.recurrence_id is set): executeSave
+ * shifts sibling occurrences by the same day-delta and new hour/minute, never
+ * their employee/location/type, matching CalendarView.applyReschedule's own
+ * time-only series shift exactly - see that function's comments for the
+ * all-or-nothing/false-positive-collision tradeoffs this mirrors. The other
+ * series-shaped thing this DOES do is let a still one-time session start
+ * repeating going forward - a strictly additive change (new rows only, this
+ * session's own row untouched apart from its date/time), not a rewrite of an
+ * existing series' pattern, which stays out of scope.
  */
 import * as React from "react";
 import { supabase } from "../../lib/supabase";
@@ -23,6 +28,7 @@ import { sessionDuration } from "./types";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../../lib/checkSlotConflict";
 import { useFocusTrap } from "../../lib/useFocusTrap";
+import { RecurrenceScopeModal } from "./RecurrenceScopeModal";
 
 interface ClientAvailabilityRow { client_id: number; day: string; start_time: string; end_time: string }
 
@@ -93,6 +99,12 @@ export function RescheduleModal({
   const [endCount, setEndCount] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Recurring sessions get the same this/following/all choice drag-to-
+  // reschedule already offers (CalendarView's RecurrenceScopeModal/
+  // applyReschedule) before this modal's own write goes out - see
+  // executeSave below for the series-shift logic. A one-time session skips
+  // straight to executeSave("this") with no picker, unchanged from before.
+  const [showScopePicker, setShowScopePicker] = React.useState(false);
 
   const type = sessionTypes.find((t) => t.name === typeName);
   const duration = type?.duration_minutes ?? type?.duration ?? sessionDuration(session, sessionTypes);
@@ -155,7 +167,20 @@ export function RescheduleModal({
     ));
   }
 
-  async function handleSave() {
+  // Entry point for the Save button. A recurring session (session.recurrence_id
+  // set) needs the this/following/all choice first - executeSave runs once a
+  // scope is picked. A one-time session applies immediately with scope
+  // "this", exactly as before this change.
+  function handleSave() {
+    if (!selectedSlot) return;
+    if (session.recurrence_id) {
+      setShowScopePicker(true);
+      return;
+    }
+    void executeSave("this");
+  }
+
+  async function executeSave(scope: "this" | "following" | "all") {
     if (!selectedSlot) return;
     setSaving(true);
     setError(null);
@@ -176,6 +201,43 @@ export function RescheduleModal({
       setSaving(false);
       setError("That slot was just booked by someone else - pick another time.");
       return;
+    }
+
+    // "following"/"all": shift sibling occurrences' date/time only - never
+    // their employee/location/type (see this file's header comment: a
+    // series-wide field change is deliberately out of scope, matching
+    // drag-to-reschedule's own this/following/all prompt, which is
+    // time-only for the same reason - CalendarView's applyReschedule).
+    // Fresh-checked and all-or-nothing before any write happens: a
+    // partially-applied series shift (some occurrences moved, some left
+    // behind at the old time) would leave the series split across two
+    // times, which is worse than refusing the whole move - same tradeoff
+    // applyReschedule documents.
+    let siblingShifts: { row: any; shiftedDateStr: string }[] = [];
+    if (scope !== "this" && session.recurrence_id) {
+      const { data: rows } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
+      const oldDate = parseDateStr(session.session_date);
+      const newDate = parseDateStr(selectedDate);
+      const dayDelta = Math.round((newDate.getTime() - oldDate.getTime()) / 86400000);
+      const targets = (rows || []).filter((r: any) => r.id !== session.id && (scope === "all" || r.session_date >= session.session_date));
+      siblingShifts = targets.map((r: any) => ({ row: r, shiftedDateStr: toDateStr(addDays(parseDateStr(r.session_date), dayDelta)) }));
+
+      if (siblingShifts.length) {
+        // Each sibling keeps its own employee_id (never the employeeId just
+        // picked above for THIS occurrence) - conflict-checked per its own
+        // clinician, same as applyReschedule's series shift.
+        const freshKeys = await fetchFreshConflictKeys(
+          siblingShifts.map(({ row, shiftedDateStr }) => ({ employeeId: row.employee_id, dateStr: shiftedDateStr, hour: selectedSlot.hour, minute: selectedSlot.minute })),
+        );
+        const collision = siblingShifts.find(({ row, shiftedDateStr }) =>
+          freshKeys.has(slotKeyOf({ employeeId: row.employee_id, dateStr: shiftedDateStr, hour: selectedSlot.hour, minute: selectedSlot.minute })),
+        );
+        if (collision) {
+          setSaving(false);
+          setError(`Can't move the series - ${collision.shiftedDateStr} already has a session at that time.`);
+          return;
+        }
+      }
     }
 
     // Only actually assign a new recurrence_id when the future occurrences
@@ -209,6 +271,25 @@ export function RescheduleModal({
         : "Save failed. Try again.");
       setSaving(false);
       return;
+    }
+
+    // Apply the sibling shift only after the primary write above succeeds -
+    // pre-checked fresh just above, so a failure here is the same rare
+    // "two writes landed in the same round trip" race the pre-check can't
+    // fully close (see lib/checkSlotConflict.ts). This session's own row is
+    // already saved at this point; report that plainly rather than a raw
+    // "reschedule failed" if the rest of the series doesn't go through.
+    if (siblingShifts.length) {
+      const results = await Promise.all(siblingShifts.map(({ row, shiftedDateStr }) =>
+        supabase.from("sessions").update({ session_date: shiftedDateStr, hour: selectedSlot.hour, minute: selectedSlot.minute }).eq("id", row.id),
+      ));
+      if (results.some((r) => r.error)) {
+        setSaving(false);
+        setError(results.some((r) => isBookingConflictError(r.error))
+          ? "This session was updated, but another session was just booked into a slot the series needed - check the calendar."
+          : "This session was updated, but the rest of the series failed to move - check the calendar.");
+        return;
+      }
     }
 
     if (willRepeat) {
@@ -247,10 +328,13 @@ export function RescheduleModal({
     }
 
     setSaving(false);
-    onSaved("Session updated");
+    onSaved(siblingShifts.length
+      ? `Session updated · ${siblingShifts.length} other series session${siblingShifts.length !== 1 ? "s" : ""} moved`
+      : "Session updated");
   }
 
   return (
+    <>
     <div style={overlayStyle} onClick={onClose}>
       <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" style={{ ...modalStyle, width: "min(480px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Reschedule</div>
@@ -389,6 +473,13 @@ export function RescheduleModal({
         })()}
       </div>
     </div>
+    {showScopePicker && (
+      <RecurrenceScopeModal
+        onPick={(scope) => { setShowScopePicker(false); void executeSave(scope); }}
+        onCancel={() => setShowScopePicker(false)}
+      />
+    )}
+    </>
   );
 }
 
