@@ -155,6 +155,33 @@ project history of the schema being locked or the questionnaire being
 answered. This was called the most technically consequential open decision and
 a blocker for Clinician Portal build.
 
+**OPEN (raised 2026-09-14, scheduler feature batch, PR #170)** — whether to
+migrate the scheduler's core tables (`sessions`, `clients`, `staff`,
+`calendars`, `locations`, `session_types`, `client_availability`,
+`staff_availability`) onto migration `0024`'s `auth_can()` action-based
+permission system, replacing their current hardcoded role-name checks
+(`auth_role() = 'admin'`, `auth_is_staff()`, `auth_is_scheduling_staff()`).
+
+About 15 migrations since `0024` (payroll, timesheets, family messaging,
+forms/consents, supervision, the lesson bank) already gate on `auth_can()` —
+new tables have used it from the start, exactly as `0024`'s header says they
+should. The scheduler's own tables never have: they predate this repo's
+migration history and have their own separate layered history of fixes
+already (`0013`, `0014`, `0046`).
+
+The actual gap this would close: today there is no way to express "this
+person schedules but does not read clinical notes" — a receptionist role —
+without making them a `clinician`, which is wrong. `auth_can()` would let a
+clinic (or a specific person, via `user_permission_grants`) differ from a
+role's default bundle of actions without touching a single RLS policy.
+
+Not done as a side effect of PR #170's feature work, deliberately: `0024`'s
+own header is explicit that this kind of sweep happens table by table, never
+in bulk, specifically because a mistake here means a tenant silently loses
+access to their own data — real, standalone work with its own PR and its own
+verification pass, not something that should ride in on an unrelated batch.
+Needs a decision on *when*, not *whether*.
+
 ---
 
 ## 2026-08-30 — first clinician dry-run prep
