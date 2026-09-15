@@ -2469,6 +2469,107 @@ await check("deleting a record takes its grants with it", async () => {
      0, "orphaned grants");
 });
 
+// --------------------------------------------------------------------------
+// 0073 · guardian self-service into households/household_members, and the
+// new home_session_preferences table (backs apps/web's centralized profile
+// page). parentA/parentB/maya/noah/household/outsider/aSuper are the 0047
+// fixtures above — reused here rather than rebuilt.
+// --------------------------------------------------------------------------
+await db.exec(`update relationship_permissions set granted = false
+                where permission = 'manage_household'
+                  and relationship_id in (select id from guardian_relationships where user_id = '${parentB}')`);
+
+await check("a guardian without manage_household reads the household but cannot edit it", async () => {
+  await as(parentB, async () => {
+    eq(await count(`select count(*)::int n from households where id='${household}'`), 1, "still readable");
+    await updateAffects(
+      `update households set phone = '555-0000' where id = '${household}'`,
+      0, "edit without manage_household");
+  });
+});
+
+await check("a guardian with manage_household can edit the household's mailing address", async () => {
+  await as(parentA, () => updateAffects(
+    `update households set address_line1 = '12 Birch St', city = 'Ottawa' where id = '${household}'`,
+    1, "mailing address edit"));
+  eq((await one(`select address_line1 from households where id='${household}'`)).address_line1,
+     "12 Birch St", "address persisted");
+});
+
+await check("manage_household does not extend to merging or deactivating the household", async () => {
+  await as(parentA, () => insertRaises(
+    `update households set status = 'INACTIVE' where id = '${household}'`,
+    "family-initiated household status change"));
+});
+
+await check("a guardian with manage_household can add a plain emergency contact", async () => {
+  await as(parentA, async () => {
+    await db.exec(`insert into household_members
+        (clinic_id, household_id, full_name, relationship, is_emergency_contact, phone, phone_secondary, email)
+       values ('${clinicA}','${household}','Grandma Rosa','emergency_contact', true, '613-555-0100', '613-555-0101', 'rosa@t.test')`);
+  });
+  eq(await count(`select count(*)::int n from household_members
+                    where household_id='${household}' and full_name='Grandma Rosa'`),
+     1, "new contact visible");
+});
+
+await check("adding a contact cannot also link a new client or grant a login", async () => {
+  await as(parentA, async () => {
+    await insertRaises(
+      `insert into household_members (clinic_id, household_id, full_name, relationship, client_id)
+       values ('${clinicA}','${household}','Fake Kid','other_relative', ${noah})`,
+      "contact insert carrying a client_id");
+    await insertRaises(
+      `insert into household_members (clinic_id, household_id, full_name, relationship, user_id)
+       values ('${clinicA}','${household}','Self-Invite','other_relative', '${outsider}')`,
+      "contact insert carrying a user_id");
+  });
+});
+
+await check("manage_household does not allow relinking an existing member's identity", async () => {
+  // Maya's own row is already outside the guardian UPDATE policy's reach
+  // (client_id is set, so it's neither "own row" nor a plain contact) —
+  // that's RLS, not the trigger. The real test of the trigger's
+  // defense-in-depth is a row RLS DOES let a guardian touch: the plain
+  // contact just inserted, attacked via the one field the policy's own
+  // WITH CHECK doesn't re-validate on UPDATE.
+  await as(parentA, () => insertRaises(
+    `update household_members set client_id = ${noah} where household_id='${household}' and full_name='Grandma Rosa'`,
+    "family relinking a plain contact to a client"));
+});
+
+await check("home_session_preferences: any active guardian can set it, manage_household or not", async () => {
+  // parentB had manage_household revoked above but still has an active,
+  // fully-permissioned relationship to Maya — this is deliberately not
+  // gated the same way as the household edits above.
+  await as(parentB, async () => {
+    await db.exec(`insert into home_session_preferences (client_id, clinic_id, preference, updated_by)
+                   values (${maya}, '${clinicA}', 'if_required', '${parentB}')`);
+  });
+  eq((await one(`select preference from home_session_preferences where client_id=${maya}`)).preference,
+     "if_required", "preference set without manage_household");
+
+  await as(parentB, () => updateAffects(
+    `update home_session_preferences set preference = 'only', updated_by = '${parentB}' where client_id = ${maya}`,
+    1, "guardian updates their own choice"));
+});
+
+await check("a guardian cannot set the preference for a client they cannot access", async () => {
+  await as(outsider, () => insertRaises(
+    `insert into home_session_preferences (client_id, clinic_id, preference, updated_by)
+     values (${maya}, '${clinicA}', 'never', '${outsider}')`,
+    "preference set by a non-guardian"));
+});
+
+await check("staff read and write home_session_preferences regardless of guardian grants", async () => {
+  await as(aSuper, async () => {
+    await db.exec(`insert into home_session_preferences (client_id, clinic_id, preference, updated_by)
+                   values (${noah}, '${clinicA}', 'never', '${aSuper}')`);
+    eq(await count(`select count(*)::int n from home_session_preferences where client_id=${noah}`),
+       1, "staff-set preference");
+  });
+});
+
 console.log(out.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
