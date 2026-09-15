@@ -116,6 +116,15 @@ export function webUrl(): string {
 export function loginUrl(): string {
   return `${webUrl()}/login`;
 }
+/**
+ * The one centralized profile page, hosted in apps/web for the same reason
+ * sign-out and refresh are: every portal points at one place instead of
+ * carrying its own copy. Every role can reach it, so unlike urlFor() it
+ * takes no PortalKey - there is no per-role admission question here.
+ */
+export function profileUrl(): string {
+  return `${webUrl()}/profile`;
+}
 export function refreshUrl(): string {
   return `${webUrl()}/api/auth/refresh`;
 }

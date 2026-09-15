@@ -14,7 +14,7 @@
 
 import * as React from "react";
 import { AppNav } from "@summit/nav";
-import { parseVisiblePortals, signOutUrl } from "@summit/portals";
+import { parseVisiblePortals, profileUrl, signOutUrl } from "@summit/portals";
 import {
   explainProblem, gate, getIdentity, refreshIdentity, type Identity,
 } from "@summit/session";
@@ -101,6 +101,7 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
       {...props}
       role={identity?.appRole}
       visiblePortals={visiblePortals}
+      profileHref={profileUrl()}
       signOutHref={signOutUrl()}
     />
   );

@@ -5,7 +5,7 @@ import { useUser } from "../lib/useUser";
 import { UserContext } from "../lib/UserContext";
 import { explainProblem } from "../lib/explainProblem";
 import { AppNav, SupportButton, DEFAULT_SUPPORT_EMAIL } from '@summit/nav';
-import { parseVisiblePortals } from "@summit/portals";
+import { parseVisiblePortals, profileUrl } from "@summit/portals";
 import { getSetting, initSettings, onSettingsChange } from "@summit/settings";
 
 export default function App({ Component, pageProps }) {
@@ -40,7 +40,7 @@ export default function App({ Component, pageProps }) {
     const { title, detail } = explainProblem(problem);
     return (
       <>
-        <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} />
+        <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} profileHref={profileUrl()} />
         <div style={{ maxWidth: 640, margin: "48px auto", padding: "0 24px", fontFamily: "Inter, sans-serif" }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{title}</h1>
           <p style={{ color: "#6B7280", fontSize: 15 }}>{detail}</p>
@@ -51,7 +51,7 @@ export default function App({ Component, pageProps }) {
 
   return (
     <>
-      <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} />
+      <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} profileHref={profileUrl()} />
       <UserContext.Provider value={user}>
         <Component {...pageProps} signOut={signOut} />
       </UserContext.Provider>
