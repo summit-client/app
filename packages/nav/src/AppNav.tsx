@@ -233,6 +233,8 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profil
             // Colour is severity (critical beats important beats complete),
             // fill is plain completion percent - the two are deliberately
             // independent, see this prop's own doc comment on AppNavProps.
+            // No text anywhere on this - critical/important/complete are
+            // colour plus (for critical) the badge below, never a word.
             <svg width="34" height="34" viewBox="0 0 34 34" style={{ position: 'absolute', inset: 0 }} aria-hidden>
               <circle cx="17" cy="17" r="15" fill="none" stroke="oklch(100% 0 0 / 0.18)" strokeWidth="2.5" />
               <circle
@@ -249,6 +251,33 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profil
                 style={{ transition: 'stroke-dasharray 500ms cubic-bezier(.2,.8,.3,1)' }}
               />
             </svg>
+          ) : null}
+          {priorityStatus?.state === 'critical' ? (
+            // The critical badge: a plain "!" in a filled circle, no word
+            // anywhere near it - this is the whole indicator for "at least
+            // one critical item outstanding," not a decoration on top of one.
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                top: -2,
+                right: -2,
+                width: 14,
+                height: 14,
+                borderRadius: '999px',
+                background: 'var(--danger)',
+                border: '1.5px solid var(--brand-800, #1A3F5C)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 10,
+                fontWeight: 800,
+                lineHeight: 1,
+                color: '#fff',
+              }}
+            >
+              !
+            </span>
           ) : null}
           <span
             style={{
