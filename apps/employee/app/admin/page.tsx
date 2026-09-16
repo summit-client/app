@@ -67,8 +67,8 @@ function AdminAccessGate({ children }: { children: React.ReactNode }) {
  * join the result against directory() for names, the same pattern
  * "Pending sign-offs" already used before this change. hub_pd_records and
  * hub_time_off_requests needed a new manage-scoped SELECT policy first
- * (migration 0041, not yet applied live) - hub_certificates and
- * hub_task_progress already had one from migration 0006.
+ * (migration 0041, applied live) - hub_certificates and hub_task_progress
+ * already had one from migration 0006.
  */
 type QueueState<T> = { rows: T[] | null; error: string | null };
 

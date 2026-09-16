@@ -25,9 +25,11 @@
 -- 0036_client_documents.sql (itself a renumber from an earlier 0035 collision).
 -- Same content, just the next free number on `main` as of this fix.
 --
--- NOT YET APPLIED to the live database - the Supabase MCP configured for this
--- project is read-only by design (see CLAUDE.md's "Supabase access for
--- Claude sessions"). A human needs to run this migration.
+-- Applied to the live database 2026-09-16 (confirmed by the user - every
+-- migration 0000 through 0074 has been run). The Supabase MCP configured for
+-- this project is still read-only by design (see CLAUDE.md's "Supabase
+-- access for Claude sessions"), so a future migration still needs a human to
+-- run it; this note is a status update, not a standing caveat.
 
 create policy hub_pd_manage_select on hub_pd_records for select
   using (clinic_id = auth_clinic_id() and hub_can_manage(user_id));

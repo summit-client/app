@@ -7,8 +7,8 @@ import { resolveViewedClient } from "../../../lib/admin-view-as";
  * family's own upcoming sessions - pages/appointments.tsx's "Request
  * reschedule" / "Request cancellation" actions. This never touches
  * `sessions` itself: it only inserts a row into `session_change_requests`
- * (migration 0035, not yet applied to the live database - see that file's
- * own header) for staff to see and action from their own side. There is no
+ * (migration 0040 - mislabeled 0035 here before a later renumber; applied
+ * live) for staff to see and action from their own side. There is no
  * staff-side UI for that queue yet either; this endpoint only has to get the
  * ask recorded.
  *

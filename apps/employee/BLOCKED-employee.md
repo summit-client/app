@@ -12,15 +12,22 @@ Full audit pass ahead of tomorrow's live demo (real staff, real invites, real
 module completions). Everything below the `---` after this section is the
 prior hardening pass, re-verified rather than re-done. This section is new.
 
-### CRITICAL — migration `0041` is very likely still not applied to the live database
+### RESOLVED 2026-09-16 — migration `0041` has been applied to the live database
+
+**Update:** confirmed by the user directly that every migration `0000`
+through `0074` has now been run live, `0041` included. Both queues below
+read from the real, granted policy now. The section below is kept as the
+history of how this one got missed, not as a live warning - the "will render
+empty" framing no longer applies.
 
 **Two of the Admin console's five queues — "Time-off requests" and "PD
-awaiting verification" — will render empty for every admin/supervisor/
-scheduler tomorrow unless a human runs this migration first.** This is not a
-code bug; the app code is correct and already merged (PR #132). It is a
+awaiting verification" — rendered empty for every admin/supervisor/
+scheduler** for as long as this migration sat unrun. This was never a code
+bug; the app code was correct and already merged (PR #132). It was a
 migration that was merged to `main` in a broken (base64-corrupted) state, sat
 unrunnable for a full day, was only fixed hours before this audit
-(`0a2fd4d`), and per its own header has never been applied live:
+(`0a2fd4d`), and per its own header (at the time) had never been applied
+live:
 
 ```
 -- NOT YET APPLIED to the live database - the Supabase MCP configured for this
@@ -61,10 +68,10 @@ and its `onboardingPercent`/`trainingDue` columns still read from
 `hub_task_progress`/`hub_employee_training` (`0006`, live already) so they're
 unaffected.
 
-**Action needed before the demo, by a human with the Supabase SQL editor**:
-run `supabase/migrations/0041_hub_pd_timeoff_manage_select.sql` against the
-live project. It's two `CREATE POLICY ... FOR SELECT` statements, additive,
-no data migration, safe to run at any time. Confirm with:
+**Done, 2026-09-16** - confirmed applied live. Originally: "Action needed
+before the demo, by a human with the Supabase SQL editor: run
+`supabase/migrations/0041_hub_pd_timeoff_manage_select.sql` against the live
+project." Left below for how to re-confirm if this is ever in doubt again:
 ```sql
 select policyname from pg_policies
 where tablename in ('hub_pd_records','hub_time_off_requests') and cmd = 'select';
