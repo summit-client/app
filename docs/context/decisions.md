@@ -196,6 +196,21 @@ belongs (automatic — e.g. session end time has passed and it wasn't
 cancelled/no-showed — versus an explicit staff action) before the stat is
 trustworthy.
 
+**RESOLVED (verified live 2026-09-16)** — PR #170's body also flagged that
+`apps/scheduler/pages/admin.tsx` reads/writes `client.email`, `client.sessions`
+and `client.availability`, none of which appear in this repo's tracked
+migration history, and asked for a live check. Yanko ran
+`select column_name from information_schema.columns where table_name = 'clients'`
+against the live project: `email` and `sessions` are both real, live columns
+on `clients` — same shape as the `clinic_id`/`'supervisor'`-enum gaps
+elsewhere in this doc, undocumented because `clients` predates this repo's
+migration history, not a bug. `availability` is not a column on `clients` at
+all, and was never expected to be one — `admin.tsx`'s `.availability` is a
+plain JS field populated from the separate, already-`clinic_id`-scoped
+`client_availability`/`staff_availability` tables (`.insert()`/`.delete()`
+against those tables, not a `clients` column read). No action needed on any
+of the three.
+
 ---
 
 ## 2026-08-30 — first clinician dry-run prep
