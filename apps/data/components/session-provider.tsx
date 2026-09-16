@@ -101,7 +101,8 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
       {...props}
       role={identity?.appRole}
       visiblePortals={visiblePortals}
-      profileHref={profileUrl()}
+      profileHref={profileUrl(identity?.appRole)}
+      profileName={identity?.fullName}
       signOutHref={signOutUrl()}
     />
   );

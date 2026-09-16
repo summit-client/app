@@ -16,11 +16,15 @@ import { getSetting, onSettingsChange } from "@summit/settings";
 
 export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
   const [role, setRole] = React.useState<AppRole | null | undefined>(undefined);
+  const [fullName, setFullName] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
     getIdentity().then((identity) => {
-      if (!cancelled) setRole(identity.appRole);
+      if (!cancelled) {
+        setRole(identity.appRole);
+        setFullName(identity.fullName);
+      }
     });
     return () => { cancelled = true; };
   }, []);
@@ -51,7 +55,8 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
       role={role}
       visiblePortals={visiblePortals}
       adminHref={showAdminLink ? "/admin" : undefined}
-      profileHref={profileUrl()}
+      profileHref={profileUrl(role)}
+      profileName={fullName}
       signOutHref={signOutUrl()}
     />
   );

@@ -26,14 +26,21 @@ interface AppNavProps {
   /** When set, a settings cogwheel sits at the right of the bar. */
   settingsHref?: string;
   /**
-   * When set, a profile icon sits at the right of the bar (after settingsHref,
-   * before signOutHref). This should be the shared `profileUrl()` from
-   * @summit/portals - the centralized profile page lives in apps/web, same
-   * reasoning as signOutHref pointing at signOutUrl() rather than a local
-   * route. Every role can see this one; there is no admission question here
-   * the way there is for adminHref.
+   * When set, a profile avatar sits at the right of the bar (after
+   * settingsHref, before signOutHref). This should be the shared
+   * `profileUrl(role)` from @summit/portals, same reasoning as signOutHref
+   * pointing at signOutUrl() rather than a local route. Every role can see
+   * this one; there is no admission question here the way there is for
+   * adminHref.
    */
   profileHref?: string;
+  /**
+   * The viewer's display name, shown as initials inside the profile avatar
+   * circle. Optional and purely cosmetic - pass `undefined`/`null` (identity
+   * still resolving, or none on file) and the avatar falls back to a plain
+   * person glyph instead of blank or guessed initials.
+   */
+  profileName?: string | null;
   /**
    * When set, a sign-out control sits at the far right of the bar (after the
    * settings cogwheel, if both are present). This must be the shared
@@ -72,10 +79,13 @@ interface AppNavProps {
  * Client so staff move between them from any screen. Colours come from the
  * shared tokens, so it follows the theme and accent like everything else.
  */
-export function AppNav({ activeKey, adminHref, settingsHref, profileHref, signOutHref, role, visiblePortals }: AppNavProps) {
+export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profileName, signOutHref, role, visiblePortals }: AppNavProps) {
   const visible = role == null
     ? portals.filter((p) => p.key === activeKey)
     : portalsFor(role, visiblePortals);
+  const initials = profileName
+    ? profileName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("")
+    : null;
   return (
     <nav
       aria-label="Summit portals"
@@ -192,16 +202,27 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, signOu
             height: 30,
             flexShrink: 0,
             borderRadius: 'var(--radius-full, 999px)',
-            color: 'oklch(100% 0 0 / 0.66)',
+            border: initials ? '1.5px solid oklch(100% 0 0 / 0.5)' : 'none',
+            // White at full opacity, not the 66%-opacity white every other
+            // icon in this bar uses - two-letter bold text at 12px reads
+            // much lower-contrast than a line-art glyph at the same
+            // opacity, and this is still against the same --brand-800 bar
+            // background every other icon here is already verified against.
+            color: initials ? '#fff' : 'oklch(100% 0 0 / 0.66)',
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: '0.01em',
             textDecoration: 'none',
             transition: 'all var(--duration-fast, 110ms) var(--ease-out-quart, ease)',
           }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <circle cx="12" cy="8" r="4" />
-            <path d="M4 21c0-4 4-6.5 8-6.5s8 2.5 8 6.5" />
-          </svg>
+          {initials ?? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 21c0-4 4-6.5 8-6.5s8 2.5 8 6.5" />
+            </svg>
+          )}
         </a>
       ) : null}
       {signOutHref ? (

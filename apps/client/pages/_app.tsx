@@ -11,11 +11,15 @@ import { getSetting, initSettings, onSettingsChange } from '@summit/settings'
 
 export default function App({ Component, pageProps }: AppProps) {
   const [role, setRole] = React.useState<AppRole | null | undefined>(undefined)
+  const [fullName, setFullName] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
     getIdentity().then((identity) => {
-      if (!cancelled) setRole(identity.appRole)
+      if (!cancelled) {
+        setRole(identity.appRole)
+        setFullName(identity.fullName)
+      }
     })
     return () => { cancelled = true }
   }, [])
@@ -40,7 +44,7 @@ export default function App({ Component, pageProps }: AppProps) {
       <Head>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
       </Head>
-      <AppNav activeKey="client" role={role} visiblePortals={visiblePortals} profileHref={profileUrl()} />
+      <AppNav activeKey="client" role={role} visiblePortals={visiblePortals} profileHref={profileUrl(role)} profileName={fullName} />
       <Component {...pageProps} />
     </>
   )

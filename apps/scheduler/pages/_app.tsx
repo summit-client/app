@@ -40,7 +40,7 @@ export default function App({ Component, pageProps }) {
     const { title, detail } = explainProblem(problem);
     return (
       <>
-        <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} profileHref={profileUrl()} />
+        <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} profileHref={profileUrl(user?.role)} profileName={user?.full_name} />
         <div style={{ maxWidth: 640, margin: "48px auto", padding: "0 24px", fontFamily: "Inter, sans-serif" }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{title}</h1>
           <p style={{ color: "#6B7280", fontSize: 15 }}>{detail}</p>
@@ -51,7 +51,7 @@ export default function App({ Component, pageProps }) {
 
   return (
     <>
-      <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} profileHref={profileUrl()} />
+      <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} profileHref={profileUrl(user?.role)} profileName={user?.full_name} />
       <UserContext.Provider value={user}>
         <Component {...pageProps} signOut={signOut} />
       </UserContext.Provider>
