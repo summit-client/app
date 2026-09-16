@@ -230,15 +230,9 @@ importers:
       '@summit/design':
         specifier: workspace:*
         version: link:../../packages/design
-      '@summit/nav':
-        specifier: workspace:*
-        version: link:../../packages/nav
       '@summit/portals':
         specifier: workspace:*
         version: link:../../packages/portals
-      '@summit/session':
-        specifier: workspace:*
-        version: link:../../packages/session
       '@supabase/auth-helpers-nextjs':
         specifier: ^0.15.0
         version: 0.15.0(@supabase/supabase-js@2.106.1)

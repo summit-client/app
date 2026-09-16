@@ -1,21 +1,17 @@
 import '@summit/design/tokens.css'
 import '@summit/design/components.css'
 import type { AppProps } from 'next/app'
-import { useRouter } from 'next/router'
 import '../styles/globals.css'
 import PublicNav from '../components/PublicNav'
 
-// /profile is this app's one authenticated screen - it renders the
-// cross-portal AppNav itself (see pages/profile.tsx), not the marketing
-// PublicNav every other page here gets.
-const AUTHENTICATED_PATHS = new Set(['/profile'])
-
+// apps/web is marketing and sign-in only - it has no authenticated screen of
+// its own (see @summit/portals' profileUrl(): every role's real profile
+// lives in apps/employee or apps/client). Every page here gets the same
+// public nav.
 export default function App({ Component, pageProps }: AppProps) {
-  const router = useRouter()
-  const isAuthenticated = AUTHENTICATED_PATHS.has(router.pathname)
   return (
     <>
-      {!isAuthenticated && <PublicNav />}
+      <PublicNav />
       <Component {...pageProps} />
     </>
   )
