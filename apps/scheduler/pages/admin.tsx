@@ -61,10 +61,26 @@ interface Client {
    *  home_address when a clinician marks it as a home visit (still editable
    *  per session for a one-off). */
   address?: string | null;
+  /** Waitlist triage fields (migration 0071). contact_phone/contact_email
+   *  are deliberately separate from the pre-existing `email` field above
+   *  (which writes to a column named `email` that, as far as this repo's
+   *  migration history shows, was never actually added to `clients` -
+   *  pre-existing, out of scope for this change, flagged in the PR
+   *  description rather than fixed here). referral_source and
+   *  waitlist_priority/waitlist_notes are settable from any client's
+   *  lifecycle, not only while waitlisted - see this migration's header. */
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  referral_source?: string | null;
+  waitlist_notes?: string | null;
+  waitlist_priority?: string;
 }
 
 const defaultStaffForm = { name: '', role: 'RBT', specialties: [] as string[], capacity: 20 };
-const defaultClientForm = { name: '', email: '', session_type: 'Direct Therapy', status: 'active', address: '' };
+const defaultClientForm = {
+  name: '', email: '', session_type: 'Direct Therapy', status: 'active', address: '',
+  contact_phone: '', contact_email: '', referral_source: '',
+};
 
 const roleColors: Record<string, string> = {
   BCBA: '#7C3AED', BCaBA: '#2563EB', RBT: '#16A34A', Supervisor: '#D97706',
@@ -192,6 +208,9 @@ async function fetchAll() {
         session_type: clientForm.session_type,
         status: clientForm.status,
         address: clientForm.address.trim() || null,
+        contact_phone: clientForm.contact_phone.trim() || null,
+        contact_email: clientForm.contact_email.trim() || null,
+        referral_source: clientForm.referral_source.trim() || null,
         sessions: 0,
         availability: [],
         clinic_id: appUser.clinic_id,
@@ -605,6 +624,9 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
         {STATUSES.map(st => <option key={st}>{st}</option>)}
       </select>
       <input style={{ ...s.input, marginBottom: 0, width: 200 }} value={editForm.address ?? client.address ?? ''} onChange={e => setEditForm(f => ({ ...f, address: e.target.value }))} placeholder="Address" />
+      <input style={{ ...s.input, marginBottom: 0, width: 150 }} type="tel" value={editForm.contact_phone ?? client.contact_phone ?? ''} onChange={e => setEditForm(f => ({ ...f, contact_phone: e.target.value }))} placeholder="Phone" />
+      <input style={{ ...s.input, marginBottom: 0, width: 180 }} type="email" value={editForm.contact_email ?? client.contact_email ?? ''} onChange={e => setEditForm(f => ({ ...f, contact_email: e.target.value }))} placeholder="Contact email" />
+      <input style={{ ...s.input, marginBottom: 0, width: 180 }} value={editForm.referral_source ?? client.referral_source ?? ''} onChange={e => setEditForm(f => ({ ...f, referral_source: e.target.value }))} placeholder="Referral source" />
       <button style={s.btnPrimary} onClick={() => handleSave('clients', client.id)} disabled={saving}>Save</button>
       <button style={s.btnGhost} onClick={() => { setEditingId(null); setEditForm({}); }}>Cancel</button>
     </div>
@@ -692,6 +714,32 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
                   value={clientForm.email}
                   onChange={e => setClientForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="client@email.com"
+                />
+
+                <label style={s.label}>Contact Phone</label>
+                <input
+                  style={s.input}
+                  type="tel"
+                  value={clientForm.contact_phone}
+                  onChange={e => setClientForm(f => ({ ...f, contact_phone: e.target.value }))}
+                  placeholder="(555) 555-5555"
+                />
+
+                <label style={s.label}>Contact Email</label>
+                <input
+                  style={s.input}
+                  type="email"
+                  value={clientForm.contact_email}
+                  onChange={e => setClientForm(f => ({ ...f, contact_email: e.target.value }))}
+                  placeholder="Best email to reach the family"
+                />
+
+                <label style={s.label}>Referral Source</label>
+                <input
+                  style={s.input}
+                  value={clientForm.referral_source}
+                  onChange={e => setClientForm(f => ({ ...f, referral_source: e.target.value }))}
+                  placeholder="e.g. pediatrician referral, word of mouth"
                 />
 
                 <label style={s.label}>Session Type</label>
