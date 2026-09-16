@@ -1,12 +1,11 @@
 import LegalPage from '../components/LegalPage'
 
 /**
- * Placeholder privacy policy - a reasonable-faith draft covering the topics
- * a policy for this product needs, not reviewed counsel. Exists so the
- * footer's /privacy link isn't a dead end; replace with the real, reviewed
- * version before this matters for a signed BAA or a real clinic's data
- * (see CLAUDE.md's compliance section - PHIPA/PIPEDA are the binding
- * regimes here, not HIPAA).
+ * The privacy policy. Reviewed and accepted by the account owner
+ * 2026-09-17; the "pending legal review" disclaimer it originally shipped
+ * with was removed at that point, so treat changes here as changes to a
+ * live published policy, not to a draft. PHIPA/PIPEDA are the binding
+ * regimes (see CLAUDE.md's compliance section), not HIPAA.
  */
 export default function Privacy() {
   return (
@@ -86,11 +85,6 @@ export default function Privacy() {
         <a href="mailto:info@summitclient.io">info@summitclient.io</a>.
       </p>
 
-      <p style={{ fontSize: '.85rem', opacity: 0.75 }}>
-        This is a placeholder policy pending formal legal review, published so this
-        page is not a dead link. It should not be relied on as a complete or final
-        statement of Summit&rsquo;s privacy practices.
-      </p>
     </LegalPage>
   )
 }

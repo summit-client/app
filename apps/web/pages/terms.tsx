@@ -1,10 +1,10 @@
 import LegalPage from '../components/LegalPage'
 
 /**
- * Placeholder terms of service - a reasonable-faith draft, not reviewed
- * counsel. Exists so the footer's /terms link isn't a dead end; replace
- * with the real, reviewed version before this matters commercially. See
- * privacy.tsx's own note for the same caveat.
+ * The terms of service. Reviewed and accepted by the account owner
+ * 2026-09-17; the "pending legal review" disclaimer it originally shipped
+ * with was removed at that point, so treat changes here as changes to a
+ * live published agreement, not to a draft. See privacy.tsx's own note.
  */
 export default function Terms() {
   return (
@@ -86,11 +86,6 @@ export default function Terms() {
         <a href="mailto:info@summitclient.io">info@summitclient.io</a>.
       </p>
 
-      <p style={{ fontSize: '.85rem', opacity: 0.75 }}>
-        This is a placeholder agreement pending formal legal review, published so this
-        page is not a dead link. It should not be relied on as a complete or final
-        statement of the terms governing the Service.
-      </p>
     </LegalPage>
   )
 }
