@@ -110,7 +110,7 @@ export function credentialLine(c: EmployeeCredential | null = primaryCredential(
 
 /** The employee's highest recorded education level, derived fresh from every
  *  record on each call rather than a column someone has to keep in sync -
- *  see migration 0070's header. */
+ *  see migration 0074's header. */
 export function highestEducation(): EmployeeEducation | null {
   return computeHighestEducation(hr().education);
 }

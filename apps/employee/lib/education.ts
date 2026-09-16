@@ -1,6 +1,6 @@
 /**
  * Academic education, separate from the regulatory credential rule engine in
- * credentials.ts. See migration 0070's header for why: a degree has no
+ * credentials.ts. See migration 0074's header for why: a degree has no
  * cycle, no CEU requirement, and cannot lapse, so it does not belong in
  * employee_credentials or CREDENTIAL_RULES.
  */
@@ -44,7 +44,7 @@ export interface EmployeeEducation {
 }
 
 /** The single highest-ranked record, for display as "highest level achieved".
- *  Derived at read time on purpose - see migration 0070's header. */
+ *  Derived at read time on purpose - see migration 0074's header. */
 export function highestEducation(records: EmployeeEducation[]): EmployeeEducation | null {
   if (!records.length) return null;
   return records.slice().sort((a, b) => EDUCATION_RANK[b.level] - EDUCATION_RANK[a.level])[0];

@@ -1,4 +1,4 @@
--- 0070 · Employee education (highest level achieved)
+-- 0074 · Employee education (highest level achieved)
 --
 -- Issue #164: staff asked to record credentials outside the regulatory
 -- rule engine - an academic degree (e.g. a Masters in Special Education),
