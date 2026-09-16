@@ -196,6 +196,48 @@ export function isOnboardingComplete(progress: TaskProgress[]): boolean {
   return p.applicable > 0 && p.completed === p.applicable;
 }
 
+/**
+ * Priority status for the nav bar's profile ring (@summit/nav's
+ * `priorityStatus` prop). "Critical" is `supervisorSignoffRequired` tasks -
+ * the ones that gate on someone else confirming them (new-hire paperwork,
+ * direct deposit, payroll access, emergency contact): these are the tasks
+ * where "I'll get to it" isn't actually the employee's call to make.
+ * "Important" is every other required, applicable task. Optional tasks are
+ * never counted - a completion ring isn't the place to nag about work
+ * nobody has to do. `state` is deliberately ordered: any critical task
+ * outstanding wins outright, even at 99% overall - an admin with an
+ * unsubmitted VSC is still "critical", not "almost done."
+ */
+export function priorityProgress(progress: TaskProgress[]) {
+  const ob = onboardingProgress(progress);
+  progress = effectiveProgress(progress);
+  const byKey = new Map(progress.map((p) => [p.taskKey, p]));
+  const applicableRequired = HUB_TASKS.filter((t) => {
+    if (t.required === false) return false;
+    const p = byKey.get(t.key);
+    return p?.status !== "NOT_APPLICABLE" && p?.applicable !== false;
+  });
+  const critical = applicableRequired.filter((t) => t.supervisorSignoffRequired);
+  const important = applicableRequired.filter((t) => !t.supervisorSignoffRequired);
+  const criticalDone = critical.filter((t) => byKey.get(t.key)?.status === "COMPLETED").length;
+  const importantDone = important.filter((t) => byKey.get(t.key)?.status === "COMPLETED").length;
+  const criticalOutstanding = critical.length - criticalDone;
+  const importantOutstanding = important.length - importantDone;
+  const state: "critical" | "important" | "complete" =
+    criticalOutstanding > 0 ? "critical" : importantOutstanding > 0 ? "important" : "complete";
+  const label = state === "complete"
+    ? "All onboarding tasks complete"
+    : [
+        criticalOutstanding > 0 ? `${criticalOutstanding} critical task${criticalOutstanding === 1 ? "" : "s"} left` : null,
+        importantOutstanding > 0 ? `${importantOutstanding} important task${importantOutstanding === 1 ? "" : "s"} left` : null,
+      ].filter(Boolean).join(", ");
+  return {
+    percent: ob.percent, state, label,
+    criticalTotal: critical.length, criticalDone, criticalOutstanding,
+    importantTotal: important.length, importantDone, importantOutstanding,
+  };
+}
+
 /* ---- the loaded snapshot --------------------------------------------------- */
 
 /**
