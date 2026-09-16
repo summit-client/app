@@ -182,6 +182,20 @@ access to their own data — real, standalone work with its own PR and its own
 verification pass, not something that should ride in on an unrelated batch.
 Needs a decision on *when*, not *whether*.
 
+**OPEN (raised 2026-09-14, scheduler feature batch, PR #170)** — the
+Dashboard's "No-show rate" stat (added in the same PR) will read as a
+degenerate 100%/0% indefinitely, because nothing in `apps/scheduler`
+anywhere sets `sessions.status = 'completed'`. The stat is computed against
+`completed + no_show` only (deliberately excluding future bookings), but
+with the numerator's other half never populated, every occurred session
+either has no status transition at all or sits at whatever it was created
+with — there is currently no code path, button, or job in this app that
+marks a session completed. Flagged in PR #170's own body rather than
+silently worked around. Needs a decision on where completion-marking
+belongs (automatic — e.g. session end time has passed and it wasn't
+cancelled/no-showed — versus an explicit staff action) before the stat is
+trustworthy.
+
 ---
 
 ## 2026-08-30 — first clinician dry-run prep
