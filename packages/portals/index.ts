@@ -121,21 +121,19 @@ export function loginUrl(): string {
  *
  * Staff-shaped roles (admin/supervisor/clinician/scheduler) go straight to
  * apps/employee's own "My Profile" - that is where the real HR fields
- * (employee number, job title, credential, signature) live. This used to be
- * `${webUrl()}/profile` unconditionally for every role: apps/web's own
- * /profile page deliberately shows those roles nothing but a name/role card
- * and a link into apps/employee (see that page's own comment - HR fields
- * stay in apps/employee rather than being duplicated there), so a staff
- * account clicking the nav icon always landed on that near-empty stop first
- * and had to click through a second time to reach anything real - including
- * from *inside* apps/employee itself, which round-tripped out to the hub and
- * back for no reason. `client` (family/guardian) keeps going to
- * apps/web/profile - that page's family branch (household, emergency
- * contacts, home session preference) is the real content for that role, not
- * a stub, so there is nothing to skip past.
+ * (employee number, job title, credential, signature) live. `client`
+ * (family/guardian) goes straight to apps/client's own "Your family" page
+ * (pages/family.tsx) - that is where the real family content (children,
+ * household, emergency contacts, care team, home session preference,
+ * availability) lives, for the same reason: apps/web's /profile page used
+ * to carry a full copy of the household/emergency-contact/preference
+ * editors, duplicating a screen apps/client already had (read-only there,
+ * at the time) rather than pointing at it. Both branches now match the
+ * same shape - apps/web's /profile is a stub for every role, never the
+ * real content, so there is nothing to skip past for any of them.
  */
 export function profileUrl(role?: AppRole | null): string {
-  return role === "client" ? `${webUrl()}/profile` : `${urlFor("employee")}/profile`;
+  return role === "client" ? `${urlFor("client")}/family` : `${urlFor("employee")}/profile`;
 }
 export function refreshUrl(): string {
   return `${webUrl()}/api/auth/refresh`;

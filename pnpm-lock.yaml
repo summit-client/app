@@ -17,6 +17,9 @@ importers:
 
   apps/client:
     dependencies:
+      '@summit/availability':
+        specifier: workspace:*
+        version: link:../../packages/availability
       '@summit/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -224,9 +227,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@summit/availability':
-        specifier: workspace:*
-        version: link:../../packages/availability
       '@summit/design':
         specifier: workspace:*
         version: link:../../packages/design
@@ -239,9 +239,6 @@ importers:
       '@summit/session':
         specifier: workspace:*
         version: link:../../packages/session
-      '@summit/settings':
-        specifier: workspace:*
-        version: link:../../packages/settings
       '@supabase/auth-helpers-nextjs':
         specifier: ^0.15.0
         version: 0.15.0(@supabase/supabase-js@2.106.1)

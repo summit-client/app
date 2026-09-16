@@ -2,17 +2,21 @@ import type {
   GetServerSideProps, InferGetServerSidePropsType, NextApiRequest, NextApiResponse,
 } from "next";
 import { useRouter } from "next/router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { FamilyAvatar } from "../components/family-switcher";
 import { LoadErrorNotice } from "../components/load-error-notice";
 import { createClient } from "../lib/supabase-server";
+import { browserClient } from "../lib/supabase-browser";
 import { ageOf, can, canForAny, displayName, familyFromRows, type Family } from "../lib/family";
 import { homeUrlFor } from "@summit/portals";
+import { AvailabilityGrid, type AvailabilityRow } from "@summit/availability";
+import { getSetting } from "@summit/settings";
 import styles from "../styles/design-b.module.css";
 
 type Household = {
+  id: string;
   name: string;
   address_line1: string | null;
   address_line2: string | null;
@@ -20,6 +24,7 @@ type Household = {
   province: string | null;
   postal_code: string | null;
   phone: string | null;
+  email: string | null;
   preferred_language: string;
 };
 
@@ -30,9 +35,12 @@ type Member = {
   relationship: string;
   email: string | null;
   phone: string | null;
+  phone_secondary: string | null;
   is_emergency_contact: boolean;
   client_id: number | null;
 };
+
+type Preference = "only" | "if_required" | "never";
 
 type CareTeamMember = {
   client_id: number;
@@ -57,11 +65,13 @@ type TimelineEntry = {
 type PageProps =
   | {
       mode: "family";
+      userId: string;
       family: Family;
       household: Household | null;
       members: Member[];
       careTeam: CareTeamMember[];
       timeline: TimelineEntry[];
+      preferences: Record<number, Preference>;
       loadError: boolean;
     }
   | { mode: "no-access" }
@@ -110,6 +120,25 @@ export default function FamilyPage(
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
+  // Editable copies of the server-rendered household/contacts/preferences -
+  // declared unconditionally (rules of hooks), synced from props once mode
+  // is known. Availability is fetched on demand per child instead of up
+  // front - most visits don't open it, and it's a second query per child.
+  const [household, setHousehold] = useState<Household | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [preferences, setPreferences] = useState<Record<number, Preference>>({});
+  const [availabilityByChild, setAvailabilityByChild] = useState<Record<number, AvailabilityRow[]>>({});
+  const [expandedAvailability, setExpandedAvailability] = useState<number | null>(null);
+  const [addingContact, setAddingContact] = useState(false);
+  const [contactDraft, setContactDraft] = useState({ full_name: "", relationship: "emergency_contact", phone: "", phone_secondary: "", email: "" });
+
+  useEffect(() => {
+    if (props.mode !== "family") return;
+    setHousehold(props.household);
+    setMembers(props.members);
+    setPreferences(props.preferences);
+  }, [props]);
+
   if (props.mode === "error") return <LoadErrorNotice />;
 
   if (props.mode === "no-access") {
@@ -137,12 +166,80 @@ export default function FamilyPage(
     );
   }
 
-  const { family, household, members, careTeam, timeline, loadError } = props;
+  const { family, careTeam, timeline, loadError, userId } = props;
   const canWrite = canForAny(family, "message_clinic");
+  const canManageHousehold = canForAny(family, "manage_household");
   const nameOf = (clientId: number) => {
     const c = family.children.find((x) => x.clientId === clientId);
     return c ? displayName(c) : "your family";
   };
+
+  async function saveHousehold(fields: Partial<Household>) {
+    if (!household) return;
+    const { error: hhErr } = await browserClient().from("households").update(fields).eq("id", household.id);
+    if (hhErr) { setProblem(hhErr.message); return; }
+    setHousehold({ ...household, ...fields });
+  }
+
+  async function addContact() {
+    if (!household || !contactDraft.full_name.trim()) return;
+    const { data, error: insErr } = await browserClient()
+      .from("household_members")
+      .insert({
+        clinic_id: family.children[0]?.clinicId,
+        household_id: household.id,
+        full_name: contactDraft.full_name,
+        relationship: contactDraft.relationship || "emergency_contact",
+        is_emergency_contact: true,
+        phone: contactDraft.phone || null,
+        phone_secondary: contactDraft.phone_secondary || null,
+        email: contactDraft.email || null,
+      })
+      .select("id, full_name, preferred_name, relationship, email, phone, phone_secondary, is_emergency_contact, client_id")
+      .single();
+    if (insErr) { setProblem(insErr.message); return; }
+    setMembers((prev) => [...prev, data as Member]);
+    setContactDraft({ full_name: "", relationship: "emergency_contact", phone: "", phone_secondary: "", email: "" });
+    setAddingContact(false);
+  }
+
+  async function updateContact(id: string, fields: Partial<Member>) {
+    const { error: updErr } = await browserClient().from("household_members").update(fields).eq("id", id);
+    if (updErr) { setProblem(updErr.message); return; }
+    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, ...fields } : m)));
+  }
+
+  async function savePreference(clientId: number, preference: Preference) {
+    const child = family.children.find((c) => c.clientId === clientId);
+    if (!child?.clinicId) return;
+    const { error: prefErr } = await browserClient().from("home_session_preferences").upsert(
+      { client_id: clientId, clinic_id: child.clinicId, preference, updated_by: userId, updated_at: new Date().toISOString() },
+      { onConflict: "client_id" },
+    );
+    if (prefErr) { setProblem(prefErr.message); return; }
+    setPreferences((prev) => ({ ...prev, [clientId]: preference }));
+  }
+
+  async function loadAvailability(clientId: number) {
+    const { data } = await browserClient().from("client_availability").select("day, start_time, end_time").eq("client_id", clientId);
+    setAvailabilityByChild((prev) => ({ ...prev, [clientId]: (data as AvailabilityRow[]) ?? [] }));
+    setExpandedAvailability(clientId);
+  }
+
+  async function saveAvailability(clientId: number, ranges: Array<{ client_id?: number; day: string; start_time: string; end_time: string }>) {
+    const child = family.children.find((c) => c.clientId === clientId);
+    if (!child?.clinicId) return;
+    const scoped = ranges.map((r) => ({ day: r.day, start_time: r.start_time, end_time: r.end_time, client_id: clientId, clinic_id: child.clinicId }));
+    const sb = browserClient();
+    const { error: delErr } = await sb.from("client_availability").delete().eq("client_id", clientId);
+    if (delErr) { setProblem(delErr.message); return; }
+    if (scoped.length) {
+      const { error: insErr } = await sb.from("client_availability").insert(scoped);
+      if (insErr) { setProblem(insErr.message); return; }
+    }
+    setAvailabilityByChild((prev) => ({ ...prev, [clientId]: scoped }));
+    setExpandedAvailability(null);
+  }
 
   async function saveObservation(e: React.FormEvent) {
     e.preventDefault();
@@ -223,53 +320,126 @@ export default function FamilyPage(
           {household ? (
             <>
               <h2 style={sectionHeading}>Where we write to you</h2>
-              <div style={{ ...rowStyle, display: "block", marginBottom: 32 }}>
-                <p style={{ margin: 0, color: "var(--ink)", lineHeight: 1.7 }}>
-                  {[household.address_line1, household.address_line2,
-                    [household.city, household.province].filter(Boolean).join(", "),
-                    household.postal_code]
-                    .filter(Boolean).join("\n") || "No address on file."}
-                </p>
-                {household.phone ? (
-                  <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 14 }}>
-                    {household.phone}
+              {canManageHousehold ? (
+                <HouseholdEditor household={household} onSave={saveHousehold} />
+              ) : (
+                <div style={{ ...rowStyle, display: "block", marginBottom: 32 }}>
+                  <p style={{ margin: 0, color: "var(--ink)", lineHeight: 1.7 }}>
+                    {[household.address_line1, household.address_line2,
+                      [household.city, household.province].filter(Boolean).join(", "),
+                      household.postal_code]
+                      .filter(Boolean).join("\n") || "No address on file."}
                   </p>
-                ) : null}
-                {/* Read-only, and it says so rather than offering an Edit
-                    button that would not work. Changing a household address is
-                    gated on manage_household and there is no write path yet. */}
-                <p style={{ margin: "10px 0 0", color: "var(--muted)", fontSize: 13 }}>
-                  To change any of this, message the clinic and they will update it.
-                </p>
-              </div>
+                  <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 14 }}>
+                    {[household.phone, household.email].filter(Boolean).join(" · ") || "No phone or email on file."}
+                  </p>
+                  <p style={{ margin: "10px 0 0", color: "var(--muted)", fontSize: 13 }}>
+                    You don&apos;t have edit access to this yet — message the clinic to make changes.
+                  </p>
+                </div>
+              )}
             </>
           ) : null}
 
           {/* ---------------------------------------------------------- */}
           <h2 style={sectionHeading}>People on your record</h2>
           {contacts.length === 0 ? (
-            <div className={styles.emptyBox} style={{ marginBottom: 32 }}>
+            <div className={styles.emptyBox} style={{ marginBottom: canManageHousehold ? 12 : 32 }}>
               No other contacts on file.
             </div>
           ) : (
-            <ul style={{ listStyle: "none", margin: "0 0 32px", padding: 0, display: "grid", gap: 10 }}>
+            <ul style={{ listStyle: "none", margin: `0 0 ${canManageHousehold ? 12 : 32}px`, padding: 0, display: "grid", gap: 10 }}>
               {contacts.map((m) => (
                 <li key={m.id} style={rowStyle}>
                   <FamilyAvatar label={m.preferred_name || m.full_name} clientId={null} size={34} />
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: "block", color: "var(--ink)", fontWeight: 600, fontSize: 15 }}>
-                      {m.preferred_name || m.full_name}
+                  {canManageHousehold ? (
+                    <span style={{ flex: 1, minWidth: 0, display: "grid", gap: 6 }}>
+                      <input style={fieldStyle} value={m.full_name}
+                        onChange={(e) => updateContact(m.id, { full_name: e.target.value })} />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input style={fieldStyle} placeholder="Phone" value={m.phone ?? ""}
+                          onChange={(e) => updateContact(m.id, { phone: e.target.value })} />
+                        <input style={fieldStyle} placeholder="Second phone" value={m.phone_secondary ?? ""}
+                          onChange={(e) => updateContact(m.id, { phone_secondary: e.target.value })} />
+                      </div>
+                      <input style={fieldStyle} placeholder="Email" value={m.email ?? ""}
+                        onChange={(e) => updateContact(m.id, { email: e.target.value })} />
                     </span>
-                    <span style={{ display: "block", color: "var(--muted)", fontSize: 13, marginTop: 2 }}>
-                      {RELATIONSHIP_LABELS[m.relationship] ?? "Contact"}
-                      {m.is_emergency_contact ? " · emergency contact" : ""}
-                      {m.phone ? ` · ${m.phone}` : ""}
+                  ) : (
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", color: "var(--ink)", fontWeight: 600, fontSize: 15 }}>
+                        {m.preferred_name || m.full_name}
+                      </span>
+                      <span style={{ display: "block", color: "var(--muted)", fontSize: 13, marginTop: 2 }}>
+                        {RELATIONSHIP_LABELS[m.relationship] ?? "Contact"}
+                        {m.is_emergency_contact ? " · emergency contact" : ""}
+                        {m.phone ? ` · ${m.phone}` : ""}
+                      </span>
                     </span>
-                  </span>
+                  )}
                 </li>
               ))}
             </ul>
           )}
+          {canManageHousehold ? (
+            addingContact ? (
+              <div style={{ ...rowStyle, display: "grid", gap: 8, marginBottom: 32 }}>
+                <input style={fieldStyle} placeholder="Name" value={contactDraft.full_name}
+                  onChange={(e) => setContactDraft((d) => ({ ...d, full_name: e.target.value }))} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input style={fieldStyle} placeholder="Phone" value={contactDraft.phone}
+                    onChange={(e) => setContactDraft((d) => ({ ...d, phone: e.target.value }))} />
+                  <input style={fieldStyle} placeholder="Second phone" value={contactDraft.phone_secondary}
+                    onChange={(e) => setContactDraft((d) => ({ ...d, phone_secondary: e.target.value }))} />
+                </div>
+                <input style={fieldStyle} placeholder="Email" value={contactDraft.email}
+                  onChange={(e) => setContactDraft((d) => ({ ...d, email: e.target.value }))} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" style={primaryButton(false)} onClick={addContact}>Add contact</button>
+                  <button type="button" style={{ ...primaryButton(false), background: "#fff", color: "#0C5350" }}
+                    onClick={() => setAddingContact(false)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" style={{ ...primaryButton(false), background: "#fff", color: "#0C5350", marginBottom: 32 }}
+                onClick={() => setAddingContact(true)}>
+                + Add emergency contact
+              </button>
+            )
+          ) : null}
+
+          {/* ---------------------------------------------------------- */}
+          <h2 style={sectionHeading}>Home session preference &amp; availability</h2>
+          <ul style={{ listStyle: "none", margin: "0 0 32px", padding: 0, display: "grid", gap: 10 }}>
+            {family.children.map((c) => (
+              <li key={c.clientId} style={{ ...rowStyle, display: "block" }}>
+                <span style={{ display: "block", color: "var(--ink)", fontWeight: 600, fontSize: 15, marginBottom: 10 }}>
+                  {displayName(c)}
+                </span>
+                <PreferenceRow value={preferences[c.clientId] ?? null} onChoose={(p) => savePreference(c.clientId, p)} />
+                <div style={{ marginTop: 12 }}>
+                  {expandedAvailability === c.clientId ? (
+                    <AvailabilityGrid
+                      entityId={c.clientId}
+                      entityType="client"
+                      existingAvailability={availabilityByChild[c.clientId] ?? []}
+                      workStart={Math.floor(Number(String(getSetting("calendar.workStart") || "08:00").split(":")[0]))}
+                      workEnd={Math.floor(Number(String(getSetting("calendar.workEnd") || "17:00").split(":")[0]))}
+                      workDays={String(getSetting("calendar.workDays") || "Mon,Tue,Wed,Thu,Fri").split(",").map((d) => d.trim())}
+                      incrementMinutes={Number(getSetting("calendar.gridIncrementMinutes")) || 30}
+                      onSave={(ranges) => saveAvailability(c.clientId, ranges)}
+                      onCancel={() => setExpandedAvailability(null)}
+                    />
+                  ) : (
+                    <button type="button" style={{ ...primaryButton(false), background: "#fff", color: "#0C5350" }}
+                      onClick={() => loadAvailability(c.clientId)}>
+                      {(availabilityByChild[c.clientId] ?? []).length === 0 ? "Set availability" : "Edit availability"}
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
 
           {/* ---------------------------------------------------------- */}
           <h2 style={sectionHeading}>Who works with your children</h2>
@@ -421,6 +591,85 @@ function primaryButton(busy: boolean): React.CSSProperties {
   };
 }
 
+/**
+ * Household address/phone/email, editable in place. Local draft state so
+ * typing doesn't fire a write per keystroke - it saves on blur, and again
+ * explicitly via the button for anyone who tabs straight to the next field.
+ */
+function HouseholdEditor({
+  household, onSave,
+}: {
+  household: Household;
+  onSave: (fields: Partial<Household>) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState(household);
+
+  useEffect(() => { setDraft(household); }, [household]);
+
+  function field(key: keyof Household) {
+    return {
+      value: draft[key] ?? "",
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+        setDraft((d) => ({ ...d, [key]: e.target.value })),
+      onBlur: () => { if (draft[key] !== household[key]) onSave({ [key]: draft[key] || null }); },
+    };
+  }
+
+  return (
+    <div style={{ ...rowStyle, display: "grid", gap: 8, marginBottom: 32 }}>
+      <input style={fieldStyle} placeholder="Address line 1" {...field("address_line1")} />
+      <input style={fieldStyle} placeholder="Address line 2" {...field("address_line2")} />
+      <div style={{ display: "flex", gap: 8 }}>
+        <input style={fieldStyle} placeholder="City" {...field("city")} />
+        <input style={fieldStyle} placeholder="Province" {...field("province")} />
+        <input style={fieldStyle} placeholder="Postal code" {...field("postal_code")} />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input style={fieldStyle} placeholder="Phone" {...field("phone")} />
+        <input style={fieldStyle} placeholder="Email" {...field("email")} />
+      </div>
+    </div>
+  );
+}
+
+const PREFERENCE_OPTIONS: { value: Preference; label: string }[] = [
+  { value: "only", label: "Home sessions only" },
+  { value: "if_required", label: "Home if required" },
+  { value: "never", label: "Not at home" },
+];
+
+/** A choice of three, not a form field - one click commits it. */
+function PreferenceRow({
+  value, onChoose,
+}: {
+  value: Preference | null;
+  onChoose: (p: Preference) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {PREFERENCE_OPTIONS.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChoose(opt.value)}
+            style={{
+              padding: "8px 14px", borderRadius: 999, fontSize: 13.5, fontWeight: 600,
+              border: `1px solid ${active ? "#0C5350" : "#cddde4"}`,
+              background: active ? "#0C5350" : "#fff",
+              color: active ? "#fff" : "var(--ink)",
+              cursor: "pointer",
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, res }) => {
   const supabase = createClient(req as NextApiRequest, res as NextApiResponse);
 
@@ -436,7 +685,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
 
   const { data: familyRows, error: familyError } = await supabase
     .from("my_family")
-    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, relationship, permissions");
+    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, relationship, permissions, clinic_id");
   if (familyError) {
     console.error("family: load failed:", familyError.message);
     return { props: { mode: "error" } };
@@ -452,14 +701,14 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
     return { props: { mode: "no-access" } };
   }
 
-  // Four independent reads. Run together rather than in sequence: none of them
-  // needs another's result, and this page is four sections of one screen.
-  const [households, membersRes, careRes, timelineRes] = await Promise.all([
+  // Five independent reads. Run together rather than in sequence: none of them
+  // needs another's result, and this page is five sections of one screen.
+  const [households, membersRes, careRes, timelineRes, prefRes] = await Promise.all([
     supabase.from("households")
-      .select("name, address_line1, address_line2, city, province, postal_code, phone, preferred_language")
+      .select("id, name, address_line1, address_line2, city, province, postal_code, phone, email, preferred_language")
       .limit(1),
     supabase.from("household_members")
-      .select("id, full_name, preferred_name, relationship, email, phone, is_emergency_contact, client_id")
+      .select("id, full_name, preferred_name, relationship, email, phone, phone_secondary, is_emergency_contact, client_id")
       .eq("status", "ACTIVE")
       .order("relationship", { ascending: true }),
     supabase.rpc("my_care_team"),
@@ -467,25 +716,35 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
       .select("entry_id, client_id, occurred_on, source, kind, title, detail")
       .order("occurred_on", { ascending: false })
       .limit(60),
+    supabase.from("home_session_preferences")
+      .select("client_id, preference")
+      .in("client_id", family.children.map((c) => c.clientId)),
   ]);
 
   for (const [what, r] of [
     ["household", households], ["members", membersRes],
-    ["care team", careRes], ["timeline", timelineRes],
+    ["care team", careRes], ["timeline", timelineRes], ["preferences", prefRes],
   ] as const) {
     if (r.error) console.error(`family: ${what} load failed:`, r.error.message);
+  }
+
+  const preferences: Record<number, Preference> = {};
+  for (const row of (prefRes.data ?? []) as { client_id: number; preference: Preference }[]) {
+    preferences[row.client_id] = row.preference;
   }
 
   return {
     props: {
       mode: "family",
+      userId: user.id,
       family,
       household: (households.data?.[0] as Household) ?? null,
       members: (membersRes.data ?? []) as Member[],
       careTeam: (careRes.data ?? []) as CareTeamMember[],
       timeline: (timelineRes.data ?? []) as TimelineEntry[],
+      preferences,
       loadError: Boolean(
-        households.error || membersRes.error || careRes.error || timelineRes.error),
+        households.error || membersRes.error || careRes.error || timelineRes.error || prefRes.error),
     },
   };
 };
