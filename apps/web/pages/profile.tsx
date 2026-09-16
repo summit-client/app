@@ -2,6 +2,8 @@ import * as React from 'react'
 import Head from 'next/head'
 import { AppNav } from '@summit/nav'
 import { urlFor } from '@summit/portals'
+import { AvailabilityGrid, type AvailabilityRow } from '@summit/availability'
+import { getSetting } from '@summit/settings'
 import { supabase } from '../lib/supabase'
 import { ProfileProvider, ProfileGate, useIdentity, useSession } from '../components/profile-provider'
 import { motion, AnimatePresence } from 'motion/react'
@@ -22,6 +24,7 @@ type Household = {
   province: string | null
   postal_code: string | null
   phone: string | null
+  email: string | null
 }
 
 type Contact = {
@@ -103,6 +106,7 @@ function FamilyProfile() {
   const [contacts, setContacts] = React.useState<Contact[]>([])
   const [preferences, setPreferences] = React.useState<Record<number, Preference>>({})
   const [selectedClient, setSelectedClient] = React.useState<number | null>(null)
+  const [availability, setAvailability] = React.useState<AvailabilityRow[]>([])
   const [error, setError] = React.useState<string | null>(null)
 
   const reload = React.useCallback(async () => {
@@ -139,6 +143,27 @@ function FamilyProfile() {
   }, [])
 
   React.useEffect(() => { void reload() }, [reload])
+
+  React.useEffect(() => {
+    if (selectedClient == null) { setAvailability([]); return }
+    let cancelled = false
+    supabase.from('client_availability').select('day, start_time, end_time').eq('client_id', selectedClient)
+      .then(({ data }) => { if (!cancelled) setAvailability((data as AvailabilityRow[]) ?? []) })
+    return () => { cancelled = true }
+  }, [selectedClient])
+
+  async function saveAvailability(clientId: number, ranges: Array<{ client_id?: number; day: string; start_time: string; end_time: string }>) {
+    const row = family!.find((r) => r.client_id === clientId)
+    if (!row) return
+    const scoped = ranges.map((r) => ({ day: r.day, start_time: r.start_time, end_time: r.end_time, client_id: clientId, clinic_id: row.clinic_id }))
+    const { error: delErr } = await supabase.from('client_availability').delete().eq('client_id', clientId)
+    if (delErr) { setError(delErr.message); return }
+    if (scoped.length) {
+      const { error: insErr } = await supabase.from('client_availability').insert(scoped)
+      if (insErr) { setError(insErr.message); return }
+    }
+    setAvailability(scoped)
+  }
 
   if (error) {
     return (
@@ -235,6 +260,15 @@ function FamilyProfile() {
         />
       )}
 
+      {selectedClient != null && (
+        <ClientAvailabilityCard
+          clientId={selectedClient}
+          clientName={family.find((r) => r.client_id === selectedClient)?.client_name ?? ''}
+          availability={availability}
+          onSave={(ranges) => saveAvailability(selectedClient, ranges)}
+        />
+      )}
+
       <HouseholdCard
         household={household}
         canEdit={canManageHousehold}
@@ -320,6 +354,46 @@ function HomeSessionWizard({ clientName, value, onChoose }: {
   )
 }
 
+function ClientAvailabilityCard({ clientId, clientName, availability, onSave }: {
+  clientId: number
+  clientName: string
+  availability: AvailabilityRow[]
+  onSave: (ranges: Array<{ client_id?: number; day: string; start_time: string; end_time: string }>) => Promise<void>
+}) {
+  const [editing, setEditing] = React.useState(false)
+  const days = new Set(availability.map((a) => a.day))
+
+  return (
+    <div className="card card-pad">
+      <h2 className="h-page" style={{ fontSize: '1.05rem' }}>
+        Availability{clientName ? ` — ${clientName}` : ''}
+      </h2>
+      {editing ? (
+        <AvailabilityGrid
+          entityId={clientId}
+          entityType="client"
+          existingAvailability={availability}
+          workStart={Math.floor(Number(String(getSetting('calendar.workStart') || '08:00').split(':')[0]))}
+          workEnd={Math.floor(Number(String(getSetting('calendar.workEnd') || '17:00').split(':')[0]))}
+          workDays={String(getSetting('calendar.workDays') || 'Mon,Tue,Wed,Thu,Fri').split(',').map((d) => d.trim())}
+          incrementMinutes={Number(getSetting('calendar.gridIncrementMinutes')) || 30}
+          onSave={async (ranges) => { await onSave(ranges); setEditing(false) }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <>
+          <p className="sub" style={{ marginTop: 4 }}>
+            {days.size === 0 ? 'Not set yet.' : `${days.size} day(s) with availability set.`}
+          </p>
+          <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => setEditing(true)}>
+            {days.size === 0 ? 'Set availability' : 'Edit availability'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 function HouseholdCard({ household, canEdit, onSave }: {
   household: Household | null
   canEdit: boolean
@@ -346,6 +420,9 @@ function HouseholdCard({ household, canEdit, onSave }: {
             ? [household.address_line1, household.address_line2, household.city, household.province, household.postal_code]
                 .filter(Boolean).join(', ')
             : 'Not set yet.'}
+        </p>
+        <p className="sub" style={{ marginTop: 4 }}>
+          {[household.phone, household.email].filter(Boolean).join(' · ') || 'No phone or email on file.'}
         </p>
         <p className="sub" style={{ marginTop: 8 }}>
           You don't have edit access to this yet — contact your clinic to make changes.
@@ -380,9 +457,15 @@ function HouseholdCard({ household, canEdit, onSave }: {
             <input className="input" value={draft?.postal_code ?? ''} onChange={(e) => setDraft((d) => d && { ...d, postal_code: e.target.value })} />
           </div>
         </div>
-        <div className="field">
-          <label>Phone</label>
-          <input className="input" value={draft?.phone ?? ''} onChange={(e) => setDraft((d) => d && { ...d, phone: e.target.value })} />
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Phone</label>
+            <input className="input" value={draft?.phone ?? ''} onChange={(e) => setDraft((d) => d && { ...d, phone: e.target.value })} />
+          </div>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Email</label>
+            <input className="input" type="email" value={draft?.email ?? ''} onChange={(e) => setDraft((d) => d && { ...d, email: e.target.value })} />
+          </div>
         </div>
         <button
           className="btn"

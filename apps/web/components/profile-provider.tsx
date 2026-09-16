@@ -14,6 +14,7 @@ import * as React from "react";
 import {
   explainProblem, getIdentity, refreshIdentity, type Identity,
 } from "@summit/session";
+import { initSettings } from "@summit/settings";
 
 interface Ctx { identity: Identity | null; loading: boolean; reload: () => void }
 
@@ -31,6 +32,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => { load(); }, [load]);
+  // First use of @summit/settings in this app - same call/timing every
+  // other portal's session bootstrap already uses (see apps/client's own
+  // _app.tsx). Only consumer today is the Availability card's
+  // calendar.workStart/workEnd/workDays/gridIncrementMinutes read.
+  React.useEffect(() => { if (identity) void initSettings(); }, [identity]);
 
   const value = React.useMemo(
     () => ({ identity, loading, reload: () => load(true) }),

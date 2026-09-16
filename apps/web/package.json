@@ -20,7 +20,8 @@
     "@summit/design": "workspace:*",
     "@summit/nav": "workspace:*",
     "@summit/portals": "workspace:*",
-    "@summit/session": "workspace:*"
+    "@summit/session": "workspace:*",
+    "@summit/settings": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20",
