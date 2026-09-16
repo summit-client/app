@@ -352,11 +352,12 @@ export async function computeStaffPriorityStatus(userId: string, appRole: string
   ];
 
   if (appRole === "clinician" || appRole === "supervisor") {
-    const credRes = await sb().from("employee_credentials").select("id").eq("user_id", userId).limit(1);
+    const [credRes, avail] = await Promise.all([
+      sb().from("employee_credentials").select("id").eq("user_id", userId).limit(1),
+      getMyStaffAvailability(staff.id),
+    ]);
     if (credRes.error) throw new ProvisioningError("my-credentials-check", describe(credRes.error));
     items.push({ critical: true, done: (credRes.data?.length ?? 0) > 0 });
-
-    const avail = await getMyStaffAvailability(staff.id);
     items.push({ critical: true, done: avail.length > 0 });
   }
 

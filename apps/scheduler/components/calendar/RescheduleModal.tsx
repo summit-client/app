@@ -494,10 +494,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const overlayStyle: React.CSSProperties = {
   position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center",
-  // A light blur (not the calendar's other modals - just this one, on
-  // request) on whatever's behind the popup, to pull focus onto the
-  // reschedule flow itself rather than the grid still visible around it.
-  backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+  // Same blur every popup across the app now uses (normalized 2026-09-16),
+  // not a one-off just for this modal anymore.
+  backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)",
 };
 const modalStyle: React.CSSProperties = {
   background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",

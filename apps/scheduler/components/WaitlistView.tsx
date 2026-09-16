@@ -100,6 +100,11 @@ interface WaitlistViewProps {
   // view - see that file's `views` object), so many more props than these
   // arrive at runtime. Only what's used here is declared.
   onNavigate?: (view: string) => void;
+  // Opens the same popup the calendar's click-to-create uses, pre-seeded
+  // with this client/location/session type - see CreateView's own
+  // `waitlistPrefill` effect in pages/index.jsx. Falls back to a plain
+  // navigation to the Create tab (the old behavior) if this isn't wired.
+  onRequestBookFromWaitlist?: (client: Client) => void;
 }
 
 function daysWaiting(createdAt?: string | null): number | null {
@@ -110,7 +115,7 @@ function daysWaiting(createdAt?: string | null): number | null {
   return Math.max(0, Math.floor(ms / 86400000));
 }
 
-export function WaitlistView({ clients, setClients, locations, showToast, onNavigate }: WaitlistViewProps) {
+export function WaitlistView({ clients, setClients, locations, showToast, onNavigate, onRequestBookFromWaitlist }: WaitlistViewProps) {
   const [promotingId, setPromotingId] = useState<number | null>(null);
   const [priorityUpdatingId, setPriorityUpdatingId] = useState<number | null>(null);
   // Which row's notes editor is expanded, and its in-progress draft text -
@@ -295,7 +300,7 @@ export function WaitlistView({ clients, setClients, locations, showToast, onNavi
 
                   <button
                     type="button"
-                    onClick={() => onNavigate?.("create")}
+                    onClick={() => onRequestBookFromWaitlist ? onRequestBookFromWaitlist(client) : onNavigate?.("create")}
                     style={{
                       padding: "5px 14px", borderRadius: 8, fontSize: 13,
                       border: `0.5px solid ${COLORS.border}`, background: COLORS.bg,

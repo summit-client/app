@@ -315,7 +315,7 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profil
           aria-label="Sign out"
           title="Sign out"
           style={{
-            marginLeft: adminHref || settingsHref || profileHref ? 4 : 'auto',
+            marginLeft: priorityStatus ? 8 : adminHref || settingsHref || profileHref ? 4 : 'auto',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',

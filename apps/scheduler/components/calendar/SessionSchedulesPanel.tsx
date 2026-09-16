@@ -372,7 +372,7 @@ export function SessionSchedulesPanel({
 
 const overlayStyle: React.CSSProperties = {
   position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center",
-  backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+  backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)",
 };
 const modalStyle: React.CSSProperties = {
   background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",

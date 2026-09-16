@@ -76,10 +76,12 @@ interface Client {
   waitlist_priority?: string;
 }
 
-const defaultStaffForm = { name: '', role: 'RBT', specialties: [] as string[], capacity: 20 };
+interface Location { id: number; name: string; }
+
+const defaultStaffForm = { name: '', role: 'RBT', specialties: [] as string[], capacity: 20, location_id: null as number | null };
 const defaultClientForm = {
   name: '', email: '', session_type: 'Direct Therapy', status: 'active', address: '',
-  contact_phone: '', contact_email: '', referral_source: '',
+  contact_phone: '', contact_email: '', referral_source: '', location_id: null as number | null,
 };
 
 const roleColors: Record<string, string> = {
@@ -96,6 +98,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('staff');
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [clientList, setClientList] = useState<Client[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [sessionTypeNames, setSessionTypeNames] = useState<string[]>(DEFAULT_SESSION_TYPES);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -123,17 +126,19 @@ export default function AdminPage() {
 
 async function fetchAll() {
   setLoading(true);
-  const [{ data: staff }, { data: clients }, { data: bk }, { data: cal }, { data: types }] = await Promise.all([
+  const [{ data: staff }, { data: clients }, { data: bk }, { data: cal }, { data: types }, { data: locs }] = await Promise.all([
     supabase.from('staff').select('*').order('name'),
     supabase.from('clients').select('*').order('name'),
     supabase.from('sessions').select('*'),
     supabase.from('calendars').select('*'),
     supabase.from('session_types').select('name').order('name'),
+    supabase.from('locations').select('id, name').order('name'),
   ]);
   setStaffList(staff || []);
   setClientList(clients || []);
   setBookings(bk || []);
   setCalendars(cal || []);
+  setLocations(locs || []);
   // This clinic's own configured session types (SessionTypeEditModal,
   // migration 0019), not the fixed four-item list every clinic used to be
   // stuck with here regardless of what it actually configured.
@@ -166,6 +171,7 @@ async function fetchAll() {
         role: staffForm.role,
         specialties: staffForm.specialties,
         capacity: staffForm.capacity,
+        location_id: staffForm.location_id,
         booked: 0,
         availability: [],
         clinic_id: appUser.clinic_id,
@@ -211,6 +217,7 @@ async function fetchAll() {
         contact_phone: clientForm.contact_phone.trim() || null,
         contact_email: clientForm.contact_email.trim() || null,
         referral_source: clientForm.referral_source.trim() || null,
+        location_id: clientForm.location_id,
         sessions: 0,
         availability: [],
         clinic_id: appUser.clinic_id,
@@ -403,6 +410,8 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 1000,
+      backdropFilter: 'blur(2.8px)',
+      WebkitBackdropFilter: 'blur(2.8px)',
     } as React.CSSProperties,
 
     modal: {
@@ -589,6 +598,10 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
         {ROLES.map(r => <option key={r}>{r}</option>)}
       </select>
       <input style={{ ...s.input, marginBottom: 0, width: 80 }} type="number" value={editForm.capacity ?? member.capacity} onChange={e => setEditForm(f => ({ ...f, capacity: Number(e.target.value) }))} />
+      <select style={{ ...s.select, marginBottom: 0, width: 140 }} value={editForm.location_id ?? member.location_id ?? ''} onChange={e => setEditForm(f => ({ ...f, location_id: e.target.value ? Number(e.target.value) : null }))}>
+        <option value="">No location set</option>
+        {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+      </select>
       <button style={s.btnPrimary} onClick={() => handleSave('staff', member.id)} disabled={saving}>Save</button>
       <button style={s.btnGhost} onClick={() => { setEditingId(null); setEditForm({}); }}>Cancel</button>
     </div>
@@ -596,7 +609,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
     <>
       <div>
         <div style={s.cardName}>{member.name}</div>
-        <div style={s.cardSub}>{member.booked ?? 0}/{member.capacity ?? '—'} sessions booked{member.specialties?.length ? ' · ' + member.specialties.join(', ') : ''}</div>
+        <div style={s.cardSub}>{member.booked ?? 0}/{member.capacity ?? '—'} sessions booked{member.specialties?.length ? ' · ' + member.specialties.join(', ') : ''} · {locations.find(l => l.id === member.location_id)?.name ?? 'No location set'}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(roleColors[member.role] || '#6B7280')}>{member.role}</span>
@@ -623,6 +636,10 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       <input style={{ ...s.input, marginBottom: 0, width: 150 }} type="tel" value={editForm.contact_phone ?? client.contact_phone ?? ''} onChange={e => setEditForm(f => ({ ...f, contact_phone: e.target.value }))} placeholder="Phone" />
       <input style={{ ...s.input, marginBottom: 0, width: 180 }} type="email" value={editForm.contact_email ?? client.contact_email ?? ''} onChange={e => setEditForm(f => ({ ...f, contact_email: e.target.value }))} placeholder="Contact email" />
       <input style={{ ...s.input, marginBottom: 0, width: 180 }} value={editForm.referral_source ?? client.referral_source ?? ''} onChange={e => setEditForm(f => ({ ...f, referral_source: e.target.value }))} placeholder="Referral source" />
+      <select style={{ ...s.select, marginBottom: 0, width: 140 }} value={editForm.location_id ?? client.location_id ?? ''} onChange={e => setEditForm(f => ({ ...f, location_id: e.target.value ? Number(e.target.value) : null }))}>
+        <option value="">No location set</option>
+        {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+      </select>
       <button style={s.btnPrimary} onClick={() => handleSave('clients', client.id)} disabled={saving}>Save</button>
       <button style={s.btnGhost} onClick={() => { setEditingId(null); setEditForm({}); }}>Cancel</button>
     </div>
@@ -630,7 +647,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
     <>
       <div>
         <div style={s.cardName}>{client.name}</div>
-        <div style={s.cardSub}>{client.email || 'No email'} · {client.session_type}{client.address ? ` · ${client.address}` : ''}</div>
+        <div style={s.cardSub}>{client.email || 'No email'} · {client.session_type}{client.address ? ` · ${client.address}` : ''} · {locations.find(l => l.id === client.location_id)?.name ?? 'No location set'}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(statusColors[client.status] || '#6B7280')}>{client.status}</span>
@@ -691,6 +708,16 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
                     </span>
                   ))}
                 </div>
+
+                <label style={s.label}>Location</label>
+                <select
+                  style={s.select}
+                  value={staffForm.location_id ?? ''}
+                  onChange={e => setStaffForm(f => ({ ...f, location_id: e.target.value ? Number(e.target.value) : null }))}
+                >
+                  <option value="">No location set</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
               </>
             ) : (
               <>
@@ -763,6 +790,16 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
                   onChange={e => setClientForm(f => ({ ...f, address: e.target.value }))}
                   placeholder="Used for home-visit sessions"
                 />
+
+                <label style={s.label}>Location</label>
+                <select
+                  style={s.select}
+                  value={clientForm.location_id ?? ''}
+                  onChange={e => setClientForm(f => ({ ...f, location_id: e.target.value ? Number(e.target.value) : null }))}
+                >
+                  <option value="">No location set</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
               </>
             )}
 

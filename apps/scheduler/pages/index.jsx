@@ -871,6 +871,18 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
     showToast("Availability saved");
   }
 
+  // client.sessions is a stored counter, set to 0 at creation and never
+  // incremented or decremented anywhere a session is actually booked or
+  // cancelled - it silently drifts from reality (a client could show "11
+  // sessions" here while NeedsAttentionPanel, reading the live `bookings`
+  // array, correctly tags the same client "Never booked"). Counting
+  // non-cancelled bookings live, the same source NeedsAttentionPanel
+  // already uses, keeps this in sync instead of adding a second thing that
+  // has to remember to update the stored counter.
+  function sessionsCountFor(clientId) {
+    return (bookings || []).filter(b => b.client_id === clientId && b.status !== "cancelled").length;
+  }
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
@@ -911,7 +923,7 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
                   {availSummary.length > 0 && <div style={{ fontSize: 12, color: COLORS.textT, marginTop: 4 }}>{availSummary.join(" · ")}</div>}
                 </div>
                 <Badge label={client.status === "active" ? "Active" : "Waitlist"} color={client.status === "active" ? "#5DCAA5" : "#EF9F27"} />
-                <div style={{ fontSize: 13, color: COLORS.textS, minWidth: 70, textAlign: "right" }}>{client.sessions} sessions</div>
+                <div style={{ fontSize: 13, color: COLORS.textS, minWidth: 70, textAlign: "right" }}>{sessionsCountFor(client.id)} sessions</div>
                 <button onClick={() => setExpandedId(isExp ? null : client.id)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, border: `0.5px solid ${COLORS.border}`, background: isExp ? COLORS.bgT : COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
                   {isExp ? "Close" : "Edit availability"}
                 </button>
@@ -1354,7 +1366,7 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
 
 // ─── Create view ──────────────────────────────────────────────────────────────
 
-function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays, workStart, workEnd, prefill, onConsumedPrefill }) {
+function CreateView({ clients, employees, sessionTypes, locations, calendars, setCalendars, staffAvailability, clientAvailability, bookings, refreshBookings, typeColors, showToast, workDays, workStart, workEnd, prefill, onConsumedPrefill, waitlistPrefill, onConsumedWaitlistPrefill }) {
   const appUser = useContext(UserContext);
   const [step, setStep] = useState("calendar");
   const [trail, setTrail] = useState([]);
@@ -1472,6 +1484,39 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     setStep("quickSlot");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
+
+  // Waitlist's "Book a session" - replicates the calendar's click-to-create
+  // popup (same overlay, below in Scheduler()), but pre-seeds client,
+  // location and session type instead of a specific date/hour/minute (the
+  // waitlist has none of those yet - that's the whole point of this path).
+  // Unlike quickSlot (which needs an exact slot already chosen), this jumps
+  // into the standard wizard's own "staff" step with calendar/matchCount/
+  // location/client/sessionType already answered the same way clicking
+  // through each of those steps would have set them - staff and an
+  // available time are the only things actually left to pick. Session type
+  // defaults to "Assessment" (still changeable) because handleConfirmAndBook
+  // already auto-promotes a waitlist client off the list on a booked
+  // Assessment session - this path leads straight into that existing
+  // behavior rather than around it.
+  useEffect(() => {
+    if (!waitlistPrefill) return;
+    const covering = calendars.find(c => c.status === "active") ?? calendars.find(c => c.status !== "archived") ?? null;
+    const location = locations.find(l => l.id === waitlistPrefill.location_id) ?? null;
+    const client = clients.find(c => c.id === waitlistPrefill.id) ?? null;
+    const sessionType = sessionTypes.find(st => st.name === "Assessment") ?? sessionTypes[0] ?? null;
+    setSelectedCalendar(covering);
+    setMatchCount("one");
+    setSelectedLocation(location);
+    setSelectedClient(client);
+    setSelectedSessionType(sessionType);
+    setStaffChoice(null);
+    setSelectedStaff(null);
+    setRecurring("no"); setEndType(null); setEndDate(""); setEndCount("");
+    setError(null);
+    setTrail([covering?.name, "One match", location?.name, client?.name, sessionType?.name].filter(Boolean));
+    setStep("staff");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waitlistPrefill]);
 
   const ONE_ORDER = ["calendar", "matchCount", "location", "client", "sessionType", "staff", "time", "review", "booked"];
   const MULTI_ORDER = ["calendar", "matchCount", "multiClient", "time", "review", "booked"];
@@ -2191,7 +2236,7 @@ finally { setLoading(false); }
         </div>
 
         {pendingConflict && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)" }}
             onClick={e => { if (e.target === e.currentTarget) setPendingConflict(null); }}>
             <div ref={pendingConflictTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Scheduling conflict" style={{ width: 380, background: COLORS.bg, borderRadius: 14, padding: "24px 26px", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 12px 40px rgba(0,0,0,0.25)" }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.text, marginBottom: 6 }}>Scheduling conflict</div>
@@ -2599,7 +2644,16 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   const [rescheduleInitialSlot, setRescheduleInitialSlot] = useState(null);
 
   const [calFilter, setCalFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("scheduled");
+  // Was "scheduled" - since there's no "completed" status in this schema
+  // yet (a session past its date just stays "scheduled" - see
+  // NeedsAttentionPanel's own comment on that same gap), that default only
+  // ever excluded cancelled/no_show sessions, but a client or clinic whose
+  // sessions carry a status value this dropdown doesn't special-case would
+  // see an empty list by default with no visible reason why. "All statuses"
+  // is a real option here already - defaulting to it means this list always
+  // shows something to filter FROM, rather than starting pre-filtered to a
+  // guess.
+  const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [staffFilter, setStaffFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -2815,8 +2869,8 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
             {(employees || []).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
         )}
-        {(search || statusFilter !== "scheduled" || calFilter !== "all" || typeFilter !== "all" || staffFilter !== "all") && (
-          <button onClick={() => { setSearch(""); setStatusFilter("scheduled"); setCalFilter("all"); setTypeFilter("all"); setStaffFilter("all"); }}
+        {(search || statusFilter !== "all" || calFilter !== "all" || typeFilter !== "all" || staffFilter !== "all") && (
+          <button onClick={() => { setSearch(""); setStatusFilter("all"); setCalFilter("all"); setTypeFilter("all"); setStaffFilter("all"); }}
             style={{ padding: "6px 12px", borderRadius: 8, fontSize: 13, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textT, cursor: "pointer" }}>
             Clear
           </button>
@@ -2945,7 +2999,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
       {rescheduleTarget && (() => {
         const client = clients.find(c => c.id === rescheduleTarget.client_id);
         return (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)" }}>
             <div ref={rescheduleTrapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" style={{ background: COLORS.bg, borderRadius: 14, padding: 28, width: 380, border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: COLORS.text, marginBottom: 4 }}>
                 Reschedule session
@@ -3101,16 +3155,27 @@ export default function Scheduler() {
   // looking at (the calendar) never actually goes anywhere - it's just
   // covered by the popup until this closes.
   const [calendarPrefill, setCalendarPrefill] = useState(null);
+  // Waitlist's "Book a session" - shares the exact same popup as
+  // calendarPrefill below (same overlay, same CreateView instance), just
+  // seeded from a waitlist client instead of a calendar click. Kept as its
+  // own state rather than reused into calendarPrefill's shape since the two
+  // carry different information (a date/hour/minute vs a client/location)
+  // and CreateView's two prefill effects key off which one is actually set.
+  const [waitlistPrefill, setWaitlistPrefill] = useState(null);
+  function closePrefillPopup() { setCalendarPrefill(null); setWaitlistPrefill(null); }
   // Click-to-create's quick-slot wizard modal had no Escape-to-close.
   useEffect(() => {
-    if (!calendarPrefill) return;
-    const onKey = e => { if (e.key === "Escape") setCalendarPrefill(null); };
+    if (!calendarPrefill && !waitlistPrefill) return;
+    const onKey = e => { if (e.key === "Escape") closePrefillPopup(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [calendarPrefill]);
-  const calendarPrefillTrapRef = useFocusTrap(!!calendarPrefill);
+  }, [calendarPrefill, waitlistPrefill]);
+  const calendarPrefillTrapRef = useFocusTrap(!!(calendarPrefill || waitlistPrefill));
   function requestCreateAt(dateStr, hour, minute) {
     setCalendarPrefill({ dateStr, hour, minute });
+  }
+  function requestBookFromWaitlist(client) {
+    setWaitlistPrefill(client);
   }
 
   // Backs the Dashboard's clickable client/clinician names (PersonLink,
@@ -3193,6 +3258,7 @@ export default function Scheduler() {
           workEnd={workEnd} setWorkEnd={setWorkEnd}
           showToast={showToast}
           onRequestCreate={requestCreateAt}
+          onRequestBookFromWaitlist={requestBookFromWaitlist}
           onNavigate={setView}
           prefill={calendarPrefill}
           onConsumedPrefill={() => setCalendarPrefill(null)}
@@ -3206,13 +3272,13 @@ export default function Scheduler() {
           refreshSignal={bookings}
         />
       </main>
-      {calendarPrefill && (
+      {(calendarPrefill || waitlistPrefill) && (
         <div
-          onClick={() => setCalendarPrefill(null)}
+          onClick={closePrefillPopup}
           style={{
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 200,
             display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-            backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+            backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)",
           }}
         >
           <div
@@ -3229,7 +3295,7 @@ export default function Scheduler() {
             }}
           >
             <button
-              onClick={() => setCalendarPrefill(null)}
+              onClick={closePrefillPopup}
               aria-label="Close"
               style={{
                 position: "absolute", top: 12, right: 12, width: 30, height: 30, borderRadius: "50%",
@@ -3256,6 +3322,8 @@ export default function Scheduler() {
               showToast={showToast}
               prefill={calendarPrefill}
               onConsumedPrefill={() => setCalendarPrefill(null)}
+              waitlistPrefill={waitlistPrefill}
+              onConsumedWaitlistPrefill={() => setWaitlistPrefill(null)}
             />
           </div>
         </div>

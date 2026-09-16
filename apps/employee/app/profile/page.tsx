@@ -21,14 +21,12 @@ import { SessionGate, useIdentity, useSession } from "@/components/session-provi
  * onboarding and training deadline; role controls what the Admin page shows. */
 export default function ProfilePage() {
   return (
-    <HubGate>
-      {/* HrGate too: the credential number below comes from the HR snapshot,
-          and reading it before that store has loaded would render an empty
-          field that looks like "you have no credential recorded". */}
-      <HrGate>
-        <Profile />
-      </HrGate>
-    </HubGate>
+    // HrGate already wraps its children in HubGate internally - an outer
+    // HubGate here just made the hub snapshot load twice, fully
+    // sequentially, before the HR snapshot even started.
+    <HrGate>
+      <Profile />
+    </HrGate>
   );
 }
 
