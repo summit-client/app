@@ -149,7 +149,20 @@ export interface InviteTeammateInput {
   role: "admin" | "supervisor" | "clinician" | "scheduler" | "client";
   fullName?: string;
   supervisorId?: string;
+  /** role === "client" only: link to this EXISTING, unlinked clients row. */
   clientId?: number;
+  /**
+   * role === "client" only, and only when clientId is omitted - creates a
+   * new clients row inline instead of requiring one to already exist. See
+   * invite-teammate's own InviteRequest for the exact shape; sessionType is
+   * the only one of these that's required.
+   */
+  sessionType?: string;
+  status?: string;
+  address?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  referralSource?: string;
 }
 export interface EditTeammateInput {
   targetUserId: string;
@@ -206,6 +219,12 @@ export async function inviteTeammate(input: InviteTeammateInput): Promise<void> 
     full_name: input.fullName,
     supervisor_id: input.supervisorId,
     client_id: input.clientId,
+    session_type: input.sessionType,
+    status: input.status,
+    address: input.address,
+    contact_phone: input.contactPhone,
+    contact_email: input.contactEmail,
+    referral_source: input.referralSource,
   });
 }
 
@@ -220,6 +239,20 @@ export async function editTeammate(input: EditTeammateInput): Promise<void> {
 
 export async function deactivateTeammate(targetUserId: string): Promise<{ warning?: string }> {
   return invoke("edit-teammate", { target_user_id: targetUserId, deactivate: true }) as Promise<{ warning?: string }>;
+}
+
+/**
+ * Existing scheduler `clients` records with no portal login yet - the
+ * InviteForm's picker for `role === "client"`. Plain RLS-backed read (the
+ * clinic-wide `clients` select every staff role here already has), not part
+ * of the snapshot system the rest of this file loads once - this app has no
+ * other reason to touch the clients table, so it's fetched on demand only
+ * when the invite form's role is set to "client".
+ */
+export async function listUnlinkedClients(): Promise<{ id: number; name: string }[]> {
+  const res = await sb().from("clients").select("id, name").is("user_id", null).order("name");
+  if (res.error) throw new ProvisioningError("list-clients", describe(res.error));
+  return (res.data ?? []) as { id: number; name: string }[];
 }
 
 /* ---- preview backend -------------------------------------------------------- */
