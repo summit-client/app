@@ -467,6 +467,27 @@ access to `apps/employee` at all, now scoped specifically to the Admin
 console (PR #94, migration `0022` — applied live — widened
 `hub_can_manage()`, see "One role vocabulary" above).
 
+Fixed 2026-09-16 (PR #175): invites consolidated to one flow —
+`apps/employee`'s Admin console `InviteForm` is now the only place to invite
+anyone, staff or client; the duplicate panel in `apps/scheduler`'s admin page
+is deleted outright, no replacement link. `invite-teammate` now
+auto-provisions the full row set for a brand-new account in one call —
+`staff` + `staff_availability` + `employment_records` for staff-shaped
+roles, `clients` + `client_availability` for an inline-created client.
+Backed by migration `0075` (`staff.user_id` — never existed before despite
+0013's comment assuming it did) and migration `0076` (`staff` contact/
+emergency-contact columns + a guard trigger restricting self-edit to those
+fields, `staff_availability`/`client_availability` own-row write RLS,
+`households.email`) — both confirmed applied live. A profile-setup checklist
+now drives a progress ring on the cross-portal nav avatar (critical items get
+a plain "!" badge, no text anywhere); shared `@summit/availability` package
+replaces three independent copies of the drag-to-select grid, with the org's
+real `calendar.gridIncrementMinutes` wired through instead of a hardcoded 30.
+Also: `apps/web/pages/profile.tsx` (and its provider) deleted — it had
+become two identity-only stubs nothing in the app linked to anymore, once
+`profileUrl()` was repointed to send every role straight to its real profile
+in `apps/employee` or `apps/client`.
+
 - **`invite-teammate` does not check whether the invited email already has a
   `profiles` row before upserting one.** Supabase's `inviteUserByEmail`
   resolves an already-registered email to that *same existing user id*
