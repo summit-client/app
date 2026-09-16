@@ -81,7 +81,7 @@ export default function SessionTypeEditModal({ sessionType, clinicId, onSave, on
   ];
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={isNew ? "New session type" : "Edit session type"}
         style={{ background: COLORS.bg, borderRadius: 14, padding: "28px 28px 24px", width: 380, maxHeight: "85vh", overflowY: "auto", border: `0.5px solid ${COLORS.borderS}`, boxShadow: "0 8px 32px rgba(0,0,0,0.22)" }}>

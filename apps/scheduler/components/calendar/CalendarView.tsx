@@ -843,7 +843,7 @@ function ModeButton({ active, label, onClick }: { active: boolean; label: string
 }
 
 const overlayStyle: React.CSSProperties = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center",
+  position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center",
 };
 const modalStyle: React.CSSProperties = {
   width: 340, background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",

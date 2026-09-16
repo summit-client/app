@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
-import { supabase } from '../lib/supabase'
+import { supabase, setRememberMePreference } from '../lib/supabase'
 import { ROLE_REDIRECTS } from '../lib/role-redirects'
 import { withTimeout } from '../lib/withTimeout'
 import { describeAuthError } from '../lib/authErrors'
@@ -38,6 +38,7 @@ export default function Login() {
   const router = useRouter()
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(true)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
   const [formError, setFormError]     = useState('')
   const [loading, setLoading]         = useState(false)
@@ -61,6 +62,13 @@ export default function Login() {
     if (errors.email || errors.password) return
 
     setLoading(true)
+
+    // Must be set before signInWithPassword() below - that call is what
+    // actually writes the session cookie, via lib/supabase.ts's setAll(),
+    // which reads this preference to decide whether the cookie gets a
+    // Max-Age (survives closing the browser) or none (a session cookie,
+    // gone once the browser fully closes).
+    setRememberMePreference(rememberMe)
 
     // This is the one place in apps/web that verifies a fresh credential
     // pair, not a possibly-stale cookie - the cross-portal getUser()-vs-
@@ -119,7 +127,7 @@ export default function Login() {
   }
 
   return (
-    <AuthCard title="Sign in to Summit Client" subtitle="Welcome back. Enter your details to continue.">
+    <AuthCard title="Welcome back" subtitle="Enter your details to continue.">
       <form className="auth-form" onSubmit={handleSubmit} noValidate>
         {formError && (
           <p className="auth-form-error" role="alert">{formError}</p>
@@ -145,6 +153,15 @@ export default function Login() {
           error={fieldErrors.password}
           required
         />
+
+        <label className="auth-remember">
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={e => setRememberMe(e.target.checked)}
+          />
+          Remember me
+        </label>
 
         <SubmitButton loading={loading} loadingLabel="Signing in…">
           Sign in

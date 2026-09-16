@@ -334,17 +334,28 @@ html { scroll-behavior: smooth; }
    These properties used to be chosen in JS by an `isMobile` state that
    starts `false` (to match server-rendered HTML) and flips after a
    `matchMedia` check runs in a `useEffect`. That flip lands ~1 render tick
-   after hydration, so on a phone the page briefly laid out as the 320vh
-   pinned-scroll desktop scene (2-column grid squeezed into the viewport)
-   and then collapsed to the real mobile stack - confirmed live: hero
-   height went from 2700px to 1039px within ~100ms of load on a 390px
-   viewport, a huge, visible reflow. CSS media queries apply during the
-   very first paint, before any JS runs, so moving the breakpoint-sensitive
-   properties here removes the reflow entirely. `isMobile` in index.tsx now
-   only chooses which *scroll-linked motion values* (opacity/rotate driven
-   by scrollYProgress) apply on top of this already-correct layout - a
-   cosmetic decision, never a layout one. */
-.hero-bg { position: relative; height: 320vh; }
+   after hydration, so on a phone the page briefly laid out as the pinned-
+   scroll desktop scene (2-column grid squeezed into the viewport) and then
+   collapsed to the real mobile stack - confirmed live: hero height went
+   from 2700px to 1039px within ~100ms of load on a 390px viewport, a huge,
+   visible reflow. CSS media queries apply during the very first paint,
+   before any JS runs, so moving the breakpoint-sensitive properties here
+   removes the reflow entirely. `isMobile` in index.tsx now only chooses
+   which *scroll-linked motion values* (opacity/rotate driven by
+   scrollYProgress) apply on top of this already-correct layout - a
+   cosmetic decision, never a layout one.
+
+   Was 320vh (2026-09-17: shortened to 200vh). index.tsx's scene-timing
+   constants (PILL_START/SWEEP_START/etc.) are all fractions of
+   scrollYProgress (0-1), which useScroll normalizes to whatever this
+   height actually is - so this number alone controls how much physical
+   scrolling the whole choreographed sequence takes, without needing any of
+   those fractions to change. Shortened because the contrast between this
+   pinned scene and the normal-height sections after it made the rest of
+   the page feel like it was flying by right after; the choreography itself
+   (pill entrance, calendar rotation, cell sweep) is unchanged, just
+   compressed into less scroll distance. */
+.hero-bg { position: relative; height: 200vh; }
 @media (max-width: 780px) {
   .hero-bg { height: auto; }
 }
@@ -508,6 +519,21 @@ html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) {
   .auth-spinner { animation-duration: 1.4s; }
 }
+
+.legal-body h2 {
+  font-family: 'Outfit', sans-serif; font-size: 1.15rem; font-weight: 600;
+  color: var(--brand-navy); margin: 2.25rem 0 .75rem;
+}
+.legal-body p { margin: 0 0 1rem; }
+.legal-body ul { margin: 0 0 1rem; padding-left: 1.25rem; }
+.legal-body li { margin-bottom: .4rem; }
+
+.auth-remember {
+  display: flex; align-items: center; gap: .55rem;
+  font-size: .85rem; color: var(--brand-gray-700); font-weight: 500;
+  cursor: pointer; user-select: none;
+}
+.auth-remember input { width: 16px; height: 16px; accent-color: var(--brand-teal); cursor: pointer; }
 
 .auth-links {
   display: flex; flex-wrap: wrap; gap: .5rem 1rem; justify-content: space-between;
@@ -733,10 +759,10 @@ html { scroll-behavior: smooth; }
    a tall track holds a sticky viewport while scroll drives the sequence. One
    motion vocabulary across the page.
 
-   Tighter than the hero, though. The hero runs 320vh because it choreographs
-   several things at once; this steps through five panels, so 260vh keeps each
-   stage on screen long enough to read without the section becoming a hostage
-   scroll. */
+   This steps through five panels, so 260vh keeps each stage on screen long
+   enough to read without the section becoming a hostage scroll - unrelated
+   to the hero's own height (`.hero-bg`, shortened 2026-09-17), which was
+   tuned independently for a different, denser choreography. */
 .flow-track { height: 260vh; position: relative; }
 .flow-sticky {
   position: sticky;
