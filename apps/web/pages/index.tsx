@@ -120,8 +120,9 @@ export default function Home() {
   const display = "'Outfit',sans-serif"
   const body    = "'Source Sans 3',sans-serif"
 
-  // This hero is a pinned-scroll ("scrollytelling") sequence: a 320vh-tall
-  // container holds the viewport via position:sticky while scrollYProgress
+  // This hero is a pinned-scroll ("scrollytelling") sequence: a tall
+  // container (`.hero-bg`, 200vh) holds the viewport via position:sticky
+  // while scrollYProgress
   // drives pills flying in, a calendar 3D-rotating, and cells sweeping a
   // highlight in choreographed order - all tuned around that long, slow
   // scroll distance. Compressing that same choreography onto a phone's
@@ -198,7 +199,7 @@ export default function Home() {
   // from there, `.hero-bg`'s own remaining height is always exactly one more
   // viewport tall, however tall `.hero-bg` itself is set to (that's just
   // what "a nearly-viewport-tall sticky child, in a container that ends
-  // right after it" requires - shrinking `.hero-bg`'s 320vh doesn't change
+  // right after it" requires - shrinking `.hero-bg`'s height doesn't change
   // this, it only compresses everything before it). scrollYProgress is
   // clamped at 1 for that entire final viewport, so any opacity curve that
   // reaches 0 by progress 1 (as this one deliberately did) stays at 0 for

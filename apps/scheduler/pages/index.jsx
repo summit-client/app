@@ -214,9 +214,7 @@ function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, 
     const hasClientAvail = (clientAvailability || []).some(a => a.client_id === dragPs.clientId);
     if (!hasClientAvail) return "green";
     const cAvail = clientAvailAt(dragPs.clientId, day, tKey, clientAvailability);
-    const anyStaffAvail = employees.some(e =>
-      e.specialties?.includes(dragPs.sessionType) && staffAvailAt(e.id, day, tKey, staffAvailability)
-    );
+    const anyStaffAvail = employees.some(e => staffAvailAt(e.id, day, tKey, staffAvailability));
     if (sAvail && cAvail) return "green";
     if (cAvail && anyStaffAvail) return "yellow";
     return "normal";
@@ -1970,7 +1968,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     const differentClinician = suggestDifferentClinicianSameSlot({
       dateStr: prefill.dateStr, hour: prefill.hour, minute: prefill.minute, durationMinutes: duration,
       locationId: quickStaff.location_id ?? null, excludeEmployeeId: quickStaff.id,
-      employees: assignableEmployees.filter(e => e.specialties?.includes(quickType.name)), sessions: existing, staffAvailability,
+      employees: assignableEmployees, sessions: existing, staffAvailability,
     });
     setPendingConflict({ message, suggestions: [...sameClinician, ...differentClinician] });
   }
@@ -1985,7 +1983,6 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       // (or nobody, if unlinked) - it would otherwise recommend a colleague
       // for a clinician to book, which the final insert rejects outright.
       const eligible = assignableEmployees.filter(e =>
-        e.specialties?.includes(selectedSessionType.name) &&
         e.booked < e.capacity &&
         e.location_id === selectedClient.location_id &&
         (staffChoice === "any" || e.id === selectedStaff?.id)
@@ -2017,7 +2014,6 @@ Respond ONLY with valid JSON — no extra text:
         // colleague's slot that would fail to book.
         const eligible = assignableEmployees
           .filter(e =>
-            e.specialties?.includes(session_type) &&
             e.booked < e.capacity &&
             e.location_id === client.location_id
           )
@@ -2096,7 +2092,7 @@ finally { setLoading(false); }
     // nobody, if not yet linked to a staff row), never a colleague who
     // would just fail the insert.
     const eligibleStaff = quickType && quickClient
-      ? assignableEmployees.filter(e => e.specialties?.includes(quickType.name) && e.location_id === quickClient.location_id)
+      ? assignableEmployees.filter(e => e.location_id === quickClient.location_id)
       : [];
     const allThreeChosen = !!(quickClient && quickType && quickStaff);
     const ready = allThreeChosen && recurring && (recurring === "no" || (endType && (endType === "date" ? endDate : endCount)));
@@ -2401,7 +2397,7 @@ finally { setLoading(false); }
     // runMatch's own assignableEmployees-filtered candidate list rather than
     // silently being able to pick a colleague from this list who'd fail the
     // final insert.
-    const eligible = assignableEmployees.filter(e => e.specialties?.includes(selectedSessionType?.name) && e.booked < e.capacity && e.location_id === selectedClient?.location_id);
+    const eligible = assignableEmployees.filter(e => e.booked < e.capacity && e.location_id === selectedClient?.location_id);
     return (
       <div>{PH}<Trail steps={trail} onBack={goBack} />
         <StepCard question="Staff preference?">

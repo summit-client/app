@@ -33,6 +33,14 @@ const ROLES = ['BCBA', 'BCaBA', 'RBT', 'Supervisor'];
 // hardcoded and identical for every clinic regardless of what session types
 // that clinic actually configured. See BLOCKED-scheduler.md.
 const DEFAULT_SESSION_TYPES = ['Assessment', 'RBA Supervision', 'Direct Therapy', 'Group Therapy'];
+// Descriptive only (2026-09-16) - staff-matching eligibility (pages/index.jsx's
+// quickSlot/staff-step/AI-match filters) used to require a specialty chip
+// whose text exactly matched a session type's name, which almost never
+// happened (these two lists were never the same vocabulary - "Direct
+// Therapy" the session type vs. "DTT" the specialty). Dropped from matching
+// entirely rather than trying to reconcile the two taxonomies; eligibility
+// is now location + capacity + availability only. Kept as a field since it's
+// still useful staff metadata, just not a filter anymore.
 const SPECIALTIES_OPTIONS = ['Autism', 'Behavioral Intervention', 'Parent Training', 'Social Skills', 'VB', 'DTT', 'NET'];
 const STATUSES = ['active', 'inactive', 'waitlist'];
 
