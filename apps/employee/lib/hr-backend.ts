@@ -255,6 +255,70 @@ export async function listUnlinkedClients(): Promise<{ id: number; name: string 
   return (res.data ?? []) as { id: number; name: string }[];
 }
 
+/**
+ * The caller's own `staff` row (0075's user_id column) - phone, emergency
+ * contact and availability all live there now (0076), not on the HR
+ * snapshot this file otherwise loads once. Filtered by userId explicitly
+ * rather than left to RLS alone: an admin/scheduler/clinician's OTHER select
+ * policies on `staff` are clinic-wide, so a plain unfiltered read could
+ * return more than one row for them and blow up .maybeSingle(). null means
+ * no staff row exists yet - true for anyone invited before the pipeline
+ * that auto-creates one (see invite-teammate's own extension).
+ */
+export interface MyStaffRecord {
+  id: number;
+  phone: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+}
+
+export async function getMyStaffRecord(userId: string): Promise<MyStaffRecord | null> {
+  const res = await sb().from("staff")
+    .select("id, phone, emergency_contact_name, emergency_contact_phone")
+    .eq("user_id", userId).maybeSingle();
+  if (res.error) throw new ProvisioningError("my-staff-record", describe(res.error));
+  if (!res.data) return null;
+  return {
+    id: res.data.id as number,
+    phone: (res.data.phone as string | null) ?? null,
+    emergencyContactName: (res.data.emergency_contact_name as string | null) ?? null,
+    emergencyContactPhone: (res.data.emergency_contact_phone as string | null) ?? null,
+  };
+}
+
+export async function saveMyStaffContact(staffId: number, patch: {
+  phone?: string | null; emergencyContactName?: string | null; emergencyContactPhone?: string | null;
+}): Promise<void> {
+  const res = await sb().from("staff").update({
+    ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+    ...(patch.emergencyContactName !== undefined ? { emergency_contact_name: patch.emergencyContactName } : {}),
+    ...(patch.emergencyContactPhone !== undefined ? { emergency_contact_phone: patch.emergencyContactPhone } : {}),
+  }).eq("id", staffId);
+  if (res.error) throw new ProvisioningError("save-staff-contact", describe(res.error));
+}
+
+export async function getMyStaffAvailability(staffId: number): Promise<{ day: string; start_time: string; end_time: string }[]> {
+  const res = await sb().from("staff_availability").select("day, start_time, end_time").eq("staff_id", staffId);
+  if (res.error) throw new ProvisioningError("my-staff-availability", describe(res.error));
+  return (res.data ?? []) as { day: string; start_time: string; end_time: string }[];
+}
+
+/** Delete-then-insert, same shape as apps/scheduler's own availability save -
+ *  ranges come from @summit/availability's AvailabilityGrid, clinic_id added
+ *  by the caller (this module has no ambient "current clinic" the way the
+ *  HR snapshot does). */
+export async function saveMyStaffAvailability(
+  staffId: number,
+  ranges: Array<{ day: string; start_time: string; end_time: string; clinic_id: string }>,
+): Promise<void> {
+  const del = await sb().from("staff_availability").delete().eq("staff_id", staffId);
+  if (del.error) throw new ProvisioningError("save-staff-availability", describe(del.error));
+  if (ranges.length) {
+    const ins = await sb().from("staff_availability").insert(ranges.map((r) => ({ ...r, staff_id: staffId })));
+    if (ins.error) throw new ProvisioningError("save-staff-availability", describe(ins.error));
+  }
+}
+
 /* ---- preview backend -------------------------------------------------------- */
 
 const KEY = "summit-hr-store";
