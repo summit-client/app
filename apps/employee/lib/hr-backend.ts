@@ -319,6 +319,58 @@ export async function saveMyStaffAvailability(
   }
 }
 
+export interface PriorityStatus {
+  percent: number;
+  state: "critical" | "important" | "complete";
+  label: string;
+}
+
+/**
+ * The nav bar's profile-ring data, for staff-shaped roles (admin/supervisor/
+ * clinician/scheduler). Replaces the old hub.ts priorityProgress(), which was
+ * keyed off supervisorSignoffRequired onboarding tasks - an unrelated
+ * concept. This is the confirmed per-role table: contact info and emergency
+ * contact are critical for every staff role; credentials and availability
+ * are additionally critical for clinician/supervisor specifically (admin/
+ * scheduler don't carry a clinical credential or get booked). No "important"
+ * tier for staff roles - everything here is critical, matching the table as
+ * agreed; only the client-role checklist (apps/client) has an important
+ * tier (home session preference).
+ *
+ * Fully self-contained - does not touch the onboarding hub snapshot or the
+ * HR snapshot, both of which need their own provider load. This is called
+ * from apps/employee/components/portal-bar.tsx, which sits outside both.
+ * `null` means no staff row exists yet (nothing to check).
+ */
+export async function computeStaffPriorityStatus(userId: string, appRole: string | null): Promise<PriorityStatus | null> {
+  const staff = await getMyStaffRecord(userId);
+  if (!staff) return null;
+
+  const items: { critical: boolean; done: boolean }[] = [
+    { critical: true, done: !!staff.phone },
+    { critical: true, done: !!(staff.emergencyContactName && staff.emergencyContactPhone) },
+  ];
+
+  if (appRole === "clinician" || appRole === "supervisor") {
+    const credRes = await sb().from("employee_credentials").select("id").eq("user_id", userId).limit(1);
+    if (credRes.error) throw new ProvisioningError("my-credentials-check", describe(credRes.error));
+    items.push({ critical: true, done: (credRes.data?.length ?? 0) > 0 });
+
+    const avail = await getMyStaffAvailability(staff.id);
+    items.push({ critical: true, done: avail.length > 0 });
+  }
+
+  const total = items.length;
+  const done = items.filter((i) => i.done).length;
+  const outstanding = total - done;
+  const percent = total ? Math.round((done / total) * 100) : 100;
+  const state: PriorityStatus["state"] = outstanding > 0 ? "critical" : "complete";
+  const label = state === "complete"
+    ? "Profile complete"
+    : `${outstanding} item${outstanding === 1 ? "" : "s"} left`;
+  return { percent, state, label };
+}
+
 /* ---- preview backend -------------------------------------------------------- */
 
 const KEY = "summit-hr-store";

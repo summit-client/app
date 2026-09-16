@@ -13,14 +13,12 @@ import { AppNav } from "@summit/nav";
 import { parseVisiblePortals, profileUrl, signOutUrl } from "@summit/portals";
 import { getIdentity, type AppRole } from "@summit/session";
 import { getSetting, onSettingsChange } from "@summit/settings";
-import { getProgress, isHubLoaded, loadHub, onHubChange, priorityProgress } from "@/lib/hub";
-import { getSession } from "@/lib/session";
-
-type PriorityStatus = { percent: number; state: "critical" | "important" | "complete"; label: string };
+import { computeStaffPriorityStatus, type PriorityStatus } from "@/lib/hr-backend";
 
 export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
   const [role, setRole] = React.useState<AppRole | null | undefined>(undefined);
   const [fullName, setFullName] = React.useState<string | null>(null);
+  const [userId, setUserId] = React.useState<string | null>(null);
   const [priorityStatus, setPriorityStatus] = React.useState<PriorityStatus | null>(null);
 
   React.useEffect(() => {
@@ -29,37 +27,25 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
       if (!cancelled) {
         setRole(identity.appRole);
         setFullName(identity.fullName);
+        setUserId(identity.userId || null);
       }
     });
     return () => { cancelled = true; };
   }, []);
 
-  // The profile avatar's completion ring (@summit/nav's priorityStatus prop)
-  // needs the onboarding hub snapshot, which <HubGate> loads per-screen -
-  // this bar sits outside it (see file header), so it is never guaranteed to
-  // exist yet. Loads its own copy when nothing has loaded one already
-  // (getSession() re-maps @summit/session's already-cached identity, so
-  // that part costs nothing extra; loadHub() itself does cost a second
-  // Supabase read alongside whatever the screen's own <HubGate> triggers -
-  // accepted for now rather than standing up a second, lighter query for
-  // one ring's three numbers). onHubChange() keeps the ring in sync with
-  // every later load or mutation, from either source.
+  // The profile avatar's completion ring. computeStaffPriorityStatus() is
+  // fully self-contained (its own staff/employee_credentials/
+  // staff_availability reads) - unlike the old onboarding-hub-based version,
+  // it needs no snapshot from a provider this bar sits outside of (see file
+  // header), so there's nothing to load ahead of it here.
   React.useEffect(() => {
+    if (!userId) return;
     let cancelled = false;
-    const recompute = () => {
-      if (cancelled || !isHubLoaded()) return;
-      setPriorityStatus(priorityProgress(getProgress()));
-    };
-    if (isHubLoaded()) {
-      recompute();
-    } else {
-      getSession()
-        .then((session) => (session.problem ? undefined : loadHub(session)))
-        .then(recompute)
-        .catch(() => { /* no ring rather than a broken bar */ });
-    }
-    return onHubChange(recompute);
-  }, []);
+    computeStaffPriorityStatus(userId, role ?? null)
+      .then((status) => { if (!cancelled) setPriorityStatus(status); })
+      .catch(() => { /* no ring rather than a broken bar */ });
+    return () => { cancelled = true; };
+  }, [userId, role]);
 
   // Mirrors AdminAccessGate's check in app/admin/page.tsx exactly - admin,
   // supervisor, or scheduler (scheduler's Admin console access is a scoped
