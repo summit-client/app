@@ -42,6 +42,11 @@ export interface FamilyChild {
   status: string;
   dateOfBirth: string | null;
   permissions: GuardianPermission[];
+  /** Needed for writes scoped to this child (home_session_preferences,
+   *  client_availability) - both require clinic_id on the row. Nullable
+   *  only because the test fixture rows don't carry it; a real `my_family`
+   *  row always does. */
+  clinicId: string | null;
 }
 
 export interface Family {
@@ -105,6 +110,7 @@ interface MyFamilyRow {
   household_id: string | null;
   household_name: string | null;
   permissions: string[] | null;
+  clinic_id?: string | null;
 }
 
 export function familyFromRows(rows: MyFamilyRow[]): Family {
@@ -115,6 +121,7 @@ export function familyFromRows(rows: MyFamilyRow[]): Family {
     status: r.client_status ?? "active",
     dateOfBirth: r.date_of_birth,
     permissions: (r.permissions ?? []) as GuardianPermission[],
+    clinicId: r.clinic_id ?? null,
   }));
 
   // Sorted by name so the switcher does not reorder between loads. Postgres

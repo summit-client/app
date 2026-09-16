@@ -196,6 +196,14 @@ export function isOnboardingComplete(progress: TaskProgress[]): boolean {
   return p.applicable > 0 && p.completed === p.applicable;
 }
 
+// priorityProgress() (the nav ring's data source) moved to hr-backend.ts as
+// computeStaffPriorityStatus() (2026-09-16) - it was keyed off
+// supervisorSignoffRequired, an onboarding-task concept unrelated to the
+// actual per-role profile-setup checklist (contact info, emergency contact,
+// credentials, availability) the ring is meant to track. That data lives on
+// `staff`/`employee_credentials`/`staff_availability`, none of which this
+// module (hub_task_progress and friends) touches.
+
 /* ---- the loaded snapshot --------------------------------------------------- */
 
 /**

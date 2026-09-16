@@ -149,7 +149,20 @@ export interface InviteTeammateInput {
   role: "admin" | "supervisor" | "clinician" | "scheduler" | "client";
   fullName?: string;
   supervisorId?: string;
+  /** role === "client" only: link to this EXISTING, unlinked clients row. */
   clientId?: number;
+  /**
+   * role === "client" only, and only when clientId is omitted - creates a
+   * new clients row inline instead of requiring one to already exist. See
+   * invite-teammate's own InviteRequest for the exact shape; sessionType is
+   * the only one of these that's required.
+   */
+  sessionType?: string;
+  status?: string;
+  address?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  referralSource?: string;
 }
 export interface EditTeammateInput {
   targetUserId: string;
@@ -206,6 +219,12 @@ export async function inviteTeammate(input: InviteTeammateInput): Promise<void> 
     full_name: input.fullName,
     supervisor_id: input.supervisorId,
     client_id: input.clientId,
+    session_type: input.sessionType,
+    status: input.status,
+    address: input.address,
+    contact_phone: input.contactPhone,
+    contact_email: input.contactEmail,
+    referral_source: input.referralSource,
   });
 }
 
@@ -220,6 +239,136 @@ export async function editTeammate(input: EditTeammateInput): Promise<void> {
 
 export async function deactivateTeammate(targetUserId: string): Promise<{ warning?: string }> {
   return invoke("edit-teammate", { target_user_id: targetUserId, deactivate: true }) as Promise<{ warning?: string }>;
+}
+
+/**
+ * Existing scheduler `clients` records with no portal login yet - the
+ * InviteForm's picker for `role === "client"`. Plain RLS-backed read (the
+ * clinic-wide `clients` select every staff role here already has), not part
+ * of the snapshot system the rest of this file loads once - this app has no
+ * other reason to touch the clients table, so it's fetched on demand only
+ * when the invite form's role is set to "client".
+ */
+export async function listUnlinkedClients(): Promise<{ id: number; name: string }[]> {
+  const res = await sb().from("clients").select("id, name").is("user_id", null).order("name");
+  if (res.error) throw new ProvisioningError("list-clients", describe(res.error));
+  return (res.data ?? []) as { id: number; name: string }[];
+}
+
+/**
+ * The caller's own `staff` row (0075's user_id column) - phone, emergency
+ * contact and availability all live there now (0076), not on the HR
+ * snapshot this file otherwise loads once. Filtered by userId explicitly
+ * rather than left to RLS alone: an admin/scheduler/clinician's OTHER select
+ * policies on `staff` are clinic-wide, so a plain unfiltered read could
+ * return more than one row for them and blow up .maybeSingle(). null means
+ * no staff row exists yet - true for anyone invited before the pipeline
+ * that auto-creates one (see invite-teammate's own extension).
+ */
+export interface MyStaffRecord {
+  id: number;
+  phone: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+}
+
+export async function getMyStaffRecord(userId: string): Promise<MyStaffRecord | null> {
+  const res = await sb().from("staff")
+    .select("id, phone, emergency_contact_name, emergency_contact_phone")
+    .eq("user_id", userId).maybeSingle();
+  if (res.error) throw new ProvisioningError("my-staff-record", describe(res.error));
+  if (!res.data) return null;
+  return {
+    id: res.data.id as number,
+    phone: (res.data.phone as string | null) ?? null,
+    emergencyContactName: (res.data.emergency_contact_name as string | null) ?? null,
+    emergencyContactPhone: (res.data.emergency_contact_phone as string | null) ?? null,
+  };
+}
+
+export async function saveMyStaffContact(staffId: number, patch: {
+  phone?: string | null; emergencyContactName?: string | null; emergencyContactPhone?: string | null;
+}): Promise<void> {
+  const res = await sb().from("staff").update({
+    ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+    ...(patch.emergencyContactName !== undefined ? { emergency_contact_name: patch.emergencyContactName } : {}),
+    ...(patch.emergencyContactPhone !== undefined ? { emergency_contact_phone: patch.emergencyContactPhone } : {}),
+  }).eq("id", staffId);
+  if (res.error) throw new ProvisioningError("save-staff-contact", describe(res.error));
+}
+
+export async function getMyStaffAvailability(staffId: number): Promise<{ day: string; start_time: string; end_time: string }[]> {
+  const res = await sb().from("staff_availability").select("day, start_time, end_time").eq("staff_id", staffId);
+  if (res.error) throw new ProvisioningError("my-staff-availability", describe(res.error));
+  return (res.data ?? []) as { day: string; start_time: string; end_time: string }[];
+}
+
+/** Delete-then-insert, same shape as apps/scheduler's own availability save -
+ *  ranges come from @summit/availability's AvailabilityGrid, clinic_id added
+ *  by the caller (this module has no ambient "current clinic" the way the
+ *  HR snapshot does). */
+export async function saveMyStaffAvailability(
+  staffId: number,
+  ranges: Array<{ day: string; start_time: string; end_time: string; clinic_id: string }>,
+): Promise<void> {
+  const del = await sb().from("staff_availability").delete().eq("staff_id", staffId);
+  if (del.error) throw new ProvisioningError("save-staff-availability", describe(del.error));
+  if (ranges.length) {
+    const ins = await sb().from("staff_availability").insert(ranges.map((r) => ({ ...r, staff_id: staffId })));
+    if (ins.error) throw new ProvisioningError("save-staff-availability", describe(ins.error));
+  }
+}
+
+export interface PriorityStatus {
+  percent: number;
+  state: "critical" | "important" | "complete";
+  label: string;
+}
+
+/**
+ * The nav bar's profile-ring data, for staff-shaped roles (admin/supervisor/
+ * clinician/scheduler). Replaces the old hub.ts priorityProgress(), which was
+ * keyed off supervisorSignoffRequired onboarding tasks - an unrelated
+ * concept. This is the confirmed per-role table: contact info and emergency
+ * contact are critical for every staff role; credentials and availability
+ * are additionally critical for clinician/supervisor specifically (admin/
+ * scheduler don't carry a clinical credential or get booked). No "important"
+ * tier for staff roles - everything here is critical, matching the table as
+ * agreed; only the client-role checklist (apps/client) has an important
+ * tier (home session preference).
+ *
+ * Fully self-contained - does not touch the onboarding hub snapshot or the
+ * HR snapshot, both of which need their own provider load. This is called
+ * from apps/employee/components/portal-bar.tsx, which sits outside both.
+ * `null` means no staff row exists yet (nothing to check).
+ */
+export async function computeStaffPriorityStatus(userId: string, appRole: string | null): Promise<PriorityStatus | null> {
+  const staff = await getMyStaffRecord(userId);
+  if (!staff) return null;
+
+  const items: { critical: boolean; done: boolean }[] = [
+    { critical: true, done: !!staff.phone },
+    { critical: true, done: !!(staff.emergencyContactName && staff.emergencyContactPhone) },
+  ];
+
+  if (appRole === "clinician" || appRole === "supervisor") {
+    const credRes = await sb().from("employee_credentials").select("id").eq("user_id", userId).limit(1);
+    if (credRes.error) throw new ProvisioningError("my-credentials-check", describe(credRes.error));
+    items.push({ critical: true, done: (credRes.data?.length ?? 0) > 0 });
+
+    const avail = await getMyStaffAvailability(staff.id);
+    items.push({ critical: true, done: avail.length > 0 });
+  }
+
+  const total = items.length;
+  const done = items.filter((i) => i.done).length;
+  const outstanding = total - done;
+  const percent = total ? Math.round((done / total) * 100) : 100;
+  const state: PriorityStatus["state"] = outstanding > 0 ? "critical" : "complete";
+  const label = state === "complete"
+    ? "Profile complete"
+    : `${outstanding} item${outstanding === 1 ? "" : "s"} left`;
+  return { percent, state, label };
 }
 
 /* ---- preview backend -------------------------------------------------------- */

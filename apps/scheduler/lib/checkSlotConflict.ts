@@ -110,8 +110,7 @@ export function slotKeyOf(s: SlotKey): string {
  * through (two writes landing within the same round trip), so every call
  * site should show the same friendly conflict message either way rather than
  * a raw Postgres error reaching the UI. See
- * supabase/migrations/0045_sessions_no_double_booking.sql - not yet applied
- * to the live database as of this change; a human needs to run it.
+ * supabase/migrations/0045_sessions_no_double_booking.sql - applied live.
  */
 export function isBookingConflictError(error: { code?: string } | null | undefined): boolean {
   return error?.code === "23505" || error?.code === "23P01";

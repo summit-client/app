@@ -12,7 +12,7 @@ import {
   signOffTask, verifyPd,
   type PendingCertificate, type PendingPd, type PendingSignoff, type PendingTimeOff, type TeamMember,
 } from "@/lib/hub";
-import { deactivateTeammate, editTeammate, inviteTeammate, ProvisioningError } from "@/lib/hr-backend";
+import { deactivateTeammate, editTeammate, inviteTeammate, listUnlinkedClients, ProvisioningError } from "@/lib/hr-backend";
 import { SessionGate, useIdentity } from "@/components/session-provider";
 
 /**
@@ -67,8 +67,8 @@ function AdminAccessGate({ children }: { children: React.ReactNode }) {
  * join the result against directory() for names, the same pattern
  * "Pending sign-offs" already used before this change. hub_pd_records and
  * hub_time_off_requests needed a new manage-scoped SELECT policy first
- * (migration 0041, not yet applied live) - hub_certificates and
- * hub_task_progress already had one from migration 0006.
+ * (migration 0041, applied live) - hub_certificates and hub_task_progress
+ * already had one from migration 0006.
  */
 type QueueState<T> = { rows: T[] | null; error: string | null };
 
@@ -105,7 +105,9 @@ function AdminConsole() {
     return (
       <div>
         <AdminTabs tab={tab} setTab={setTab} role={role} />
-        {tab === "staff" ? <StaffTab isAdmin={role === "ADMIN"} isPreview={identity.isPreview} /> : <BackendSettingsTab />}
+        {tab === "staff" ? (
+          <StaffTab isAdmin={role === "ADMIN"} isScheduler={identity.appRole === "scheduler"} isPreview={identity.isPreview} />
+        ) : <BackendSettingsTab />}
       </div>
     );
   }
@@ -335,7 +337,7 @@ const ACCESS_LEVELS = ["EMPLOYEE", "SUPERVISOR", "ADMIN"] as const;
  * can invite a scheduler, or a client onto an existing intake record, from
  * apps/scheduler's admin page instead, next to where that data actually lives.
  */
-function StaffTab({ isAdmin, isPreview }: { isAdmin: boolean; isPreview: boolean }) {
+function StaffTab({ isAdmin, isScheduler, isPreview }: { isAdmin: boolean; isScheduler: boolean; isPreview: boolean }) {
   const people = directory();
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -389,8 +391,13 @@ function StaffTab({ isAdmin, isPreview }: { isAdmin: boolean; isPreview: boolean
         </p>
       ) : null}
 
-      {isAdmin && !isPreview ? (
-        <InviteForm people={people} onDone={(text) => setNotice({ kind: "ok", text })} onError={(text) => setNotice({ kind: "err", text })} />
+      {(isAdmin || isScheduler) && !isPreview ? (
+        <InviteForm
+          people={people}
+          callerRole={isAdmin ? "admin" : "scheduler"}
+          onDone={(text) => setNotice({ kind: "ok", text })}
+          onError={(text) => setNotice({ kind: "err", text })}
+        />
       ) : (
         <div className="card card-pad" style={{ marginTop: 12 }}>
           <b style={{ fontSize: "var(--text-sm)" }}>Adding someone</b>
@@ -401,7 +408,7 @@ function StaffTab({ isAdmin, isPreview }: { isAdmin: boolean; isPreview: boolean
           <p className="sub" style={{ marginTop: 6 }}>
             {isPreview
               ? "Invites are disabled in preview - there is no real account to send one to."
-              : "Only an admin can invite someone from here. A scheduler can invite a client or clinician from the scheduler's admin page."}
+              : "Supervisor accounts cannot send invites. An admin can invite you the access you need."}
           </p>
         </div>
       )}
@@ -409,19 +416,58 @@ function StaffTab({ isAdmin, isPreview }: { isAdmin: boolean; isPreview: boolean
   );
 }
 
-const INVITE_ROLES = ["admin", "supervisor", "clinician"] as const;
+/**
+ * Mirrors invite-teammate's own INVITE_MATRIX (supabase/functions/invite-
+ * teammate/index.ts) - that copy is the actual authority (it re-validates
+ * and rejects anything this list wouldn't offer), this one only decides
+ * what to show. Keep the two in sync if either changes; supervisor holds no
+ * key here on purpose, same as there - supervisor gets zero invite rights.
+ */
+const INVITE_MATRIX = {
+  admin: ["admin", "supervisor", "clinician", "scheduler", "client"],
+  scheduler: ["client", "clinician"],
+} as const;
+
+type InviteRole = (typeof INVITE_MATRIX)[keyof typeof INVITE_MATRIX][number];
 
 function InviteForm({
-  people, onDone, onError,
-}: { people: ReturnType<typeof directory>; onDone: (text: string) => void; onError: (text: string) => void }) {
+  people, callerRole, onDone, onError,
+}: {
+  people: ReturnType<typeof directory>;
+  callerRole: keyof typeof INVITE_MATRIX;
+  onDone: (text: string) => void;
+  onError: (text: string) => void;
+}) {
+  const roleOptions = INVITE_MATRIX[callerRole];
   const [email, setEmail] = React.useState("");
   const [fullName, setFullName] = React.useState("");
-  const [role, setRole] = React.useState<(typeof INVITE_ROLES)[number]>("clinician");
+  const [role, setRole] = React.useState<InviteRole>(roleOptions[roleOptions.length - 1]);
   const [supervisorId, setSupervisorId] = React.useState("");
   const [sending, setSending] = React.useState(false);
 
+  // Client-only state: pick an existing unlinked record, or create one
+  // inline. Fetched on demand rather than up front - this app has no other
+  // reason to load the clients table, and most invites here aren't clients.
+  const [unlinkedClients, setUnlinkedClients] = React.useState<{ id: number; name: string }[] | null>(null);
+  const [clientMode, setClientMode] = React.useState<"existing" | "new">("existing");
+  const [clientId, setClientId] = React.useState<number | "">("");
+  const [sessionType, setSessionType] = React.useState("");
+  const [address, setAddress] = React.useState("");
+  const [contactPhone, setContactPhone] = React.useState("");
+  const [contactEmail, setContactEmail] = React.useState("");
+  const [referralSource, setReferralSource] = React.useState("");
+
+  React.useEffect(() => {
+    if (role !== "client" || unlinkedClients !== null) return;
+    listUnlinkedClients().then(setUnlinkedClients).catch(() => setUnlinkedClients([]));
+  }, [role, unlinkedClients]);
+
   async function send() {
     if (!email.trim()) return;
+    if (role === "client" && clientMode === "existing" && clientId === "") {
+      onError("Pick an existing client record, or switch to “New client”.");
+      return;
+    }
     setSending(true);
     try {
       await inviteTeammate({
@@ -429,11 +475,24 @@ function InviteForm({
         fullName: fullName.trim() || undefined,
         role,
         supervisorId: role === "clinician" && supervisorId ? supervisorId : undefined,
+        clientId: role === "client" && clientMode === "existing" ? Number(clientId) : undefined,
+        sessionType: role === "client" && clientMode === "new" ? sessionType.trim() : undefined,
+        address: role === "client" && clientMode === "new" ? address.trim() || undefined : undefined,
+        contactPhone: role === "client" && clientMode === "new" ? contactPhone.trim() || undefined : undefined,
+        contactEmail: role === "client" && clientMode === "new" ? contactEmail.trim() || undefined : undefined,
+        referralSource: role === "client" && clientMode === "new" ? referralSource.trim() || undefined : undefined,
       });
       onDone(`Invite sent to ${email.trim()}.`);
       setEmail("");
       setFullName("");
       setSupervisorId("");
+      setClientId("");
+      setSessionType("");
+      setAddress("");
+      setContactPhone("");
+      setContactEmail("");
+      setReferralSource("");
+      setUnlinkedClients(null);
     } catch (e) {
       onError(e instanceof ProvisioningError ? e.message : "Could not send the invite.");
     } finally {
@@ -465,8 +524,8 @@ function InviteForm({
       />
       <label htmlFor="inv-role" className="sub">Role</label>
       <select id="inv-role" className="input" value={role}
-        onChange={(e) => setRole(e.target.value as (typeof INVITE_ROLES)[number])}>
-        {INVITE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        onChange={(e) => setRole(e.target.value as InviteRole)}>
+        {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
       </select>
       {role === "clinician" ? (
         <>
@@ -480,12 +539,70 @@ function InviteForm({
           </select>
         </>
       ) : null}
-      <button onClick={send} disabled={sending || !email.trim()} className="btn" style={{ alignSelf: "flex-start" }}>
+      {role === "client" ? (
+        <>
+          <div role="radiogroup" aria-label="Client record" style={{ display: "flex", gap: 14 }}>
+            <label className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="radio" name="inv-client-mode" checked={clientMode === "existing"}
+                onChange={() => setClientMode("existing")} />
+              Existing client
+            </label>
+            <label className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="radio" name="inv-client-mode" checked={clientMode === "new"}
+                onChange={() => setClientMode("new")} />
+              New client
+            </label>
+          </div>
+          {clientMode === "existing" ? (
+            <select id="inv-client" className="input" value={clientId}
+              onChange={(e) => setClientId(e.target.value ? Number(e.target.value) : "")}>
+              <option value="">
+                {unlinkedClients === null ? "Loading…" : unlinkedClients.length === 0 ? "No unlinked clients" : "Which client record?"}
+              </option>
+              {(unlinkedClients ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : (
+            <>
+              {/* No session-types dropdown here - this app has no other
+                  reason to load that table, and the scheduler's own admin
+                  page already falls back to a hardcoded list for the same
+                  reason (see its DEFAULT_SESSION_TYPES). Free text carries
+                  the same risk that fallback already does; not solved here. */}
+              <label htmlFor="inv-session-type" className="sub">Session type</label>
+              <input id="inv-session-type" type="text" className="input" value={sessionType}
+                onChange={(e) => setSessionType(e.target.value)} placeholder="e.g. Direct Therapy" />
+              <label htmlFor="inv-address" className="sub">Address (optional)</label>
+              <input id="inv-address" type="text" className="input" value={address}
+                onChange={(e) => setAddress(e.target.value)} />
+              <label htmlFor="inv-contact-phone" className="sub">Contact phone (optional)</label>
+              <input id="inv-contact-phone" type="tel" className="input" value={contactPhone}
+                onChange={(e) => setContactPhone(e.target.value)} />
+              <label htmlFor="inv-contact-email" className="sub">Contact email (optional)</label>
+              <input id="inv-contact-email" type="email" className="input" value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)} />
+              <label htmlFor="inv-referral" className="sub">Referral source (optional)</label>
+              <input id="inv-referral" type="text" className="input" value={referralSource}
+                onChange={(e) => setReferralSource(e.target.value)} />
+            </>
+          )}
+        </>
+      ) : null}
+      <button
+        onClick={send}
+        disabled={sending || !email.trim() || (role === "client" && clientMode === "new" && !sessionType.trim())}
+        className="btn" style={{ alignSelf: "flex-start" }}
+      >
         {sending ? "Sending…" : "Send invite"}
       </button>
     </div>
   );
 }
+
+// Unrelated to InviteForm's INVITE_MATRIX above - this is what an existing
+// account's role can be CHANGED to via edit-teammate, not who may be
+// invited. Kept as its own constant rather than reusing INVITE_MATRIX,
+// which is invite-teammate's list and answers a different question.
+const EDIT_ROLES = ["admin", "supervisor", "clinician"] as const;
 
 function TeammateActions({
   person, people, busy, onBusy, onDone, onError, onDeactivated,
@@ -553,7 +670,7 @@ function TeammateActions({
       <select className="input" style={{ width: "auto" }} value={role}
         aria-label={`Role for ${person.name}`}
         onChange={(e) => setRole(e.target.value)}>
-        {INVITE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        {EDIT_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
       </select>
       {role === "clinician" ? (
         <select className="input" style={{ width: "auto" }} value={supervisorId}

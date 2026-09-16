@@ -117,13 +117,23 @@ export function loginUrl(): string {
   return `${webUrl()}/login`;
 }
 /**
- * The one centralized profile page, hosted in apps/web for the same reason
- * sign-out and refresh are: every portal points at one place instead of
- * carrying its own copy. Every role can reach it, so unlike urlFor() it
- * takes no PortalKey - there is no per-role admission question here.
+ * The profile destination for the nav bar's profile icon, by role.
+ *
+ * Staff-shaped roles (admin/supervisor/clinician/scheduler) go straight to
+ * apps/employee's own "My Profile" - that is where the real HR fields
+ * (employee number, job title, credential, signature) live. `client`
+ * (family/guardian) goes straight to apps/client's own "Your family" page
+ * (pages/family.tsx) - that is where the real family content (children,
+ * household, emergency contacts, care team, home session preference,
+ * availability) lives, for the same reason: apps/web's /profile page used
+ * to carry a full copy of the household/emergency-contact/preference
+ * editors, duplicating a screen apps/client already had (read-only there,
+ * at the time) rather than pointing at it. Both branches now match the
+ * same shape - apps/web's /profile is a stub for every role, never the
+ * real content, so there is nothing to skip past for any of them.
  */
-export function profileUrl(): string {
-  return `${webUrl()}/profile`;
+export function profileUrl(role?: AppRole | null): string {
+  return role === "client" ? `${urlFor("client")}/family` : `${urlFor("employee")}/profile`;
 }
 export function refreshUrl(): string {
   return `${webUrl()}/api/auth/refresh`;

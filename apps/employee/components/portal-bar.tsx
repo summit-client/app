@@ -13,17 +13,39 @@ import { AppNav } from "@summit/nav";
 import { parseVisiblePortals, profileUrl, signOutUrl } from "@summit/portals";
 import { getIdentity, type AppRole } from "@summit/session";
 import { getSetting, onSettingsChange } from "@summit/settings";
+import { computeStaffPriorityStatus, type PriorityStatus } from "@/lib/hr-backend";
 
 export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
   const [role, setRole] = React.useState<AppRole | null | undefined>(undefined);
+  const [fullName, setFullName] = React.useState<string | null>(null);
+  const [userId, setUserId] = React.useState<string | null>(null);
+  const [priorityStatus, setPriorityStatus] = React.useState<PriorityStatus | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
     getIdentity().then((identity) => {
-      if (!cancelled) setRole(identity.appRole);
+      if (!cancelled) {
+        setRole(identity.appRole);
+        setFullName(identity.fullName);
+        setUserId(identity.userId || null);
+      }
     });
     return () => { cancelled = true; };
   }, []);
+
+  // The profile avatar's completion ring. computeStaffPriorityStatus() is
+  // fully self-contained (its own staff/employee_credentials/
+  // staff_availability reads) - unlike the old onboarding-hub-based version,
+  // it needs no snapshot from a provider this bar sits outside of (see file
+  // header), so there's nothing to load ahead of it here.
+  React.useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    computeStaffPriorityStatus(userId, role ?? null)
+      .then((status) => { if (!cancelled) setPriorityStatus(status); })
+      .catch(() => { /* no ring rather than a broken bar */ });
+    return () => { cancelled = true; };
+  }, [userId, role]);
 
   // Mirrors AdminAccessGate's check in app/admin/page.tsx exactly - admin,
   // supervisor, or scheduler (scheduler's Admin console access is a scoped
@@ -51,7 +73,9 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
       role={role}
       visiblePortals={visiblePortals}
       adminHref={showAdminLink ? "/admin" : undefined}
-      profileHref={profileUrl()}
+      profileHref={profileUrl(role)}
+      profileName={fullName}
+      priorityStatus={priorityStatus}
       signOutHref={signOutUrl()}
     />
   );

@@ -10,6 +10,7 @@
     "test": "node qa.mjs && node tests/onboarding-certificates.test.mjs"
   },
   "dependencies": {
+    "@summit/availability": "workspace:*",
     "@summit/design": "workspace:*",
     "@summit/settings": "workspace:*",
     "@supabase/ssr": "^0.10.3",

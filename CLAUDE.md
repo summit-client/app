@@ -4,6 +4,26 @@ Read this before changing anything. It is the accumulated context that is not
 obvious from the code, including several failure modes that have already cost
 real time.
 
+## Plan first, get approval, then act
+
+For anything with real architectural weight — a schema change, an RLS policy,
+which table a new field lives on, a shared-package extraction touching
+multiple apps — present the plan and wait for an explicit yes before writing
+code. Don't build ahead of approval and explain the reasoning afterward, even
+when the reasoning is sound and even mid-build when a new fact changes the
+plan. Stop, say what changed and what you now think should happen, and wait.
+
+(2026-09-16: a session picked `profiles` for new self-service contact-info
+columns — phone, emergency contact — without stopping to ask first, over the
+user's explicit direction to put them on `staff`. The reasoning wasn't even
+wrong on its own terms (`profiles_self_update` is a convenient existing
+unconditional self-write policy, `staff` has no `user_id` to key one on), but
+`profiles` carries `role` and `clinic_id` — the exact columns this schema's
+entire RBAC/RLS posture reads (`auth_role()`, `auth_clinic_id()`) — and is
+not where plain contact fields belong regardless of how convenient the
+shortcut is. Reverted. The user's own words: "Plan first to get my approval
+then act on it.")
+
 ## What this is
 
 A pnpm + Turborepo monorepo, Next.js 16.2.x with Turbopack. Mount Etna is the

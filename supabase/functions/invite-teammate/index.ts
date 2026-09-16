@@ -33,13 +33,35 @@ interface InviteRequest {
   /** Only meaningful when role === "clinician". */
   supervisor_id?: string;
   /**
-   * Required when role === "client" - this attaches an EXISTING scheduler
-   * `clients` row (created earlier through normal intake) to a new portal
-   * login. This function never creates clinical intake data; it only links
-   * an account to a client record that already exists.
+   * When role === "client", exactly one of client_id or the inline intake
+   * fields below is expected. client_id attaches an EXISTING scheduler
+   * `clients` row (created earlier through normal intake, e.g. via
+   * apps/scheduler's own "add client" form - unchanged, still the only path
+   * for creating a client record ahead of anyone being invited to it).
    */
   client_id?: number;
+  /**
+   * Inline client intake, used only when role === "client" and client_id is
+   * omitted - creates a brand-new `clients` row and links this invite's
+   * login to it in the same call, rather than requiring the two-step
+   * "create the record, then separately invite" flow. Same shape and same
+   * defaults as apps/scheduler's own handleCreateClient(), so a client
+   * created either way ends up identical. full_name (already collected
+   * above) is this client's name; only session_type is otherwise required.
+   */
+  session_type?: string;
+  status?: string;
+  address?: string;
+  contact_phone?: string;
+  contact_email?: string;
+  referral_source?: string;
 }
+
+/** Mon-Sat, blank (start_time/end_time null) - the same placeholder shape
+ *  apps/scheduler's handleCreateStaff()/handleCreateClient() seed immediately
+ *  after creating either row, so a resource created via invite ends up in
+ *  the identical state as one created there. */
+const BLANK_AVAILABILITY_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req);
@@ -110,10 +132,8 @@ Deno.serve(async (req) => {
   }
 
   let linkedClientId: number | null = null;
-  if (role === "client") {
-    if (body.client_id == null) {
-      return json(400, { error: "client_id is required to invite a client - pick an existing, unlinked client record" });
-    }
+  const creatingClientInline = role === "client" && body.client_id == null;
+  if (role === "client" && !creatingClientInline) {
     const { data: clientRow, error: clientErr } = await admin
       .from("clients")
       .select("id, user_id, clinic_id")
@@ -126,6 +146,12 @@ Deno.serve(async (req) => {
       return json(409, { error: "That client already has a portal account" });
     }
     linkedClientId = clientRow.id;
+  }
+  if (creatingClientInline && !body.full_name?.trim()) {
+    return json(400, { error: "A name is required to create a new client record" });
+  }
+  if (creatingClientInline && !body.session_type?.trim()) {
+    return json(400, { error: "A session type is required to create a new client record" });
   }
 
   // Supervisor assignment is only meaningful for a clinician, and always
@@ -155,6 +181,8 @@ Deno.serve(async (req) => {
   }
   const newUserId = invited.user.id;
 
+  let createdClientId: number | null = null;
+
   if (role === "client" && linkedClientId != null) {
     // A database trigger already created a default profiles row (role
     // 'client', clinic_id null) the instant inviteUserByEmail ran - which
@@ -163,6 +191,38 @@ Deno.serve(async (req) => {
     // clients record is this branch's job.
     const { error: linkErr } = await admin.from("clients").update({ user_id: newUserId }).eq("id", linkedClientId);
     if (linkErr) return json(500, { error: "Invite sent, but linking the client record failed: " + linkErr.message });
+  } else if (role === "client" && creatingClientInline) {
+    // Same insert shape as apps/scheduler's handleCreateClient(), plus
+    // user_id set immediately (that form updates it in a second step since
+    // it has no new login yet at that point; this call already does).
+    const { data: newClient, error: clientInsertErr } = await admin
+      .from("clients")
+      .insert({
+        name: body.full_name!.trim(),
+        email: invited.user.email,
+        session_type: body.session_type!.trim(),
+        status: body.status?.trim() || "active",
+        address: body.address?.trim() || null,
+        contact_phone: body.contact_phone?.trim() || null,
+        contact_email: body.contact_email?.trim() || null,
+        referral_source: body.referral_source?.trim() || null,
+        sessions: 0,
+        availability: [],
+        clinic_id: caller.clinic_id,
+        user_id: newUserId,
+      })
+      .select("id")
+      .single();
+    if (clientInsertErr || !newClient) {
+      return json(500, { error: "Invite sent, but creating the client record failed: " + (clientInsertErr?.message ?? "unknown error") });
+    }
+    createdClientId = newClient.id as number;
+    const { error: availErr } = await admin.from("client_availability").insert(
+      BLANK_AVAILABILITY_DAYS.map((day) => ({
+        client_id: createdClientId, day, start_time: null, end_time: null, clinic_id: caller.clinic_id,
+      })),
+    );
+    if (availErr) return json(500, { error: "Invite sent and client created, but seeding availability failed: " + availErr.message });
   } else {
     // upsert, not insert: that same trigger-created default row means a
     // plain insert always loses the race and hits profiles_pkey (confirmed
@@ -176,6 +236,58 @@ Deno.serve(async (req) => {
       supervisor_id: supervisorId,
     }, { onConflict: "id" });
     if (profileErr) return json(500, { error: "Invite sent, but creating the profile failed: " + profileErr.message });
+
+    // Staff-shaped roles only, past this point (client is handled above).
+    // A brand-new `staff` row, user_id set to this same new login - never a
+    // match against a pre-existing row (see migration 0075's header for why
+    // that distinction is what makes this safe to automate at all), plus
+    // the employment_records row that used to be a separate manual step
+    // (an admin, later, via the Workforce screen). Mostly the same insert
+    // shape as apps/scheduler's handleCreateStaff() for the staff row
+    // itself - minus `booked: 0`, which that function sends but which is
+    // not a real column anywhere in the tracked schema (0000's
+    // reconstruction of `staff` has no `booked` column, nothing later adds
+    // one, and that reconstruction's own header already admits it's
+    // "unverified against a production dump"). Worth a human checking
+    // whether handleCreateStaff's insert is quietly failing on that field
+    // today - not fixed here, out of this change's scope, but not worth
+    // copying into new code either. `capacity`/`specialties`/`availability`
+    // stay blank the same way that form leaves them, for an admin to fill
+    // in later.
+    const { data: newStaff, error: staffInsertErr } = await admin
+      .from("staff")
+      .insert({
+        name: body.full_name?.trim() || email,
+        role: null,
+        specialties: [],
+        capacity: 0,
+        availability: [],
+        clinic_id: caller.clinic_id,
+        user_id: newUserId,
+      })
+      .select("id")
+      .single();
+    if (staffInsertErr || !newStaff) {
+      return json(500, { error: "Invite sent, but creating the staff record failed: " + (staffInsertErr?.message ?? "unknown error") });
+    }
+    const newStaffId = newStaff.id as number;
+
+    const { error: staffAvailErr } = await admin.from("staff_availability").insert(
+      BLANK_AVAILABILITY_DAYS.map((day) => ({
+        staff_id: newStaffId, day, start_time: null, end_time: null, clinic_id: caller.clinic_id,
+      })),
+    );
+    if (staffAvailErr) return json(500, { error: "Invite sent and staff record created, but seeding availability failed: " + staffAvailErr.message });
+
+    const { error: employmentErr } = await admin.from("employment_records").insert({
+      clinic_id: caller.clinic_id,
+      user_id: newUserId,
+      staff_id: newStaffId,
+      start_date: new Date().toISOString().slice(0, 10),
+    });
+    if (employmentErr) {
+      return json(500, { error: "Invite sent and staff record created, but creating the employment record failed: " + employmentErr.message });
+    }
   }
 
   await recordAudit(admin, {
@@ -184,7 +296,7 @@ Deno.serve(async (req) => {
     action: "invite",
     target_user_id: newUserId,
     target_clinic_id: caller.clinic_id,
-    detail: { email, role, client_id: linkedClientId, supervisor_id: supervisorId },
+    detail: { email, role, client_id: linkedClientId ?? createdClientId, supervisor_id: supervisorId },
   });
 
   return json(200, { ok: true, user_id: newUserId });

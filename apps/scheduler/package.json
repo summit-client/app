@@ -9,6 +9,7 @@
     "test:calendar": "node tests/calendar-utils.test.mjs"
   },
   "dependencies": {
+    "@summit/availability": "workspace:*",
     "@summit/db": "workspace:*",
     "@summit/nav": "workspace:*",
     "@supabase/auth-helpers-nextjs": "^0.15.0",

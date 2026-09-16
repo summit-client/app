@@ -8,6 +8,7 @@
     "start": "next start -p 3003"
   },
   "dependencies": {
+    "@summit/availability": "workspace:*",
     "@summit/db": "workspace:*",
     "@summit/nav": "workspace:*",
     "@supabase/ssr": "^0.10.3",

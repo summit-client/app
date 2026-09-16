@@ -26,14 +26,42 @@ interface AppNavProps {
   /** When set, a settings cogwheel sits at the right of the bar. */
   settingsHref?: string;
   /**
-   * When set, a profile icon sits at the right of the bar (after settingsHref,
-   * before signOutHref). This should be the shared `profileUrl()` from
-   * @summit/portals - the centralized profile page lives in apps/web, same
-   * reasoning as signOutHref pointing at signOutUrl() rather than a local
-   * route. Every role can see this one; there is no admission question here
-   * the way there is for adminHref.
+   * When set, a profile avatar sits at the right of the bar (after
+   * settingsHref, before signOutHref). This should be the shared
+   * `profileUrl(role)` from @summit/portals, same reasoning as signOutHref
+   * pointing at signOutUrl() rather than a local route. Every role can see
+   * this one; there is no admission question here the way there is for
+   * adminHref.
    */
   profileHref?: string;
+  /**
+   * The viewer's display name, shown as initials inside the profile avatar
+   * circle. Optional and purely cosmetic - pass `undefined`/`null` (identity
+   * still resolving, or none on file) and the avatar falls back to a plain
+   * person glyph instead of blank or guessed initials.
+   */
+  profileName?: string | null;
+  /**
+   * Drives a progress ring drawn around the profile avatar. `percent` (0-100)
+   * is the fill - overall required+applicable onboarding completion, same
+   * number the Onboarding screen's own bar shows. `state` picks the colour,
+   * and the priority order is deliberate: `"critical"` wins outright even at
+   * 99% (an outstanding supervisor-signoff task - HR paperwork, the VSC -
+   * still reads as urgent), `"important"` only once every critical task is
+   * done, `"complete"` once both are. `label` is the hover/aria text (e.g.
+   * "2 critical, 1 important task left").
+   *
+   * Optional: only apps/employee has this data today
+   * (`hub_task_progress`/`HUB_TASKS`, via `lib/hub.ts`'s `priorityProgress()`
+   * - see `apps/employee/components/portal-bar.tsx`). Every other portal's
+   * caller passes nothing, same as adminHref above, and the avatar renders
+   * exactly as it did before this existed.
+   */
+  priorityStatus?: {
+    percent: number;
+    state: "critical" | "important" | "complete";
+    label: string;
+  } | null;
   /**
    * When set, a sign-out control sits at the far right of the bar (after the
    * settings cogwheel, if both are present). This must be the shared
@@ -72,10 +100,13 @@ interface AppNavProps {
  * Client so staff move between them from any screen. Colours come from the
  * shared tokens, so it follows the theme and accent like everything else.
  */
-export function AppNav({ activeKey, adminHref, settingsHref, profileHref, signOutHref, role, visiblePortals }: AppNavProps) {
+export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profileName, priorityStatus, signOutHref, role, visiblePortals }: AppNavProps) {
   const visible = role == null
     ? portals.filter((p) => p.key === activeKey)
     : portalsFor(role, visiblePortals);
+  const initials = profileName
+    ? profileName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("")
+    : null;
   return (
     <nav
       aria-label="Summit portals"
@@ -181,27 +212,101 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, signOu
       {profileHref ? (
         <a
           href={profileHref}
-          aria-label="Profile"
-          title="Profile"
+          aria-label={priorityStatus ? `Profile — ${priorityStatus.label}` : "Profile"}
+          title={priorityStatus ? priorityStatus.label : "Profile"}
           style={{
             marginLeft: adminHref || settingsHref ? 4 : 'auto',
+            position: 'relative',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 30,
-            height: 30,
+            width: priorityStatus ? 34 : 30,
+            height: priorityStatus ? 34 : 30,
             flexShrink: 0,
-            borderRadius: 'var(--radius-full, 999px)',
-            color: 'oklch(100% 0 0 / 0.66)',
             textDecoration: 'none',
             transition: 'all var(--duration-fast, 110ms) var(--ease-out-quart, ease)',
           }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <circle cx="12" cy="8" r="4" />
-            <path d="M4 21c0-4 4-6.5 8-6.5s8 2.5 8 6.5" />
-          </svg>
+          {priorityStatus ? (
+            // Track + fill, same construction as grove.tsx's ScoreRing:
+            // strokeDasharray = filled arc length, remaining circumference.
+            // Colour is severity (critical beats important beats complete),
+            // fill is plain completion percent - the two are deliberately
+            // independent, see this prop's own doc comment on AppNavProps.
+            // No text anywhere on this - critical/important/complete are
+            // colour plus (for critical) the badge below, never a word.
+            <svg width="34" height="34" viewBox="0 0 34 34" style={{ position: 'absolute', inset: 0 }} aria-hidden>
+              <circle cx="17" cy="17" r="15" fill="none" stroke="oklch(100% 0 0 / 0.18)" strokeWidth="2.5" />
+              <circle
+                cx="17" cy="17" r="15" fill="none"
+                stroke={
+                  priorityStatus.state === 'critical' ? 'var(--danger)'
+                    : priorityStatus.state === 'important' ? 'var(--warn)'
+                    : 'var(--good)'
+                }
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeDasharray={`${2 * Math.PI * 15 * (priorityStatus.percent / 100)} ${2 * Math.PI * 15}`}
+                transform="rotate(-90 17 17)"
+                style={{ transition: 'stroke-dasharray 500ms cubic-bezier(.2,.8,.3,1)' }}
+              />
+            </svg>
+          ) : null}
+          {priorityStatus?.state === 'critical' ? (
+            // The critical badge: a plain "!" in a filled circle, no word
+            // anywhere near it - this is the whole indicator for "at least
+            // one critical item outstanding," not a decoration on top of one.
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                top: -2,
+                right: -2,
+                width: 14,
+                height: 14,
+                borderRadius: '999px',
+                background: 'var(--danger)',
+                border: '1.5px solid var(--brand-800, #1A3F5C)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 10,
+                fontWeight: 800,
+                lineHeight: 1,
+                color: '#fff',
+              }}
+            >
+              !
+            </span>
+          ) : null}
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 30,
+              height: 30,
+              borderRadius: 'var(--radius-full, 999px)',
+              border: initials ? '1.5px solid oklch(100% 0 0 / 0.5)' : 'none',
+              // White at full opacity, not the 66%-opacity white every other
+              // icon in this bar uses - two-letter bold text at 12px reads
+              // much lower-contrast than a line-art glyph at the same
+              // opacity, and this is still against the same --brand-800 bar
+              // background every other icon here is already verified against.
+              color: initials ? '#fff' : 'oklch(100% 0 0 / 0.66)',
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: '0.01em',
+            }}
+          >
+            {initials ?? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21c0-4 4-6.5 8-6.5s8 2.5 8 6.5" />
+              </svg>
+            )}
+          </span>
         </a>
       ) : null}
       {signOutHref ? (
