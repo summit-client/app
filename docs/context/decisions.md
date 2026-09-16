@@ -182,6 +182,35 @@ access to their own data — real, standalone work with its own PR and its own
 verification pass, not something that should ride in on an unrelated batch.
 Needs a decision on *when*, not *whether*.
 
+**OPEN (raised 2026-09-14, scheduler feature batch, PR #170)** — the
+Dashboard's "No-show rate" stat (added in the same PR) will read as a
+degenerate 100%/0% indefinitely, because nothing in `apps/scheduler`
+anywhere sets `sessions.status = 'completed'`. The stat is computed against
+`completed + no_show` only (deliberately excluding future bookings), but
+with the numerator's other half never populated, every occurred session
+either has no status transition at all or sits at whatever it was created
+with — there is currently no code path, button, or job in this app that
+marks a session completed. Flagged in PR #170's own body rather than
+silently worked around. Needs a decision on where completion-marking
+belongs (automatic — e.g. session end time has passed and it wasn't
+cancelled/no-showed — versus an explicit staff action) before the stat is
+trustworthy.
+
+**RESOLVED (verified live 2026-09-16)** — PR #170's body also flagged that
+`apps/scheduler/pages/admin.tsx` reads/writes `client.email`, `client.sessions`
+and `client.availability`, none of which appear in this repo's tracked
+migration history, and asked for a live check. Yanko ran
+`select column_name from information_schema.columns where table_name = 'clients'`
+against the live project: `email` and `sessions` are both real, live columns
+on `clients` — same shape as the `clinic_id`/`'supervisor'`-enum gaps
+elsewhere in this doc, undocumented because `clients` predates this repo's
+migration history, not a bug. `availability` is not a column on `clients` at
+all, and was never expected to be one — `admin.tsx`'s `.availability` is a
+plain JS field populated from the separate, already-`clinic_id`-scoped
+`client_availability`/`staff_availability` tables (`.insert()`/`.delete()`
+against those tables, not a `clients` column read). No action needed on any
+of the three.
+
 ---
 
 ## 2026-08-30 — first clinician dry-run prep
