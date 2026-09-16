@@ -4,7 +4,6 @@ import { useContext } from 'react';
 import { UserContext } from '../lib/UserContext';
 import Sidebar from '../components/Sidebar';
 import { useFocusTrap } from '../lib/useFocusTrap';
-import { urlFor } from '@summit/portals';
 
 type Tab = 'staff' | 'clients';
 
@@ -575,19 +574,6 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
           Clients ({clientList.length})
         </button>
       </div>
-
-      {/* Invite portal access moved to MySummitHR's Admin console
-          (apps/employee/app/admin/page.tsx) - one invite flow instead of
-          two that quietly disagreed on which roles could be invited. */}
-      {appUser && (appUser.role === 'admin' || appUser.role === 'scheduler') ? (
-        <div style={{ background: 'white', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid #E5E7EB' }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Invite portal access</div>
-          <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>
-            Now in MySummitHR's Admin console -{' '}
-            <a href={`${urlFor('employee')}/admin`} style={{ color: '#1A3F5C' }}>open the Staff &amp; Teams tab</a>.
-          </p>
-        </div>
-      ) : null}
 
       {loading ? (
         <p style={s.empty}>Loading...</p>
