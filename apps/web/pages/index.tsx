@@ -92,23 +92,6 @@ export default function Home() {
     return () => io.disconnect()
   }, [])
 
-  // Count-up for the hero's portal-count stat. Previously it counted to 2 for
-  // a "2x faster scheduling" claim; it counts to 5 now, which is the number of
-  // portals that actually exist (web, scheduler, data, client, employee) rather
-  // than a speed multiple nobody measured.
-  const [portalCount, setPortalCount] = useState(0)
-  useEffect(() => {
-    const duration = 900
-    const start = performance.now()
-    let raf: number
-    const tick = (now: number) => {
-      const progress = Math.min((now - start) / duration, 1)
-      setPortalCount(Math.round(progress * 5))
-      if (progress < 1) raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [])
 
   // Brand colours, from the SummitClient colour system.
   //
@@ -262,19 +245,6 @@ export default function Home() {
             <div style={{ position: 'relative' }}>
 
               <div style={{ position: 'relative' }}>
-                <FadeOut progress={scrollYProgress} start={0.10} active={!staticScene}>
-                  <div className="an1" style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '.4rem',
-                    background: 'rgba(40,180,166,.12)', color: teal,
-                    fontSize: '.78rem', fontWeight: 600,
-                    padding: '.35rem .8rem', borderRadius: 100,
-                    marginBottom: '1.25rem',
-                    fontFamily: display, letterSpacing: '.02em',
-                  }}>
-                    Clinic management, end to end
-                  </div>
-                </FadeOut>
-
                 <FadeOut progress={scrollYProgress} start={0.13} active={!staticScene}>
                   <h1 className="an2" style={{
                     fontFamily: display,
@@ -283,9 +253,8 @@ export default function Home() {
                     fontWeight: 600, lineHeight: 1.15,
                     color: navy, marginBottom: '1.25rem',
                   }}>
-                    Your clinic.<br />
-                    One{' '}
-                    <span className="grad-text">operating system.</span>
+                    Your entire clinic,<br />
+                    one <span className="grad-text">ecosystem.</span>
                   </h1>
                 </FadeOut>
 
@@ -294,7 +263,7 @@ export default function Home() {
                     fontSize: '1.05rem', color: g700,
                     marginBottom: '2rem', maxWidth: 460, lineHeight: 1.75,
                   }}>
-                    Clients, clinical work, documentation, scheduling, staff and operations in one connected workspace. Instead of five systems that each hold part of the picture.
+                    Client & staff records, session data & reports, billing, scheduling, and more in one connected space.
                   </p>
                 </FadeOut>
 
@@ -321,7 +290,7 @@ export default function Home() {
                   boxShadow: '0 4px 22px rgba(26,63,92,.28)',
                   display: 'inline-block', position: 'relative', zIndex: 3,
                 }}>
-                  Start Free Trial
+                  Let&rsquo;s begin
                 </a>
                 <FadeOut progress={scrollYProgress} start={0.19} active={!staticScene}>
                   <a href="#how" style={{
@@ -329,26 +298,17 @@ export default function Home() {
                     fontFamily: display, fontSize: '1rem', fontWeight: 600,
                     display: 'inline-flex', alignItems: 'center', gap: '.4rem',
                   }}>
-                    See how it works →
+                    See it in action →
                   </a>
                 </FadeOut>
               </div>
 
               <FadeOut progress={scrollYProgress} start={0.22} active={!staticScene}>
-                <div className="an5 hero-stats" style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
-                  {/* One stat per part of the platform, not three about the
-                      calendar. "1" is the actual claim being made: the session
-                      is recorded once and the note, the graph, the family
-                      statement and the timesheet all come from that record. */}
-                  {[['1','record, end to end'],['','portals, one login'],['0','double entry']].map(([v,l], i) => (
-                    <div key={l}>
-                      <div style={{ fontFamily: display, fontSize: '1.5rem', fontWeight: 600, color: navy }}>
-                        {i === 1 ? portalCount : v}
-                      </div>
-                      <div style={{ fontSize: '.78rem', color: g500, fontWeight: 500 }}>{l}</div>
-                    </div>
-                  ))}
-                </div>
+                <p className="an5 hero-stats" style={{
+                  fontSize: '.95rem', color: g700, fontWeight: 500, maxWidth: 420, lineHeight: 1.6,
+                }}>
+                  See why we&rsquo;re the emerging leader in all-in-one healthcare practice solutions below.
+                </p>
               </FadeOut>
             </div>
 
@@ -698,10 +658,10 @@ export default function Home() {
             letterSpacing: '-0.02em',
             fontWeight: 600, color: '#fff', marginBottom: '1rem', lineHeight: 1.2,
           }}>
-            See what your clinic looks like connected.
+            See what your clinic is capable of.
           </h2>
           <p style={{ color: 'rgba(255,255,255,.75)', fontSize: '1.05rem', marginBottom: '2.5rem' }}>
-            We will show you your own workflows in Summit, not a generic demo.
+            Book a free consultation, ask a question, or anything else below.
           </p>
           <a href="/signup" className="btn-primary" style={{
             background: '#fff', color: navy,
@@ -710,7 +670,7 @@ export default function Home() {
             display: 'inline-block',
             boxShadow: '0 4px 20px rgba(0,0,0,.14)',
           }}>
-            Start Free Trial →
+            Let&rsquo;s begin →
           </a>
         </div>
       </section>

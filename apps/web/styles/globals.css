@@ -509,6 +509,21 @@ html { scroll-behavior: smooth; }
   .auth-spinner { animation-duration: 1.4s; }
 }
 
+.legal-body h2 {
+  font-family: 'Outfit', sans-serif; font-size: 1.15rem; font-weight: 600;
+  color: var(--brand-navy); margin: 2.25rem 0 .75rem;
+}
+.legal-body p { margin: 0 0 1rem; }
+.legal-body ul { margin: 0 0 1rem; padding-left: 1.25rem; }
+.legal-body li { margin-bottom: .4rem; }
+
+.auth-remember {
+  display: flex; align-items: center; gap: .55rem;
+  font-size: .85rem; color: var(--brand-gray-700); font-weight: 500;
+  cursor: pointer; user-select: none;
+}
+.auth-remember input { width: 16px; height: 16px; accent-color: var(--brand-teal); cursor: pointer; }
+
 .auth-links {
   display: flex; flex-wrap: wrap; gap: .5rem 1rem; justify-content: space-between;
   font-size: .82rem; color: var(--brand-gray-500);
