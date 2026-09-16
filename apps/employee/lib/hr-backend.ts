@@ -18,6 +18,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { Session } from "./session";
 import type { CreditAllocation, EmployeeCredential, PdActivity } from "./credentials";
+import type { EducationLevel, EmployeeEducation } from "./education";
 import type { MetricResponse, Recognition } from "./ecosystem";
 import type { ForumPost, Goal, HrAudit, PolicyAck, PolicyDoc, StaffMember } from "./hr-types";
 
@@ -40,6 +41,7 @@ export interface HrSnapshot {
   recognition: Recognition[];
   goals: Goal[];
   credentials: EmployeeCredential[];
+  education: EmployeeEducation[];
   activities: PdActivity[];
   allocations: CreditAllocation[];
   policies: PolicyDoc[];
@@ -64,6 +66,8 @@ export interface HrBackend {
   addActivity(a: PdActivity, allocations: CreditAllocation[]): Promise<PdActivity>;
   saveCredential(c: EmployeeCredential): Promise<EmployeeCredential>;
   removeCredential(id: string): Promise<void>;
+  saveEducation(e: EmployeeEducation): Promise<EmployeeEducation>;
+  removeEducation(id: string): Promise<void>;
   rate(r: MetricResponse): Promise<void>;
   submitPeerFeedback(subjectPersonId: string, rows: MetricResponse[]): Promise<void>;
   addForumPost(p: ForumPost): Promise<ForumPost>;
@@ -230,7 +234,7 @@ export function emptySnapshot(session: Session, seedPolicies: PolicyDoc[]): HrSn
       jobTitle: "Behaviour Clinician", accessLevel: session.role, supervisorId: null,
     }],
     responses: [], history: [], recognition: [], goals: [],
-    credentials: [], activities: [], allocations: [],
+    credentials: [], education: [], activities: [], allocations: [],
     policies: seedPolicies, acks: [], posts: [], audit: [],
     sites: [], peerScores: [], team: [],
   };
@@ -271,13 +275,33 @@ export function previewBackend(session: Session, seedPolicies: PolicyDoc[]): HrB
     },
     async saveCredential(c) {
       const i = snap.credentials.findIndex((x) => x.id === c.id);
-      if (i >= 0) snap.credentials[i] = c;
-      else snap.credentials.push(c);
+      if (i >= 0) { snap.credentials[i] = c; persist(); return c; }
+      // A blank "new-*" sentinel id must not survive the first save - the live
+      // backend replaces it with the row's real database id (see
+      // supabaseBackend's saveCredential below), and CredentialForm's own
+      // isNew / Remove-button logic assumes that happened. Left unreplaced,
+      // re-opening a just-added credential in preview mode always showed
+      // "Add credential" instead of "Edit ...", with no Remove button, because
+      // isNew re-evaluated true forever. Caught by rendering this screen.
+      const saved = { ...c, id: `cr-${Date.now().toString(36)}` };
+      snap.credentials.push(saved);
       persist();
-      return c;
+      return saved;
     },
     async removeCredential(id) {
       snap.credentials = snap.credentials.filter((x) => x.id !== id);
+      persist();
+    },
+    async saveEducation(e) {
+      const i = snap.education.findIndex((x) => x.id === e.id);
+      if (i >= 0) { snap.education[i] = e; persist(); return e; }
+      const saved = { ...e, id: `ed-${Date.now().toString(36)}` };
+      snap.education.push(saved);
+      persist();
+      return saved;
+    },
+    async removeEducation(id) {
+      snap.education = snap.education.filter((x) => x.id !== id);
       persist();
     },
     async addActivity(a, allocations) {
@@ -334,11 +358,12 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
   return {
     async load(): Promise<HrSnapshot> {
       const db = sb();
-      const [people, goals, creds, acts, allocs, pols, acks, posts, comments, recog, cycles, audit] =
+      const [people, goals, creds, edu, acts, allocs, pols, acks, posts, comments, recog, cycles, audit] =
         await Promise.all([
           db.from("profiles").select("id, full_name, role, supervisor_id").eq("clinic_id", clinic),
           db.from("development_goals").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
           db.from("employee_credentials").select("*").eq("user_id", uid),
+          db.from("employee_education").select("*").eq("user_id", uid),
           db.from("pd_activities").select("*").eq("user_id", uid).order("completion_date", { ascending: false }),
           // Scoped at the query level via the FK to pd_activities, not just
           // relied on through RLS (allocations_own_select, migration 0007) -
@@ -366,6 +391,7 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
         ["your team", people],
         ["your development goals", goals],
         ["your credentials", creds],
+        ["your education", edu],
         ["your professional development", acts],
         ["your credit allocations", allocs],
         ["the policy library", pols],
@@ -447,6 +473,13 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
           number: (c.credential_number as string) ?? "",
           cycleStart: c.cycle_start as string, cycleEnd: c.cycle_end as string,
           status: c.status as EmployeeCredential["status"],
+        })),
+        education: (edu.data ?? []).map((e) => ({
+          id: e.id as string, level: e.level as EducationLevel,
+          fieldOfStudy: (e.field_of_study as string) ?? "",
+          institution: (e.institution as string) ?? "",
+          completedYear: (e.completed_year as number | null) ?? null,
+          verification: e.verification as EmployeeEducation["verification"],
         })),
         activities: (acts.data ?? []).map((a) => ({
           id: a.id as string, title: a.title as string, provider: (a.provider as string) ?? "",
@@ -559,6 +592,23 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
     },
     async removeCredential(id) {
       ok("credential removal", await sb().from("employee_credentials").delete().eq("id", id));
+    },
+    async saveEducation(e) {
+      const row = scoped({
+        user_id: uid, level: e.level, field_of_study: e.fieldOfStudy || null,
+        institution: e.institution || null, completed_year: e.completedYear,
+        verification: e.verification,
+      });
+      if (e.id && !e.id.startsWith("new-")) {
+        ok("education", await sb().from("employee_education").update(row).eq("id", e.id));
+        return e;
+      }
+      const res = await sb().from("employee_education").insert(row).select("id").single();
+      ok("education", res);
+      return { ...e, id: res.data!.id as string };
+    },
+    async removeEducation(id) {
+      ok("education removal", await sb().from("employee_education").delete().eq("id", id));
     },
     async addActivity(a, allocations) {
       const res = await sb().from("pd_activities").insert(scoped({

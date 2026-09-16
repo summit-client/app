@@ -15,6 +15,7 @@
  */
 
 import type { CreditAllocation, EmployeeCredential, PdActivity } from "./credentials";
+import { highestEducation as computeHighestEducation, type EmployeeEducation } from "./education";
 import type { MetricResponse, Recognition } from "./ecosystem";
 import { IS_PREVIEW, type Session } from "./session";
 import {
@@ -107,6 +108,13 @@ export function credentialLine(c: EmployeeCredential | null = primaryCredential(
   return `${c.credential} #${c.number}`;
 }
 
+/** The employee's highest recorded education level, derived fresh from every
+ *  record on each call rather than a column someone has to keep in sync -
+ *  see migration 0074's header. */
+export function highestEducation(): EmployeeEducation | null {
+  return computeHighestEducation(hr().education);
+}
+
 export function personId(name: string): string | null {
   return hr().directory.find((p) => p.name === name)?.id ?? null;
 }
@@ -189,7 +197,14 @@ export async function addActivity(a: PdActivity, allocations: CreditAllocation[]
 export async function saveCredential(c: EmployeeCredential): Promise<void> {
   const s = hr();
   const saved = await be().saveCredential(c);
-  const i = s.credentials.findIndex((x) => x.id === c.id);
+  // Looked up by saved.id, not c.id: the preview backend mutates the same
+  // snapshot object this reads (s IS backend's own snap - see hr-backend.ts),
+  // and already pushed the row under a freshly generated id by the time this
+  // runs. Searching by the pre-save c.id ("new-*") would never find it and
+  // push a second, duplicate row. saved.id also covers the Supabase backend
+  // correctly: there s.credentials has no local copy yet, so this still
+  // falls through to push on insert and replaces in place on update.
+  const i = s.credentials.findIndex((x) => x.id === saved.id);
   if (i >= 0) s.credentials[i] = saved;
   else s.credentials.push(saved);
   await hrAudit("credential.saved", `${saved.credential}${saved.number ? ` (${saved.number})` : ""}`);
@@ -202,6 +217,29 @@ export async function removeCredential(id: string): Promise<void> {
   await be().removeCredential(id);
   s.credentials = s.credentials.filter((x) => x.id !== id);
   if (c) await hrAudit("credential.removed", `${c.credential}${c.number ? ` (${c.number})` : ""}`);
+  changed();
+}
+
+/** Record or update one academic education entry. Self-reported: nothing
+ *  here is independently checkable by Summit the way a registration number
+ *  is, so it is never presented as HR-verified. */
+export async function saveEducation(e: EmployeeEducation): Promise<void> {
+  const s = hr();
+  const saved = await be().saveEducation(e);
+  // By saved.id, not e.id - same reason as saveCredential above.
+  const i = s.education.findIndex((x) => x.id === saved.id);
+  if (i >= 0) s.education[i] = saved;
+  else s.education.push(saved);
+  await hrAudit("education.saved", `${saved.level}${saved.fieldOfStudy ? ` (${saved.fieldOfStudy})` : ""}`);
+  changed();
+}
+
+export async function removeEducation(id: string): Promise<void> {
+  const s = hr();
+  const e = s.education.find((x) => x.id === id);
+  await be().removeEducation(id);
+  s.education = s.education.filter((x) => x.id !== id);
+  if (e) await hrAudit("education.removed", `${e.level}${e.fieldOfStudy ? ` (${e.fieldOfStudy})` : ""}`);
   changed();
 }
 
