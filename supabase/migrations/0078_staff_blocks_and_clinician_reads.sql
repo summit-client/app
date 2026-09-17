@@ -18,6 +18,29 @@
 -- Migration 0046 then admitted clinicians to the scheduler portal without
 -- revisiting these two policies, and nothing since has widened them.
 --
+-- THAT LAST SENTENCE IS WRONG, and was found to be wrong by introspecting
+-- production on 2026-09-18, after this file had already been applied there.
+-- 0046 DID widen them - not by editing `locations_read`/`session_types_read`,
+-- which is where this file looked, but by adding a second policy to each
+-- table (`locations_clinical_staff_select` and
+-- `session_types_clinical_staff_select`, both `clinic_id = auth_clinic_id()
+-- and auth_is_staff()`, at 0046 lines 122-126). Permissive SELECT policies OR
+-- together, so clinicians and supervisors could already read both tables.
+--
+-- What that means for section 1 below: it is REDUNDANT, not harmful. The
+-- widened `locations_read`/`session_types_read` is a strict superset of what
+-- 0013 wrote, so applying it takes nothing away, and it overlaps a grant that
+-- was already there. The symptom described below - a clinician's empty
+-- location and session-type filters - was therefore NOT caused by these
+-- policies on this database, and if that symptom is still being reported the
+-- cause is somewhere else and this file is not the fix. Section 2 is the part
+-- of this migration that does real work.
+--
+-- Recorded rather than deleted, for the same reason 0077 carries the same
+-- kind of note: this is the second time in one evening that a migration in
+-- this repo reasoned from the migration history instead of from the deployed
+-- schema and got the premise wrong. Read `pg_policies` first.
+--
 -- The result is the failure mode CLAUDE.md warns about by name - RLS returns
 -- empty sets, not errors. A clinician opening the Calendar tab gets zero
 -- locations and zero session types back, so the location filter is empty, the
