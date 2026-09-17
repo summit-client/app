@@ -472,7 +472,23 @@ async function loadLive(): Promise<void> {
  */
 export function initSettings(): Promise<void> {
   if (IS_PREVIEW) return Promise.resolve();
-  if (!liveLoad) liveLoad = loadLive().then(() => notify());
+  if (!liveLoad) {
+    // loadLive() can reject - getIdentity() does on a network failure. Left
+    // unhandled, `liveLoad` stayed a rejected promise and `live` stayed null,
+    // so every read silently returned registry defaults for the rest of the
+    // session with no way back, and each `void initSettings()` call site
+    // leaked an unhandled rejection. Fall back to an empty cache (same
+    // behaviour read() already had), tell subscribers, and clear the latch so
+    // a later refreshIdentity() + initSettings() can genuinely retry.
+    liveLoad = loadLive()
+      .then(() => notify())
+      .catch((err: unknown) => {
+        console.error("Failed to load settings; using defaults for now.", err);
+        live = emptyLiveCache();
+        liveLoad = null;
+        notify();
+      });
+  }
   return liveLoad;
 }
 
