@@ -342,10 +342,17 @@ a:hover { color: var(--brand-700); }
    <div className="mobile-topbar"> holding the hamburger <label>, and a
    <label htmlFor="nav-toggle" className="nav-toggle-backdrop"> for
    tap-outside-to-close. */
-.nav-toggle-input { position: absolute; opacity: 0; pointer-events: none; }
+/* Kept in step with @summit/design's components.css: display:none rather
+   than opacity:0, because an invisible inert checkbox is still in the tab
+   order and gave every desktop page a phantom first tab stop. */
+.nav-toggle-input { display: none; }
 .nav-toggle-btn, .nav-toggle-backdrop, .mobile-topbar { display: none; }
 
 @media (max-width: 820px) {
+  /* Focusable again where it is actually the control; :checked ~ and
+     <label for> both work on a display:none checkbox. */
+  .nav-toggle-input { display: block; position: absolute; opacity: 0; pointer-events: none; }
+
   .nav-toggle-btn {
     display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
     width: 34px; height: 34px; flex: none; padding: 0;
