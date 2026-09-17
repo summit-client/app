@@ -95,7 +95,7 @@ function AdminConsole() {
   const [timeOff, reloadTimeOff] = useManagedQueue<PendingTimeOff>(listPendingTimeOffRequests);
   const [pd, reloadPd] = useManagedQueue<PendingPd>(listPendingPdVerifications);
   const [team, reloadTeam] = useManagedQueue<TeamMember>(listTeamDirectory);
-  const [activity] = useManagedQueue<ManagedAuditEvent>(listRecentActivity);
+  const [activity, reloadActivity] = useManagedQueue<ManagedAuditEvent>(listRecentActivity);
 
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading admin…</p>;
@@ -189,7 +189,7 @@ function AdminConsole() {
                   onClick={() => {
                     const title = p.task?.title ?? p.taskKey;
                     if (!confirm(`Sign off "${title}" for ${nameOf(p.userId)}? This can't be undone.`)) return;
-                    void saved(signOffTask(p.taskKey, p.userId)).then(reloadSignoffs);
+                    void saved(signOffTask(p.taskKey, p.userId)).then(() => { reloadSignoffs(); reloadActivity(); });
                   }}
                 >
                   Sign off as completed
@@ -245,8 +245,8 @@ function AdminConsole() {
                   <b>{nameOf(r.userId)}</b> · {r.type === "VACATION" ? "Vacation" : "Sick"} · {r.startDate} → {r.endDate} ({r.days}d){r.note ? ` · ${r.note}` : ""}
                 </span>
                 <span style={{ display: "flex", gap: 8 }}>
-                  <button className="btn" onClick={() => void saved(decideTimeOff(r.id, "APPROVED", { userId: r.userId, type: r.type, startDate: r.startDate })).then(reloadTimeOff)}>Approve</button>
-                  <button className="btn secondary" onClick={() => void saved(decideTimeOff(r.id, "DENIED", { userId: r.userId, type: r.type, startDate: r.startDate })).then(reloadTimeOff)}>Deny</button>
+                  <button className="btn" onClick={() => void saved(decideTimeOff(r.id, "APPROVED", { userId: r.userId, type: r.type, startDate: r.startDate })).then(() => { reloadTimeOff(); reloadActivity(); })}>Approve</button>
+                  <button className="btn secondary" onClick={() => void saved(decideTimeOff(r.id, "DENIED", { userId: r.userId, type: r.type, startDate: r.startDate })).then(() => { reloadTimeOff(); reloadActivity(); })}>Deny</button>
                 </span>
               </div>
             ))}
@@ -269,7 +269,7 @@ function AdminConsole() {
             {pd.rows.map((r) => (
               <div key={r.id} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "var(--text-sm)" }}><b>{nameOf(r.userId)}</b> · {r.title} · {r.provider || "—"} · {r.hours}h · {r.date}</span>
-                <button className="btn secondary" onClick={() => void saved(verifyPd(r.id, { userId: r.userId, title: r.title })).then(reloadPd)}>Verify</button>
+                <button className="btn secondary" onClick={() => void saved(verifyPd(r.id, { userId: r.userId, title: r.title })).then(() => { reloadPd(); reloadActivity(); })}>Verify</button>
               </div>
             ))}
             {!pd.rows.length ? <div className="card card-pad"><p className="sub">All PD entries are verified.</p></div> : null}
