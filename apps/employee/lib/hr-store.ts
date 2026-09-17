@@ -302,15 +302,18 @@ export async function setSiteDomain(site: string, domainKey: string, value: numb
   const s = hr();
   const row = s.sites.find((x) => x.site === site);
   if (!row) return;
+  // `had` is tracked separately so a rollback restores an unscored domain to
+  // unscored rather than to a 0 somebody could later read as a real score.
+  const had = domainKey in row.domains;
   const previous = row.domains[domainKey] ?? 0;
-  if (previous === value) return;
+  if (had && previous === value) return;
   row.domains[domainKey] = value;
   changed();
   try {
     await be().setSiteDomain(site, domainKey, value);
   } catch (err) {
     // Never leave a value on the board that the database does not have.
-    row.domains[domainKey] = previous;
+    if (had) row.domains[domainKey] = previous; else delete row.domains[domainKey];
     changed();
     throw err;
   }
