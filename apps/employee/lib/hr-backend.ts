@@ -33,6 +33,22 @@ export interface Person {
   supervisorId: string | null;
 }
 
+/**
+ * One site on the clinic scoreboard.
+ *
+ * `domains` is keyed by CLINIC_DOMAINS[].key from lib/ecosystem.ts - the
+ * catalogue is code, versioned with the app, and only the scores are data.
+ * Same split migration 0006 makes between content.ts and hub_task_progress.
+ *
+ * A key that is absent means "not scored yet", which every reader already
+ * treats as 0 (`domains[d.key] ?? 0`, in the screen and in clinicAverage), so
+ * a brand-new site is `{}` rather than five zeroes nobody typed.
+ */
+export interface ScoreboardSite {
+  site: string;
+  domains: Record<string, number>;
+}
+
 export interface HrSnapshot {
   cycle: string;
   directory: Person[];
@@ -48,9 +64,9 @@ export interface HrSnapshot {
   acks: PolicyAck[];
   posts: ForumPost[];
   audit: HrAudit[];
-  /** Org configuration, not a 0007 table. Clinic scoreboard sites belong in
-   *  @summit/settings; they stay local until moved there. */
-  sites: { site: string; domains: Record<string, number> }[];
+  /** The clinic scoreboard: every site in the clinic and its score per domain.
+   *  Shared clinic data, persisted in both modes - see ScoreboardSite. */
+  sites: ScoreboardSite[];
   peerScores: number[];
   /** Legacy free-text list, preview only. Live mode uses `directory`. */
   team: StaffMember[];
@@ -73,8 +89,19 @@ export interface HrBackend {
   addForumPost(p: ForumPost): Promise<ForumPost>;
   addForumComment(postId: string, body: string, author: string): Promise<void>;
   audit(a: HrAudit): Promise<void>;
-  /** Local-only concerns that have no table yet. */
-  saveLocal(snap: HrSnapshot): void;
+  /**
+   * Clinic scoreboard. These two replaced `saveLocal(snap)`, whose live
+   * implementation was an empty function - so every slider drag and every
+   * added site in production updated the screen and wrote nothing. A method
+   * named for what it saves is much harder to leave unimplemented than one
+   * named "save whatever is local", which is most of why the shape changed.
+   *
+   * setSiteDomain takes one domain rather than a site's whole map on purpose:
+   * the board is shared and its domains have different owners, so two people
+   * saving at once must not overwrite each other. See migration 0079.
+   */
+  addSite(site: string): Promise<ScoreboardSite>;
+  setSiteDomain(site: string, domainKey: string, value: number): Promise<void>;
 }
 
 export class HrWriteError extends Error {
@@ -471,7 +498,18 @@ export function previewBackend(session: Session, seedPolicies: PolicyDoc[]): HrB
       if (post) { post.comments.push({ author, body, date: new Date().toISOString() }); persist(); }
     },
     async audit(a) { snap.audit.unshift(a); snap.audit = snap.audit.slice(0, 200); persist(); },
-    saveLocal(s) { snap = s; persist(); },
+    async addSite(site) {
+      const row: ScoreboardSite = { site, domains: {} };
+      snap.sites.push(row);
+      persist();
+      return row;
+    },
+    async setSiteDomain(site, domainKey, value) {
+      const row = snap.sites.find((x) => x.site === site);
+      if (!row) return;
+      row.domains[domainKey] = value;
+      persist();
+    },
   };
 }
 
@@ -488,6 +526,11 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
 
   let nameById = new Map<string, string>();
   let idByName = new Map<string, string>();
+  /** Scoreboard site name -> hub_scoreboard_sites.id. The snapshot holds site
+   *  NAMES, because that is what the screen matches against
+   *  hub_employee_profiles.location; the id it needs to write a score lives
+   *  here, resolved once on load and extended by addSite. */
+  const siteIdByName = new Map<string, string>();
   let cycleId: string | null = null;
 
   const resolveName = (id: string | null): string => (id ? nameById.get(id) ?? "Unknown" : "Unknown");
@@ -508,7 +551,8 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
   return {
     async load(): Promise<HrSnapshot> {
       const db = sb();
-      const [people, goals, creds, edu, acts, allocs, pols, acks, posts, comments, recog, cycles, audit] =
+      const [people, goals, creds, edu, acts, allocs, pols, acks, posts, comments, recog, cycles, audit,
+        boardSites, boardScores] =
         await Promise.all([
           db.from("profiles").select("id, full_name, role, supervisor_id").eq("clinic_id", clinic),
           db.from("development_goals").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
@@ -533,6 +577,11 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
           db.from("recognitions").select("*").order("created_at", { ascending: false }).limit(300),
           db.from("scorecard_cycles").select("*").eq("user_id", uid).order("cycle", { ascending: true }),
           db.from("hr_audit_log").select("*").order("at", { ascending: false }).limit(200),
+          // The clinic scoreboard (migration 0079). Clinic-wide by design -
+          // sites compete, people do not - so these are the two reads here
+          // that are deliberately not filtered to `uid`.
+          db.from("hub_scoreboard_sites").select("id, site").eq("clinic_id", clinic).order("site"),
+          db.from("hub_scoreboard_scores").select("site_id, domain_key, score").eq("clinic_id", clinic),
         ]);
 
       // Checked before anything is mapped, so a failed read stops the load
@@ -551,6 +600,8 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
         ["recognition", recog],
         ["your scorecard cycles", cycles],
         ["the HR audit log", audit],
+        ["the clinic scoreboard", boardSites],
+        ["the clinic scoreboard's scores", boardScores],
       ]);
 
       const directory: Person[] = (people.data ?? []).map((r) => ({
@@ -594,6 +645,19 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
       // RLS below it: even if either of those ever regressed, an allocation
       // whose activity isn't in this caller's own `acts` never renders.
       const activityIds = new Set((acts.data ?? []).map((a) => a.id as string));
+
+      const domainsBySiteId = new Map<string, Record<string, number>>();
+      for (const r of boardScores.data ?? []) {
+        const siteId = r.site_id as string;
+        const domains = domainsBySiteId.get(siteId) ?? {};
+        domains[r.domain_key as string] = Number(r.score);
+        domainsBySiteId.set(siteId, domains);
+      }
+      siteIdByName.clear();
+      const sites: ScoreboardSite[] = (boardSites.data ?? []).map((r) => {
+        siteIdByName.set(r.site as string, r.id as string);
+        return { site: r.site as string, domains: domainsBySiteId.get(r.id as string) ?? {} };
+      });
 
       return {
         cycle: thisCycle(),
@@ -681,7 +745,7 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
           next: (a.new_value as string | null) ?? undefined,
           who: resolveName(a.actor as string | null), at: a.at as string,
         })),
-        sites: [],
+        sites,
         peerScores: (cycles.data ?? []).filter((c) => c.score != null).map((c) => Number(c.score)),
         team: [],
       };
@@ -841,6 +905,35 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
       if (res.error) console.warn("hr audit write failed", res.error);
     },
 
-    saveLocal() { /* live mode has no local-only state to keep */ },
+    async addSite(site) {
+      const res = await sb().from("hub_scoreboard_sites")
+        // created_by is not decoration: hub_scoreboard_sites_add (0079)
+        // requires created_by = auth.uid(), so a row that does not say who
+        // added it is rejected rather than silently filed as nobody's.
+        .insert(scoped({ site, created_by: uid })).select("id").single();
+      ok("scoreboard site", res);
+      siteIdByName.set(site, res.data!.id as string);
+      return { site, domains: {} };
+    },
+
+    async setSiteDomain(site, domainKey, value) {
+      const siteId = siteIdByName.get(site);
+      // Only reachable if the board changed underneath this browser - someone
+      // else added the site, or a reload is overdue. Better a message than an
+      // insert against a null id, which PostgREST would reject with something
+      // nobody can act on.
+      if (!siteId) throw new HrWriteError("scoreboard score", `${site} is not on the board yet - reload and try again.`);
+      // Upsert, because the first person to touch a domain creates its row and
+      // everyone after that updates it. One row per (site, domain) is what
+      // keeps two people editing different domains of the same site from
+      // overwriting each other - see migration 0079's header.
+      ok("scoreboard score", await sb().from("hub_scoreboard_scores").upsert(
+        scoped({
+          site_id: siteId, domain_key: domainKey, score: value,
+          updated_by: uid, updated_at: new Date().toISOString(),
+        }),
+        { onConflict: "site_id,domain_key" },
+      ));
+    },
   };
 }
