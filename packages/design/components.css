@@ -260,6 +260,12 @@ table.data tbody tr:hover { background: var(--accent-tint); }
     background: var(--surface); cursor: pointer;
   }
   .nav-toggle-btn span { display: block; height: 2px; margin: 0 7px; background: var(--ink); border-radius: 1px; }
+  /* The checkbox holds focus but is invisible, and a <label> can never take
+     focus itself, so tokens.css's global :focus-visible ring lands on
+     nothing. Forward it to the hamburger the keyboard user can actually see. */
+  .nav-toggle-input:focus-visible ~ .mobile-topbar .nav-toggle-btn {
+    outline: 2px solid var(--focus-ring); outline-offset: 2px;
+  }
 
   .mobile-topbar {
     display: flex; align-items: center; gap: var(--space-3);

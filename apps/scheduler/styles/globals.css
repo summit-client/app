@@ -360,6 +360,11 @@ a:hover { color: var(--brand-700); }
     background: var(--color-background-primary); cursor: pointer;
   }
   .nav-toggle-btn span { display: block; height: 2px; margin: 0 7px; background: var(--color-text-primary); border-radius: 1px; }
+  /* Same forwarding as @summit/design's copy: the focusable element is the
+     invisible checkbox, so the ring has to be drawn on the visible label. */
+  .nav-toggle-input:focus-visible ~ .mobile-topbar .nav-toggle-btn {
+    outline: 2px solid var(--brand-400); outline-offset: 2px;
+  }
 
   .mobile-topbar {
     display: flex; align-items: center; gap: 12px;
