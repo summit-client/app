@@ -615,6 +615,13 @@ export async function getMyClients(): Promise<ClientRow[]> {
   const [{ data: clients, error: clientsErr }, { data: programs }, { data: upcoming }] = await Promise.all([
     sb().from("clients").select("id,name,status").in("id", clientIds).order("name"),
     sb().from("programs").select("client_id,status").in("client_id", clientIds).neq("status", "archived"),
+    // "Next session" means next session WITH THIS CLINICIAN as of migration
+    // 0077, which narrowed a clinician's read of `sessions` to their own
+    // rows. Before it, this returned the child's next appointment with
+    // anyone on the team. The narrower reading is the right one for a card
+    // on a clinician's own caseload, and it is the one this query now gives;
+    // it is written down because the query itself does not show the change -
+    // the rows simply stop arriving. A supervisor still sees clinic-wide.
     sb().from("sessions").select("client_id,session_date")
       .in("client_id", clientIds).gte("session_date", today).order("session_date"),
   ]);
@@ -642,6 +649,24 @@ export async function getMyClients(): Promise<ClientRow[]> {
   }));
 }
 
+/**
+ * Today's sessions for the dashboard.
+ *
+ * Stays on the `sessions` table, and therefore means something narrower for a
+ * clinician than it did before migration 0077: that migration narrowed a
+ * clinician's read of this table to their own rows, so this returns THEIR day,
+ * not the clinic's. A supervisor still gets the clinic-wide day.
+ *
+ * That is a deliberate accept, not an oversight. The screen this feeds
+ * (app/page.tsx) says "Your sessions and caseload at a glance", so own-only is
+ * the more honest reading of it; and the alternative - reading
+ * `sessions_visible()` to get the clinic's whole day back - would have to
+ * unwind the `clients(name)` embed below, because PostgREST cannot resolve an
+ * FK embed on a function result. Paying that for a dashboard row a clinician
+ * would see a masked client name on is the wrong trade.
+ *
+ * getSession() derives from this and inherits the same scope.
+ */
 export async function getTodaySessions(): Promise<ScheduledSession[]> {
   if (IS_PREVIEW) return previewSessions;
   const today = new Date().toISOString().slice(0, 10);

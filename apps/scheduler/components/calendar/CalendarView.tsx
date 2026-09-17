@@ -170,12 +170,27 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     [mode, anchor, nDays, weekendsInView, workDays.join(",")],
   );
 
+  // Reads `sessions_visible()` (migration 0077), not the `sessions` table.
+  // For admin, scheduler and supervisor the two are identical. For a
+  // clinician the table now returns their OWN sessions only - every
+  // colleague's row, which this calendar needs for conflict detection and
+  // availability shading, comes back through the function with client_id and
+  // home_address already NULL and client_masked set. See lib/sessionPrivacy.ts.
+  // PostgREST filters chain onto a set-returning function exactly as onto a
+  // table, so the filter panel below is unchanged - except that filtering by
+  // client necessarily matches only rows whose client this viewer may see,
+  // which is the same thing the picker already offers them.
   const loadRange = React.useCallback(async () => {
     if (!clinicId) return;
-    let q = supabase.from("sessions").select("*")
+    let q = supabase
+      .rpc("sessions_visible", {
+        p_from: toDateStr(range.queryStart),
+        p_to: toDateStr(range.queryEnd),
+      })
+      // Redundant with the function's own tenant scoping, kept because a
+      // read that names the clinic it means is worth more than one saved
+      // predicate if this ever moves back onto a table.
       .eq("clinic_id", clinicId)
-      .gte("session_date", toDateStr(range.queryStart))
-      .lte("session_date", toDateStr(range.queryEnd))
       .neq("status", "cancelled");
     if (filters.locationIds.size) q = q.in("location_id", [...filters.locationIds]);
     if (filters.typeNames.size) q = q.in("type", [...filters.typeNames]);
@@ -210,11 +225,17 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
   const loadOverlay = React.useCallback(async () => {
     if (!clinicId || overlayStaffIds.length === 0) { setOverlaySessions([]); return; }
-    const { data } = await supabase.from("sessions").select("*")
+    // Same path as loadRange - this overlay is specifically OTHER people's
+    // days, so for a clinician it is entirely rows the `sessions` table no
+    // longer returns. It shows their occupancy, masked; that is what the
+    // panel is for.
+    const { data } = await supabase
+      .rpc("sessions_visible", {
+        p_from: toDateStr(range.queryStart),
+        p_to: toDateStr(range.queryEnd),
+      })
       .eq("clinic_id", clinicId)
       .in("employee_id", overlayStaffIds)
-      .gte("session_date", toDateStr(range.queryStart))
-      .lte("session_date", toDateStr(range.queryEnd))
       .neq("status", "cancelled");
     setOverlaySessions((data as CalSession[]) || []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -463,6 +484,9 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       failed = !!error;
       conflict = isBookingConflictError(error);
     } else {
+      // The `sessions` table on purpose - same reasoning as RescheduleModal:
+      // these are siblings of a series about to be written, so they are rows
+      // this user may write and therefore rows 0077 still returns directly.
       const { data: rows } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
       const oldDate = parseDateStr(session.session_date);
       const newDate = parseDateStr(dateStr);

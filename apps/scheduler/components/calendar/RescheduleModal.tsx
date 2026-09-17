@@ -237,6 +237,12 @@ export function RescheduleModal({
     // applyReschedule documents.
     let siblingShifts: { row: any; shiftedDateStr: string }[] = [];
     if (scope !== "this" && session.recurrence_id) {
+      // Deliberately still the `sessions` table, not sessions_visible():
+      // these are the sibling occurrences of a series this user is about to
+      // WRITE, and 0046 only lets a clinician write their own - so every row
+      // here is one 0077 still returns to them directly. Reading them through
+      // the privacy function would hand back masked copies of rows they are
+      // then going to update anyway.
       const { data: rows } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
       const oldDate = parseDateStr(session.session_date);
       const newDate = parseDateStr(selectedDate);

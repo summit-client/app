@@ -29,14 +29,28 @@ export interface SlotKey {
 }
 
 /** A fresh, single-slot conflict check. `excludeSessionId` lets a reschedule
- *  ignore the session's own prior row. */
+ *  ignore the session's own prior row.
+ *
+ *  Reads `sessions_visible()` (migration 0077) rather than the `sessions`
+ *  table, and here that is load-bearing: after 0077 a clinician's direct read
+ *  of the table returns their own rows only, so a check against a COLLEAGUE's
+ *  slot would find nothing and report "free" for a slot that is taken. The
+ *  function still publishes occupancy for every row in the clinic - time,
+ *  employee, type - which is precisely and only what a conflict check needs.
+ *
+ *  Returns just the id. It used to hand back `client_id` and `type` as well;
+ *  no caller has ever read either (all three sites test it for truthiness and
+ *  show a fixed "that slot was just booked" message), and client_id is the
+ *  one field on this row that 0077 may have masked. Returning a field whose
+ *  meaning depends on who asked, for nobody, is how the wrong name ends up on
+ *  a screen later. */
 export async function fetchFreshConflict(
   { employeeId, dateStr, hour, minute }: SlotKey,
   excludeSessionId?: number,
-): Promise<{ id: number; client_id: number; type: string } | null> {
+): Promise<{ id: number } | null> {
   let q = supabase
-    .from("sessions")
-    .select("id, client_id, type")
+    .rpc("sessions_visible", { p_from: dateStr, p_to: dateStr })
+    .select("id")
     .eq("employee_id", employeeId)
     .eq("session_date", dateStr)
     .eq("hour", hour)
@@ -52,7 +66,12 @@ export async function fetchFreshConflict(
     console.error("[checkSlotConflict] fresh conflict check failed", error);
     return null;
   }
-  return data && data.length > 0 ? data[0] : null;
+  // Cast on the way out, matching how every other rpc() result in this repo
+  // is handled (apps/data/lib/workforce.ts): with no generated Database
+  // types, supabase-js cannot tell a set-returning function from a scalar one
+  // and types the result as either.
+  const rows = (data ?? []) as { id: number }[];
+  return rows.length > 0 ? rows[0] : null;
 }
 
 /**
@@ -72,17 +91,23 @@ export async function fetchFreshConflictKeys(candidates: SlotKey[]): Promise<Set
   const keys = new Set<string>();
   await Promise.all(
     [...byEmployee.entries()].map(async ([employeeId, dates]) => {
+      // Same reasoning as fetchFreshConflict above: `sessions_visible()`, so
+      // that a clinician checking a colleague's dates sees their occupancy
+      // instead of an empty result that reads as "all free". Every column
+      // selected here is occupancy, none of it is ever masked.
+      const dateList = [...dates].sort();
       const { data, error } = await supabase
-        .from("sessions")
+        .rpc("sessions_visible", { p_from: dateList[0], p_to: dateList[dateList.length - 1] })
         .select("employee_id, session_date, hour, minute")
         .eq("employee_id", employeeId)
-        .in("session_date", [...dates])
+        .in("session_date", dateList)
         .neq("status", "cancelled");
       if (error) {
         console.error("[checkSlotConflict] fresh batch conflict check failed", error);
         return;
       }
-      (data || []).forEach((r: any) => {
+      const rows = (data ?? []) as { employee_id: number; session_date: string; hour: number; minute: number }[];
+      rows.forEach((r) => {
         keys.add(`${r.employee_id}|${r.session_date}|${r.hour}|${r.minute}`);
       });
     }),

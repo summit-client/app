@@ -3412,7 +3412,14 @@ export default function Scheduler() {
       supabase.from("clients").select("*"),
       supabase.from("staff").select("*"),
       supabase.from("session_types").select("*"),
-      supabase.from("sessions").select("*"),
+      // `sessions_visible()`, not the `sessions` table - migration 0077.
+      // Unbounded on purpose (both date args default null): this list backs
+      // the Sessions tab, the dashboard counts and the Create wizard's
+      // conflict pre-check, none of which are windowed. For admin/scheduler
+      // the rows are identical to the table's; for a clinician, colleague
+      // rows arrive with client_id and home_address NULL and client_masked
+      // set, which is what lib/sessionPrivacy.ts renders from.
+      supabase.rpc("sessions_visible"),
       supabase.from("locations").select("*"),
       supabase.from("calendars").select("*"),
       supabase.from("staff_availability").select("*"),
@@ -3449,7 +3456,7 @@ export default function Scheduler() {
   // CalendarView's refreshSignal below, kick the calendar into a refetch off
   // the emptied array. Keep the stale-but-correct rows; report the failure.
   async function refreshBookings() {
-    const { data, error: err } = await supabase.from("sessions").select("*");
+    const { data, error: err } = await supabase.rpc("sessions_visible");
     if (err) {
       console.error("[scheduler] refreshBookings: sessions query failed", err);
       showToast("Couldn't refresh the session list — it may be out of date.");

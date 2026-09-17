@@ -134,12 +134,18 @@ export function SessionSchedulesPanel({
       if (!clinicId || !employee || !client) { setLoading(false); return; }
       setLoading(true);
       setError(null);
+      // `sessions_visible()` (migration 0077), not the `sessions` table -
+      // and for this panel specifically that is a correctness requirement,
+      // not a formality. Its whole job is finding a slot where the clinician
+      // AND the child are both free, so the `client_id.eq` half has to match
+      // that child's sessions with OTHER clinicians; read from the table, a
+      // clinician now sees none of those and the panel would report "free"
+      // for a child who is already booked. The function reveals client_id
+      // for a client the caller demonstrably works with themselves, which is
+      // exactly this case - see migration 0077's header.
       const { data, error: err } = await supabase
-        .from("sessions")
-        .select("id, client_id, employee_id, session_date, hour, minute, type, status")
+        .rpc("sessions_visible", { p_from: rangeStart, p_to: rangeEnd })
         .eq("clinic_id", clinicId)
-        .gte("session_date", rangeStart)
-        .lte("session_date", rangeEnd)
         .neq("status", "cancelled")
         .or(`employee_id.eq.${employee.id},client_id.eq.${client.id}`);
       if (cancelled) return;
