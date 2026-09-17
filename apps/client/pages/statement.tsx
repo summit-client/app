@@ -22,6 +22,7 @@ import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient } from "../lib/admin-view-as";
+import { canForAny, familyFromRows } from "../lib/family";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { AccountProblemNotice } from "../components/account-problem-notice";
 import { LoadErrorNotice } from "../components/load-error-notice";
@@ -48,6 +49,11 @@ type PageProps =
       generatedOn: string;
     }
   | { mode: "problem"; problem: AccountProblem }
+  // No child on the family record grants view_billing. Without this the
+  // budget queries just come back empty under RLS and the page told the
+  // family "No budget on file yet" - a confident, false claim about their
+  // money, when the truth is the clinic has not shared it with them.
+  | { mode: "no-access" }
   // A real query failure resolving the account, as distinct from an account
   // that resolved fine and has no clinic or no linked client. Added on main
   // while this branch was open; without it a transient failure fell through
@@ -95,6 +101,33 @@ export default function Statement(
   }
   if (props.mode === "problem") {
     return <AccountProblemNotice problem={props.problem} />;
+  }
+
+  if (props.mode === "no-access") {
+    return (
+      <>
+        <Head>
+          <title>Funding Statement · Summit Client Portal</title>
+        </Head>
+        <MobileNavChrome title="Funding" />
+        <div className={styles.page}>
+          <Sidebar />
+          <main className={styles.main} style={{ background: "#edf7f8", minHeight: "100vh" }}>
+            <header style={{ marginBottom: 24 }}>
+              <p className={styles.eyebrow}>CLIENT PORTAL</p>
+              <h1 style={{ margin: "0 0 6px", color: "#173f5f" }}>Funding Statement</h1>
+            </header>
+            <div style={panel}>
+              <strong style={{ color: INK }}>Funding is not turned on for your account.</strong>
+              <p style={{ margin: "8px 0 0", color: MUTED, fontSize: 14 }}>
+                Another adult on your family record may handle the funding for this
+                file. The clinic can turn it on for you.
+              </p>
+            </div>
+          </main>
+        </div>
+      </>
+    );
   }
 
   const { clientName, isAdminViewingAs, generatedOn } = props;
@@ -472,6 +505,25 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
   }
 
   const { viewed } = resolved;
+
+  // Gate before querying, not after: client_budgets_family_read is
+  // `auth_guardian_can(client_id, 'view_billing')`, so a guardian without it
+  // gets an empty set rather than an error - the RLS-returns-empty-sets trap,
+  // which this page rendered as "No budget on file yet".
+  const { data: familyRows, error: familyError } = await supabase
+    .from("my_family")
+    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, relationship, permissions");
+  if (familyError) {
+    console.error("statement: family load failed:", familyError.message);
+    return { props: { mode: "error" } };
+  }
+  const family = familyFromRows(familyRows ?? []);
+  // A legacy single-child account with no my_family rows still reaches its own
+  // budget through RLS, so it gets the page rather than the notice - the same
+  // carve-out pages/forms.tsx makes.
+  if (family.children.length > 0 && !canForAny(family, "view_billing")) {
+    return { props: { mode: "no-access" } };
+  }
 
   // Closed budgets stay on the statement: a reconciliation that hides last
   // year's spending is not a reconciliation.
