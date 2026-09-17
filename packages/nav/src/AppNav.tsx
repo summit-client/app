@@ -104,6 +104,12 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profil
   const visible = role == null
     ? portals.filter((p) => p.key === activeKey)
     : portalsFor(role, visiblePortals);
+  // profileUrl() resolves by role and falls through to the employee portal
+  // for anything it does not recognise, including the `undefined` a caller
+  // passes while getIdentity() is still in flight. A family user who clicks
+  // in that window lands on a portal ACCESS does not admit them to, so the
+  // avatar waits for a real role - the same loose-null test the pills use.
+  const showProfile = Boolean(profileHref) && role != null;
   const initials = profileName
     ? profileName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("")
     : null;
@@ -209,7 +215,7 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profil
           </svg>
         </a>
       ) : null}
-      {profileHref ? (
+      {showProfile ? (
         <a
           href={profileHref}
           aria-label={priorityStatus ? `Profile — ${priorityStatus.label}` : "Profile"}
@@ -315,7 +321,7 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profil
           aria-label="Sign out"
           title="Sign out"
           style={{
-            marginLeft: priorityStatus ? 8 : adminHref || settingsHref || profileHref ? 4 : 'auto',
+            marginLeft: priorityStatus ? 8 : adminHref || settingsHref || showProfile ? 4 : 'auto',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
