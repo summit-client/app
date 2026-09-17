@@ -105,6 +105,30 @@
 --                       Those are real rows in a real table that the admin
 --                       UI will show; the run log says when it created them.
 --
+--  7. staff / clients  (NEW PEOPLE - read this one carefully)
+--                       Tops the clinic UP TO v_target_staff session-
+--                       delivering staff and v_target_clients ACTIVE clients,
+--                       with generated fictional names. Nobody is ever
+--                       removed and a roster already above the target is left
+--                       alone. It also fills staff.role - the CLINICAL
+--                       CREDENTIAL, not profiles.role - for existing staff
+--                       who have none, spread across RBT / BCaBA / BCBA /
+--                       Supervisor so the roster does not read as one job
+--                       title. That is the only edit it makes to a person who
+--                       was already here, and it only ever fills a blank.
+--
+--                       These are rows in your real `clients` and `staff`
+--                       tables. They show up in the roster, the client picker,
+--                       the waitlist screens and anywhere else those tables
+--                       are read - not only on the calendar. Every id is
+--                       recorded in mock_data_seed_people so the cleanup
+--                       removes exactly these and nothing else.
+--
+--  8. mock_data_seed_people
+--                       Created if absent. Bookkeeping for #7, including the
+--                       previous staff.role of anyone whose credential was
+--                       filled in. Same deny-all RLS posture as #4 and #6.
+--
 --  6. mock_data_location_backfill
 --                       Created if absent. Bookkeeping for #5: the previous
 --                       location_id of every row changed, and the id of every
@@ -267,6 +291,19 @@
 --    where b.kind = 'location' and b.row_id = l.id;
 --   delete from mock_data_location_backfill;
 --
+--   -- People this script created, and credentials it filled in. Do this
+--   -- AFTER the sessions delete above: sessions.employee_id and .client_id
+--   -- carry neither ON DELETE CASCADE nor SET NULL, so a surviving session
+--   -- row blocks the delete outright.
+--   update staff s set role = b.previous_role
+--     from mock_data_seed_people b
+--    where b.kind = 'staff_role_set' and b.row_id = s.id;
+--   delete from clients c using mock_data_seed_people b
+--    where b.kind = 'client_created' and b.row_id = c.id;
+--   delete from staff s using mock_data_seed_people b
+--    where b.kind = 'staff_created' and b.row_id = s.id;
+--   delete from mock_data_seed_people;
+--
 --   -- Rows this script CREATED are deleted, not nulled.
 --   delete from staff_availability a
 --    using mock_data_availability_backfill b
@@ -337,8 +374,15 @@ declare
   -- writes a recurrence_id shaped like this.
   v_marker  text := 'dddddddd-dddd-4ddd-8ddd-';
 
-  -- See VOLUME in the header before raising this.
-  v_max_total        int := 900;
+  -- See VOLUME in the header before changing this. Raised from 900 to 3000 on
+  -- 2026-09-18 at the account owner's explicit direction, for a demo dataset
+  -- that will be wiped before go-live. READ THE TRADE-OFF: PostgREST caps a
+  -- request at 1000 rows by default and loadData()/refreshBookings() still
+  -- issue an unbounded select on sessions, so above ~1000 the Sessions tab,
+  -- the past-bookings list and the engagement leaderboard silently truncate -
+  -- and it reads as the app being broken rather than the seed being large.
+  -- The Calendar tab is date-range scoped and is unaffected.
+  v_max_total        int := 3000;
   v_client_week_max  int := 3;   -- most sessions one client gets in a week
   v_staff_week_max   int := 8;   -- most sessions one clinician gets in a week
 
@@ -353,6 +397,25 @@ declare
   -- location_id exactly as it is.
   v_demo_locations text[] := array['Main Clinic', 'North Site', 'East Site'];
 
+  -- People top-up. The clinic is brought UP TO these counts; nobody is ever
+  -- removed, and an existing roster larger than the target is left alone.
+  v_target_staff   int := 20;    -- session-delivering staff
+  v_target_clients int := 100;   -- clients with status = 'active'
+
+  -- staff.role is the CLINICAL CREDENTIAL (see CLAUDE.md - not profiles.role,
+  -- which is the permission). Spread so the roster looks like a real clinic:
+  -- mostly RBTs delivering, fewer BCaBAs, fewer BCBAs, a couple of
+  -- supervisors. The seed's own "is this person session-delivering" test
+  -- accepts any of these four, so assigning them also makes the new people
+  -- bookable without relying on capacity alone.
+  v_creds text[] := array['RBT','RBT','RBT','RBT','BCaBA','BCaBA','BCBA','Supervisor'];
+
+  v_first text[] := array['Amara','Ben','Chloe','Dev','Elena','Farid','Grace','Hugo',
+                          'Imani','Jonas','Kira','Liam','Maya','Noor','Omar','Pia',
+                          'Quinn','Rosa','Sami','Tara'];
+  v_last  text[] := array['Alvarez','Boateng','Chen','Dufresne','Eriksen','Fontaine',
+                          'Gallagher','Haddad','Ibrahim','Jensen','Kowalski','Lindqvist'];
+
   -- The operator's explicit bound, intersected with the org's own hours.
   v_floor_m int := 9 * 60;
   v_ceil_m  int := 17 * 60;
@@ -361,6 +424,7 @@ declare
   v_loc_name  text;
   v_loc_id    bigint;
   v_orphan    text;
+  v_need      int;
 
   -- ==========================================================================
   -- DERIVED / WORKING STATE
@@ -606,6 +670,106 @@ begin
   end if;
 
   -- --------------------------------------------------------------------------
+  -- 5b · People top-up. See WHAT IT WRITES #7 in the header.
+  --
+  -- Brings the clinic UP TO v_target_staff / v_target_clients. Nobody is ever
+  -- removed and an existing roster bigger than the target is left alone, so
+  -- this is additive in both directions of "wrong count".
+  --
+  -- Runs BEFORE the availability and location sections on purpose: people
+  -- created here must be picked up by both, or they arrive with no window and
+  -- no site and are unbookable - which is exactly the failure this whole
+  -- evening was spent diagnosing.
+  --
+  -- Names are generated so they cannot collide: the first name is indexed by
+  -- the row's own counter and the last name by that counter divided by the
+  -- number of first names, which walks the full cross product before it ever
+  -- repeats a pair. 20 x 12 = 240 distinct names, against a target of 100.
+  --
+  -- Everything created is recorded in mock_data_seed_people so the cleanup can
+  -- remove exactly what this script added and nothing else.
+  -- --------------------------------------------------------------------------
+  create table if not exists mock_data_seed_people (
+    kind text not null check (kind in ('staff_created', 'client_created', 'staff_role_set')),
+    row_id bigint not null,
+    clinic_id uuid not null references clinics(id) on delete cascade,
+    previous_role text,
+    created_at timestamptz not null default now(),
+    primary key (kind, row_id)
+  );
+  alter table mock_data_seed_people enable row level security;
+
+  select greatest(v_target_staff - count(*), 0) into v_need
+    from staff where clinic_id = v_clinic;
+
+  if v_need > 0 then
+    with need as (select generate_series(0, v_need - 1) as i),
+    ins as (
+      -- Deliberately no role here. The credential pass below fills every
+      -- blank in ONE cycle over v_creds; setting it in two places meant two
+      -- cycles both restarting at entry 1, which over-weighted the front of
+      -- the array and produced 12 RBTs, 6 BCaBAs and a single BCBA.
+      insert into staff (name, clinic_id, capacity)
+      select v_first[1 + (n.i % array_length(v_first, 1))] || ' ' ||
+             v_last [1 + ((n.i / array_length(v_first, 1)) % array_length(v_last, 1))],
+             v_clinic,
+             -- 4..7 sessions a week each, varied so the capacity meters differ.
+             4 + (n.i % 4)
+        from need n
+      returning id
+    )
+    insert into mock_data_seed_people (kind, row_id, clinic_id)
+    select 'staff_created', id, v_clinic from ins
+    on conflict (kind, row_id) do nothing;
+    get diagnostics v_n = row_count;
+    perform pg_temp.say(format('created %s staff member(s) to reach a roster of %s', v_n, v_target_staff));
+  else
+    perform pg_temp.say(format('staff roster already at or above %s - created none', v_target_staff));
+  end if;
+
+  -- Existing staff with no credential. Their previous value (NULL) is stored
+  -- so the cleanup can put it back; this is the one place the script edits a
+  -- person who was already here, and it only ever fills a blank.
+  insert into mock_data_seed_people (kind, row_id, clinic_id, previous_role)
+  select 'staff_role_set', s.id, v_clinic, s.role
+    from staff s where s.clinic_id = v_clinic and coalesce(btrim(s.role), '') = ''
+  on conflict (kind, row_id) do nothing;
+
+  with tgt as (
+    select s.id, row_number() over (order by s.id) - 1 as i
+      from staff s where s.clinic_id = v_clinic and coalesce(btrim(s.role), '') = ''
+  )
+  update staff s set role = v_creds[1 + (t.i % array_length(v_creds, 1))]
+    from tgt t where s.id = t.id;
+  get diagnostics v_n = row_count;
+  perform pg_temp.say(format('assigned a credential to %s staff member(s) who had none', v_n));
+
+  select greatest(v_target_clients - count(*), 0) into v_need
+    from clients where clinic_id = v_clinic and status = 'active';
+
+  if v_need > 0 then
+    with need as (select generate_series(0, v_need - 1) as i),
+    ins as (
+      insert into clients (name, clinic_id, status)
+      -- The surname block is offset by 5 against the staff generator above so
+      -- a clinician and a child never come out with the same full name, which
+      -- in a demo reads as a data bug rather than a coincidence.
+      select v_first[1 + (n.i % array_length(v_first, 1))] || ' ' ||
+             v_last [1 + (((n.i / array_length(v_first, 1)) + 5) % array_length(v_last, 1))],
+             v_clinic, 'active'
+        from need n
+      returning id
+    )
+    insert into mock_data_seed_people (kind, row_id, clinic_id)
+    select 'client_created', id, v_clinic from ins
+    on conflict (kind, row_id) do nothing;
+    get diagnostics v_n = row_count;
+    perform pg_temp.say(format('created %s client(s) to reach %s active', v_n, v_target_clients));
+  else
+    perform pg_temp.say(format('already at or above %s active clients - created none', v_target_clients));
+  end if;
+
+  -- --------------------------------------------------------------------------
   -- 6 · Availability backfill. See WHAT IT WRITES #2 in the header.
   -- --------------------------------------------------------------------------
   if v_backfill_availability then
@@ -650,18 +814,53 @@ begin
     -- Reversible: every inserted row's id is recorded under the
     -- '*_inserted' kinds, which the cleanup DELETEs rather than nulls.
     -- ------------------------------------------------------------------
+    -- Per-person, not one identical week for everybody. Two dimensions vary:
+    --
+    --   DAYS  - every odd weekday ordinal is always in (Mon/Wed/Fri against a
+    --           Mon-first list), so nobody ends up with a week too sparse to
+    --           book; the even ones come and go on
+    --           `((i + 1) * (ord + 2)) % 7 < 4`. That floor is deliberate: a
+    --           purely random subset produces the occasional person free one
+    --           day a week, who then collides with everyone else competing
+    --           for that day. The multiplicative form matters - an additive
+    --           `(i + ord) % 3` gives every person a DIFFERENT set of days
+    --           but always exactly four of them, because ordinals 2/4/6 hit
+    --           all three residues mod 3 exactly once. Counts then look
+    --           identical across the roster, which is not what "varied
+    --           availability" means to anyone reading the screen.
+    --   HOURS - three staggered windows keyed off the person's own index:
+    --           09:00-17:00, 09:30-16:00, 10:00-15:00. All three overlap
+    --           heavily in the middle of the day, which is what keeps a
+    --           clinician and a client findable in the same slot. A window
+    --           that would come out shorter than two hours falls back to the
+    --           full one.
+    --
+    -- Deterministic despite looking arbitrary: the index is row_number() over
+    -- a stable ordering, so the same database produces the same roster of
+    -- windows on every run - the same property the rest of this script has.
     with tgt as (
-      select s.id from staff s
+      select s.id, row_number() over (order by s.id) - 1 as i
+        from staff s
        where s.clinic_id = v_clinic
          and (lower(btrim(coalesce(s.role, ''))) = any (array['bcba','bcaba','rbt','supervisor'])
               or coalesce(s.capacity, 0) > 0)
          and not exists (select 1 from staff_availability a where a.staff_id = s.id)
     ), ins as (
       insert into staff_availability (staff_id, clinic_id, day, start_time, end_time)
-      select t.id, v_clinic, d,
-             make_time(v_start_m / 60, v_start_m % 60, 0),
-             make_time(v_end_m / 60, v_end_m % 60, 0)
-        from tgt t cross join unnest(v_days) as d
+      select t.id, v_clinic, d.day,
+             make_time((w.s / 60)::int, (w.s % 60)::int, 0),
+             make_time((w.e / 60)::int, (w.e % 60)::int, 0)
+        from tgt t
+        cross join unnest(v_days) with ordinality as d(day, ord)
+        cross join lateral (
+          select v_start_m + ((t.i % 3) * 30) as s0,
+                 v_end_m   - ((t.i % 3) * 60) as e0
+        ) w0
+        cross join lateral (
+          select case when w0.e0 - w0.s0 >= 120 then w0.s0 else v_start_m end as s,
+                 case when w0.e0 - w0.s0 >= 120 then w0.e0 else v_end_m   end as e
+        ) w
+       where d.ord % 2 = 1 or (((t.i + 1) * (d.ord + 2)) % 7) < 4
       returning id
     )
     insert into mock_data_availability_backfill (kind, row_id, clinic_id)
@@ -670,16 +869,30 @@ begin
     get diagnostics v_n = row_count;
     perform pg_temp.say(format('created %s staff_availability row(s) for staff who had none', v_n));
 
+    -- Same shape for clients, with the phase shifted (i * 2) so the two
+    -- populations do not land on identical day patterns and accidentally
+    -- concentrate every booking on the same three days.
     with tgt as (
-      select c.id from clients c
+      select c.id, row_number() over (order by c.id) - 1 as i
+        from clients c
        where c.clinic_id = v_clinic and c.status = 'active'
          and not exists (select 1 from client_availability a where a.client_id = c.id)
     ), ins as (
       insert into client_availability (client_id, clinic_id, day, start_time, end_time)
-      select t.id, v_clinic, d,
-             make_time(v_start_m / 60, v_start_m % 60, 0),
-             make_time(v_end_m / 60, v_end_m % 60, 0)
-        from tgt t cross join unnest(v_days) as d
+      select t.id, v_clinic, d.day,
+             make_time((w.s / 60)::int, (w.s % 60)::int, 0),
+             make_time((w.e / 60)::int, (w.e % 60)::int, 0)
+        from tgt t
+        cross join unnest(v_days) with ordinality as d(day, ord)
+        cross join lateral (
+          select v_start_m + ((t.i % 3) * 30) as s0,
+                 v_end_m   - ((t.i % 3) * 60) as e0
+        ) w0
+        cross join lateral (
+          select case when w0.e0 - w0.s0 >= 120 then w0.s0 else v_start_m end as s,
+                 case when w0.e0 - w0.s0 >= 120 then w0.e0 else v_end_m   end as e
+        ) w
+       where d.ord % 2 = 1 or (((t.i + 2) * (d.ord + 2)) % 7) < 4
       returning id
     )
     insert into mock_data_availability_backfill (kind, row_id, clinic_id)
@@ -696,10 +909,29 @@ begin
        and (a.start_time is null or a.end_time is null)
     on conflict (kind, row_id) do nothing;
 
+    -- Same staggered windows as the inserts above, rather than stamping every
+    -- null-windowed row with one identical 09:00-17:00. A NULL window says
+    -- "nothing was ever set here", so there is no preference being overridden
+    -- - but there is also no reason to make the whole clinic look like it
+    -- keeps identical hours.
+    with k as (
+      select p.id, row_number() over (order by p.id) - 1 as i
+        from staff p where p.clinic_id = v_clinic
+    )
     update staff_availability a
-       set start_time = make_time(v_start_m / 60, v_start_m % 60, 0),
-           end_time   = make_time(v_end_m / 60, v_end_m % 60, 0)
-     where a.clinic_id = v_clinic
+       set start_time = make_time((w.s / 60)::int, (w.s % 60)::int, 0),
+           end_time   = make_time((w.e / 60)::int, (w.e % 60)::int, 0)
+      from k
+      cross join lateral (
+        select v_start_m + ((k.i % 3) * 30) as s0,
+               v_end_m   - ((k.i % 3) * 60) as e0
+      ) w0
+      cross join lateral (
+        select case when w0.e0 - w0.s0 >= 120 then w0.s0 else v_start_m end as s,
+               case when w0.e0 - w0.s0 >= 120 then w0.e0 else v_end_m   end as e
+      ) w
+     where a.staff_id = k.id
+       and a.clinic_id = v_clinic
        and left(initcap(a.day), 3) = any(v_days)
        and (a.start_time is null or a.end_time is null);
     get diagnostics v_n = row_count;
@@ -713,10 +945,29 @@ begin
        and (a.start_time is null or a.end_time is null)
     on conflict (kind, row_id) do nothing;
 
+    -- Same staggered windows as the inserts above, rather than stamping every
+    -- null-windowed row with one identical 09:00-17:00. A NULL window says
+    -- "nothing was ever set here", so there is no preference being overridden
+    -- - but there is also no reason to make the whole clinic look like it
+    -- keeps identical hours.
+    with k as (
+      select p.id, row_number() over (order by p.id) - 1 as i
+        from clients p where p.clinic_id = v_clinic and p.status = 'active'
+    )
     update client_availability a
-       set start_time = make_time(v_start_m / 60, v_start_m % 60, 0),
-           end_time   = make_time(v_end_m / 60, v_end_m % 60, 0)
-     where a.clinic_id = v_clinic
+       set start_time = make_time((w.s / 60)::int, (w.s % 60)::int, 0),
+           end_time   = make_time((w.e / 60)::int, (w.e % 60)::int, 0)
+      from k
+      cross join lateral (
+        select v_start_m + ((k.i % 3) * 30) as s0,
+               v_end_m   - ((k.i % 3) * 60) as e0
+      ) w0
+      cross join lateral (
+        select case when w0.e0 - w0.s0 >= 120 then w0.s0 else v_start_m end as s,
+               case when w0.e0 - w0.s0 >= 120 then w0.e0 else v_end_m   end as e
+      ) w
+     where a.client_id = k.id
+       and a.clinic_id = v_clinic
        and left(initcap(a.day), 3) = any(v_days)
        and (a.start_time is null or a.end_time is null);
     get diagnostics v_n = row_count;
