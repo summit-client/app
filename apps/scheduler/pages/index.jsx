@@ -3030,7 +3030,13 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   }
 
   async function cancelSelected() {
-    const ids = [...selected];
+    // Intersect with what is actually on screen, the way exportICS below
+    // already does. Nothing clears `selected` when a filter changes, so
+    // ticking rows, narrowing the filter and pressing Cancel used to cancel
+    // sessions the user could no longer see - and cancelling the wrong
+    // session is not an error anyone gets to undo.
+    const ids = filtered.filter(b => selected.has(b.id)).map(b => b.id);
+    if (ids.length === 0) return;
     const now = new Date();
     const lateCount = ids.filter(id => {
       const b = bookings.find(s => s.id === id);
