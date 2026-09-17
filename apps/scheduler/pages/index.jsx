@@ -1451,9 +1451,13 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
               <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>Flag active clients as stale after</div>
               <div style={{ fontSize: 13, color: COLORS.textS }}>{staleAfterDays} day{staleAfterDays !== 1 ? "s" : ""}</div>
             </div>
+            {/* No local toast on change: setSetting announces both outcomes
+                itself, and firing a success toast synchronously told a
+                non-admin the threshold had saved while the org write was
+                being refused and rolled back under them. */}
             <input
               type="range" min={3} max={60} value={staleAfterDays}
-              onChange={e => { void setSetting("clients.staleAfterDays", Number(e.target.value), "org"); showToast("Stale-client threshold updated"); }}
+              onChange={e => { void setSetting("clients.staleAfterDays", Number(e.target.value), "org").catch(() => {}); }}
               style={{ width: "100%", accentColor: "#5DCAA5" }}
             />
             <div style={{ fontSize: 12, color: COLORS.textT, marginTop: 8 }}>
@@ -3400,10 +3404,13 @@ export default function Scheduler() {
   const workEnd = parseInt(String(getSetting("calendar.workEnd")).split(":")[0], 10);
   function setWorkDays(updater) {
     const next = typeof updater === "function" ? updater(workDays) : updater;
-    void setSetting("calendar.workDays", next.join(","), "org");
+    // .catch here and below for the same reason as the stale-client slider:
+    // org writes are admin-only, so a refused write must not surface as an
+    // unhandled rejection. setSetting has already toasted the failure.
+    void setSetting("calendar.workDays", next.join(","), "org").catch(() => {});
   }
-  function setWorkStart(hour) { void setSetting("calendar.workStart", `${String(hour).padStart(2, "0")}:00`, "org"); }
-  function setWorkEnd(hour) { void setSetting("calendar.workEnd", `${String(hour).padStart(2, "0")}:00`, "org"); }
+  function setWorkStart(hour) { void setSetting("calendar.workStart", `${String(hour).padStart(2, "0")}:00`, "org").catch(() => {}); }
+  function setWorkEnd(hour) { void setSetting("calendar.workEnd", `${String(hour).padStart(2, "0")}:00`, "org").catch(() => {}); }
 
   useEffect(() => { loadData(); }, []);
 
