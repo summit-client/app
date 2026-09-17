@@ -632,8 +632,15 @@ export async function setSetting(
       if (error) throw error;
     }
   } catch (err) {
-    if (previous == null) delete layer[key]; else layer[key] = previous;
-    notify();
+    // Only undo OUR optimistic write. A dragged slider fires one setSetting
+    // per pointer move, so by the time an earlier call fails a later one may
+    // already have written and saved a newer value - restoring `previous`
+    // then would put a value in the cache that the server does not have.
+    // Every SettingValue is a primitive, so === is the right test.
+    if (layer[key] === value || (value == null && !(key in layer))) {
+      if (previous == null) delete layer[key]; else layer[key] = previous;
+      notify();
+    }
     console.error(`Failed to save ${def.label}:`, err);
     if (!opts.silent) toastError(failureText(def.label, err));
     throw err;
