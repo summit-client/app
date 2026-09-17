@@ -5,7 +5,7 @@ import { useUser } from "../lib/useUser";
 import { UserContext } from "../lib/UserContext";
 import { explainProblem } from "../lib/explainProblem";
 import { AppNav, SupportButton, DEFAULT_SUPPORT_EMAIL } from '@summit/nav';
-import { parseVisiblePortals, profileUrl } from "@summit/portals";
+import { parseVisiblePortals, profileUrl, signOutUrl } from "@summit/portals";
 import { getSetting, initSettings, onSettingsChange } from "@summit/settings";
 import { ToastHost } from "@summit/toast";
 
@@ -50,7 +50,7 @@ export default function App({ Component, pageProps }) {
           portalsFor() would return. Same placement apps/data uses
           (<PortalBar> above <SessionGate>) and apps/employee uses
           (<PortalBar> outside <SessionProvider>). */}
-      <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} profileHref={profileUrl(user?.role)} profileName={user?.full_name} />
+      <AppNav activeKey="scheduler" role={user?.role} visiblePortals={visiblePortals} profileHref={profileUrl(user?.role)} profileName={user?.full_name} signOutHref={signOutUrl()} />
       {/* One toast surface for the whole portal (@summit/toast), mounted
           alongside the bar rather than inside a branch: a write can resolve
           after the page below has already switched. */}
