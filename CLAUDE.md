@@ -488,6 +488,51 @@ become two identity-only stubs nothing in the app linked to anymore, once
 `profileUrl()` was repointed to send every role straight to its real profile
 in `apps/employee` or `apps/client`.
 
+Applied live 2026-09-18 (PR #178): migrations `0077`–`0080`, in that order.
+`0077` puts the clinician/client privacy boundary in the database —
+admin/supervisor keep a clinic-wide read of `sessions`, a clinician's direct
+read is their own rows, and colleague occupancy comes from
+`public.sessions_visible()`, a security-definer function that NULLs
+`client_id`/`home_address` and sets `client_masked` on rows the caller may
+not associate. Apps now **read `sessions_visible()`, write `sessions`**.
+`0078` makes clientless Break/Lunch/Meeting blocks insertable (0016's trigger
+had no null guard on `client_id`). `0079` adds
+`hub_scoreboard_sites`/`hub_scoreboard_scores`. `0080` restores 0014's
+`clients` grant and backfills `staff.user_id` from `employment_records`
+(14 of 17 staff rows linked; the 3 skipped are test accounts with no
+employment record).
+
+**The lesson from that night is bigger than the migrations, and it is this:
+read `pg_policies` before believing this repo's migration history.** Three
+premises written from the history turned out to be false against the
+deployed schema, all found by introspecting before applying:
+
+- **Migration 0014 was never applied.** Neither `clients_clinical_staff_select`
+  nor `sessions_clinical_staff_select` existed, and nothing here drops them.
+  So the clinic-wide clinician read 0077 was written to *narrow* never
+  existed; on this database 0077 is a grant. **Never apply 0014 now** — its
+  sessions half would OR with 0077's narrow policy and silently undo it.
+- **`staff.user_id` was null for every pre-existing staff member** (0075 added
+  the column and `invite-teammate` sets it for new hires only). Everything
+  keyed on it was dead: `staff_self_select`, 0076's availability writes and
+  contact self-edit, and the pre-history "Staff can read own sessions". A
+  clinician and a supervisor each read **zero** sessions and zero clients,
+  while 0046 — applied — let a clinician *write* their own.
+- **`sessions.created_at` does not exist**, though `0000` declares it. 0077
+  listed it on that authority and would have failed outright. First measured
+  divergence between `0000`'s reconstruction and production; recorded in
+  `0000`'s own header. Treat every other column there as inferred, not
+  observed, until the `pg_dump` reconciliation that header asks for happens.
+
+Open after that pass, both raised and deliberately not bundled: the
+pre-history `Staff can read own sessions` has **no clinic predicate** — it
+matches on `employee_id` alone, across clinics. It is unreachable rather than
+safe, because 0016's trigger refuses to write a session whose clinic
+disagrees with its staff member's; proven by removing that trigger in a
+scratch cluster and reading a cross-clinic row. A write-side trigger is not a
+tenant boundary. And `hub_pd_records`/`hub_time_off_requests` still have no
+`..._manage_select` policy (see the Admin console bullet below).
+
 - **`invite-teammate` does not check whether the invited email already has a
   `profiles` row before upserting one.** Supabase's `inviteUserByEmail`
   resolves an already-registered email to that *same existing user id*
