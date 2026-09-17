@@ -425,6 +425,7 @@ declare
   v_loc_id    bigint;
   v_orphan    text;
   v_need      int;
+  v_rec       record;
 
   -- ==========================================================================
   -- DERIVED / WORKING STATE
@@ -989,12 +990,34 @@ begin
   -- (so the location filter, the location column and visibleLocation() have
   -- something real to show), not to make it possible.
   --
-  -- Round-robin by row_number, not a hash of the id. A hash spreads unevenly
-  -- on small inputs and can leave a location with clients but no staff -
-  -- those clients would then match nobody and silently get zero sessions.
-  -- Round-robin over the same ordered location list for both tables
-  -- guarantees each site gets both, as long as there are at least as many of
-  -- each as there are locations. The check below reports it if not.
+  -- CAPACITY-WEIGHTED, not round-robin, and the difference is the whole point.
+  --
+  -- An even round-robin was the first attempt and it failed badly against
+  -- real data (2026-09-18): the clinic had three genuine sites with every
+  -- one of its fourteen staff at a single one of them. Spreading clients
+  -- evenly gave the two staffless sites thirty-odd children each against the
+  -- two clinicians this script had just created there - 9 and 11 weekly
+  -- capacity against 30 and 32 clients. 42 of 100 children matched nobody and
+  -- came out of the run with no sessions at all, while the third site sat on
+  -- 123 weekly capacity for 38 clients.
+  --
+  -- So both halves now follow capacity instead of headcount, greedily, one
+  -- row at a time:
+  --
+  --   STAFF   go to the site with the worst clients-per-capacity ratio, so
+  --           new hires land where the shortage actually is rather than
+  --           being sprinkled evenly over sites that do not need them.
+  --   CLIENTS go to the site with the most unused capacity, which by
+  --           construction cannot pile a child onto a site that has nobody
+  --           to see them while another sits idle.
+  --
+  -- Greedy rather than proportional arithmetic because it is obviously
+  -- correct on inspection and self-corrects as it goes: each assignment
+  -- changes the ratio the next one reads. At 3 sites and ~66 assignments the
+  -- cost is irrelevant.
+  --
+  -- Still deterministic: ties break on location id, and the rows are
+  -- processed in id order.
   --
   -- Only rows whose location_id is already NULL are touched, so a real
   -- assignment made in the app is never overwritten. Reversible: the previous
@@ -1013,6 +1036,25 @@ begin
     -- Same deny-all posture as mock_data_availability_backfill: RLS on, no
     -- policy at all. Nothing in any app reads it.
     alter table mock_data_location_backfill enable row level security;
+
+    -- Re-balance what THIS SCRIPT assigned on an earlier run, before working
+    -- out where anything goes. Without this, a second run finds every row it
+    -- placed last time already carrying a location_id, skips them all as
+    -- "already assigned", and faithfully reproduces whatever imbalance the
+    -- previous run created - which is exactly what happened live on
+    -- 2026-09-18, where a re-run could not have repaired the 42 clients the
+    -- even round-robin had stranded.
+    --
+    -- Only rows recorded in mock_data_location_backfill are reset, and they
+    -- are reset to the value recorded there, which for a row this script
+    -- assigned is NULL. An assignment made in the app is not in that table
+    -- and is never touched.
+    update staff s set location_id = b.previous_location_id
+      from mock_data_location_backfill b
+     where b.kind = 'staff' and b.row_id = s.id and b.clinic_id = v_clinic;
+    update clients c set location_id = b.previous_location_id
+      from mock_data_location_backfill b
+     where b.kind = 'client' and b.row_id = c.id and b.clinic_id = v_clinic;
 
     select count(*) into v_nloc from locations where clinic_id = v_clinic;
 
@@ -1036,36 +1078,47 @@ begin
       from staff s where s.clinic_id = v_clinic and s.location_id is null
     on conflict (kind, row_id) do nothing;
 
-    with locs as (
-      select id, row_number() over (order by id) - 1 as n
-        from locations where clinic_id = v_clinic
-    ), tgt as (
-      select id, row_number() over (order by id) - 1 as seq
-        from staff where clinic_id = v_clinic and location_id is null
-    )
-    update staff s set location_id = l.id
-      from tgt t join locs l on l.n = t.seq % v_nloc
-     where s.id = t.id;
-    get diagnostics v_n = row_count;
-    perform pg_temp.say(format('assigned a location to %s staff row(s)', v_n));
+    v_n := 0;
+    for v_rec in select id from staff
+                  where clinic_id = v_clinic and location_id is null order by id loop
+      select l.id into v_loc_id
+        from locations l
+       where l.clinic_id = v_clinic
+       order by (select count(*) from clients c
+                  where c.clinic_id = v_clinic and c.status = 'active'
+                    and c.location_id = l.id)::numeric
+                / greatest((select coalesce(sum(least(coalesce(s2.capacity, 0), v_staff_week_max)), 0)
+                              from staff s2
+                             where s2.clinic_id = v_clinic and s2.location_id = l.id), 1)
+                desc, l.id
+       limit 1;
+      update staff set location_id = v_loc_id where id = v_rec.id;
+      v_n := v_n + 1;
+    end loop;
+    perform pg_temp.say(format('assigned a location to %s staff row(s), worst-shortage-first', v_n));
 
     insert into mock_data_location_backfill (kind, row_id, clinic_id, previous_location_id)
     select 'client', c.id, v_clinic, c.location_id
       from clients c where c.clinic_id = v_clinic and c.location_id is null
     on conflict (kind, row_id) do nothing;
 
-    with locs as (
-      select id, row_number() over (order by id) - 1 as n
-        from locations where clinic_id = v_clinic
-    ), tgt as (
-      select id, row_number() over (order by id) - 1 as seq
-        from clients where clinic_id = v_clinic and location_id is null
-    )
-    update clients c set location_id = l.id
-      from tgt t join locs l on l.n = t.seq % v_nloc
-     where c.id = t.id;
-    get diagnostics v_n = row_count;
-    perform pg_temp.say(format('assigned a location to %s client row(s)', v_n));
+    v_n := 0;
+    for v_rec in select id from clients
+                  where clinic_id = v_clinic and location_id is null order by id loop
+      select l.id into v_loc_id
+        from locations l
+       where l.clinic_id = v_clinic
+       order by ((select coalesce(sum(least(coalesce(s2.capacity, 0), v_staff_week_max)), 0)
+                    from staff s2
+                   where s2.clinic_id = v_clinic and s2.location_id = l.id)
+                 - (select count(*) from clients c
+                     where c.clinic_id = v_clinic and c.status = 'active'
+                       and c.location_id = l.id)) desc, l.id
+       limit 1;
+      update clients set location_id = v_loc_id where id = v_rec.id;
+      v_n := v_n + 1;
+    end loop;
+    perform pg_temp.say(format('assigned a location to %s client row(s), most-spare-capacity-first', v_n));
 
     -- A site with clients but no clinicians books nobody. Report it rather
     -- than let those clients quietly come out of the run with zero sessions.
