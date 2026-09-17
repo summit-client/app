@@ -14,54 +14,74 @@
 import * as React from "react";
 import { loadHub, onHubChange } from "@/lib/hub";
 import { HubWriteError } from "@/lib/hub-backend";
-import { SessionGate, useIdentity, useSession } from "@/components/session-provider";
-import type { HubRole } from "@/lib/session";
+import { SessionGate, useIdentity } from "@/components/session-provider";
+import { toast, toastError } from "@summit/toast";
+import type { HubRole, Session } from "@/lib/session";
 
 type Status = "loading" | "ready" | "failed";
 
-interface Ctx { status: Status; error: string | null; reload: () => void; version: number }
-const HubCtx = React.createContext<Ctx>({ status: "loading", error: null, reload: () => {}, version: 0 });
+export interface GateCtx { status: Status; error: string | null; reload: () => void; version: number }
+export const HubCtx = React.createContext<GateCtx>({ status: "loading", error: null, reload: () => {}, version: 0 });
 
-function HubLoader({ children }: { children: React.ReactNode }) {
+/**
+ * The loading half of a gate: runs `load(identity)` and tracks it.
+ *
+ * Shared with hr-provider.tsx, which needs two of these running side by side.
+ * `load` and `subscribe` have to be module-level functions - an inline arrow
+ * changes identity every render and would re-run the load forever.
+ */
+export function useSnapshot(
+  load: (identity: Session) => Promise<void>,
+  subscribe: (fn: () => void) => () => void,
+): GateCtx {
   const identity = useIdentity();
   const [status, setStatus] = React.useState<Status>("loading");
   const [error, setError] = React.useState<string | null>(null);
   const [version, bump] = React.useReducer((n: number) => n + 1, 0);
 
-  const load = React.useCallback(() => {
+  const run = React.useCallback(() => {
     setStatus("loading");
     setError(null);
-    loadHub(identity)
+    load(identity)
       .then(() => setStatus("ready"))
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : String(e));
         setStatus("failed");
       });
-  }, [identity]);
+  }, [identity, load]);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => { run(); }, [run]);
 
   // Mutations bump a version so every screen re-renders off the new snapshot.
-  React.useEffect(() => onHubChange(bump), []);
+  React.useEffect(() => subscribe(bump), [subscribe]);
 
-  const value = React.useMemo(
-    () => ({ status, error, reload: load, version }),
-    [status, error, load, version],
+  return React.useMemo(
+    () => ({ status, error, reload: run, version }),
+    [status, error, run, version],
   );
+}
 
-  if (status === "loading") return <p className="sub">Loading…</p>;
+/** A snapshot that could not be loaded at all - the screen behind it would
+ *  throw on its first synchronous read, so it never renders. */
+export function LoadFailed({ title, error, onRetry }: { title: string; error: string | null; onRetry: () => void }) {
+  return (
+    <div className="card card-pad" style={{ marginTop: 16, maxWidth: 640 }}>
+      <h1 className="h-page">{title}</h1>
+      <p className="sub" style={{ marginTop: 8 }}>{error}</p>
+      <button className="btn" style={{ marginTop: 12 }} onClick={onRetry}>Try again</button>
+    </div>
+  );
+}
 
-  if (status === "failed") {
-    return (
-      <div className="card card-pad" style={{ marginTop: 16, maxWidth: 640 }}>
-        <h1 className="h-page">Could not load your records</h1>
-        <p className="sub" style={{ marginTop: 8 }}>{error}</p>
-        <button className="btn" style={{ marginTop: 12 }} onClick={load}>Try again</button>
-      </div>
-    );
+function HubLoader({ children }: { children: React.ReactNode }) {
+  const hub = useSnapshot(loadHub, onHubChange);
+
+  if (hub.status === "loading") return <p className="sub">Loading…</p>;
+  if (hub.status === "failed") {
+    return <LoadFailed title="Could not load your records" error={hub.error} onRetry={hub.reload} />;
   }
 
-  return <HubCtx.Provider value={value}>{children}</HubCtx.Provider>;
+  return <HubCtx.Provider value={hub}>{children}</HubCtx.Provider>;
 }
 
 /** Wrap a screen. Identity resolves first, then the hub snapshot loads, then
@@ -74,7 +94,7 @@ export function HubGate({ children, requires }: { children: React.ReactNode; req
   );
 }
 
-export function useHub(): Ctx {
+export function useHub(): GateCtx {
   return React.useContext(HubCtx);
 }
 
@@ -85,9 +105,15 @@ export function useHub(): Ctx {
  * rejected write and a successful one looked identical on screen - the user saw
  * their change, and it was gone on the next load. This puts the failure in
  * front of them.
+ *
+ * Both halves are announced here rather than at each call site: a screen that
+ * routes a write through this never has to remember to confirm it, and one
+ * that is written next year gets the same confirmation for free. Pass
+ * `{ silent: true }` for an action that records something without the user
+ * having asked to save anything.
  */
 export function useHubAction(): {
-  run: (fn: () => Promise<unknown>) => Promise<void>;
+  run: (fn: () => Promise<unknown>, opts?: { silent?: boolean }) => Promise<void>;
   busy: boolean;
   error: string | null;
   clearError: () => void;
@@ -96,13 +122,17 @@ export function useHubAction(): {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const run = React.useCallback(async (fn: () => Promise<unknown>) => {
+  const run = React.useCallback(async (fn: () => Promise<unknown>, opts: { silent?: boolean } = {}) => {
     setBusy(true);
     setError(null);
     try {
       await fn();
+      if (!opts.silent) toast();
     } catch (e: unknown) {
       setError(e instanceof HubWriteError ? e.message : e instanceof Error ? e.message : String(e));
+      // The <WriteError> card carries the detail and stays until dismissed;
+      // the toast only has to catch the eye of someone who already looked away.
+      toastError();
       // The snapshot was updated optimistically in some paths; re-read so the
       // screen shows what is actually stored rather than what we hoped.
       reload();

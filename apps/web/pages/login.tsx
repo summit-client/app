@@ -1,6 +1,13 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
-import { supabase, setRememberMePreference } from '../lib/supabase'
+import {
+  supabase,
+  setRememberMePreference,
+  getLastEmail,
+  setLastEmail,
+  clearLastEmail,
+  hasSessionCookie,
+} from '../lib/supabase'
 import { ROLE_REDIRECTS } from '../lib/role-redirects'
 import { withTimeout } from '../lib/withTimeout'
 import { describeAuthError } from '../lib/authErrors'
@@ -42,6 +49,7 @@ export default function Login() {
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
   const [formError, setFormError]     = useState('')
   const [loading, setLoading]         = useState(false)
+  const prefilled = useRef(false)
 
   // router.query is empty on the very first render (Next hasn't parsed the
   // URL yet); it's populated a tick later without changing the URL itself,
@@ -50,6 +58,32 @@ export default function Login() {
     if (!router.isReady) return
     const message = readRedirectError(router.query)
     if (message) setFormError(message)
+  }, [router.isReady, router.query])
+
+  // The remembered address is read here rather than in useState's
+  // initialiser: localStorage doesn't exist while this page is prerendered,
+  // so an initialiser would make the server's HTML and the client's first
+  // render disagree and blow up hydration. The ref keeps a later router.query
+  // identity change from overwriting whatever the user has since typed.
+  //
+  // It is dropped whenever this device no longer holds a session, which is
+  // the only way to cover sign-out: /api/auth/signout runs server-side and
+  // cannot reach localStorage, so without this a departing user's address
+  // would sit pre-filled in the form for the next person on a shared clinic
+  // machine. `?signedout` is the precise signal for that landing and is read
+  // first, but the sign-out endpoint doesn't send it, so in practice it is
+  // the missing cookie that fires.
+  useEffect(() => {
+    if (!router.isReady || prefilled.current) return
+    prefilled.current = true
+
+    if ('signedout' in router.query || !hasSessionCookie()) {
+      clearLastEmail()
+      return
+    }
+
+    const remembered = getLastEmail()
+    if (remembered) setEmail(remembered)
   }, [router.isReady, router.query])
 
   async function handleSubmit(e: FormEvent) {
@@ -88,6 +122,12 @@ export default function Login() {
         setLoading(false)
         return
       }
+
+      // Written on the credential check rather than after the profile lookup
+      // below: the address is worth remembering the moment it's been proven
+      // to belong to a real account, even if the redirect that follows fails.
+      if (rememberMe) setLastEmail(email.trim())
+      else clearLastEmail()
 
       const { data: profile, error: profileError } = await withTimeout(
         supabase.from('profiles').select('role').eq('id', data.user.id).single(),
@@ -160,7 +200,7 @@ export default function Login() {
             checked={rememberMe}
             onChange={e => setRememberMe(e.target.checked)}
           />
-          Remember me
+          Remember me on this device
         </label>
 
         <SubmitButton loading={loading} loadingLabel="Signing in…">

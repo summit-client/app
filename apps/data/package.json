@@ -21,7 +21,8 @@
     "@summit/nav": "workspace:*",
     "@summit/portals": "workspace:*",
     "@summit/session": "workspace:*",
-    "@summit/proxy-auth": "workspace:*"
+    "@summit/proxy-auth": "workspace:*",
+    "@summit/toast": "workspace:*"
   },
   "devDependencies": {
     "typescript": "6.0.2",

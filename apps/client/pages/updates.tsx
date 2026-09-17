@@ -234,24 +234,29 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // signed_at from the DB as a reasonable default; re-sorted below by the
   // actual intended key (see mostRecentFirst) since that key isn't a
   // single column PostgREST's .order() can express.
-  const { data: notes, error: notesError } = await supabase
-    .from("session_notes")
-    .select("id, status, signed_at, countersigned_at, body")
-    .eq("client_id", viewed.clientId)
-    .in("status", ["signed", "countersigned"])
-    .order("signed_at", { ascending: false, nullsFirst: false });
+  const [notesRes, annRes] = await Promise.all([
+    supabase
+      .from("session_notes")
+      .select("id, status, signed_at, countersigned_at, body")
+      .eq("client_id", viewed.clientId)
+      .in("status", ["signed", "countersigned"])
+      .order("signed_at", { ascending: false, nullsFirst: false }),
+
+    // Announcements are addressed to the household, so unlike the notes above
+    // they are not filtered to the child being viewed. A load failure here is
+    // deliberately not fatal to the page: a family should still get their
+    // clinical notes if the notice board is having a bad day.
+    supabase
+      .from("my_announcements")
+      .select("announcement_id, title, body, category, is_urgent, publish_at, is_unread"),
+  ]);
+
+  const { data: notes, error: notesError } = notesRes;
+  const { data: annRows, error: annError } = annRes;
 
   if (notesError) {
     console.error("Failed to load updates page notes:", notesError.message);
   }
-
-  // Announcements are addressed to the household, so unlike the notes above
-  // they are not filtered to the child being viewed. A load failure here is
-  // deliberately not fatal to the page: a family should still get their
-  // clinical notes if the notice board is having a bad day.
-  const { data: annRows, error: annError } = await supabase
-    .from("my_announcements")
-    .select("announcement_id, title, body, category, is_urgent, publish_at, is_unread");
   if (annError) {
     console.error("Failed to load announcements:", annError.message);
   }

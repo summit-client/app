@@ -9,6 +9,9 @@
       "default": "./src/index.ts"
     }
   },
+  "dependencies": {
+    "@summit/toast": "workspace:*"
+  },
   "peerDependencies": {
     "react": "^19.0.0"
   },

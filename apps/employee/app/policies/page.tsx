@@ -31,12 +31,15 @@ function PoliciesScreen() {
   const s = hr();
   const ackFor = (id: string, version: string) => s.acks.find((a) => a.policyId === id && a.version === version);
 
+  // Silent: opening a policy writes the "opened" half of the audit trail, but
+  // the person clicked Preview, not Save. Only the acknowledgement below is a
+  // save from where they are standing.
   const open = (id: string, version: string, name: string, url: string | null, content: string | null) =>
     void run(async () => {
       await openPolicy(id, version, name);
       setPreview({ id, name, url: url ? (url.includes("drive.google.com") ? url.replace(/\/view.*$/, "/preview") : url) : null, content });
       force();
-    });
+    }, { silent: true });
 
   const acknowledge = (id: string, version: string, name: string) =>
     void run(async () => { await acknowledgePolicy(id, version, name); force(); });

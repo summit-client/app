@@ -62,9 +62,14 @@ const countBadge: React.CSSProperties = {
   borderRadius: 8, background: "#5DCAA5", color: "#fff", fontSize: 10, padding: "0 4px",
 };
 
+/** Appearance only. Every positional key that used to live here -
+ *  position/top/left/z-index/min-width/max-height/overflow-y - moved to
+ *  .toolbar-menu in styles/globals.css, because an inline declaration beats
+ *  the media query that re-anchors these menus on a narrow screen, and a
+ *  menu left half inline changes shape while its siblings don't. Call sites
+ *  pass className="toolbar-menu" and size themselves with data-size /
+ *  data-fill rather than overriding minWidth here. */
 const panelStyle: React.CSSProperties = {
-  position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 60,
-  minWidth: 220, maxHeight: 360, overflowY: "auto",
   background: COLORS.bg, border: `0.5px solid ${COLORS.border}`, borderRadius: 10,
   boxShadow: "0 8px 30px rgba(0,0,0,0.15)", padding: 12,
 };
@@ -182,7 +187,7 @@ function PillFilterMenu<T extends string | number>({
         {label} {selected.size > 0 && <span style={countBadge}>{selected.size}</span>}
       </button>
       {open && (
-        <div style={panelStyle}>
+        <div className="toolbar-menu" data-align="left" style={panelStyle}>
           {items.length === 0 ? (
             <div style={{ fontSize: 12, color: COLORS.textT, padding: "4px 2px" }}>None yet</div>
           ) : (
@@ -243,7 +248,7 @@ function SearchFilterMenu<T extends number>({
         {label} {selected.size > 0 && <span style={countBadge}>{selected.size}</span>}
       </button>
       {open && (
-        <div style={{ ...panelStyle, minWidth: 240 }}>
+        <div className="toolbar-menu" data-align="left" data-size="wide" style={panelStyle}>
           <input
             autoFocus
             value={query}
@@ -325,7 +330,7 @@ export function SearchSelectMenu<T extends number>({
         <span aria-hidden="true" style={{ color: COLORS.textT, flexShrink: 0 }}>▾</span>
       </button>
       {open && (
-        <div style={{ ...panelStyle, minWidth: 260, width: "100%" }}>
+        <div className="toolbar-menu" data-align="left" data-size="wide" data-fill="true" style={panelStyle}>
           <input
             autoFocus
             value={query}
@@ -392,7 +397,7 @@ export function CalendarPicker({
         {selected ? selected.name : "All calendars"}
       </button>
       {open && (
-        <div style={{ ...panelStyle, minWidth: 200 }}>
+        <div className="toolbar-menu" data-align="left" style={panelStyle}>
           <div
             onClick={() => { onChange(null); setOpen(false); }}
             style={{ padding: "6px 8px", borderRadius: 6, fontSize: 13, fontWeight: selectedId == null ? 500 : 400, color: selectedId == null ? "#3f9c78" : COLORS.text, background: selectedId == null ? "#5DCAA512" : "transparent", cursor: "pointer" }}

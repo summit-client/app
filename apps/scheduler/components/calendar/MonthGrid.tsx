@@ -9,6 +9,8 @@ import * as React from "react";
 import { toDateStr, isSameDate } from "./dateUtils";
 import { RecurringIcon, SessionTypeDot } from "./icons";
 import type { CalSession, CalClient, CalSessionType } from "./types";
+import { useAppUser } from "../../lib/UserContext";
+import { sessionPrimaryLabel } from "../../lib/sessionPrivacy";
 
 const MAX_CHIPS = 3;
 
@@ -29,6 +31,7 @@ interface Props {
 
 export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, typeColors, draftSessionIds, onSelectDay, onSessionClick, sessionColorOverrides }: Props) {
   const [expanded, setExpanded] = React.useState<string | null>(null);
+  const viewer = useAppUser();
   const today = toDateStr(new Date());
   const monthIdx = anchorMonth.getMonth();
 
@@ -74,7 +77,9 @@ export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, 
               </div>
             )}
             {chips.map((s) => {
-              const client = clients.find((c) => c.id === s.client_id);
+              // Session type when the viewer may not see the client - same
+              // rule and the same helper as TimeGrid's blocks.
+              const label = sessionPrimaryLabel(viewer, s, clients);
               const color = sessionColorOverrides?.[s.id] ?? (typeColors[s.type] || "#888");
               const draft = draftSessionIds.has(s.id);
               // Distinct from the draft chip's grey dashed look - a no-show
@@ -94,7 +99,7 @@ export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, 
                 >
                   <SessionTypeDot size={6} color={color} />
                   {s.recurrence_id && <RecurringIcon size={8} />}
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client?.name}</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
                   {draft && <span style={{ fontSize: 8, fontWeight: 700, color, flexShrink: 0 }}>D</span>}
                   {noShow && <span style={{ fontSize: 8, fontWeight: 700, color: "#8A5A1E", flexShrink: 0 }}>⚠</span>}
                 </div>

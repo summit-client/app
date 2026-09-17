@@ -7,6 +7,7 @@ const SWATCH: Record<Accent, string> = { blue: "#1b5a6e", green: "#2f5d3a", pink
 import {
   readAudit, resolve, restore, setSetting, term, TERMINOLOGY_DEFAULTS, TERMINOLOGY_SUGGESTIONS,
 } from "@summit/settings";
+import { saved } from "@summit/toast";
 import { GenericSection, SettingRow, useSettingsTick } from "./controls";
 import { useSession } from "@/components/session-provider";
 
@@ -28,9 +29,16 @@ function useJsonPref<T>(key: string, dflt: T): [T, (v: T) => void] {
       if (raw) setV(JSON.parse(raw) as T);
     } catch { /* corrupt pref — fall back to default */ }
   }, [key]);
+  // These collections persist to localStorage rather than through
+  // setSetting(), so nothing else announces them - every section built on
+  // this hook (dashboard widgets, hidden modules, the notification matrix,
+  // the role grid, integrations, automations, the email account) confirms its
+  // save here or nowhere. setItem throws when storage is full or blocked,
+  // which is exactly the case that used to leave the screen showing a value
+  // nothing had stored.
   const save = (next: T) => {
     setV(next);
-    localStorage.setItem(key, JSON.stringify(next));
+    void saved(async () => { localStorage.setItem(key, JSON.stringify(next)); });
   };
   return [v, save];
 }
@@ -130,8 +138,15 @@ export function AppearanceSection() {
           onClick={() => {
             applyTheme("system"); applyAccent("blue"); setTheme("system"); setAccent("blue");
             if (!canWriteOrg) { force(); return; }
-            setSetting("appearance.primaryColor", null, "org"); setSetting("appearance.accentColor", null, "org");
-            setSetting("appearance.density", null, "org"); force();
+            // One reset, three writes: they are silenced individually and
+            // announced once together, so a failed reset reads as one
+            // failure rather than as three unrelated ones.
+            void saved(() => Promise.all([
+              setSetting("appearance.primaryColor", null, "org", "You", { silent: true }),
+              setSetting("appearance.accentColor", null, "org", "You", { silent: true }),
+              setSetting("appearance.density", null, "org", "You", { silent: true }),
+            ]));
+            force();
           }}>
           Reset to Summit Default
         </button>
@@ -199,7 +214,7 @@ function TermRow({ name }: { name: string }) {
         <select className="input" style={{ width: "auto", minWidth: 180 }} aria-label={`Term for ${TERMINOLOGY_DEFAULTS[name]}`}
           value={String(r.effective)} disabled={!canWriteOrg}
           title={canWriteOrg ? undefined : "Only an administrator can change organization terminology."}
-          onChange={(e) => { if (canWriteOrg) setSetting(key, e.target.value, "org"); }}>
+          onChange={(e) => { if (canWriteOrg) void setSetting(key, e.target.value, "org").catch(() => {}); }}>
           {suggestions.map((s) => <option key={s}>{s}</option>)}
           {!suggestions.includes(String(r.effective)) ? <option>{String(r.effective)}</option> : null}
         </select>
@@ -346,7 +361,7 @@ function QuietTime({ k }: { k: string }) {
   useSettingsTick();
   const r = resolve(k);
   return <input type="time" className="input" style={{ width: 120 }} aria-label={r.def.label}
-    value={String(r.effective)} onChange={(e) => setSetting(k, e.target.value, "user")} />;
+    value={String(r.effective)} onChange={(e) => void setSetting(k, e.target.value, "user").catch(() => {})} />;
 }
 
 /* ---- Roles & Permissions ------------------------------------------------------------ */
@@ -522,7 +537,7 @@ export function PrivacySection() {
                 <td><span className="pill neutral">{e.level}</span></td>
                 <td>{e.who}</td>
                 <td className="trend">{e.at.slice(0, 16).replace("T", " ")}</td>
-                <td><button className="btn ghost" onClick={() => restore(e)}>Restore previous</button></td>
+                <td><button className="btn ghost" onClick={() => void restore(e).catch(() => {})}>Restore previous</button></td>
               </tr>
             ))}
             {!audit.length ? <tr><td colSpan={6} style={{ color: "var(--muted)" }}>No changes yet.</td></tr> : null}

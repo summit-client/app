@@ -4,13 +4,23 @@
  * calendar grid, each person in their own colour - reusing the exact
  * TimeGrid/MonthGrid rendering (SessionBlock/StackedPill/Tooltip/
  * SessionDetail) the viewer's own sessions already use, not a second,
- * redacted renderer. Full session detail is deliberate, not an oversight:
- * `sessions` is already clinic-wide SELECT for every non-client staff role
- * (migrations 0013 + 0014), and `staff` now is too (migration 0035) - anyone
- * who can open this picker could already see this same data one click away
- * via the plain Clinicians filter in FilterPanel.tsx. This only adds a way
- * to see several people's schedules *at once*, distinguishably, which is
- * what the colour + legend below is for.
+ * redacted renderer.
+ *
+ * What an overlaid block SHOWS is no longer "everything," and this comment
+ * used to say the opposite. A clinician looking at a colleague's session
+ * here gets the time, the session type and that the slot is taken - never
+ * the client's name and never a home-visit address. That masking lives in
+ * the shared renderer (lib/sessionPrivacy.ts, applied in TimeGrid /
+ * MonthGrid / SessionDetail), so it holds for this overlay without this
+ * picker knowing anything about it, and it extends to the in-app grid the
+ * same scrubbing migration 0072 already approved for calendar feeds on
+ * 2026-09-14. Admin, scheduler and supervisor still see everything.
+ * Migration 0046's "full read parity" note predates that decision.
+ *
+ * The underlying read is still clinic-wide for every non-client staff role
+ * (migrations 0013 + 0014; `staff` too since 0035), so this is a display
+ * control and not an access control - see lib/sessionPrivacy.ts's header
+ * before describing it as anything stronger.
  *
  * Deliberately excludes the client role at every layer: the client portal
  * (apps/client) doesn't import this component at all, and the RLS this
@@ -118,10 +128,15 @@ export function StaffOverlayPicker({
         )}
       </button>
       {open && (
+        // Position, width and max-height come from .toolbar-menu in
+        // styles/globals.css, not from here - this menu is the one that
+        // provably clipped off the left edge of a phone, and an inline
+        // positional style would beat the media query that fixes it.
         <div
+          className="toolbar-menu"
+          data-align="right"
+          data-size="wide"
           style={{
-            position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 60,
-            minWidth: 250, maxHeight: 380, overflowY: "auto",
             background: COLORS.bg, border: `0.5px solid ${COLORS.border}`, borderRadius: 10,
             boxShadow: "0 8px 30px rgba(0,0,0,0.15)", padding: 12,
           }}

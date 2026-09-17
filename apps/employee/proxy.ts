@@ -94,6 +94,18 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
+// Brand chrome only. Every page renders /summit-mark-64.png and Next serves
+// this app's app/icon.svg at /icon.svg, and both used to cost a full Supabase
+// auth round trip before Next handed back a file that is world-readable on
+// disk and byte-identical for every user - gating them was never a boundary.
+// The lookahead is a PREFIX test, not path equality: an unanchored
+// `summit-mark-64.png` entry would also un-gate `/summit-mark-64.png.anything`
+// and `/icon.svg/whatever`, so each filename is anchored with `$` (the
+// escapes survive path-to-regexp - checked against the regex Next actually
+// compiles this into). `_next/static` and `_next/image` stay unanchored
+// because they are directories. Nothing that renders or returns clinic data
+// belongs on this list - public/hub-docs and public/clinical are clinic
+// documents, not chrome, and stay gated.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico$|favicon\\.svg$|icon\\.svg$|summit-mark-64\\.png$).*)"],
 };

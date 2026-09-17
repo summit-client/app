@@ -6,6 +6,7 @@
   "types": "index.ts",
   "dependencies": {
     "@summit/session": "workspace:*",
+    "@summit/toast": "workspace:*",
     "@supabase/ssr": "^0.10.3"
   }
 }

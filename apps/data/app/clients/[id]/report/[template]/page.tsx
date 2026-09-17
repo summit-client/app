@@ -7,6 +7,7 @@ import { getClients, getPrograms } from "@/lib/data";
 import { administrations, instrumentById, overallPct } from "@/lib/instruments";
 import { blockFor, DOC_TEMPLATES, loadDoc, saveDoc, type DocDraft, type DocTemplate } from "@/lib/clinical-docs";
 import { PdfExport, PrintSection } from "@/components/pdf-export";
+import { saved } from "@summit/toast";
 import type { ClientRow, Program } from "@/lib/types";
 
 /**
@@ -80,7 +81,10 @@ export default function ClinicalDocPage() {
     const merged = { ...doc, ...next };
     // freeze current autofill text into the draft so what was proofed is what is signed
     for (const s of template.sections) if (merged.content[s.id] == null) merged.content[s.id] = autofillText(s);
-    saveDoc(merged);
+    // sessionStorage, so this is the only place that can report the outcome -
+    // and it does throw when storage is blocked, which is the case where a
+    // silent "Save draft" is worst.
+    void saved(async () => { saveDoc(merged); });
     setDoc(merged);
   };
 

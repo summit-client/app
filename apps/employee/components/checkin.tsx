@@ -9,6 +9,7 @@ import {
   type RatingValue,
 } from "@/lib/ecosystem";
 import { currentCycle, directory, hr, rate as saveRating, submitPeerFeedback } from "@/lib/hr-store";
+import { saved } from "@summit/toast";
 
 /** Performance Checkin (self ratings) and Peer Reviews, shared by the
  * Scoreboard tabs. Peers come from the clinician's own team. */
@@ -44,8 +45,11 @@ export function PerformanceCheckin({ onChange }: { onChange: () => void }) {
   const recogPoints = s.recognition.filter((r) => r.to === me && r.date.slice(0, 7) === currentCycle()).reduce((n, r) => n + r.points, 0);
   const auto = new Map(computeAutoResponses({ trainingPct, onboardingPct: ob.percent, recogPoints }).map((r) => [r.metricKey, r]));
 
+  // saved() resolves rather than rejecting, so the re-render happens either
+  // way - which is what the old .catch(() => onChange()) was for - and the
+  // failure now says something instead of only re-reading the store.
   const rate = (key: string, source: string, rating: RatingValue) => {
-    void saveRating(key, source as never, rating).then(onChange).catch(() => onChange());
+    void saved(saveRating(key, source as never, rating)).then(onChange);
   };
 
   return (
@@ -90,7 +94,7 @@ export function PerformanceCheckin({ onChange }: { onChange: () => void }) {
                   {row && requiresExample(row.rating) ? (
                     <textarea className="input" rows={2} style={{ marginTop: 8 }} defaultValue={row.comment}
                       aria-label={`Example for ${m.behaviour}`} placeholder="What happened, and what would help?"
-                      onBlur={(e) => { void saveRating(m.key, row.source, row.rating, e.target.value); }} />
+                      onBlur={(e) => { void saved(saveRating(m.key, row.source, row.rating, e.target.value)); }} />
                   ) : null}
                 </div>
               );
@@ -102,7 +106,7 @@ export function PerformanceCheckin({ onChange }: { onChange: () => void }) {
         <label htmlFor="support">What would help you next month?</label>
         <textarea id="support" className="input" rows={2}
           defaultValue={s.responses.find((r) => r.metricKey === "support-request")?.comment ?? ""}
-          onBlur={(e) => { void saveRating("support-request", "SELF", 3, e.target.value); }} />
+          onBlur={(e) => { void saved(saveRating("support-request", "SELF", 3, e.target.value)); }} />
       </div>
     </div>
   );
@@ -136,10 +140,13 @@ export function PeerReviews({ onChange }: { onChange: () => void }) {
         metricKey: p.key, source: "PEER" as const, rating: 3 as RatingValue, comment: notes[p.key],
       })),
     ];
-    void submitPeerFeedback(subject, rows).then(() => {
+    // Clearing the form was the only sign it went anywhere, and the previous
+    // .catch swallowed a rejection whole - so a failed submission looked
+    // exactly like a successful one, minus the reset nobody was watching for.
+    void saved(async () => {
+      await submitPeerFeedback(subject, rows);
       setRatings({}); setNotes({}); setSubject("");
-      onChange();
-    }).catch(() => onChange());
+    }).then(onChange);
   };
 
   const blocked = Object.entries(ratings).some(([k, v]) => requiresExample(v) && !(notes[k] ?? "").trim());

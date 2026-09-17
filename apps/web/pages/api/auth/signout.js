@@ -13,5 +13,11 @@ import { createClient } from '../../../lib/supabase-server'
 export default async function handler(req, res) {
   const supabase = createClient(req, res)
   await supabase.auth.signOut()
-  res.redirect('/login')
+  // `?signedout=1` is how the login page knows to forget the remembered
+  // email rather than pre-fill it. Sign-out happens here, on the server,
+  // where localStorage cannot be reached - without this marker login.tsx
+  // has to infer it from the absence of a session cookie, which also fires
+  // when a session merely expired, and on a shared clinic workstation
+  // guessing wrong means showing the last person's address to the next one.
+  res.redirect('/login?signedout=1')
 }

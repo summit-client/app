@@ -41,6 +41,9 @@ importers:
       '@summit/settings':
         specifier: workspace:*
         version: link:../../packages/settings
+      '@summit/toast':
+        specifier: workspace:*
+        version: link:../../packages/toast
       '@supabase/ssr':
         specifier: ^0.10.3
         version: 0.10.3(@supabase/supabase-js@2.106.1)
@@ -90,6 +93,9 @@ importers:
       '@summit/settings':
         specifier: workspace:*
         version: link:../../packages/settings
+      '@summit/toast':
+        specifier: workspace:*
+        version: link:../../packages/toast
       '@supabase/ssr':
         specifier: ^0.10.3
         version: 0.10.3(@supabase/supabase-js@2.106.1)
@@ -142,6 +148,9 @@ importers:
       '@summit/settings':
         specifier: workspace:*
         version: link:../../packages/settings
+      '@summit/toast':
+        specifier: workspace:*
+        version: link:../../packages/toast
       '@supabase/ssr':
         specifier: ^0.10.3
         version: 0.10.3(@supabase/supabase-js@2.106.1)
@@ -194,6 +203,9 @@ importers:
       '@summit/settings':
         specifier: workspace:*
         version: link:../../packages/settings
+      '@summit/toast':
+        specifier: workspace:*
+        version: link:../../packages/toast
       '@supabase/auth-helpers-nextjs':
         specifier: ^0.15.0
         version: 0.15.0(@supabase/supabase-js@2.106.1)
@@ -278,6 +290,9 @@ importers:
 
   packages/availability:
     dependencies:
+      '@summit/toast':
+        specifier: workspace:*
+        version: link:../toast
       react:
         specifier: ^19.0.0
         version: 19.2.4
@@ -379,9 +394,28 @@ importers:
       '@summit/session':
         specifier: workspace:*
         version: link:../session
+      '@summit/toast':
+        specifier: workspace:*
+        version: link:../toast
       '@supabase/ssr':
         specifier: ^0.10.3
         version: 0.10.3(@supabase/supabase-js@2.106.1)
+
+  packages/toast:
+    dependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.2.4
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.1
+      '@types/react':
+        specifier: 19.2.14
+        version: 19.2.14
+      typescript:
+        specifier: 6.0.2
+        version: 6.0.2
 
   packages/workforce:
     devDependencies:

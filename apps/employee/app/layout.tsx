@@ -6,6 +6,7 @@ import "@summit/design/components.css";
 import "@summit/design/motion.css";
 import "./app.css";
 import { themeInitScript } from "@summit/design";
+import { ToastHost } from "@summit/toast";
 import { PortalBar } from "@/components/portal-bar";
 import { SupportButton } from "@/components/support";
 import { BrandingEffects, SessionProvider } from "@/components/session-provider";
@@ -82,6 +83,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <BrandingEffects />
+        {/* Once, at the root: every "Changes saved" in this portal is emitted
+            through @summit/toast's store and rendered here, so no screen needs
+            a toast of its own. Outside <SessionProvider> on purpose - a write
+            that fails because identity is unusable still has to be able to
+            say so. */}
+        <ToastHost />
         <PortalBar activeKey="employee" />
         {/* Mobile sidebar drawer: a plain checkbox, so the toggle needs no
             "use client" in this Server Component. See the comment on

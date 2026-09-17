@@ -40,7 +40,12 @@ export const supabase = createBrowserClient(
           // default writer sets a host-only cookie that shadows the real one.
           if (isProduction) str += `; Domain=.summitclient.io`;
           str += `; Path=${opts.path}`;
-          if (opts.maxAge) str += `; Max-Age=${opts.maxAge}`;
+          // `maxAge === 0` is how the SDK EXPIRES a cookie, and a falsy check
+          // swallows exactly that case - turning an intended deletion into a
+          // session cookie that outlives it. Written out rather than relying
+          // on truthiness for that reason.
+          if (opts.maxAge === 0) str += `; Max-Age=0`;
+          else if (opts.maxAge) str += `; Max-Age=${opts.maxAge}`;
           str += `; SameSite=${opts.sameSite || "Lax"}`;
           if (isHttps) str += `; Secure`;
           document.cookie = str;

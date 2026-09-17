@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { HubGate } from "@/components/hub-provider";
 import { HrGate } from "@/components/hr-provider";
 import { credentialLine, primaryCredential } from "@/lib/hr-store";
 import { SignaturePad } from "@/components/signature-pad";
 import { AvailabilityGrid } from "@summit/availability";
 import { getSetting } from "@summit/settings";
+import { saved } from "@summit/toast";
 import {
   getMyStaffAvailability, getMyStaffRecord, saveMyStaffAvailability, saveMyStaffContact,
   type MyStaffRecord,
@@ -21,9 +21,11 @@ import { SessionGate, useIdentity, useSession } from "@/components/session-provi
  * onboarding and training deadline; role controls what the Admin page shows. */
 export default function ProfilePage() {
   return (
-    // HrGate already wraps its children in HubGate internally - an outer
-    // HubGate here just made the hub snapshot load twice, fully
-    // sequentially, before the HR snapshot even started.
+    // HrGate loads the hub snapshot too. An outer HubGate here used to make
+    // it load TWICE - loadHub() does not dedupe - and fully sequentially,
+    // before the HR snapshot even started. Both loads now start together
+    // inside HrGate; wrapping this in anything else brings the double load
+    // straight back.
     <HrGate>
       <Profile />
     </HrGate>
@@ -45,7 +47,11 @@ function Profile() {
   const [myStaff, setMyStaff] = React.useState<MyStaffRecord | null | undefined>(undefined);
   const [myAvailability, setMyAvailability] = React.useState<{ day: string; start_time: string; end_time: string }[]>([]);
   const [editingAvailability, setEditingAvailability] = React.useState(false);
-  const [contactSaving, setContactSaving] = React.useState(false);
+  // Per field, not one flag for all three. A single flag disabled every
+  // contact input the moment any one of them blurred, so tabbing (or, on a
+  // phone, tapping) from Phone to Emergency contact name landed on a disabled
+  // field: focus was dropped and the keyboard closed mid-form.
+  const [savingField, setSavingField] = React.useState<string | null>(null);
 
   const loadStaff = React.useCallback(() => {
     getMyStaffRecord(identity.userId).then((rec) => {
@@ -58,16 +64,25 @@ function Profile() {
   if (!ready) return <p className="sub">Loading profile…</p>;
 
   const p = getProfile();
-  const patch = (k: string, v: string) => void saveProfile({ [k]: v } as never).then(force);
+
+  // Every field on this screen saves on blur or change, with no Save button
+  // anywhere - so saved() is what tells the user it landed, and it is also
+  // the only thing catching the write. These two were `void save(...)` with
+  // no `.catch`: a denied write left the typed value sitting on screen, the
+  // database unchanged, and nothing anywhere saying so.
+  const patch = (k: string, v: string) => void saved(saveProfile({ [k]: v } as never)).then(force);
 
   async function patchContact(field: "phone" | "emergencyContactName" | "emergencyContactPhone", value: string) {
     if (!myStaff) return;
-    setContactSaving(true);
+    setSavingField(field);
     try {
-      await saveMyStaffContact(myStaff.id, { [field]: value || null });
-      setMyStaff({ ...myStaff, [field]: value || null });
+      await saved(async () => {
+        await saveMyStaffContact(myStaff.id, { [field]: value || null });
+        // Inside the write, so a rejection never leaves the row looking saved.
+        setMyStaff({ ...myStaff, [field]: value || null });
+      });
     } finally {
-      setContactSaving(false);
+      setSavingField(null);
     }
   }
 
@@ -133,13 +148,13 @@ function Profile() {
       ) : (
         <div className="card card-pad" style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
           <div className="field"><label htmlFor="pr-phone">Phone</label>
-            <input id="pr-phone" type="tel" className="input" disabled={contactSaving}
+            <input id="pr-phone" type="tel" className="input" disabled={savingField === "phone"}
               defaultValue={myStaff.phone ?? ""} onBlur={(e) => patchContact("phone", e.target.value)} /></div>
           <div className="field"><label htmlFor="pr-ec-name">Emergency contact name</label>
-            <input id="pr-ec-name" className="input" disabled={contactSaving}
+            <input id="pr-ec-name" className="input" disabled={savingField === "emergencyContactName"}
               defaultValue={myStaff.emergencyContactName ?? ""} onBlur={(e) => patchContact("emergencyContactName", e.target.value)} /></div>
           <div className="field"><label htmlFor="pr-ec-phone">Emergency contact phone</label>
-            <input id="pr-ec-phone" type="tel" className="input" disabled={contactSaving}
+            <input id="pr-ec-phone" type="tel" className="input" disabled={savingField === "emergencyContactPhone"}
               defaultValue={myStaff.emergencyContactPhone ?? ""} onBlur={(e) => patchContact("emergencyContactPhone", e.target.value)} /></div>
         </div>
       )}

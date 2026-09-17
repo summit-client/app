@@ -1,4 +1,5 @@
 import * as React from "react";
+import { saved } from "@summit/toast";
 import { availToSlots, generateTimeSlots, slotsToRanges, type AvailabilityEntityType, type AvailabilityRow } from "./grid";
 
 const AVAIL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -68,14 +69,17 @@ export function AvailabilityGrid({
     setSelected((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
 
+  // Confirming the save here rather than in each caller is the whole point of
+  // this component existing: the scheduler announced it, the two profile
+  // pages said nothing, and that difference was never a decision anyone made.
+  // saved() also closes the failure half - onSave rejects on an RLS denial,
+  // and this used to be try/finally with no catch, so the rejection escaped an
+  // event handler unhandled while the grid just stopped saying "Saving…".
   async function handleSave() {
     setSaving(true);
     const ranges = slotsToRanges(selected, entityId, entityType, availDays, timeSlots, endOfDayTime);
-    try {
-      await onSave(ranges);
-    } finally {
-      setSaving(false);
-    }
+    await saved(() => onSave(ranges), { text: "Availability saved" });
+    setSaving(false);
   }
 
   const slotLabel = incrementMinutes === 60 ? "hour" : `${incrementMinutes}-min`;

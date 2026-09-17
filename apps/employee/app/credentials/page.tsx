@@ -13,6 +13,7 @@ import {
   type EducationLevel, type EmployeeEducation,
 } from "@/lib/education";
 import { hr, removeCredential, removeEducation, saveCredential, saveEducation } from "@/lib/hr-store";
+import { saved } from "@summit/toast";
 
 /**
  * My Credentials. One compliance tracker per credential, using the rule
@@ -334,7 +335,7 @@ function EducationForm({
         <button className="btn secondary" onClick={onCancel} disabled={busy}>Cancel</button>
         {!isNew ? (
           <button className="btn ghost" style={{ marginLeft: "auto", color: "var(--danger)" }} disabled={busy}
-            onClick={() => { void removeEducation(f.id); onCancel(); }}>
+            onClick={() => { void saved(removeEducation(f.id)); onCancel(); }}>
             Remove
           </button>
         ) : null}
@@ -411,7 +412,7 @@ function CredentialForm({
         <button className="btn secondary" onClick={onCancel} disabled={busy}>Cancel</button>
         {!isNew ? (
           <button className="btn ghost" style={{ marginLeft: "auto", color: "var(--danger)" }} disabled={busy}
-            onClick={() => { void removeCredential(f.id); onCancel(); }}>
+            onClick={() => { void saved(removeCredential(f.id)); onCancel(); }}>
             Remove
           </button>
         ) : null}

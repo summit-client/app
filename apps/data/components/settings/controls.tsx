@@ -52,9 +52,12 @@ export function SettingRow({ settingKey }: { settingKey: string }) {
   // 0012). Preview mode has no real RLS to hit, so don't block there.
   const orgWriteBlocked = level === "org" && !identity?.isPreview && identity?.appRole !== "admin";
 
+  // setSetting() announces both halves itself (@summit/toast), so nothing
+  // here reports the outcome a second time. The catch is only so its rethrow
+  // on a denied write stops surfacing as an unhandled rejection.
   const set = (v: SettingValue) => {
     if (orgWriteBlocked) return;
-    void setSetting(settingKey, v, level);
+    void setSetting(settingKey, v, level).catch(() => {});
   };
 
   return (
@@ -76,7 +79,7 @@ export function SettingRow({ settingKey }: { settingKey: string }) {
             Org default: <b>{String(r.org ?? r.def.default)}</b>
             {" → "}My preference: <b>{r.user != null ? String(r.user) : "not set"}</b>
             {r.user != null ? (
-              <button className="btn ghost" style={{ padding: "2px 8px", marginLeft: 8 }} onClick={() => setSetting(settingKey, null, "user")}>
+              <button className="btn ghost" style={{ padding: "2px 8px", marginLeft: 8 }} onClick={() => void setSetting(settingKey, null, "user").catch(() => {})}>
                 Use default
               </button>
             ) : null}

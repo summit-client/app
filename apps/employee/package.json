@@ -13,6 +13,7 @@
     "@summit/availability": "workspace:*",
     "@summit/design": "workspace:*",
     "@summit/settings": "workspace:*",
+    "@summit/toast": "workspace:*",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.1",
     "next": "16.2.1",

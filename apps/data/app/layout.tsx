@@ -7,6 +7,7 @@ import { themeInitScript } from "@summit/design";
 import { PortalNav, SettingsEffects } from "@/components/portal-chrome";
 import { PortalBar, SessionGate, SessionProvider } from "@/components/session-provider";
 import { ClinicianSupportButton } from "@/components/support-button";
+import { ToastHost } from "@summit/toast";
 
 export const metadata: Metadata = {
   title: "Summit Clinician",
@@ -23,6 +24,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <SettingsEffects />
+        {/* One per portal, outside the shell so no screen's overflow can clip
+            it. ToastHost is "use client"; this layout stays a Server
+            Component because nothing here calls into it. */}
+        <ToastHost />
         <SessionProvider>
           <PortalBar activeKey="clinician" settingsHref="/settings" />
           {/* Mobile sidebar drawer: a plain checkbox, so the toggle needs no

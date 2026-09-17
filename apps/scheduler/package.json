@@ -22,7 +22,8 @@
     "@summit/portals": "workspace:*",
     "@summit/proxy-auth": "workspace:*",
     "@summit/session": "workspace:*",
-    "@summit/settings": "workspace:*"
+    "@summit/settings": "workspace:*",
+    "@summit/toast": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "19.2.14",

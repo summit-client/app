@@ -12,6 +12,7 @@ import {
   AbcPanel, DttPanel, DurationPanel, FrequencyPanel, IntervalPanel, NetPanel, TaskAnalysisPanel, YniPanel,
 } from "@/components/modes";
 import { getSetting } from "@summit/settings";
+import { saved } from "@summit/toast";
 import { masteryCheck, trendArrow } from "@/lib/mastery";
 import {
   MODE_LABEL, PROMPT_ORDER,
@@ -197,10 +198,14 @@ function PlanReview({ plan, programs, session, onStart, onChange }: {
       && !plan.priorityProgramIds.includes(p.id) && !plan.maintenanceProgramIds.includes(p.id),
   );
 
+  // onChange runs either way: on failure it re-reads the stored plan, which
+  // is what puts the chip back that the write did not remove.
   const removePriority = (id: string) =>
-    void saveSessionPlan(session.id, { ...plan, priorityProgramIds: plan.priorityProgramIds.filter((x) => x !== id) }).then(onChange);
+    void saved(() => saveSessionPlan(session.id, { ...plan, priorityProgramIds: plan.priorityProgramIds.filter((x) => x !== id) }),
+      { text: "Plan updated" }).then(onChange);
   const addPriority = (id: string) =>
-    id && void saveSessionPlan(session.id, { ...plan, priorityProgramIds: [...plan.priorityProgramIds, id] }).then(onChange);
+    id && void saved(() => saveSessionPlan(session.id, { ...plan, priorityProgramIds: [...plan.priorityProgramIds, id] }),
+      { text: "Plan updated" }).then(onChange);
 
   return (
     <div className="card card-pad" style={{ marginTop: 14 }}>

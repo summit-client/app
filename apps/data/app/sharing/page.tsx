@@ -7,6 +7,7 @@ import {
   visibilitySummary,
   type GuardianOption, type ShareableRecord, type Visibility,
 } from "@/lib/visibility";
+import { toast } from "@summit/toast";
 
 /**
  * What families see.
@@ -66,6 +67,7 @@ export default function SharingPage() {
     setBusy(true); setNotice(null);
     try {
       await setVisibility(r.recordType, r.recordId, v);
+      toast("Visibility updated");
       await load();
       if (v === "specific") await openRecord({ ...r, visibility: v });
     } catch (e) {
@@ -82,6 +84,7 @@ export default function SharingPage() {
     setBusy(true); setNotice(null);
     try {
       await setGrant(r.recordType, r.recordId, r.clinicId, g.userId, on);
+      toast(on ? `${g.name} can see this` : `${g.name} can no longer see this`);
       const next = new Set(granted);
       if (on) next.add(g.userId); else next.delete(g.userId);
       setGranted(next);
