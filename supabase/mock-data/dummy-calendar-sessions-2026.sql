@@ -67,6 +67,34 @@
 --                       the correct posture for a table nothing in the apps
 --                       reads.
 --
+--  5. locations / staff.location_id / clients.location_id
+--                       Spreads people across sites so the seeded calendar
+--                       reads like a multi-site clinic: the location filter,
+--                       the location column and visibleLocation() all have
+--                       something real to show. Round-robin, deterministic,
+--                       and it only ever fills a location_id that is already
+--                       NULL - a real assignment made in the app is never
+--                       overwritten.
+--
+--                       THIS IS COSMETIC, NOT A PREREQUISITE. The pairing
+--                       rule is `is not distinct from`, which treats NULL as
+--                       equal to NULL, so a clinic with every location_id
+--                       unset seeds perfectly well with everyone eligible
+--                       for everyone. Set v_assign_locations := false to
+--                       skip it entirely.
+--
+--                       If the clinic has NO locations at all - which is the
+--                       normal state, since nothing in the monorepo wrote
+--                       that table until the Locations screen shipped - it
+--                       INSERTs the few named in v_demo_locations first.
+--                       Those are real rows in a real table that the admin
+--                       UI will show; the run log says when it created them.
+--
+--  6. mock_data_location_backfill
+--                       Created if absent. Bookkeeping for #5: the previous
+--                       location_id of every row changed, and the id of every
+--                       location created. Same deny-all RLS posture as #4.
+--
 -- ----------------------------------------------------------------------------
 -- WHAT IT NEVER WRITES, AND WHY THAT MATTERS
 -- ----------------------------------------------------------------------------
@@ -211,6 +239,19 @@
 --    where b.kind = 'client' and b.row_id = a.id
 --      and b.clinic_id = 'ee78d13c-eec9-4512-98bc-d00bca2d08c9';
 --
+--   -- Undo the location assignment (#5). Order matters: clear the references
+--   -- before deleting the locations they point at.
+--   update staff s set location_id = b.previous_location_id
+--     from mock_data_location_backfill b
+--    where b.kind = 'staff' and b.row_id = s.id;
+--   update clients c set location_id = b.previous_location_id
+--     from mock_data_location_backfill b
+--    where b.kind = 'client' and b.row_id = c.id;
+--   delete from locations l
+--    using mock_data_location_backfill b
+--    where b.kind = 'location' and b.row_id = l.id;
+--   delete from mock_data_location_backfill;
+--
 --   delete from mock_data_availability_backfill
 --    where clinic_id = 'ee78d13c-eec9-4512-98bc-d00bca2d08c9';
 --
@@ -279,11 +320,24 @@ declare
   v_staff_week_max   int := 8;   -- most sessions one clinician gets in a week
 
   v_backfill_availability boolean := true;   -- see WHAT IT WRITES #2
+  v_assign_locations      boolean := true;   -- see WHAT IT WRITES #5
   v_skip_holidays         boolean := true;   -- public_holidays, migration 0027
+
+  -- Only used when the clinic has NO locations at all. Nothing in the
+  -- monorepo wrote this table until the Locations screen shipped, so an
+  -- untouched clinic has zero, and "spread people across sites" needs sites
+  -- to spread them across. Set v_assign_locations := false to leave every
+  -- location_id exactly as it is.
+  v_demo_locations text[] := array['Main Clinic', 'North Site', 'East Site'];
 
   -- The operator's explicit bound, intersected with the org's own hours.
   v_floor_m int := 9 * 60;
   v_ceil_m  int := 17 * 60;
+
+  v_nloc      int;
+  v_loc_name  text;
+  v_loc_id    bigint;
+  v_orphan    text;
 
   -- ==========================================================================
   -- DERIVED / WORKING STATE
@@ -579,6 +633,114 @@ begin
   else
     perform pg_temp.say('availability backfill DISABLED - only people with a real availability '
       || 'window will get sessions');
+  end if;
+
+  -- --------------------------------------------------------------------------
+  -- 6b · Location assignment. See WHAT IT WRITES #5 in the header.
+  --
+  -- NOT a prerequisite for seeding, and it is worth being precise about that
+  -- because the opposite was briefly believed. The pairing rule below is
+  -- `s.location_id is not distinct from rq.client_loc`, and `is not distinct
+  -- from` treats NULL as equal to NULL - so a clinic where every location_id
+  -- is NULL seeds perfectly well, with everyone eligible for everyone. This
+  -- section exists to make the seeded calendar LOOK like a multi-site clinic
+  -- (so the location filter, the location column and visibleLocation() have
+  -- something real to show), not to make it possible.
+  --
+  -- Round-robin by row_number, not a hash of the id. A hash spreads unevenly
+  -- on small inputs and can leave a location with clients but no staff -
+  -- those clients would then match nobody and silently get zero sessions.
+  -- Round-robin over the same ordered location list for both tables
+  -- guarantees each site gets both, as long as there are at least as many of
+  -- each as there are locations. The check below reports it if not.
+  --
+  -- Only rows whose location_id is already NULL are touched, so a real
+  -- assignment made in the app is never overwritten. Reversible: the previous
+  -- value of every row it changes, and the id of every location it creates,
+  -- goes into mock_data_location_backfill.
+  -- --------------------------------------------------------------------------
+  if v_assign_locations then
+    create table if not exists mock_data_location_backfill (
+      kind text not null check (kind in ('staff', 'client', 'location')),
+      row_id bigint not null,
+      clinic_id uuid not null references clinics(id) on delete cascade,
+      previous_location_id bigint,
+      assigned_at timestamptz not null default now(),
+      primary key (kind, row_id)
+    );
+    -- Same deny-all posture as mock_data_availability_backfill: RLS on, no
+    -- policy at all. Nothing in any app reads it.
+    alter table mock_data_location_backfill enable row level security;
+
+    select count(*) into v_nloc from locations where clinic_id = v_clinic;
+
+    if v_nloc = 0 then
+      foreach v_loc_name in array v_demo_locations loop
+        insert into locations (clinic_id, name) values (v_clinic, v_loc_name)
+        returning id into v_loc_id;
+        insert into mock_data_location_backfill (kind, row_id, clinic_id)
+        values ('location', v_loc_id, v_clinic)
+        on conflict (kind, row_id) do nothing;
+      end loop;
+      v_nloc := array_length(v_demo_locations, 1);
+      perform pg_temp.say(format('created %s demo location(s): %s - this clinic had none',
+                                 v_nloc, array_to_string(v_demo_locations, ', ')));
+    else
+      perform pg_temp.say(format('using the %s location(s) this clinic already has', v_nloc));
+    end if;
+
+    insert into mock_data_location_backfill (kind, row_id, clinic_id, previous_location_id)
+    select 'staff', s.id, v_clinic, s.location_id
+      from staff s where s.clinic_id = v_clinic and s.location_id is null
+    on conflict (kind, row_id) do nothing;
+
+    with locs as (
+      select id, row_number() over (order by id) - 1 as n
+        from locations where clinic_id = v_clinic
+    ), tgt as (
+      select id, row_number() over (order by id) - 1 as seq
+        from staff where clinic_id = v_clinic and location_id is null
+    )
+    update staff s set location_id = l.id
+      from tgt t join locs l on l.n = t.seq % v_nloc
+     where s.id = t.id;
+    get diagnostics v_n = row_count;
+    perform pg_temp.say(format('assigned a location to %s staff row(s)', v_n));
+
+    insert into mock_data_location_backfill (kind, row_id, clinic_id, previous_location_id)
+    select 'client', c.id, v_clinic, c.location_id
+      from clients c where c.clinic_id = v_clinic and c.location_id is null
+    on conflict (kind, row_id) do nothing;
+
+    with locs as (
+      select id, row_number() over (order by id) - 1 as n
+        from locations where clinic_id = v_clinic
+    ), tgt as (
+      select id, row_number() over (order by id) - 1 as seq
+        from clients where clinic_id = v_clinic and location_id is null
+    )
+    update clients c set location_id = l.id
+      from tgt t join locs l on l.n = t.seq % v_nloc
+     where c.id = t.id;
+    get diagnostics v_n = row_count;
+    perform pg_temp.say(format('assigned a location to %s client row(s)', v_n));
+
+    -- A site with clients but no clinicians books nobody. Report it rather
+    -- than let those clients quietly come out of the run with zero sessions.
+    select string_agg(l.name, ', ' order by l.name) into v_orphan
+      from locations l
+     where l.clinic_id = v_clinic
+       and exists (select 1 from clients c
+                    where c.clinic_id = v_clinic and c.location_id = l.id
+                      and coalesce(c.status, 'active') = 'active')
+       and not exists (select 1 from staff s
+                        where s.clinic_id = v_clinic and s.location_id = l.id);
+    if v_orphan is not null then
+      perform pg_temp.say('WARNING: location(s) with active clients but no staff - their '
+        || 'clients can match nobody and will get no sessions: ' || v_orphan);
+    end if;
+  else
+    perform pg_temp.say('location assignment DISABLED - every location_id left as it is');
   end if;
 
   -- ==========================================================================
