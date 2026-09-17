@@ -69,7 +69,11 @@ export interface HubBackend {
   issueOnboardingCertificate(userId: string, title: string, competency: string): Promise<Certificate | null>;
   requestTimeOff(req: Omit<TimeOffRequest, "id" | "status" | "days">, days: number): Promise<TimeOffRequest>;
   decideTimeOff(id: string, decision: TimeOffRequest["status"]): Promise<void>;
-  audit(action: string, detail: string): Promise<void>;
+  /** `subjectId` is who the event is ABOUT. It defaults to the caller, but a
+   *  manager's sign-off / PD verification / time-off decision is about the
+   *  employee whose record moved, and hub_audit_read keys the clinic-wide
+   *  feed on exactly that column. */
+  audit(action: string, detail: string, subjectId?: string): Promise<void>;
 }
 
 /** A write that failed. Surfaced, never swallowed: the old code awaited every
@@ -644,11 +648,11 @@ export function supabaseBackend(session: Session): HubBackend {
         .eq("id", id).eq("status", "REQUESTED"));
     },
 
-    async audit(action, detail) {
+    async audit(action, detail, subjectId) {
       // Audit is best-effort: losing an audit row must not lose the action that
       // produced it. It is still reported, just not thrown.
       const res = await sb().from("hub_audit_events").insert({
-        clinic_id: clinic, actor: uid, subject: uid, action, detail: { note: detail },
+        clinic_id: clinic, actor: uid, subject: subjectId ?? uid, action, detail: { note: detail },
       });
       if (res.error) console.warn("audit write failed", res.error);
     },

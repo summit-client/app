@@ -245,8 +245,8 @@ function AdminConsole() {
                   <b>{nameOf(r.userId)}</b> · {r.type === "VACATION" ? "Vacation" : "Sick"} · {r.startDate} → {r.endDate} ({r.days}d){r.note ? ` · ${r.note}` : ""}
                 </span>
                 <span style={{ display: "flex", gap: 8 }}>
-                  <button className="btn" onClick={() => void saved(decideTimeOff(r.id, "APPROVED")).then(reloadTimeOff)}>Approve</button>
-                  <button className="btn secondary" onClick={() => void saved(decideTimeOff(r.id, "DENIED")).then(reloadTimeOff)}>Deny</button>
+                  <button className="btn" onClick={() => void saved(decideTimeOff(r.id, "APPROVED", { userId: r.userId, type: r.type, startDate: r.startDate })).then(reloadTimeOff)}>Approve</button>
+                  <button className="btn secondary" onClick={() => void saved(decideTimeOff(r.id, "DENIED", { userId: r.userId, type: r.type, startDate: r.startDate })).then(reloadTimeOff)}>Deny</button>
                 </span>
               </div>
             ))}
@@ -269,7 +269,7 @@ function AdminConsole() {
             {pd.rows.map((r) => (
               <div key={r.id} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "var(--text-sm)" }}><b>{nameOf(r.userId)}</b> · {r.title} · {r.provider || "—"} · {r.hours}h · {r.date}</span>
-                <button className="btn secondary" onClick={() => void saved(verifyPd(r.id)).then(reloadPd)}>Verify</button>
+                <button className="btn secondary" onClick={() => void saved(verifyPd(r.id, { userId: r.userId, title: r.title })).then(reloadPd)}>Verify</button>
               </div>
             ))}
             {!pd.rows.length ? <div className="card card-pad"><p className="sub">All PD entries are verified.</p></div> : null}

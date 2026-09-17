@@ -250,14 +250,24 @@ function be(): HubBackend {
   return backend;
 }
 
-async function audit(action: string, detail: string): Promise<void> {
+/**
+ * `subjectId` is who the event is ABOUT, defaulting to the caller. It matters
+ * because the admin queues act on other people: filing a manager's sign-off,
+ * PD verification or time-off decision against the manager put it in the wrong
+ * person's history and out of reach of the clinic feed, which reads
+ * hub_audit_read's `hub_can_manage(subject)`. The caller's own in-memory
+ * snapshot only gains the row when the event really is about them.
+ */
+async function audit(action: string, detail: string, subjectId?: string): Promise<void> {
   const s = requireSnap();
-  s.audit.unshift({
-    id: `au-${Date.now().toString(36)}-${s.audit.length}`,
-    action, detail, at: new Date().toISOString(), who: s.profile.name,
-  });
-  s.audit = s.audit.slice(0, 100);
-  await be().audit(action, detail);
+  if (subjectId == null || subjectId === s.profile.id) {
+    s.audit.unshift({
+      id: `au-${Date.now().toString(36)}-${s.audit.length}`,
+      action, detail, at: new Date().toISOString(), who: s.profile.name,
+    });
+    s.audit = s.audit.slice(0, 100);
+  }
+  await be().audit(action, detail, subjectId);
 }
 
 /* ---- reads/writes (preview now; live seam noted per function) ----------------- */
@@ -372,7 +382,7 @@ export async function signOffTask(taskKey: string, subjectId?: string): Promise<
       row.completedAt = new Date().toISOString();
     }
   }
-  await audit("onboarding.signoff", HUB_TASKS.find((t) => t.key === taskKey)?.title ?? taskKey);
+  await audit("onboarding.signoff", HUB_TASKS.find((t) => t.key === taskKey)?.title ?? taskKey, subject);
   changed();
 }
 
@@ -438,12 +448,14 @@ export async function addPd(entry: Omit<PdRecord, "id" | "verified">): Promise<v
  * of this bug). Now the write always happens; the local snapshot is only
  * patched when the caller happened to verify their own record.
  */
-export async function verifyPd(id: string): Promise<void> {
+export async function verifyPd(id: string, subject?: { userId: string; title: string }): Promise<void> {
   const s = requireSnap();
   await be().verifyPd(id);
   const r = s.pd.find((x) => x.id === id);
   if (r) r.verified = true;
-  await audit("pd.verified", r?.title ?? id);
+  // r is null for every cross-employee verification, so without the caller
+  // passing the queue row the audit detail degrades to a bare uuid.
+  await audit("pd.verified", subject?.title ?? r?.title ?? id, subject?.userId);
   changed();
 }
 
@@ -529,12 +541,20 @@ export async function requestTimeOff(req: Omit<TimeOffRequest, "id" | "status" |
  *  shape as verifyPd() above and signOffTask(), for the same reason: the admin
  *  queue decides other people's requests, which are never in the caller's own
  *  loaded snapshot. */
-export async function decideTimeOff(id: string, decision: "APPROVED" | "DENIED" | "CANCELLED"): Promise<void> {
+export async function decideTimeOff(
+  id: string,
+  decision: "APPROVED" | "DENIED" | "CANCELLED",
+  subject?: { userId: string; type: string; startDate: string },
+): Promise<void> {
   const s = requireSnap();
   await be().decideTimeOff(id, decision);
   const r = s.timeOff.find((x) => x.id === id);
   if (r) r.status = decision;
-  await audit("timeoff.decided", r ? `${r.type} ${r.startDate} → ${decision}` : `time-off ${id} → ${decision}`);
+  // Same as verifyPd(): the row is never in the caller's own snapshot when an
+  // admin decides someone else's request, so the queue row supplies the text.
+  const local = r ? `${r.type} ${r.startDate} → ${decision}` : null;
+  const passed = subject ? `${subject.type} ${subject.startDate} → ${decision}` : null;
+  await audit("timeoff.decided", passed ?? local ?? `time-off ${id} → ${decision}`, subject?.userId);
   changed();
 }
 
