@@ -1,5 +1,5 @@
 import { createClient } from '../../../lib/supabase-server'
-import { isKnownOrigin } from '@summit/portals'
+import { isKnownOrigin, webUrl } from '@summit/portals'
 
 /**
  * The one place allowed to redeem a refresh token. All four portals share a
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     // this request's cookies were fixed the instant the browser sent them,
     // so retrying in place would just resubmit the same spent token. Bounded
     // so a genuine dead heat can't loop forever.
-    const retry = new URL('https://summitclient.io/api/auth/refresh')
+    const retry = new URL(`${webUrl()}/api/auth/refresh`)
     retry.searchParams.set('return_to', returnTo)
     retry.searchParams.set('attempt', String(attemptNumber + 1))
     res.redirect(retry.toString())
