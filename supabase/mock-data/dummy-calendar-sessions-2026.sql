@@ -35,8 +35,23 @@
 --                       first, so re-running replaces rather than duplicates.
 --
 --  2. staff_availability / client_availability
---                       UPDATE of rows whose start_time or end_time is NULL,
---                       setting them to the effective work window. This is
+--                       INSERT of a full working week for anyone who has NO
+--                       availability rows at all, and UPDATE of rows whose
+--                       start_time or end_time is NULL, setting them to the
+--                       effective work window.
+--
+--                       The INSERT half is deliberately limited to people
+--                       with ZERO rows. A partial week is a real preference
+--                       and filling in the rest of it would silently widen
+--                       someone's availability into something they never
+--                       agreed to; zero rows expresses nothing, so there is
+--                       nothing to overwrite. Confirmed live 2026-09-18 that
+--                       this matters: one clinic had 14 staff and not a
+--                       single staff_availability row, so the UPDATE-only
+--                       version fixed nothing and the run died on an empty
+--                       weekly template.
+--
+--                       This is
 --                       NOT cosmetic: every staff member and client created
 --                       through the scheduler's admin form or through
 --                       invite-teammate gets six Mon-Sat availability rows
@@ -251,6 +266,14 @@
 --    using mock_data_location_backfill b
 --    where b.kind = 'location' and b.row_id = l.id;
 --   delete from mock_data_location_backfill;
+--
+--   -- Rows this script CREATED are deleted, not nulled.
+--   delete from staff_availability a
+--    using mock_data_availability_backfill b
+--    where b.kind = 'staff_inserted' and b.row_id = a.id;
+--   delete from client_availability a
+--    using mock_data_availability_backfill b
+--    where b.kind = 'client_inserted' and b.row_id = a.id;
 --
 --   delete from mock_data_availability_backfill
 --    where clinic_id = 'ee78d13c-eec9-4512-98bc-d00bca2d08c9';
@@ -587,15 +610,83 @@ begin
   -- --------------------------------------------------------------------------
   if v_backfill_availability then
     create table if not exists mock_data_availability_backfill (
-      kind text not null check (kind in ('staff', 'client')),
+      kind text not null,
       row_id bigint not null,
       clinic_id uuid not null references clinics(id) on delete cascade,
       backfilled_at timestamptz not null default now(),
       primary key (kind, row_id)
     );
+    -- The constraint is added separately, and dropped first, because an
+    -- earlier version of this script created the table with
+    -- `check (kind in ('staff','client'))` inline. `create table if not
+    -- exists` would leave that narrower constraint in place on a database
+    -- that already ran it, and the two new kinds below would fail against it.
+    alter table mock_data_availability_backfill
+      drop constraint if exists mock_data_availability_backfill_kind_check;
+    alter table mock_data_availability_backfill
+      add constraint mock_data_availability_backfill_kind_check
+      check (kind in ('staff', 'client', 'staff_inserted', 'client_inserted'));
     -- Deny-all: RLS on with no policy at all. Nothing in any app reads this
     -- table, and only the service role should ever touch it.
     alter table mock_data_availability_backfill enable row level security;
+
+    -- ------------------------------------------------------------------
+    -- 6a-i · MISSING availability rows, not just NULL ones.
+    --
+    -- Confirmed live 2026-09-18: this clinic's `staff_availability` was
+    -- EMPTY - not null-windowed, absent - for all 14 staff, while every
+    -- client had six. The backfill below only ever UPDATEd rows that already
+    -- existed, so it fixed nothing and the weekly template came out empty
+    -- with "check the distinct day values" as the only clue. A person with no
+    -- availability row at all is available for nothing, which is the same
+    -- outcome as a NULL window and needs the same treatment.
+    --
+    -- ONLY people with ZERO rows are given any. Somebody with a partial week
+    -- has expressed a real preference - Mondays only, say - and filling in
+    -- the rest of their week would silently widen it into something they did
+    -- not agree to. Zero rows expresses nothing, so there is nothing to
+    -- overwrite. That distinction is the whole rule here.
+    --
+    -- Reversible: every inserted row's id is recorded under the
+    -- '*_inserted' kinds, which the cleanup DELETEs rather than nulls.
+    -- ------------------------------------------------------------------
+    with tgt as (
+      select s.id from staff s
+       where s.clinic_id = v_clinic
+         and (lower(btrim(coalesce(s.role, ''))) = any (array['bcba','bcaba','rbt','supervisor'])
+              or coalesce(s.capacity, 0) > 0)
+         and not exists (select 1 from staff_availability a where a.staff_id = s.id)
+    ), ins as (
+      insert into staff_availability (staff_id, clinic_id, day, start_time, end_time)
+      select t.id, v_clinic, d,
+             make_time(v_start_m / 60, v_start_m % 60, 0),
+             make_time(v_end_m / 60, v_end_m % 60, 0)
+        from tgt t cross join unnest(v_days) as d
+      returning id
+    )
+    insert into mock_data_availability_backfill (kind, row_id, clinic_id)
+    select 'staff_inserted', id, v_clinic from ins
+    on conflict (kind, row_id) do nothing;
+    get diagnostics v_n = row_count;
+    perform pg_temp.say(format('created %s staff_availability row(s) for staff who had none', v_n));
+
+    with tgt as (
+      select c.id from clients c
+       where c.clinic_id = v_clinic and c.status = 'active'
+         and not exists (select 1 from client_availability a where a.client_id = c.id)
+    ), ins as (
+      insert into client_availability (client_id, clinic_id, day, start_time, end_time)
+      select t.id, v_clinic, d,
+             make_time(v_start_m / 60, v_start_m % 60, 0),
+             make_time(v_end_m / 60, v_end_m % 60, 0)
+        from tgt t cross join unnest(v_days) as d
+      returning id
+    )
+    insert into mock_data_availability_backfill (kind, row_id, clinic_id)
+    select 'client_inserted', id, v_clinic from ins
+    on conflict (kind, row_id) do nothing;
+    get diagnostics v_n = row_count;
+    perform pg_temp.say(format('created %s client_availability row(s) for clients who had none', v_n));
 
     insert into mock_data_availability_backfill (kind, row_id, clinic_id)
     select 'staff', a.id, v_clinic
