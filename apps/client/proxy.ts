@@ -104,9 +104,24 @@ export async function proxy(request: NextRequest) {
 // compiles this into). `_next/static` and `_next/image` stay unanchored
 // because they are directories. The list is kept identical to the other three
 // portals' rather than trimmed per app; a filename an app does not serve just
-// 404s. Nothing that renders or returns clinic data belongs here - unlike
-// apps/scheduler this matcher deliberately still covers /api, because these
-// Pages Router routes rely on the gate (see pages/api/calendar/feed-token.ts).
+// 404s. Unlike apps/scheduler this matcher deliberately still covers /api,
+// because these Pages Router routes rely on the gate (see
+// pages/api/calendar/feed-token.ts) - with exactly one exception:
+//
+// `api/calendar/feed/` is the subscribable ICS feed, and it is the one route
+// here that is SUPPOSED to be reachable without a cookie. A calendar app
+// polling a webcal:// URL in the background sends no session, so that route
+// was written token-gated instead: it checks the token itself and scopes
+// every query by hand against an RLS-bypassing lookup client (read its
+// header). Gating it meant the proxy redirected every poll to /login, so
+// family calendar subscriptions never worked at all - this is a correctness
+// fix, not a performance one.
+//
+// The trailing slash is load-bearing. These entries are prefix tests, so a
+// bare `api/calendar/feed` would also un-gate `/api/calendar/feedback...`;
+// requiring the slash means only the feed's own token segment matches. It is
+// NOT `$`-anchored like the asset entries above because the token is a real
+// path segment after it.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico$|favicon\\.svg$|icon\\.svg$|summit-mark-64\\.png$).*)"],
+  matcher: ["/((?!_next/static|_next/image|api/calendar/feed/|favicon\\.ico$|favicon\\.svg$|icon\\.svg$|summit-mark-64\\.png$).*)"],
 };

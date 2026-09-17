@@ -38,6 +38,12 @@ export interface PrivacyViewer {
 
 export const MASKED_CLIENT_LABEL = "Client (private)";
 export const MASKED_HOME_LABEL = "Home visit";
+/** A staff-only block (Break/Lunch/Meeting - session_types
+ *  .is_client_optional) genuinely has no client. Distinct from the masked
+ *  label on purpose: "there is nobody to name" and "there is somebody you
+ *  may not see" are different facts, and showing the masked wording for a
+ *  lunch break would imply a hidden client that does not exist. */
+export const NO_CLIENT_LABEL = "No client";
 
 /**
  * admin/scheduler: always - unchanged from today.
@@ -75,11 +81,16 @@ export function visibleClient<T extends { id: number; name: string }>(
   session: PrivacyScopedSession | null | undefined,
   clients: T[] | null | undefined,
 ): { client?: T; name: string; masked: boolean } {
+  // Checked before the permission test: a session with no client has no
+  // identity to protect, so masking one would be noise - and for a staff
+  // block it would be actively misleading.
+  if (session && session.client_id == null) {
+    return { client: undefined, name: NO_CLIENT_LABEL, masked: false };
+  }
   if (!canSeeClientIdentity(viewer, session)) {
     return { client: undefined, name: MASKED_CLIENT_LABEL, masked: true };
   }
-  const client =
-    session?.client_id != null ? (clients || []).find((c) => c.id === session.client_id) : undefined;
+  const client = (clients || []).find((c) => c.id === session?.client_id);
   return { client, name: client?.name ?? "Unknown client", masked: false };
 }
 
@@ -113,6 +124,8 @@ export function sessionPrimaryLabel<T extends { id: number; name: string }>(
   session: (PrivacyScopedSession & { type?: string | null }) | null | undefined,
   clients: T[] | null | undefined,
 ): string {
+  // A staff block's type IS its label - "Lunch", not "No client".
+  if (session && session.client_id == null) return session.type || NO_CLIENT_LABEL;
   const { name, masked } = visibleClient(viewer, session, clients);
   if (!masked) return name;
   return session?.type || MASKED_CLIENT_LABEL;

@@ -154,11 +154,18 @@
 -- COVERAGE GAPS, STATED HONESTLY
 -- ----------------------------------------------------------------------------
 --  * Session types with is_client_optional = true (Break, Lunch, Meeting -
---    seeded per clinic by migration 0019) are excluded. Migration 0016's
---    clinic-consistency trigger has no NULL guard on client_id, so the
---    client-less clinician block those types were designed for cannot be
---    inserted at all. They are bookable WITH a client attached, but a
---    "Lunch" session booked against a child is not something worth seeding.
+--    seeded per clinic by migration 0019) are excluded, so the seeded weeks
+--    contain client sessions only and no breaks.
+--    This was originally a hard blocker rather than a choice: 0016's
+--    clinic-consistency trigger had no NULL guard on client_id, so the
+--    client-less clinician block those types were designed for could not be
+--    inserted at all. Migration 0078 added that guard, and the scheduler's
+--    click-to-create now has a "Staff block" mode that books them - so they
+--    ARE creatable by hand from the app. They stay out of this script
+--    because a generated lunch break competes with real ones for the same
+--    slot and 0045's unique index would then reject the real booking; if you
+--    want them seeded too, that is a deliberate future change to the
+--    template builder, not an oversight.
 --  * Group session types (max_clients > 1) are booked, but only ever as a
 --    single client per slot. 0045's partial unique index is on (employee_id,
 --    session_date, hour, minute), so a group of N clients sharing one
@@ -616,10 +623,10 @@ begin
       || 'and will not offer them: ' || v_txt);
   end if;
 
-  -- Client-facing session types. is_client_optional types are excluded: 0016
-  -- rejects a NULL client_id, so the clinician-only block they exist for
-  -- cannot be inserted, and attaching a child to a "Lunch" is not realistic
-  -- demo data. Duplicate names collapse to the largest duration and gaps.
+  -- Client-facing session types. is_client_optional types are excluded - see
+  -- the COVERAGE GAPS note in the header for why they stay out even now that
+  -- migration 0078 makes a client-less block insertable.
+  -- Duplicate names collapse to the largest duration and gaps.
   create temp table t_type (
     seq int not null, name text primary key, duration int not null,
     gap_before int not null, gap_after int not null, grid_min int not null

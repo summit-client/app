@@ -26,6 +26,10 @@ const NAV = [
   { id: "clients",   label: "Clients",   icon: "⊙", roles: ["admin", "scheduler"] },
   { id: "employees", label: "Staff",     icon: "◎", roles: ["admin", "scheduler"] },
   { id: "sessiontypes", label: "Session Types", icon: "◈", roles: ["admin", "scheduler"] },
+  // Scheduler sees it read-only (RLS grants insert/update/delete to admin
+  // alone), which is still worth having: "which location is this client at"
+  // is a scheduling question.
+  { id: "locations", label: "Locations", icon: "⌂", roles: ["admin", "scheduler"] },
   { id: "settings",  label: "Settings",  icon: "⚙", roles: ["admin"] },
 ];
 
@@ -42,7 +46,23 @@ export default function Sidebar({ view, onNavigate, appUser, bookings, calendars
   const isAdminPage = router.pathname === "/admin";
   const activeId = isAdminPage ? "admin" : view;
 
+/**
+ * Below 820px this sidebar is an off-canvas drawer held open by the
+ * `#nav-toggle` checkbox (CLAUDE.md's mobile nav pattern - a checkbox
+ * rather than JS so it works inside a Server Component layout). Navigating
+ * from inside the drawer changed the view underneath but left the checkbox
+ * checked, so the drawer stayed open over the page it had just navigated
+ * to and had to be dismissed by hand every time. Nothing else unchecks it:
+ * the backdrop and the hamburger are both <label>s for the same input, and
+ * neither is involved in a nav click.
+ */
+function closeMobileDrawer() {
+  const toggle = document.getElementById("nav-toggle");
+  if (toggle instanceof HTMLInputElement) toggle.checked = false;
+}
+
 function handleNav(id: string) {
+  closeMobileDrawer();
   if (isAdminPage) {
     if (id === "settings") return;
     router.push({ pathname: "/", query: { view: id } });
