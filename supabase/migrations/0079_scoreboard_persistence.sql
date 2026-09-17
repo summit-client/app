@@ -78,6 +78,17 @@
 -- Safe to run once, by hand, in the Supabase SQL editor. Idempotent
 -- throughout: create ... if not exists, drop policy if exists before each
 -- create, on conflict do nothing on both seeds.
+--
+-- VERIFIED against a scratch Postgres 16 with 0024's permission tables and
+-- stubs for clinics/profiles/auth.uid(): applies clean, applies clean a second
+-- time, and the policies behave - a clinic member reads the board and upserts
+-- a score through the same (site_id, domain_key) conflict target the app uses;
+-- a member of another clinic sees zero rows and updates zero rows; a `client`
+-- account sees nothing at all; an insert that names someone else as created_by
+-- or another clinic as clinic_id is refused; DELETE affects zero rows for
+-- everyone; a duplicate or blank site name and a score outside 0-100 are all
+-- refused. What that scratch run CANNOT tell you is how it behaves against
+-- this project's real data - see the note at the top of migration 0000.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
