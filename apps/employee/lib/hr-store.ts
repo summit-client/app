@@ -319,10 +319,13 @@ export async function setSiteDomain(site: string, domainKey: string, value: numb
   changed();
 }
 
-export async function addScoreboardSite(name: string): Promise<void> {
+/** Resolves to the site that was added, or null when there was nothing to add
+ *  (blank, or already on the board). The caller uses that to decide whether to
+ *  clear the input - a failed write must not also throw away what was typed. */
+export async function addScoreboardSite(name: string): Promise<string | null> {
   const s = hr();
   const site = name.trim();
-  if (!site || s.sites.some((x) => x.site === site)) return;
+  if (!site || s.sites.some((x) => x.site === site)) return null;
   const saved = await be().addSite(site);
   // By identity, not by pushing unconditionally: the preview backend mutates
   // this same snapshot object (s IS its snap - see hr-backend.ts) and has
@@ -332,4 +335,5 @@ export async function addScoreboardSite(name: string): Promise<void> {
   if (!s.sites.includes(saved)) s.sites.push(saved);
   await hrAudit("scoreboard.site_added", site);
   changed();
+  return site;
 }

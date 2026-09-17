@@ -108,9 +108,14 @@ function ScoreboardScreen() {
     }, COMMIT_MS);
   };
 
-  const addSite = (name: string) => {
-    if (!name.trim() || s.sites.some((x) => x.site === name.trim())) return;
-    void saved(() => addScoreboardSite(name)).then(force);
+  const addSite = async (input: HTMLInputElement) => {
+    const name = input.value.trim();
+    if (!name || s.sites.some((x) => x.site === name)) return;
+    // Cleared only once it is really on the board. This used to clear
+    // unconditionally, which was harmless while the write was a no-op and
+    // would not be now: a rejected insert would take the typed name with it.
+    if (await saved(() => addScoreboardSite(name))) input.value = "";
+    force();
   };
 
   return (
@@ -158,7 +163,7 @@ function ScoreboardScreen() {
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
         <input className="input" style={{ maxWidth: 220 }} placeholder="Add a site" aria-label="Add a site"
-          onKeyDown={(e) => { if (e.key === "Enter") { addSite((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ""; } }} />
+          onKeyDown={(e) => { if (e.key === "Enter") void addSite(e.target as HTMLInputElement); }} />
         <span className="sub" style={{ marginTop: 8 }}>Press enter to add.</span>
       </div>
 
