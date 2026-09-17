@@ -23,7 +23,7 @@ import { previewBackend, supabaseBackend, type HubBackend, type HubSnapshot } fr
 export { IS_PREVIEW };
 export * from "./hub-types";
 import type {
-  AuditEvent, Certificate, EmployeeProfile, PdRecord, PendingCertificate, PendingPd, PendingSignoff,
+  AuditEvent, Certificate, EmployeeProfile, ManagedAuditEvent, PdRecord, PendingCertificate, PendingPd, PendingSignoff,
   PendingTimeOff, TaskProgress, TaskStatus, TeamMember, TimeOffRequest, TrainingRecord,
 } from "./hub-types";
 
@@ -317,6 +317,13 @@ export async function updateTask(taskKey: string, patch: { status?: TaskStatus; 
  *  other people, so hub.ts's single-user requireSnap() shape doesn't fit it. */
 export async function listPendingSignoffs(): Promise<PendingSignoff[]> {
   return be().listPendingSignoffs();
+}
+
+/** The activity feed across the caller's manageable scope. Same
+ *  shape/reasoning as listPendingSignoffs(): it names other people, so it is
+ *  not part of the caller's own snapshot. */
+export async function listRecentActivity(): Promise<ManagedAuditEvent[]> {
+  return be().listRecentActivity();
 }
 
 /** Onboarding certificates earned but not yet issued, across the caller's

@@ -7,9 +7,10 @@ import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/sett
 import { HUB_TASKS } from "@/lib/content";
 import { directory, hr } from "@/lib/hr-store";
 import {
-  decideTimeOff, getAudit, issueOnboardingCertificate, listPendingCertificatesToIssue,
-  listPendingPdVerifications, listPendingSignoffs, listPendingTimeOffRequests, listTeamDirectory,
-  signOffTask, verifyPd,
+  decideTimeOff, issueOnboardingCertificate, listPendingCertificatesToIssue,
+  listPendingPdVerifications, listPendingSignoffs, listPendingTimeOffRequests, listRecentActivity,
+  listTeamDirectory, signOffTask, verifyPd,
+  type ManagedAuditEvent,
   type PendingCertificate, type PendingPd, type PendingSignoff, type PendingTimeOff, type TeamMember,
 } from "@/lib/hub";
 import { deactivateTeammate, editTeammate, inviteTeammate, listUnlinkedClients, ProvisioningError } from "@/lib/hr-backend";
@@ -94,6 +95,7 @@ function AdminConsole() {
   const [timeOff, reloadTimeOff] = useManagedQueue<PendingTimeOff>(listPendingTimeOffRequests);
   const [pd, reloadPd] = useManagedQueue<PendingPd>(listPendingPdVerifications);
   const [team, reloadTeam] = useManagedQueue<TeamMember>(listTeamDirectory);
+  const [activity] = useManagedQueue<ManagedAuditEvent>(listRecentActivity);
 
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading admin…</p>;
@@ -277,20 +279,28 @@ function AdminConsole() {
 
       <h2 className="section-title">Recent activity</h2>
       <div className="card table-wrap">
-        <table className="data">
-          <thead><tr><th>Action</th><th>Detail</th><th>Who</th><th>When</th></tr></thead>
-          <tbody>
-            {getAudit().slice(0, 15).map((a) => (
-              <tr key={a.id}>
-                <td><span className="pill neutral">{a.action}</span></td>
-                <td>{a.detail}</td>
-                <td>{a.who}</td>
-                <td className="trend">{a.at.slice(0, 16).replace("T", " ")}</td>
-              </tr>
-            ))}
-            {!getAudit().length ? <tr><td colSpan={4} style={{ color: "var(--muted)" }}>No activity yet.</td></tr> : null}
-          </tbody>
-        </table>
+        {activity.error ? (
+          <p className="sub" style={{ color: "var(--danger)" }}>Could not load activity: {activity.error}</p>
+        ) : activity.rows === null ? (
+          <p className="sub">Loading activity…</p>
+        ) : (
+          <table className="data">
+            <thead><tr><th>Action</th><th>Detail</th><th>Who</th><th>When</th></tr></thead>
+            <tbody>
+              {activity.rows.slice(0, 15).map((a) => (
+                <tr key={a.id}>
+                  <td><span className="pill neutral">{a.action}</span></td>
+                  <td>{a.detail}</td>
+                  {/* who is only filled in for the caller's own rows; every
+                      other actor resolves through the HR directory here. */}
+                  <td>{a.who || nameOf(a.actorId)}</td>
+                  <td className="trend">{a.at.slice(0, 16).replace("T", " ")}</td>
+                </tr>
+              ))}
+              {!activity.rows.length ? <tr><td colSpan={4} style={{ color: "var(--muted)" }}>No activity yet.</td></tr> : null}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

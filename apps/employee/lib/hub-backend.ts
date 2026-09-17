@@ -17,7 +17,7 @@ import { createBrowserClient } from "@supabase/ssr";
 import type { Session } from "./session";
 import { earnedUnissuedCertificatesFor, onboardingPercentFor, trainingDueFor } from "./hub-cert-logic";
 import type {
-  AuditEvent, Certificate, EmployeeProfile, PdRecord, PendingCertificate, PendingPd, PendingSignoff,
+  AuditEvent, Certificate, EmployeeProfile, ManagedAuditEvent, PdRecord, PendingCertificate, PendingPd, PendingSignoff,
   PendingTimeOff, TaskProgress, TaskStatus, TeamMember, TimeOffRequest, TrainingRecord,
 } from "./hub-types";
 
@@ -55,6 +55,10 @@ export interface HubBackend {
    *  training-due computed per person - the admin console's Team Directory,
    *  which used to render only the caller's own profile row. */
   listTeamDirectory(): Promise<TeamMember[]>;
+  /** The activity feed across the caller's manageable scope, rather than the
+   *  caller's own history. See migration 0006's hub_audit_read, which already
+   *  admits `hub_can_manage(subject)` alongside `actor = auth.uid()`. */
+  listRecentActivity(): Promise<ManagedAuditEvent[]>;
   upsertTraining(rec: TrainingRecord): Promise<void>;
   addPd(entry: Omit<PdRecord, "id" | "verified">): Promise<PdRecord>;
   verifyPd(id: string): Promise<void>;
@@ -192,6 +196,11 @@ export function previewBackend(session: Session): HubBackend {
         onboardingPercent: onboardingPercentFor(snap.progress, snap.training),
         trainingDue: trainingDueFor(snap.training),
       }];
+    },
+    async listRecentActivity() {
+      // The preview store holds one employee - the caller - so the clinic-wide
+      // feed is their own history, tagged with their own id.
+      return snap.audit.map((a) => ({ ...a, subjectId: snap.profile.id, actorId: snap.profile.id }));
     },
     async upsertTraining(rec) {
       const i = snap.training.findIndex((t) => t.courseKey === rec.courseKey);
@@ -526,6 +535,34 @@ export function supabaseBackend(session: Session): HubBackend {
           trainingDue: trainingDueFor(data.training),
         };
       });
+    },
+
+    async listRecentActivity() {
+      // Deliberately no .eq("subject", uid), same reasoning as
+      // listPendingSignoffs(): hub_audit_read already scopes this to
+      // `actor = auth.uid() or hub_can_manage(subject)`, so a manager sees
+      // what they may manage and nobody sees more than that. Filtering by
+      // subject here is what limited a console built to oversee everyone
+      // else to the caller's own history.
+      const res = await sb().from("hub_audit_events")
+        .select("id, action, detail, at, actor, subject")
+        .eq("clinic_id", clinic)
+        .order("at", { ascending: false })
+        .limit(100);
+      okRead("clinic activity history", res);
+      return (res.data ?? []).map((r) => ({
+        id: String(r.id),
+        action: r.action as string,
+        detail: typeof r.detail === "string"
+          ? r.detail
+          : (r.detail as { note?: string } | null)?.note ?? JSON.stringify(r.detail ?? {}),
+        at: r.at as string,
+        // The admin screen resolves actorId through directory(); "You" is the
+        // only name this layer can know without it.
+        who: r.actor === uid ? session.fullName ?? "You" : "",
+        subjectId: r.subject as string,
+        actorId: r.actor as string,
+      }));
     },
 
     async addPd(entry) {

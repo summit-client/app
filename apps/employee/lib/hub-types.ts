@@ -40,6 +40,11 @@ export interface PendingTimeOff extends TimeOffRequest { userId: string }
 /** One other person's PD record awaiting verification. */
 export interface PendingPd extends PdRecord { userId: string }
 
+/** One audit row from the caller's manageable scope rather than their own
+ *  history. Carries the subject's id so the admin console can resolve a
+ *  name for it, the same reason PendingSignoff does. */
+export interface ManagedAuditEvent extends AuditEvent { subjectId: string; actorId: string }
+
 /** One row of the admin console's clinic-wide Team Directory: onboarding %
  *  and training-due are computed from that person's own progress/training,
  *  not the caller's - see lib/hub-cert-logic.ts. */
