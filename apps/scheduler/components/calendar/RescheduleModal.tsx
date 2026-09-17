@@ -349,7 +349,21 @@ export function RescheduleModal({
         is_home_visit: isHome,
         home_address: isHome ? (homeAddress || null) : null,
       }));
-      if (inserts.length) await supabase.from("sessions").insert(inserts);
+      if (inserts.length) {
+        // Same reasoning as the sibling-shift failure above: this session's
+        // own row (and its recurrence_id) is already saved, so a failure here
+        // must be reported rather than swallowed - announcing "N future
+        // sessions added" when none were leaves a series of one on screen
+        // and none on the calendar.
+        const { error: insErr } = await supabase.from("sessions").insert(inserts);
+        if (insErr) {
+          setSaving(false);
+          setError(isBookingConflictError(insErr)
+            ? "This session was updated, but one of the repeats hit a slot that was just booked - check the calendar."
+            : "This session was updated, but the future repeats could not be created - check the calendar.");
+          return;
+        }
+      }
       setSaving(false);
       onSaved(skipped > 0 ? `Session updated · ${inserts.length} future session${inserts.length !== 1 ? "s" : ""} added, ${skipped} skipped (conflicts)` : `Session updated · ${inserts.length} future session${inserts.length !== 1 ? "s" : ""} added`);
       return;
