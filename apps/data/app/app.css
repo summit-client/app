@@ -1,6 +1,9 @@
 /* App shell + shared component classes. Every color comes from tokens.css. */
 
-.shell { display: flex; min-height: calc(100vh - var(--portalnav-h)); }
+/* .shell itself is already defined in @summit/design/components.css,
+   imported before this file - dropped the identical copy that used to be
+   here so the shared rule stays the one source of truth (byte-for-byte
+   duplicate, so this changes nothing rendered). */
 
 /* primitives */
 
