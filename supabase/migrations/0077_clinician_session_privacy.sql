@@ -20,6 +20,34 @@
 -- The account owner asked for this closed properly. This migration is the
 -- database half.
 --
+-- WHAT THIS ACTUALLY DOES ON THE LIVE DATABASE, MEASURED 2026-09-18 - READ
+-- THIS BEFORE THE ANALYSIS BELOW, WHICH DESCRIBES THE SCHEMA THIS REPO
+-- DOCUMENTS RATHER THAN THE ONE THAT IS DEPLOYED.
+--
+-- Migration 0014 was never applied to production. `pg_policies` on `sessions`
+-- carries sessions_staff_select (0013), sessions_family_read (0052) and two
+-- pre-history own-row policies; `sessions_clinical_staff_select` is simply not
+-- there, and nothing in this repo drops it. So the clinic-wide clinician read
+-- described below - the leak - HAS NEVER EXISTED on the deployed database.
+-- Worse in practice: `staff.user_id` is null for all 13 staff accounts (0075
+-- added the column and populates it at invite time only, with no backfill), so
+-- the "Staff can read own sessions" pre-history policy matches nothing for
+-- anyone. A clinician and a supervisor each read ZERO rows from `sessions`
+-- today, while 0046 - which IS applied - lets a clinician WRITE their own.
+--
+-- Against that starting state this migration is not a narrowing at all. It is
+-- a grant: supervisors go from 0 rows to clinic-wide, clinicians from 0 to
+-- their own plus masked colleague occupancy. The reasoning below is still the
+-- right reasoning - it is why the grant is shaped this way rather than as
+-- 0014's blanket `auth_is_staff()` - and re-applying 0014's sessions half
+-- later would undo all of it silently. But do not read the "WHAT IS ACTUALLY
+-- WRONG TODAY" section as a description of what your users could see.
+--
+-- `clients_clinical_staff_select` (0014's other half) is missing for the same
+-- reason, which this file's "it does not touch `clients`" note below assumes
+-- is present. It is not: clinicians read zero clients too. That needs its own
+-- migration and is not fixed here.
+--
 -- THE SHAPE OF THE PROBLEM, STATED PRECISELY
 --
 -- A clinician genuinely NEEDS colleague rows. Remove them and the scheduler's
@@ -395,7 +423,6 @@ create type public.visible_session as (
   type          text,
   status        text,
   recurrence_id uuid,
-  created_at    timestamptz,
   clinic_id     uuid,
   location_id   bigint,
   is_home_visit boolean,
@@ -404,11 +431,26 @@ create type public.visible_session as (
 );
 
 comment on type public.visible_session is
-  'The row shape public.sessions_visible() returns: `sessions` as of '
-  'migration 0018, plus client_masked. Columns are listed explicitly rather '
-  'than inherited from the table so that a column added to `sessions` later '
-  'is not published by this privacy boundary until someone decides it should '
-  'be.';
+  'The row shape public.sessions_visible() returns: the columns of `sessions` '
+  'this boundary publishes, plus client_masked. Listed explicitly rather than '
+  'inherited from the table so that a column added to `sessions` later is not '
+  'published until someone decides it should be. Deliberately excludes '
+  'created_at - see the note above this type.';
+
+-- NO created_at HERE, and this is not an oversight. An earlier draft of this
+-- file listed it, on the authority of migration 0000's reconstruction of
+-- `sessions`, which declares `created_at timestamptz not null default now()`.
+-- The live table does not have that column - confirmed 2026-09-18 by
+-- introspecting information_schema before applying this migration, which is
+-- the only reason this file did not simply fail on `column s.created_at does
+-- not exist`. 0000's own header says its reconstruction is unverified against
+-- a production dump; this is the first divergence actually measured, and it is
+-- recorded in 0000 as well.
+--
+-- Nothing in the monorepo reads a session's created_at (CalSession does not
+-- declare it; every created_at in the apps belongs to another table), so this
+-- publishes what exists and what is used, rather than adding a column to
+-- production to satisfy a type.
 
 create or replace function public.sessions_visible(
   p_from date default null,
@@ -451,7 +493,6 @@ as $$
     s.type,
     s.status,
     s.recurrence_id,
-    s.created_at,
     s.clinic_id,
     s.location_id,
     s.is_home_visit,
