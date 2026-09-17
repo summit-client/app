@@ -49,7 +49,6 @@ export default function PublicNav() {
   const links = [
     { label: 'Features', href: '/#features' },
     { label: 'How it works', href: '/#how' },
-    { label: 'Reviews', href: '/#testimonials' },
   ]
 
   return (

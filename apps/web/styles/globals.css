@@ -101,7 +101,7 @@ a:focus-visible, button:focus-visible {
 html { scroll-behavior: smooth; }
 
 /* Offset anchor jumps so the fixed nav doesn't cover section headings */
-#features, #how, #testimonials, #trial {
+#features, #how, #trial {
   scroll-margin-top: 80px;
 }
 
