@@ -6,13 +6,19 @@ import * as React from "react";
 import { getProfile, getProgress, getTraining, onboardingProgress, refreshDue } from "@/lib/hub";
 import { HUB_COURSES } from "@/lib/content";
 import { BAND_LABEL, CLINIC_DOMAINS, clinicAverage, computeAutoResponses, computeEcosystem, percentileBand, rankSites } from "@/lib/ecosystem";
-import { currentCycle, hr, saveLocal } from "@/lib/hr-store";
+import { addScoreboardSite, currentCycle, hr, setSiteDomain } from "@/lib/hr-store";
 import { BerryBurst, EggToast, ScoreRing, useEasterEggs, Volcano } from "@/components/grove";
 import { PerformanceCheckin, PeerReviews } from "@/components/checkin";
+import { saved } from "@summit/toast";
 
 /**
  * Clinic scoreboard. Sites compete; people do not. Individual standing is a
  * private band shown only to the person it belongs to.
+ *
+ * Every control here saves by itself - there is no Save button - so saved()
+ * from @summit/toast is what confirms a write landed and what reports one that
+ * did not. Before migration 0079 there was nothing to confirm: both controls
+ * called a saveLocal() that did nothing at all in live mode.
  */
 export default function ScoreboardPage() {
   return (
@@ -22,20 +28,48 @@ export default function ScoreboardPage() {
   );
 }
 
+/**
+ * How long a slider sits still before its value is written.
+ *
+ * A range input fires onChange on every step, so dragging 0 -> 85 is eighty-five
+ * events. Writing each one would be eighty-five round trips for one decision.
+ * The value on screen still updates on every step (see `pending` below); only
+ * the write waits.
+ */
+const COMMIT_MS = 400;
+
 function ScoreboardScreen() {
   const [ready, setReady] = React.useState(false);
   const [, force] = React.useReducer((n: number) => n + 1, 0);
   const [burst, setBurst] = React.useState(false);
   const [tab, setTab] = React.useState<"checkin" | "peers" | "clinic">("checkin");
+  /**
+   * Domain values typed but not yet written, keyed by domain key.
+   *
+   * Only ever applies to the viewer's own site, because that is the only site
+   * with sliders. Keeping them here rather than writing them straight into the
+   * snapshot is what makes a failed save recoverable: clearing the entry drops
+   * the screen back to whatever the database actually holds, with no second
+   * copy of "the last good value" to keep in sync.
+   */
+  const [pending, setPending] = React.useState<Record<string, number>>({});
+  const timers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const eggs = useEasterEggs();
   React.useEffect(() => setReady(true), []);
+  // Deliberately no cleanup that cancels the timers on unmount: a pending
+  // value is a save the person already asked for, and navigating away half a
+  // second later should not throw it out.
   if (!ready) return <p className="sub">Loading…</p>;
 
   const s = hr();
   const profile = getProfile();
   const sites = rankSites(s.sites.map((x) => {
-    const average = clinicAverage(x.domains);
-    return { site: x.site, domains: x.domains, average, unlocked: average >= 85 };
+    // The overlay applies to your own site only - see `pending`. Applying it
+    // to the average too keeps the meter, the rank and the "N to go" moving
+    // with the slider instead of jumping when the write lands.
+    const domains = x.site === profile.location ? { ...x.domains, ...pending } : x.domains;
+    const average = clinicAverage(domains);
+    return { site: x.site, domains, average, unlocked: average >= 85 };
   }));
   const mine = sites.find((x) => x.site === profile.location) ?? null;
   const ob = onboardingProgress(getProgress());
@@ -47,22 +81,40 @@ function ScoreboardScreen() {
   const band = eco.score != null ? percentileBand(eco.score, s.peerScores) : null;
 
   const setDomain = (site: string, key: string, value: number) => {
-    const row = s.sites.find((x) => x.site === site);
-    if (!row) return;
-    const was = clinicAverage(row.domains) >= 85;
-    row.domains[key] = value;
-    saveLocal();
-    if (!was && clinicAverage(row.domains) >= 85) {
-      setBurst(true);
-      setTimeout(() => setBurst(false), 2800);
-    }
-    force();
+    setPending((p) => ({ ...p, [key]: value }));
+    clearTimeout(timers.current[key]);
+    timers.current[key] = setTimeout(() => {
+      void (async () => {
+        const row = hr().sites.find((x) => x.site === site);
+        const was = row ? clinicAverage(row.domains) >= 85 : false;
+        // saved() resolves either way rather than throwing, so the overlay is
+        // cleared on both paths: on success the snapshot now holds this value,
+        // on failure it still holds the one the database has and the slider
+        // snaps back to it - with the reason in a toast rather than a number
+        // on a shared board that only this browser believes.
+        await saved(() => setSiteDomain(site, key, value));
+        setPending((p) => {
+          const next = { ...p };
+          delete next[key];
+          return next;
+        });
+        // Unlocking is announced only once the score is really recorded.
+        if (row && !was && clinicAverage(row.domains) >= 85) {
+          setBurst(true);
+          setTimeout(() => setBurst(false), 2800);
+        }
+        force();
+      })();
+    }, COMMIT_MS);
   };
 
-  const addSite = (name: string) => {
-    if (!name.trim() || s.sites.some((x) => x.site === name)) return;
-    s.sites.push({ site: name.trim(), domains: Object.fromEntries(CLINIC_DOMAINS.map((d) => [d.key, 0])) });
-    saveLocal();
+  const addSite = async (input: HTMLInputElement) => {
+    const name = input.value.trim();
+    if (!name || s.sites.some((x) => x.site === name)) return;
+    // Cleared only once it is really on the board. This used to clear
+    // unconditionally, which was harmless while the write was a no-op and
+    // would not be now: a rejected insert would take the typed name with it.
+    if (await saved(() => addScoreboardSite(name))) input.value = "";
     force();
   };
 
@@ -111,7 +163,7 @@ function ScoreboardScreen() {
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
         <input className="input" style={{ maxWidth: 220 }} placeholder="Add a site" aria-label="Add a site"
-          onKeyDown={(e) => { if (e.key === "Enter") { addSite((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ""; } }} />
+          onKeyDown={(e) => { if (e.key === "Enter") void addSite(e.target as HTMLInputElement); }} />
         <span className="sub" style={{ marginTop: 8 }}>Press enter to add.</span>
       </div>
 

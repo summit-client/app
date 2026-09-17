@@ -21,6 +21,8 @@ import type { AvailabilityRow } from "./suggestions";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { useFocusTrap } from "../../lib/useFocusTrap";
 import { todayDateStr } from "./dateUtils";
+import { useAppUser } from "../../lib/UserContext";
+import { visibleClient, visibleLocation } from "../../lib/sessionPrivacy";
 
 interface ClientAvailabilityRow { client_id: number; day: string; start_time: string; end_time: string }
 
@@ -94,9 +96,14 @@ export function SessionDetail({
   // one-time session skips straight to executeCancel("this"), unchanged from
   // before this was added.
   const [showCancelScopePicker, setShowCancelScopePicker] = React.useState(false);
-  const client = clients.find((c) => c.id === session.client_id);
+  const viewer = useAppUser();
+  // `client` is undefined whenever the viewer may not see who this session
+  // is with, not merely re-labelled - so everything downstream of here
+  // (SessionSchedulesPanel, its own query) has nothing to leak even if a
+  // future change forgets the `masked` checks below.
+  const { client, name: clientName, masked } = visibleClient(viewer, session, clients);
   const emp = employees.find((e) => e.id === session.employee_id);
-  const loc = locations.find((l) => l.id === session.location_id);
+  const locationText = visibleLocation(viewer, session, locations).text;
   const color = colorOverride ?? (typeColors[session.type] || "#888");
   // Only offer "Mark no-show" for a session that has actually happened
   // (today or earlier - never a future session, since no one can know yet
@@ -152,32 +159,41 @@ export function SessionDetail({
 
   return (
     <div style={overlayStyle} onClick={onClose}>
-      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Session detail for ${client?.name || "session"}`} style={{ ...modalStyle, borderLeft: `4px solid ${color}` }} onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Session detail for ${clientName}`} style={{ ...modalStyle, borderLeft: `4px solid ${color}` }} onClick={(e) => e.stopPropagation()}>
         {isDraft && (
           <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: "#8A5E10", background: "#EF9F2722", borderRadius: 5, padding: "2px 8px", marginBottom: 8 }}>
             DRAFT — not yet on the confirmed calendar
           </div>
         )}
-        <div style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>{client?.name || "Unknown client"}</div>
+        <div style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>{clientName}</div>
         <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14 }}>{emp?.name || "Unassigned"}</div>
         <DetailRow label="Date" value={session.session_date} />
         <DetailRow label="Time" value={`${String(session.hour).padStart(2, "0")}:${String(session.minute).padStart(2, "0")}`} />
-        <DetailRow label="Location" value={session.is_home_visit ? (session.home_address || "Client's home") : (loc?.name || "—")} />
+        <DetailRow label="Location" value={locationText} />
         <DetailRow label="Type" value={session.type} />
         <DetailRow label="Recurrence" value={session.recurrence_id ? "Recurring" : "One-time"} />
         {cancelError && <div style={{ fontSize: 13, color: "#A33A3A", marginTop: 8 }}>{cancelError}</div>}
         {noShowError && <div style={{ fontSize: 13, color: "#8A5A1E", marginTop: 8 }}>{noShowError}</div>}
 
+        {/* `masked` is redundant with `!client` today (visibleClient returns
+            no client row when masked) and is stated anyway: it is the only
+            thing left standing if someone later resolves `client`
+            independently of the mask. The old copy blamed missing data for
+            what is really a permission, which reads as a bug. */}
         <button
           onClick={() => setShowSchedules(true)}
-          disabled={!client || !emp}
-          title={!client || !emp ? "Needs both a client and a clinician on file" : undefined}
-          style={{ width: "100%", marginTop: 12, padding: "8px 0", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: (!client || !emp) ? "not-allowed" : "pointer", opacity: (!client || !emp) ? 0.5 : 1 }}
+          disabled={masked || !client || !emp}
+          title={masked ? "Only available for your own sessions." : (!client || !emp) ? "Needs both a client and a clinician on file" : undefined}
+          style={{ width: "100%", marginTop: 12, padding: "8px 0", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: (masked || !client || !emp) ? "not-allowed" : "pointer", opacity: (masked || !client || !emp) ? 0.5 : 1 }}
         >
           View both schedules
         </button>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+        {/* flexWrap at every width, not just on a phone: this modal is a
+            fixed 340px everywhere, and four buttons (Mark no-show renders
+            for any past-dated still-scheduled session) already overflow
+            that card on a desktop, since modalStyle sets no overflow. */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           {canManage && (
             <>
               {canMarkNoShow && (
@@ -197,7 +213,7 @@ export function SessionDetail({
         </div>
       </div>
 
-      {showSchedules && client && emp && (
+      {showSchedules && !masked && client && emp && (
         <SessionSchedulesPanel
           session={session}
           client={client}
@@ -240,7 +256,15 @@ const overlayStyle: React.CSSProperties = {
   position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center",
 };
 const modalStyle: React.CSSProperties = {
-  width: 340, background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+  // The 16px gutter is on the MODAL, not on overlayStyle, on purpose:
+  // SessionSchedulesPanel and RecurrenceScopeModal both render inside that
+  // overlay, and its backdrop-filter makes it their fixed-positioning
+  // containing block - padding there would silently shrink both nested
+  // dialogs away from the screen edges too. A flat `width: 340` clipped
+  // symmetrically below 340px (Fold cover screen, split-screen), and the
+  // left half of that clip is unreachable.
+  width: "min(340px, calc(100% - 32px))",
+  background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
 };
 const navBtn: React.CSSProperties = {
   padding: "6px 14px", borderRadius: 8, fontSize: 13, border: "0.5px solid var(--color-border-tertiary)",

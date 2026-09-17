@@ -1,6 +1,7 @@
 "use client";
 
 import { HubGate } from "@/components/hub-provider";
+import { saved } from "@summit/toast";
 
 import * as React from "react";
 import { CATEGORY_LABELS, HUB_COURSES, HUB_TASKS, WEEK_SUBTITLES, type HubTask } from "@/lib/content";
@@ -47,21 +48,24 @@ function OnboardingScreen() {
   const byKey = new Map(progress.map((p) => [p.taskKey, p]));
   const ob = onboardingProgress(getProgress());
 
-  const setStatus = async (task: HubTask, status: TaskStatus) => {
+  /**
+   * Every write on this screen, so the sticky indicator and the toast can
+   * never disagree. The indicator used to be set to "Saved ✓" the line after
+   * an unguarded `await`, which meant a rejected write left it stuck on
+   * "Saving…" forever - the one good autosave affordance in the app, lying.
+   */
+  const write = async (fn: () => Promise<unknown>) => {
     setSaveState("saving");
-    await updateTask(task.key, { status });
-    setSaveState("saved");
-    setTimeout(() => setSaveState("idle"), 1500);
+    const ok = await saved(async () => { await fn(); return true; });
+    setSaveState(ok ? "saved" : "idle");
+    if (ok) setTimeout(() => setSaveState("idle"), 1500);
     force();
   };
+
+  const setStatus = (task: HubTask, status: TaskStatus) => write(() => updateTask(task.key, { status }));
   const setNotes = (task: HubTask, notes: string) => {
     clearTimeout(timers.current[task.key]);
-    timers.current[task.key] = setTimeout(async () => {
-      setSaveState("saving");
-      await updateTask(task.key, { notes });
-      setSaveState("saved");
-      setTimeout(() => setSaveState("idle"), 1500);
-    }, 700);
+    timers.current[task.key] = setTimeout(() => { void write(() => updateTask(task.key, { notes })); }, 700);
   };
 
   const weeks = [1, 2] as const;
@@ -85,7 +89,7 @@ function OnboardingScreen() {
         <div className="hub-progress" style={{ marginTop: 8 }}><div style={{ width: `${ob.percent}%` }} /></div>
       </div>
 
-      <VscBanner status={profile.vscStatus} onChange={async (s) => { await saveProfile({ vscStatus: s }); force(); }} />
+      <VscBanner status={profile.vscStatus} onChange={(s) => void write(() => saveProfile({ vscStatus: s }))} />
 
       {weeks.map((week) => {
         const weekTasks = HUB_TASKS.filter((t) => t.week === week);

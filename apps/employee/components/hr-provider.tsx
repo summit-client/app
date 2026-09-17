@@ -1,76 +1,79 @@
 "use client";
 
 /**
- * Loads My HR data before any screen that reads it renders.
+ * Loads My HR data before any screen that reads it renders - alongside the hub
+ * snapshot rather than behind it.
  *
- * Mirrors components/hub-provider.tsx deliberately - two loaders with the same
- * shape is easier to hold in your head than one clever one, and the two stores
- * have genuinely different lifecycles.
+ * This used to be <HubGate><HrLoader>…</HrLoader></HubGate>, so the HR wave's
+ * 13 queries could not begin until the hub's 7 had all come back: a whole
+ * round trip of latency on every screen in this portal, bought for nothing,
+ * since loadHub() and loadHr() each need only the identity and never each
+ * other's result. They start in the same render now.
+ *
+ * Two properties the old nesting gave for free, kept deliberately:
+ *  - nothing renders until BOTH have settled. hr() and the hub's requireSnap()
+ *    throw when read before their own load, and several screens read both, so
+ *    rendering on the first one to resolve would crash them.
+ *  - each loader runs exactly once. loadHub() does not dedupe - the comment in
+ *    app/profile/page.tsx records what a double-wrapped gate cost last time.
  */
 
 import * as React from "react";
 import { loadHr, onHrChange, HrWriteError } from "@/lib/hr-store";
-import { HubGate } from "@/components/hub-provider";
-import { useIdentity } from "@/components/session-provider";
+import { loadHub, onHubChange } from "@/lib/hub";
+import { HubCtx, LoadFailed, useSnapshot, type GateCtx } from "@/components/hub-provider";
+import { SessionGate } from "@/components/session-provider";
+import { toast, toastError } from "@summit/toast";
 import type { HubRole } from "@/lib/session";
 
-type Status = "loading" | "ready" | "failed";
-interface Ctx { status: Status; error: string | null; reload: () => void; version: number }
+const HrCtx = React.createContext<GateCtx>({ status: "loading", error: null, reload: () => {}, version: 0 });
 
-const HrCtx = React.createContext<Ctx>({ status: "loading", error: null, reload: () => {}, version: 0 });
+function HubAndHrLoader({ children }: { children: React.ReactNode }) {
+  const hub = useSnapshot(loadHub, onHubChange);
+  const hrSnapshot = useSnapshot(loadHr, onHrChange);
 
-function HrLoader({ children }: { children: React.ReactNode }) {
-  const identity = useIdentity();
-  const [status, setStatus] = React.useState<Status>("loading");
-  const [error, setError] = React.useState<string | null>(null);
-  const [version, bump] = React.useReducer((n: number) => n + 1, 0);
-
-  const load = React.useCallback(() => {
-    setStatus("loading");
-    setError(null);
-    loadHr(identity)
-      .then(() => setStatus("ready"))
-      .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
-        setStatus("failed");
-      });
-  }, [identity]);
-
-  React.useEffect(() => { load(); }, [load]);
-  React.useEffect(() => onHrChange(bump), []);
-
-  const value = React.useMemo(() => ({ status, error, reload: load, version }), [status, error, load, version]);
-
-  if (status === "loading") return <p className="sub">Loading…</p>;
-  if (status === "failed") {
-    return (
-      <div className="card card-pad" style={{ marginTop: 16, maxWidth: 640 }}>
-        <h1 className="h-page">Could not load your HR records</h1>
-        <p className="sub" style={{ marginTop: 8 }}>{error}</p>
-        <button className="btn" style={{ marginTop: 12 }} onClick={load}>Try again</button>
-      </div>
-    );
+  if (hub.status === "failed") {
+    return <LoadFailed title="Could not load your records" error={hub.error} onRetry={hub.reload} />;
   }
-  return <HrCtx.Provider value={value}>{children}</HrCtx.Provider>;
-}
+  if (hrSnapshot.status === "failed") {
+    return <LoadFailed title="Could not load your HR records" error={hrSnapshot.error} onRetry={hrSnapshot.reload} />;
+  }
+  if (hub.status !== "ready" || hrSnapshot.status !== "ready") return <p className="sub">Loading…</p>;
 
-/** Identity, then the hub snapshot, then the HR snapshot, then the screen.
- *  Several screens read both stores, so this nests rather than competing. */
-export function HrGate({ children, requires }: { children: React.ReactNode; requires?: HubRole[] }) {
+  // Both contexts, because an HrGate screen may read either store - and
+  // useHubAction() without HubCtx would reload nothing after a failed write.
   return (
-    <HubGate requires={requires}>
-      <HrLoader>{children}</HrLoader>
-    </HubGate>
+    <HubCtx.Provider value={hub}>
+      <HrCtx.Provider value={hrSnapshot}>{children}</HrCtx.Provider>
+    </HubCtx.Provider>
   );
 }
 
-export function useHr(): Ctx {
+/** Identity, then both snapshots in parallel, then the screen. */
+export function HrGate({ children, requires }: { children: React.ReactNode; requires?: HubRole[] }) {
+  return (
+    <SessionGate requires={requires}>
+      <HubAndHrLoader>{children}</HubAndHrLoader>
+    </SessionGate>
+  );
+}
+
+export function useHr(): GateCtx {
   return React.useContext(HrCtx);
 }
 
-/** Runs a mutation and surfaces a failure rather than losing it. */
+/**
+ * Runs a mutation and surfaces a failure rather than losing it.
+ *
+ * Both halves are announced here rather than at each call site: career, PD,
+ * policies, team and recognition all route their writes through this, so one
+ * change gives every one of them the same confirmation, and so does the next
+ * screen anyone adds. Pass `{ silent: true }` for an action that records
+ * something the user did not ask to save - opening a policy, for instance,
+ * writes an audit row but is not a save.
+ */
 export function useHrAction(): {
-  run: (fn: () => Promise<unknown>) => Promise<void>;
+  run: (fn: () => Promise<unknown>, opts?: { silent?: boolean }) => Promise<void>;
   busy: boolean;
   error: string | null;
   clearError: () => void;
@@ -79,14 +82,19 @@ export function useHrAction(): {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const run = React.useCallback(async (fn: () => Promise<unknown>) => {
+  const run = React.useCallback(async (fn: () => Promise<unknown>, opts: { silent?: boolean } = {}) => {
     setBusy(true);
     setError(null);
     try {
       await fn();
       reload();
+      if (!opts.silent) toast();
     } catch (e: unknown) {
       setError(e instanceof HrWriteError ? e.message : e instanceof Error ? e.message : String(e));
+      // The <WriteError> card below carries the detail and stays until it is
+      // dismissed; the toast only has to catch the eye of someone who has
+      // already looked away from the control they changed.
+      toastError();
       reload();
     } finally {
       setBusy(false);

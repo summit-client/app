@@ -17,6 +17,9 @@ import { WEEKDAY_ABBR, toDateStr, formatFullRange } from "./dateUtils";
 import { LocationPinIcon, HomeIcon, ClinicianIcon, ClientIcon, RecurringIcon, SessionTypeDot } from "./icons";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { sessionDuration } from "./types";
+import { useAppUser } from "../../lib/UserContext";
+import { visibleClient, visibleLocation, sessionPrimaryLabel } from "../../lib/sessionPrivacy";
+import type { PrivacyViewer } from "../../lib/sessionPrivacy";
 
 const PX_PER_MIN = 1.1;
 
@@ -123,16 +126,18 @@ function clusterByOverlap(sessions: CalSession[], sessionTypes: CalSessionType[]
   }));
 }
 
+/** A home visit's street address is the single most identifying thing on
+ *  this grid - more so than the name, since it's where the child lives -
+ *  so the text and the title both come from visibleLocation, which gives a
+ *  colleague's home visit back as just "Home visit". Icon choice stays
+ *  local: which KIND of place it is isn't identifying. */
 function locationLabel(
+  viewer: PrivacyViewer | null | undefined,
   session: CalSession,
   locations: CalLocation[],
 ): { icon: React.ReactNode; text: string; title: string } {
-  if (session.is_home_visit) {
-    const addr = session.home_address || "Home visit";
-    return { icon: <HomeIcon size={11} />, text: addr, title: addr };
-  }
-  const loc = locations.find((l) => l.id === session.location_id);
-  return { icon: <LocationPinIcon size={11} />, text: loc?.name || "—", title: loc?.address || loc?.name || "No location set" };
+  const { text, title } = visibleLocation(viewer, session, locations);
+  return { icon: session.is_home_visit ? <HomeIcon size={11} /> : <LocationPinIcon size={11} />, text, title };
 }
 
 function Tooltip({
@@ -141,9 +146,14 @@ function Tooltip({
   session: CalSession; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];
   sessionTypes: CalSessionType[]; typeColors: Record<string, string>; colorOverride?: string;
 }) {
-  const client = clients.find((c) => c.id === session.client_id);
+  // Read straight from context rather than threaded down through
+  // DayColumn/StackedPill - every renderer in this file that can name a
+  // client does the same, so there is no prop chain a future call site can
+  // forget to pass and quietly un-mask.
+  const viewer = useAppUser();
+  const clientName = visibleClient(viewer, session, clients).name;
   const emp = employees.find((e) => e.id === session.employee_id);
-  const loc = locationLabel(session, locations);
+  const loc = locationLabel(viewer, session, locations);
   const dur = sessionDuration(session, sessionTypes);
   const color = colorOverride ?? (typeColors[session.type] || "#888");
   return (
@@ -160,7 +170,7 @@ function Tooltip({
       </div>
       <Row icon={loc.icon} text={loc.text} title={loc.title} />
       <Row icon={<ClinicianIcon size={11} />} text={emp?.name || "Unassigned"} />
-      <Row icon={<ClientIcon size={11} />} text={client?.name || "Unknown client"} />
+      <Row icon={<ClientIcon size={11} />} text={clientName} />
       <Row icon={<SessionTypeDot size={9} color={color} />} text={session.type} />
       {session.recurrence_id && <Row icon={<RecurringIcon size={11} />} text="Recurring" />}
       {session.status === "no_show" && <Row icon={<span style={{ color: "#EF9F27", fontSize: 10 }}>⚠</span>} text="No-show" />}
@@ -198,8 +208,13 @@ function SessionBlock({
   isDraft: boolean;
 }) {
   const [hovered, setHovered] = React.useState(false);
-  const client = clients.find((c) => c.id === session.client_id);
-  const loc = locationLabel(session, locations);
+  const viewer = useAppUser();
+  // The session TYPE stands in for the name when the viewer may not see it,
+  // so a colleague's day still reads as a real working day rather than a
+  // row of blanks - and never initials, which re-identify immediately in a
+  // clinic this size once a slot repeats weekly.
+  const label = sessionPrimaryLabel(viewer, session, clients);
+  const loc = locationLabel(viewer, session, locations);
   // Amber, not draft's grey/dashed treatment or the list view's grey
   // "cancelled" dimming - a no-show needs to read as its own thing at a
   // glance (something that happened and needs follow-up), not as "same as
@@ -218,7 +233,7 @@ function SessionBlock({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onSessionClick(session); } }}
       tabIndex={0}
       role="button"
-      aria-label={`${client?.name || "Unknown client"}, ${session.type}, ${String(session.hour).padStart(2, "0")}:${String(session.minute).padStart(2, "0")}${isNoShow ? ", no-show" : ""}`}
+      aria-label={`${label}, ${session.type}, ${String(session.hour).padStart(2, "0")}:${String(session.minute).padStart(2, "0")}${isNoShow ? ", no-show" : ""}`}
       style={{
         position: "absolute", top, height, left, width, zIndex: 10,
         borderRadius: 5, padding: "2px 5px", background: color + (isDraft ? "14" : "22"),
@@ -228,7 +243,7 @@ function SessionBlock({
     >
       <div style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 600, color, lineHeight: 1.3 }}>
         {session.recurrence_id && <RecurringIcon size={10} color={color} />}
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client?.name || "Unknown"}</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
         {isDraft && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color, opacity: 0.8, flexShrink: 0 }}>DRAFT</span>}
         {isNoShow && <span title="No-show" style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color: "#8A5A1E", flexShrink: 0 }}>⚠ NO-SHOW</span>}
       </div>
@@ -257,6 +272,7 @@ function StackedPill({
   sessionColorOverrides?: Record<number, string>;
 }) {
   const [open, setOpen] = React.useState(false);
+  const viewer = useAppUser();
   if (cluster.sessions.length === 1) {
     const s = cluster.sessions[0];
     const color = sessionColorOverrides?.[s.id] ?? (typeColors[s.type] || "#888");
@@ -300,7 +316,7 @@ function StackedPill({
           borderRadius: 10, padding: 8, boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
         }}>
           {cluster.sessions.map((s) => {
-            const client = clients.find((c) => c.id === s.client_id);
+            const label = sessionPrimaryLabel(viewer, s, clients);
             const c = sessionColorOverrides?.[s.id] ?? (typeColors[s.type] || "#888");
             const draft = draftSessionIds.has(s.id);
             const noShow = s.status === "no_show";
@@ -314,12 +330,12 @@ function StackedPill({
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onSessionClick(s); } }}
                 tabIndex={0}
                 role="button"
-                aria-label={`${client?.name || "Unknown client"}, ${s.type}, ${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}${noShow ? ", no-show" : ""}`}
+                aria-label={`${label}, ${s.type}, ${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}${noShow ? ", no-show" : ""}`}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", borderRadius: 6, cursor: "pointer", opacity: draft ? 0.7 : noShow ? 0.75 : 1 }}
               >
                 <SessionTypeDot size={8} color={c} />
                 {s.recurrence_id && <RecurringIcon size={10} />}
-                <span style={{ fontSize: 12, color: "var(--color-text-primary)" }}>{client?.name}</span>
+                <span style={{ fontSize: 12, color: "var(--color-text-primary)" }}>{label}</span>
                 {draft && <span style={{ fontSize: 9, fontWeight: 700, color: c }}>DRAFT</span>}
                 {noShow && <span title="No-show" style={{ fontSize: 9, fontWeight: 700, color: "#8A5A1E" }}>⚠</span>}
                 <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: "auto" }}>

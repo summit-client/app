@@ -1,6 +1,15 @@
 export interface CalSession {
   id: number;
-  client_id: number;
+  /** Nullable for two different reasons, and the app has to tell them apart.
+   *  A staff block (Break/Lunch/Meeting - migration 0078) genuinely has no
+   *  client. A row read through `sessions_visible()` (migration 0077) has it
+   *  NULLed because this viewer may not see WHOSE session it is; that case
+   *  and only that case sets `client_masked`. See lib/sessionPrivacy.ts. */
+  client_id: number | null;
+  /** True when `sessions_visible()` withheld client_id (and home_address) on
+   *  this row. Absent on rows read straight from the `sessions` table, which
+   *  are the viewer's own and never masked. */
+  client_masked?: boolean;
   employee_id: number;
   calendar_id: number | null;
   session_date: string;

@@ -7,6 +7,7 @@ import { BINDER_URL, HUB_COURSES, type CourseKind } from "@/lib/content";
 import { dueDate, getProfile, getTraining, refreshDue, setCourseStatus } from "@/lib/hub";
 import { MODULE_BY_COURSE, PASS_COUNT, type SummitModule } from "@/lib/modules";
 import { BerryBurst } from "@/components/grove";
+import { saved } from "@summit/toast";
 
 /**
  * Training. Numbered modules continue past the Autism Internet Modules:
@@ -48,7 +49,7 @@ function TrainingScreen() {
     setQuizFor(null);
     setBurst(true);
     setTimeout(() => setBurst(false), 2600);
-    void setCourseStatus(courseKey, "COMPLETED").then(force);
+    void saved(setCourseStatus(courseKey, "COMPLETED")).then(force);
   };
 
   return (
@@ -110,7 +111,7 @@ function TrainingScreen() {
                             {quizFor === c.key ? "Close check" : "Competency check"}
                           </button>
                         ) : (
-                          <button className="btn" onClick={() => void setCourseStatus(c.key, "COMPLETED").then(force)}>Mark complete</button>
+                          <button className="btn" onClick={() => void saved(setCourseStatus(c.key, "COMPLETED")).then(force)}>Mark complete</button>
                         )
                       ) : null}
                     </div>

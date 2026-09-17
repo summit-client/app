@@ -18,6 +18,7 @@ import {
   groupActivitiesByGoal,
 } from "../lib/activity-display";
 import { formatClinicDate } from "../lib/clinic-date";
+import { toast } from "@summit/toast";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { AccountProblemNotice } from "../components/account-problem-notice";
 import { LoadErrorNotice } from "../components/load-error-notice";
@@ -92,6 +93,7 @@ export default function Activities(
       setActivities((current) =>
         current.map((existing) => (existing.id === activity.id ? activity : existing))
       );
+      toast(status === "completed" ? "Marked complete" : "Marked in progress");
     } catch {
       setActionError("Couldn't update that activity. Check your connection and try again.");
     } finally {

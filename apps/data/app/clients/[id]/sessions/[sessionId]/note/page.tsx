@@ -8,6 +8,7 @@ import {
   hydrateClientHistory, saveNote,
 } from "@/lib/data";
 import { PdfExport, PrintSection } from "@/components/pdf-export";
+import { toast } from "@summit/toast";
 import type { ClientRow, Program, RunSession, SessionNoteDraft } from "@/lib/types";
 
 /**
@@ -100,7 +101,10 @@ export default function SessionNotePage() {
         await completeNoteOnlySession(sessionId);
         setJustSigned(true);
       } else {
+        // Signing has its own confirmation screen below; saving a draft had
+        // nothing at all.
         setNote({ ...note, status });
+        toast("Draft saved");
       }
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : `Could not ${mode === "sign" ? "sign" : "save"} this note.`);

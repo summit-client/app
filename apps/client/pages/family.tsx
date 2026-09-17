@@ -2,7 +2,7 @@ import type {
   GetServerSideProps, InferGetServerSidePropsType, NextApiRequest, NextApiResponse,
 } from "next";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { FamilyAvatar } from "../components/family-switcher";
@@ -13,6 +13,7 @@ import { ageOf, can, canForAny, displayName, familyFromRows, type Family } from 
 import { homeUrlFor } from "@summit/portals";
 import { AvailabilityGrid, type AvailabilityRow } from "@summit/availability";
 import { getSetting } from "@summit/settings";
+import { saved } from "@summit/toast";
 import styles from "../styles/design-b.module.css";
 
 type Household = {
@@ -174,50 +175,68 @@ export default function FamilyPage(
     return c ? displayName(c) : "your family";
   };
 
+  // Every write on this page is an auto-save - there is no Save button
+  // anywhere on it - so each one confirms itself through saved(). `problem`
+  // is kept alongside for the failure half: it is the only message that
+  // survives long enough to be acted on, and it sits under "Shared history"
+  // rather than beside the control, which is why the toast is not enough on
+  // its own.
   async function saveHousehold(fields: Partial<Household>) {
     if (!household) return;
-    const { error: hhErr } = await browserClient().from("households").update(fields).eq("id", household.id);
-    if (hhErr) { setProblem(hhErr.message); return; }
-    setHousehold({ ...household, ...fields });
+    await saved(async () => {
+      const { error: hhErr } = await browserClient().from("households").update(fields).eq("id", household.id);
+      if (hhErr) { setProblem(hhErr.message); throw new Error(hhErr.message); }
+      setProblem(null);
+      setHousehold({ ...household, ...fields });
+    });
   }
 
   async function addContact() {
     if (!household || !contactDraft.full_name.trim()) return;
-    const { data, error: insErr } = await browserClient()
-      .from("household_members")
-      .insert({
-        clinic_id: family.children[0]?.clinicId,
-        household_id: household.id,
-        full_name: contactDraft.full_name,
-        relationship: contactDraft.relationship || "emergency_contact",
-        is_emergency_contact: true,
-        phone: contactDraft.phone || null,
-        phone_secondary: contactDraft.phone_secondary || null,
-        email: contactDraft.email || null,
-      })
-      .select("id, full_name, preferred_name, relationship, email, phone, phone_secondary, is_emergency_contact, client_id")
-      .single();
-    if (insErr) { setProblem(insErr.message); return; }
-    setMembers((prev) => [...prev, data as Member]);
-    setContactDraft({ full_name: "", relationship: "emergency_contact", phone: "", phone_secondary: "", email: "" });
-    setAddingContact(false);
+    await saved(async () => {
+      const { data, error: insErr } = await browserClient()
+        .from("household_members")
+        .insert({
+          clinic_id: family.children[0]?.clinicId,
+          household_id: household.id,
+          full_name: contactDraft.full_name,
+          relationship: contactDraft.relationship || "emergency_contact",
+          is_emergency_contact: true,
+          phone: contactDraft.phone || null,
+          phone_secondary: contactDraft.phone_secondary || null,
+          email: contactDraft.email || null,
+        })
+        .select("id, full_name, preferred_name, relationship, email, phone, phone_secondary, is_emergency_contact, client_id")
+        .single();
+      if (insErr) { setProblem(insErr.message); throw new Error(insErr.message); }
+      setProblem(null);
+      setMembers((prev) => [...prev, data as Member]);
+      setContactDraft({ full_name: "", relationship: "emergency_contact", phone: "", phone_secondary: "", email: "" });
+      setAddingContact(false);
+    }, { text: "Contact added" });
   }
 
   async function updateContact(id: string, fields: Partial<Member>) {
-    const { error: updErr } = await browserClient().from("household_members").update(fields).eq("id", id);
-    if (updErr) { setProblem(updErr.message); return; }
-    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, ...fields } : m)));
+    await saved(async () => {
+      const { error: updErr } = await browserClient().from("household_members").update(fields).eq("id", id);
+      if (updErr) { setProblem(updErr.message); throw new Error(updErr.message); }
+      setProblem(null);
+      setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, ...fields } : m)));
+    });
   }
 
   async function savePreference(clientId: number, preference: Preference) {
     const child = family.children.find((c) => c.clientId === clientId);
     if (!child?.clinicId) return;
-    const { error: prefErr } = await browserClient().from("home_session_preferences").upsert(
-      { client_id: clientId, clinic_id: child.clinicId, preference, updated_by: userId, updated_at: new Date().toISOString() },
-      { onConflict: "client_id" },
-    );
-    if (prefErr) { setProblem(prefErr.message); return; }
-    setPreferences((prev) => ({ ...prev, [clientId]: preference }));
+    await saved(async () => {
+      const { error: prefErr } = await browserClient().from("home_session_preferences").upsert(
+        { client_id: clientId, clinic_id: child.clinicId, preference, updated_by: userId, updated_at: new Date().toISOString() },
+        { onConflict: "client_id" },
+      );
+      if (prefErr) { setProblem(prefErr.message); throw new Error(prefErr.message); }
+      setProblem(null);
+      setPreferences((prev) => ({ ...prev, [clientId]: preference }));
+    });
   }
 
   async function loadAvailability(clientId: number) {
@@ -231,12 +250,17 @@ export default function FamilyPage(
     if (!child?.clinicId) return;
     const scoped = ranges.map((r) => ({ day: r.day, start_time: r.start_time, end_time: r.end_time, client_id: clientId, clinic_id: child.clinicId }));
     const sb = browserClient();
+    // AvailabilityGrid wraps this in saved() and announces the outcome, so a
+    // refused write has to reach it as a rejection. Returning quietly here -
+    // which is what this used to do - made the grid say "Availability saved"
+    // over a delete that RLS had turned down.
     const { error: delErr } = await sb.from("client_availability").delete().eq("client_id", clientId);
-    if (delErr) { setProblem(delErr.message); return; }
+    if (delErr) { setProblem(delErr.message); throw new Error(delErr.message); }
     if (scoped.length) {
       const { error: insErr } = await sb.from("client_availability").insert(scoped);
-      if (insErr) { setProblem(insErr.message); return; }
+      if (insErr) { setProblem(insErr.message); throw new Error(insErr.message); }
     }
+    setProblem(null);
     setAvailabilityByChild((prev) => ({ ...prev, [clientId]: scoped }));
     setExpandedAvailability(null);
   }
@@ -353,18 +377,7 @@ export default function FamilyPage(
                 <li key={m.id} style={rowStyle}>
                   <FamilyAvatar label={m.preferred_name || m.full_name} clientId={null} size={34} />
                   {canManageHousehold ? (
-                    <span style={{ flex: 1, minWidth: 0, display: "grid", gap: 6 }}>
-                      <input style={fieldStyle} value={m.full_name}
-                        onChange={(e) => updateContact(m.id, { full_name: e.target.value })} />
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <input style={fieldStyle} placeholder="Phone" value={m.phone ?? ""}
-                          onChange={(e) => updateContact(m.id, { phone: e.target.value })} />
-                        <input style={fieldStyle} placeholder="Second phone" value={m.phone_secondary ?? ""}
-                          onChange={(e) => updateContact(m.id, { phone_secondary: e.target.value })} />
-                      </div>
-                      <input style={fieldStyle} placeholder="Email" value={m.email ?? ""}
-                        onChange={(e) => updateContact(m.id, { email: e.target.value })} />
-                    </span>
+                    <ContactEditor member={m} onSave={(fields) => updateContact(m.id, fields)} />
                   ) : (
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: "block", color: "var(--ink)", fontWeight: 600, fontSize: 15 }}>
@@ -593,8 +606,8 @@ function primaryButton(busy: boolean): React.CSSProperties {
 
 /**
  * Household address/phone/email, editable in place. Local draft state so
- * typing doesn't fire a write per keystroke - it saves on blur, and again
- * explicitly via the button for anyone who tabs straight to the next field.
+ * typing doesn't fire a write per keystroke - it saves on blur, and only when
+ * the value actually changed, so tabbing through untouched fields is free.
  */
 function HouseholdEditor({
   household, onSave,
@@ -629,6 +642,62 @@ function HouseholdEditor({
         <input style={fieldStyle} placeholder="Email" {...field("email")} />
       </div>
     </div>
+  );
+}
+
+/**
+ * One person on the record, editable in place - the same draft-and-blur shape
+ * as HouseholdEditor above.
+ *
+ * These four fields were wired straight to onChange against `members`, which
+ * is only updated after the round trip returns. That fired one
+ * household_members UPDATE per character AND dropped characters typed while a
+ * write was in flight, because the next render handed the input back the
+ * pre-write value. A parent typing a phone number got a mangled phone number
+ * and eleven writes.
+ */
+function ContactEditor({
+  member, onSave,
+}: {
+  member: Member;
+  onSave: (fields: Partial<Member>) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState(member);
+
+  // Resync only when this row becomes a different person. Following `member`
+  // itself would re-introduce the bug in a narrower form: saving one field
+  // replaces the row object, and that reset would wipe whatever had been
+  // typed into the next field while the first one's write was in flight.
+  const syncedId = useRef(member.id);
+  useEffect(() => {
+    if (syncedId.current === member.id) return;
+    syncedId.current = member.id;
+    setDraft(member);
+  }, [member]);
+
+  function field(key: "full_name" | "phone" | "phone_secondary" | "email") {
+    return {
+      value: draft[key] ?? "",
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+        setDraft((d) => ({ ...d, [key]: e.target.value })),
+      onBlur: () => {
+        if (draft[key] === member[key]) return;
+        // Empty is "no value on file", not the empty string - the read-only
+        // rendering above tests these for truthiness.
+        onSave({ [key]: key === "full_name" ? draft[key] : draft[key] || null });
+      },
+    };
+  }
+
+  return (
+    <span style={{ flex: 1, minWidth: 0, display: "grid", gap: 6 }}>
+      <input style={fieldStyle} aria-label="Name" placeholder="Name" {...field("full_name")} />
+      <div style={{ display: "flex", gap: 8 }}>
+        <input style={fieldStyle} aria-label="Phone" placeholder="Phone" {...field("phone")} />
+        <input style={fieldStyle} aria-label="Second phone" placeholder="Second phone" {...field("phone_secondary")} />
+      </div>
+      <input style={fieldStyle} aria-label="Email" placeholder="Email" {...field("email")} />
+    </span>
   );
 }
 

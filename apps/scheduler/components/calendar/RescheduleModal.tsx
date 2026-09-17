@@ -29,6 +29,8 @@ import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } 
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../../lib/checkSlotConflict";
 import { useFocusTrap } from "../../lib/useFocusTrap";
 import { RecurrenceScopeModal } from "./RecurrenceScopeModal";
+import { useAppUser } from "../../lib/UserContext";
+import { visibleClient } from "../../lib/sessionPrivacy";
 
 interface ClientAvailabilityRow { client_id: number; day: string; start_time: string; end_time: string }
 
@@ -106,8 +108,28 @@ export function RescheduleModal({
   // straight to executeSave("this") with no picker, unchanged from before.
   const [showScopePicker, setShowScopePicker] = React.useState(false);
 
+  const viewer = useAppUser();
+  // Only ever reachable for a session the viewer may manage, so this never
+  // masks in practice - routed through the same helper so there is one
+  // answer to "may this screen name the client", not two.
+  const clientName = visibleClient(viewer, session, client ? [client] : []).name;
+
   const type = sessionTypes.find((t) => t.name === typeName);
   const duration = type?.duration_minutes ?? type?.duration ?? sessionDuration(session, sessionTypes);
+
+  // Staff-only block types (Break / Lunch / Meeting -
+  // session_types.is_client_optional, migration 0019) are never offered for
+  // a booking that has a client, which every session reaching this modal
+  // does. Pinned to the session's ORIGINAL type, not the live `typeName`:
+  // keying the escape hatch on current state would drop the original option
+  // out of the list the instant the user switched away from it, leaving no
+  // way back without closing the modal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const originalType = React.useMemo(() => session.type, [session.id]);
+  const selectableTypes = React.useMemo(
+    () => sessionTypes.filter((t) => !t.is_client_optional || t.name === originalType),
+    [sessionTypes, originalType],
+  );
   // The currently-selected session type's own increment override, matching
   // the main grid's drag-snap resolution (sessionGridIncrement) instead of
   // always stepping at the org default regardless of which type is picked.
@@ -215,6 +237,12 @@ export function RescheduleModal({
     // applyReschedule documents.
     let siblingShifts: { row: any; shiftedDateStr: string }[] = [];
     if (scope !== "this" && session.recurrence_id) {
+      // Deliberately still the `sessions` table, not sessions_visible():
+      // these are the sibling occurrences of a series this user is about to
+      // WRITE, and 0046 only lets a clinician write their own - so every row
+      // here is one 0077 still returns to them directly. Reading them through
+      // the privacy function would hand back masked copies of rows they are
+      // then going to update anyway.
       const { data: rows } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
       const oldDate = parseDateStr(session.session_date);
       const newDate = parseDateStr(selectedDate);
@@ -336,9 +364,9 @@ export function RescheduleModal({
   return (
     <>
     <div style={overlayStyle} onClick={onClose}>
-      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" style={{ ...modalStyle, width: "min(480px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" className="modal-sheet" style={{ ...modalStyle, width: "min(480px, 100%)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Reschedule</div>
-        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: initialSlot ? 4 : 12 }}>{client?.name || "Unknown client"}</div>
+        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: initialSlot ? 4 : 12 }}>{clientName}</div>
         {initialSlot && (
           <div style={{ fontSize: 12, color: "#3f9c78", marginBottom: 8 }}>
             Pre-filled from the schedule comparison you just looked at — review and confirm below.
@@ -354,7 +382,7 @@ export function RescheduleModal({
           </Field>
           <Field label="Session type">
             <select value={typeName} onChange={(e) => setTypeName(e.target.value)} style={selectStyle}>
-              {sessionTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+              {selectableTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
             </select>
           </Field>
         </div>
@@ -493,7 +521,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const overlayStyle: React.CSSProperties = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center",
+  // flex-start and the overlay's own scroll rather than centring: a modal
+  // taller than the viewport, centred, overflows equally top and bottom and
+  // the top can't be scrolled to.
+  position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 110, display: "flex", alignItems: "flex-start", justifyContent: "center",
+  padding: 16, overflowY: "auto",
   // Same blur every popup across the app now uses (normalized 2026-09-16),
   // not a one-off just for this modal anymore.
   backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)",
@@ -506,8 +538,10 @@ const modalStyle: React.CSSProperties = {
   // with nothing to scroll. This only engages for a genuinely extreme
   // combination (very long hours, very fine increment) or a very short
   // viewport, so the whole popup scrolls as one piece instead of clipping
-  // silently off the bottom of the screen.
-  maxHeight: "94vh", overflowY: "auto",
+  // silently off the bottom of the screen. The cap itself is .modal-sheet
+  // in styles/globals.css - it needs two max-height declarations (vh then
+  // dvh) and an inline style object can only hold one.
+  margin: "auto 0", overflowY: "auto",
 };
 const navBtnSmall: React.CSSProperties = {
   padding: "5px 10px", borderRadius: 7, fontSize: 12, border: "0.5px solid var(--color-border-tertiary)",

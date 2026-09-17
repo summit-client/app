@@ -98,6 +98,24 @@ export async function proxy(req: NextRequest) {
   return res;
 }
 
+// Brand chrome only. Every page renders /summit-mark-64.png and _document.js
+// links /favicon.svg, and both used to cost a full Supabase auth round trip
+// before Next handed back a file that is world-readable on disk and
+// byte-identical for every user - gating them was never a boundary. The
+// lookahead is a PREFIX test, not path equality: an unanchored
+// `summit-mark-64.png` entry would also un-gate `/summit-mark-64.png.anything`
+// and `/favicon.svg/whatever`, so each filename is anchored with `$` (the
+// escapes survive path-to-regexp - checked against the regex Next actually
+// compiles this into). `_next/static` and `_next/image` stay unanchored
+// because they are directories. Nothing that renders or returns clinic data
+// belongs here.
+//
+// `api/` - the one entry the other three portals do not have - is deliberate
+// and every route under it is written for it: pages/api/match.ts and
+// pages/api/calendar/feed-token.ts each run sessionFreshness() themselves
+// before getUser(), because none of this file's refresh-token-race protection
+// reaches them. See lib/supabase-server.ts's header. Now anchored to the
+// directory, so a future `/apiSomething` page cannot fall through with it.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico$|favicon\\.svg$|icon\\.svg$|summit-mark-64\\.png$|api/).*)"],
 };

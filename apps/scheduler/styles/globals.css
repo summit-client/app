@@ -385,6 +385,108 @@ a:hover { color: var(--brand-700); }
   .nav-toggle-input:checked ~ .scheduler-shell .scheduler-sidebar { transform: translateX(0); }
 }
 
+/* ── Toolbar dropdown menus ────────────────────────────────
+   Shared positioning for every menu that hangs off a calendar-toolbar
+   button - StaffOverlayPicker's "Compare schedules", FilterPanel's four
+   filter menus, CalendarPicker and SearchSelectMenu. It lives here rather
+   than in each component's inline style object because an inline style
+   can't carry a media query at all, AND because an inline
+   `position`/`top`/`left`/`right`/`min-width`/`width` would outrank the
+   overrides below regardless of one - the same trap .scheduler-sidebar's
+   !important already documents. Consumers pass className="toolbar-menu"
+   plus the data-* attributes and keep only colour/border/padding inline.
+
+   Why this exists: the toolbar wraps below ~900px, which moves these
+   buttons from the far right of one line to the start of their own. A
+   `right: 0` menu wider than its shrink-wrapped ~133px button then grows
+   LEFTWARD past x=0, and <main> sets overflow-y:auto with overflow-x
+   unset, which computes overflow-x to auto - so it clips the menu and
+   scrollLeft clamps at 0. That strip is unreachable by any gesture, which
+   is what "clipped to the left on mobile" was. Right-edge overflow, by
+   contrast, scrolls inside <main> and is merely awkward.
+
+   position:fixed below depends on no ancestor of <main> carrying a
+   transform / filter / will-change (none did when this was written) - one
+   on .scheduler-shell would silently re-anchor every one of these to it. */
+.toolbar-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 60;
+  min-width: 220px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.toolbar-menu[data-align="right"] { right: 0; left: auto; }
+.toolbar-menu[data-align="left"]  { left: 0; right: auto; }
+.toolbar-menu[data-size="wide"]   { min-width: 252px; }
+.toolbar-menu[data-fill="true"]   { width: 100%; }
+
+@media (max-width: 820px) {
+  /* A narrow window with a real pointer (a resized desktop browser) keeps
+     the menus anchored to their own button, because FilterPanel's two
+     hover-opened pill menus depend on that proximity - useHoverIntent
+     starts its close timer the moment the pointer leaves the trigger, and
+     anything the pointer has to cross the screen to reach closes before it
+     arrives. Flipping the right-aligned one to grow rightward is enough
+     there: that overflow scrolls inside <main>, unlike the left. */
+  .toolbar-menu[data-align="right"] { right: auto; left: 0; }
+}
+
+@media (max-width: 820px) and (hover: none) {
+  /* Touch: anchor to the viewport outright, so no amount of toolbar
+     wrapping can put a menu where nothing scrolls. Pinned BELOW the
+     sticky .mobile-topbar rather than to the bottom of the screen - these
+     menus autofocus a search field, and a bottom-anchored sheet ends up
+     behind the on-screen keyboard the moment it opens. */
+  .toolbar-menu,
+  .toolbar-menu[data-align="right"],
+  .toolbar-menu[data-align="left"],
+  .toolbar-menu[data-size="wide"],
+  .toolbar-menu[data-fill="true"] {
+    position: fixed;
+    top: calc(var(--portalnav-h, 51px) + 64px);
+    bottom: auto;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: min(60vh, 420px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  }
+
+  /* iOS Safari zooms the page around any focused form control under 16px
+     and never zooms back out - painful on a menu or modal that has just
+     been pinned to the viewport.
+
+     !important because every one of these controls carries its own inline
+     font-size (13 in the menus, 12.5 in RescheduleModal's selectStyle),
+     and an inline declaration beats a plain stylesheet rule whatever the
+     media query says. Same reason .scheduler-sidebar's width above needs
+     it. Un-inlining a dozen call sites for one touch-only override would
+     be the bigger change, not the smaller one. */
+  .toolbar-menu input,
+  .toolbar-menu select,
+  .modal-sheet input,
+  .modal-sheet select,
+  .modal-sheet textarea { font-size: 16px !important; }
+}
+
+/* ── Tall modals ───────────────────────────────────────────
+   Two declarations, deliberately, not one `max-height: min(94dvh, 94vh)`:
+   a UA that doesn't know dvh drops that whole declaration and is left with
+   NO cap at all - the opposite of the fallback it looks like. A React
+   inline style object can't express two declarations for one property,
+   which is why the popups using this carry no inline maxHeight. dvh
+   tracks iOS Safari's collapsing URL bar; vh resolves against the large
+   viewport, so a 94vh modal there routinely exceeds the visible height.
+   Each of those overlays also scrolls from flex-start now, so what spills
+   can actually be reached. */
+.modal-sheet {
+  max-height: 94vh;
+  max-height: 94dvh;
+}
+
 /* ── Reduced motion ──────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

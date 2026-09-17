@@ -14,6 +14,7 @@ import {
 } from "@/lib/hub";
 import { deactivateTeammate, editTeammate, inviteTeammate, listUnlinkedClients, ProvisioningError } from "@/lib/hr-backend";
 import { SessionGate, useIdentity } from "@/components/session-provider";
+import { saved } from "@summit/toast";
 
 /**
  * Admin: the supervisor and admin console with team directory, pending sign-off
@@ -186,7 +187,7 @@ function AdminConsole() {
                   onClick={() => {
                     const title = p.task?.title ?? p.taskKey;
                     if (!confirm(`Sign off "${title}" for ${nameOf(p.userId)}? This can't be undone.`)) return;
-                    void signOffTask(p.taskKey, p.userId).then(reloadSignoffs);
+                    void saved(signOffTask(p.taskKey, p.userId)).then(reloadSignoffs);
                   }}
                 >
                   Sign off as completed
@@ -215,7 +216,7 @@ function AdminConsole() {
                   <b style={{ fontSize: "var(--text-sm)" }}>{c.title}</b>
                   <p className="trend" style={{ marginTop: 4 }}>{nameOf(c.userId)} · {c.competency} · earned, awaiting issue</p>
                 </div>
-                <button className="btn" onClick={() => void issueOnboardingCertificate(c.title, c.competency, c.userId).then(reloadCerts)}>
+                <button className="btn" onClick={() => void saved(issueOnboardingCertificate(c.title, c.competency, c.userId)).then(reloadCerts)}>
                   Issue certificate
                 </button>
               </div>
@@ -242,8 +243,8 @@ function AdminConsole() {
                   <b>{nameOf(r.userId)}</b> · {r.type === "VACATION" ? "Vacation" : "Sick"} · {r.startDate} → {r.endDate} ({r.days}d){r.note ? ` · ${r.note}` : ""}
                 </span>
                 <span style={{ display: "flex", gap: 8 }}>
-                  <button className="btn" onClick={() => void decideTimeOff(r.id, "APPROVED").then(reloadTimeOff)}>Approve</button>
-                  <button className="btn secondary" onClick={() => void decideTimeOff(r.id, "DENIED").then(reloadTimeOff)}>Deny</button>
+                  <button className="btn" onClick={() => void saved(decideTimeOff(r.id, "APPROVED")).then(reloadTimeOff)}>Approve</button>
+                  <button className="btn secondary" onClick={() => void saved(decideTimeOff(r.id, "DENIED")).then(reloadTimeOff)}>Deny</button>
                 </span>
               </div>
             ))}
@@ -266,7 +267,7 @@ function AdminConsole() {
             {pd.rows.map((r) => (
               <div key={r.id} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "var(--text-sm)" }}><b>{nameOf(r.userId)}</b> · {r.title} · {r.provider || "—"} · {r.hours}h · {r.date}</span>
-                <button className="btn secondary" onClick={() => void verifyPd(r.id).then(reloadPd)}>Verify</button>
+                <button className="btn secondary" onClick={() => void saved(verifyPd(r.id)).then(reloadPd)}>Verify</button>
               </div>
             ))}
             {!pd.rows.length ? <div className="card card-pad"><p className="sub">All PD entries are verified.</p></div> : null}
@@ -702,6 +703,17 @@ function BackendSettingsTab() {
   React.useEffect(() => onSettingsChange(() => force()), []);
   const defs = SETTINGS.filter((d) => d.section === "ecosystem");
 
+  /**
+   * Deliberately NOT saved(): setSetting() announces its own outcome, so
+   * every control here would toast twice. The catch is the other half of
+   * what saved() would have done - setSetting() rolls its optimistic update
+   * back and rethrows, and these three call sites did not even `void` the
+   * promise, so a denied org write silently reverted the control and left an
+   * unhandled rejection behind it.
+   */
+  const write = (key: string, value: string | number | boolean) =>
+    void setSetting(key, value, "org").catch(() => {});
+
   return (
     <div style={{ marginTop: 16 }}>
       <p className="sub" style={{ maxWidth: "68ch", marginTop: 0 }}>
@@ -720,13 +732,13 @@ function BackendSettingsTab() {
               <span>
                 {d.type === "toggle" ? (
                   <button className={`switch ${value === true ? "on" : ""}`} role="switch" aria-checked={value === true} aria-label={d.label}
-                    onClick={() => setSetting(d.key, !(value === true), "org")}><span className="knob" /></button>
+                    onClick={() => write(d.key, !(value === true))}><span className="knob" /></button>
                 ) : d.type === "number" ? (
                   <input type="number" className="input" style={{ width: 96 }} value={Number(value)} aria-label={d.label}
-                    onChange={(e) => setSetting(d.key, Number(e.target.value) || 0, "org")} />
+                    onChange={(e) => write(d.key, Number(e.target.value) || 0)} />
                 ) : (
                   <input className="input" style={{ minWidth: 260 }} value={String(value)} aria-label={d.label}
-                    onChange={(e) => setSetting(d.key, e.target.value, "org")} />
+                    onChange={(e) => write(d.key, e.target.value)} />
                 )}
               </span>
             </div>

@@ -24,7 +24,7 @@ import {
 } from "./hr-backend";
 
 export * from "./hr-types";
-export type { HrSnapshot, Person } from "./hr-backend";
+export type { HrSnapshot, Person, ScoreboardSite } from "./hr-backend";
 export { HrWriteError } from "./hr-backend";
 import type { ForumPost, Goal, HrAudit, PolicyAck, PolicyDoc } from "./hr-types";
 
@@ -284,10 +284,59 @@ export async function addForumComment(postId: string, body: string, author: stri
   changed();
 }
 
-/** Clinic scoreboard sites are org configuration with no table in 0007. They
- *  stay local until they move into @summit/settings, and are marked as such on
- *  the screen so nobody assumes they are shared. */
-export function saveLocal(): void {
-  if (snap) be().saveLocal(snap);
+/* ---- clinic scoreboard ------------------------------------------------------ */
+
+/**
+ * The scoreboard used to be the one thing in here that went nowhere: both of
+ * its controls called a saveLocal() whose live implementation was an empty
+ * function, so in production the number moved and nothing was written. It now
+ * has its own tables (migration 0079) and these two functions.
+ *
+ * Both are optimistic and both roll back. The board is shared clinic data, so
+ * "the screen says 85 and the database says 40" is not a private
+ * inconvenience - it is a number other people are reading off a leaderboard.
+ * The call sites wrap these in saved() from @summit/toast, which is what turns
+ * a rejection into something the person can see.
+ */
+export async function setSiteDomain(site: string, domainKey: string, value: number): Promise<void> {
+  const s = hr();
+  const row = s.sites.find((x) => x.site === site);
+  if (!row) return;
+  // `had` is tracked separately so a rollback restores an unscored domain to
+  // unscored rather than to a 0 somebody could later read as a real score.
+  const had = domainKey in row.domains;
+  const previous = row.domains[domainKey] ?? 0;
+  if (had && previous === value) return;
+  row.domains[domainKey] = value;
   changed();
+  try {
+    await be().setSiteDomain(site, domainKey, value);
+  } catch (err) {
+    // Never leave a value on the board that the database does not have.
+    if (had) row.domains[domainKey] = previous; else delete row.domains[domainKey];
+    changed();
+    throw err;
+  }
+  await hrAudit("scoreboard.domain", `${site}: ${domainKey} = ${value}`,
+    { previous: String(previous), next: String(value) });
+  changed();
+}
+
+/** Resolves to the site that was added, or null when there was nothing to add
+ *  (blank, or already on the board). The caller uses that to decide whether to
+ *  clear the input - a failed write must not also throw away what was typed. */
+export async function addScoreboardSite(name: string): Promise<string | null> {
+  const s = hr();
+  const site = name.trim();
+  if (!site || s.sites.some((x) => x.site === site)) return null;
+  const saved = await be().addSite(site);
+  // By identity, not by pushing unconditionally: the preview backend mutates
+  // this same snapshot object (s IS its snap - see hr-backend.ts) and has
+  // already pushed the row by the time this runs, so an unconditional push
+  // would put the new site on the board twice. Same trap as saveCredential's
+  // note above.
+  if (!s.sites.includes(saved)) s.sites.push(saved);
+  await hrAudit("scoreboard.site_added", site);
+  changed();
+  return site;
 }

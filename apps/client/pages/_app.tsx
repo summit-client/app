@@ -8,6 +8,7 @@ import { AppNav } from '@summit/nav'
 import { parseVisiblePortals, profileUrl } from '@summit/portals'
 import { getIdentity, type AppRole } from '@summit/session'
 import { getSetting, initSettings, onSettingsChange } from '@summit/settings'
+import { ToastHost } from '@summit/toast'
 import { computeClientPriorityStatus, type PriorityStatus } from '../lib/priority-status'
 
 export default function App({ Component, pageProps }: AppProps) {
@@ -60,6 +61,9 @@ export default function App({ Component, pageProps }: AppProps) {
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
       </Head>
       <AppNav activeKey="client" role={role} visiblePortals={visiblePortals} profileHref={profileUrl(role)} profileName={fullName} priorityStatus={priorityStatus} />
+      {/* One per portal, mounted beside the page rather than inside it so a
+          toast survives a route change mid-save. */}
+      <ToastHost />
       <Component {...pageProps} />
     </>
   )

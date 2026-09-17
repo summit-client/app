@@ -50,7 +50,10 @@ export function RecurrenceScopeModal({
     { key: "all" as const, label: "All sessions in the series" },
   ];
   return (
-    <div style={overlayStyle} onClick={onCancel}>
+    // stopPropagation because SessionDetail renders this INSIDE its own
+    // overlay, whose onClick closes that dialog - a backdrop tap meant for
+    // this picker used to close both.
+    <div style={overlayStyle} onClick={(e) => { e.stopPropagation(); onCancel(); }}>
       <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, marginBottom: 4, color: "var(--color-text-primary)" }}>
           <RecurringIcon size={16} /> {title}
@@ -71,7 +74,12 @@ const overlayStyle: React.CSSProperties = {
   position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center",
 };
 const modalStyle: React.CSSProperties = {
-  width: 340, background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+  // Gutter on the modal rather than padding on the overlay - this dialog
+  // also renders inside SessionDetail's overlay, which is the containing
+  // block for its own fixed positioning (backdrop-filter), so padding
+  // there would compound.
+  width: "min(340px, calc(100% - 32px))",
+  background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
 };
 const navBtn: React.CSSProperties = {
   padding: "6px 14px", borderRadius: 8, fontSize: 13, border: "0.5px solid var(--color-border-tertiary)",

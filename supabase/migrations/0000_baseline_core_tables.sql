@@ -56,6 +56,20 @@
 -- done, treat a database built from these migrations as good enough to
 -- develop against and not yet proven as a restore target.
 --
+-- FIRST CONFIRMED DIVERGENCE (2026-09-18). The warning above is no longer
+-- hypothetical. `sessions.created_at`, declared below as
+-- `created_at timestamptz not null default now()`, DOES NOT EXIST on the live
+-- table. Found by introspecting information_schema before applying migration
+-- 0077, which had listed the column on this file's authority and would
+-- otherwise have failed with `column s.created_at does not exist`; 0077 no
+-- longer publishes it. Nothing in the monorepo reads a session's created_at,
+-- so the column has not been added to production to match - this file is the
+-- thing that is wrong, and it is left as-is rather than edited so that the
+-- reconstruction still shows what was inferred and this note shows what was
+-- measured. Treat every other column here the same way until the pg_dump
+-- reconciliation above actually happens: inferred from application code, not
+-- observed.
+--
 -- Two known ambiguities, left deliberately visible rather than guessed away:
 --
 --   session_types.duration vs duration_minutes, and price vs cost. The editor

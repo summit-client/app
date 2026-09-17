@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { saved } from "@summit/toast";
 import { eventsFor, incidentsFor, recordEvent, recordIncident, undoLastEvent } from "@/lib/data";
 import { frequencySummary, masteryCheck, sessionPercent } from "@/lib/mastery";
 import { FUNCTION_LABEL, PROMPT_ORDER, type Program } from "@/lib/types";
@@ -19,8 +20,17 @@ function useBump(): [number, () => void] {
   return [n, () => setN((x) => x + 1)];
 }
 
+/**
+ * Every trial tap goes through here. Silent on success deliberately: this is
+ * trial-by-trial capture, and a clinician taps it dozens of times a minute -
+ * a confirmation per tap would be the loudest thing on the screen and would
+ * teach people to ignore the one that matters. The failure half is the
+ * opposite: a dropped observation is data that never existed, and these calls
+ * used to be `.then(bump)` with no catch, so a refused write vanished into an
+ * unhandled rejection while the counter still moved.
+ */
 function log(program: Program, code: string, extra?: { stepPosition?: number; note?: string }) {
-  return recordEvent(
+  return saved(() => recordEvent(
     {
       programId: program.id, mode: program.mode, code,
       stepPosition: extra?.stepPosition ?? null,
@@ -28,7 +38,7 @@ function log(program: Program, code: string, extra?: { stepPosition?: number; no
       note: extra?.note ?? null,
     },
     {},
-  );
+  ), { silent: true, errorText: "That tap was not recorded — check your connection." });
 }
 
 function Header({ program, right }: { program: Program; right?: React.ReactNode }) {
@@ -250,11 +260,19 @@ export function AbcPanel({ program, clientId }: { program: Program; clientId: nu
   const [, bump] = useBump();
   const [f, setF] = React.useState({ antecedent: "", behaviour: "", consequence: "", fn: "" });
   const incidents = incidentsFor(clientId);
+  // Unlike a trial tap this is a written record, so it is announced. The
+  // form is only cleared on a recorded incident — saved() resolves undefined
+  // when the write was refused, and wiping the fields then would throw away
+  // the only copy of what the clinician had just typed.
   const save = () => {
-    void recordIncident({
+    void saved(() => recordIncident({
       clientId, antecedent: f.antecedent, behaviour: f.behaviour, consequence: f.consequence,
       suspectedFunction: (f.fn || null) as never,
-    }).then(() => { setF({ antecedent: "", behaviour: "", consequence: "", fn: "" }); bump(); });
+    }), { text: "Incident recorded" }).then((recorded) => {
+      if (!recorded) return;
+      setF({ antecedent: "", behaviour: "", consequence: "", fn: "" });
+      bump();
+    });
   };
   return (
     <div>

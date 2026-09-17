@@ -12,7 +12,10 @@ import { gapsOverlap, parseTimeSetting, toDateStr, todayDateStr } from "../compo
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 import { AvailabilityGrid, generateTimeSlots } from "@summit/availability";
+import { toast } from "@summit/toast";
 import { refreshUrl } from "@summit/portals";
+import { canSeeClientIdentity, visibleClient, MASKED_CLIENT_LABEL } from "../lib/sessionPrivacy";
+import { isClinicalStaff, utilization, hasOpenCapacity } from "../lib/staff-roles";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../lib/checkSlotConflict";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { WaitlistView } from "../components/WaitlistView";
@@ -357,18 +360,11 @@ function PreviewGrid({ proposedSessions, setProposedSessions, existingSessions, 
 
 // ─── UI primitives ────────────────────────────────────────────────────────────
 
-function Toast({ message, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 5000);
-    return () => clearTimeout(t);
-  }, []);
-  return (
-    <div style={{ position: "fixed", top: 20, right: 24, zIndex: 9999, padding: "10px 18px", borderRadius: 10, background: COLORS.bg, border: `0.5px solid #5DCAA5`, boxShadow: "0 4px 16px rgba(0,0,0,0.14)", display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 500, color: COLORS.text, animation: "fadeInDown 0.2s ease" }}>
-      <span style={{ color: "#5DCAA5", fontSize: 15 }}>✓</span>
-      {message}
-    </div>
-  );
-}
+// The local Toast component that used to live here (top-right, green, 5s)
+// moved to @summit/toast, along with pages/admin.tsx's second, differently
+// styled one (bottom-right, dark, 3s) - two toasts in one app was already
+// the drift the shared package exists to end. showToast() below survives as
+// a one-line adapter so this file's call sites are unchanged.
 
 function Avatar({ name, size = 32, color = "#5DCAA5" }) {
   const initials = name.split(" ").map(n => n[0]).join("").slice(0, 2);
@@ -608,6 +604,7 @@ function ClientMatchCard({ item, accepted, onAccept, onReject, typeColors }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) {
+  const appUser = useContext(UserContext);
   const [staffFilter, setStaffFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
 
@@ -618,8 +615,26 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
     return staffOk && clientOk;
   });
 
-  const utilization = employees.length
-    ? Math.round(employees.reduce((a, e) => a + e.booked / e.capacity, 0) / employees.length * 100) : 0;
+  // Naming a client in the filter that the list below won't name is the same
+  // leak by another route: pick a client, see whose sessions survive. A
+  // clinician gets only the clients on their own sessions; admin and
+  // scheduler, who see every name anyway, get the whole roster unchanged.
+  const seesEveryClient = canSeeClientIdentity(appUser, {});
+  const filterClients = seesEveryClient
+    ? clients
+    : clients.filter(c => activeBookings.some(b => b.client_id === c.id && canSeeClientIdentity(appUser, b)));
+
+  // `staff` is an everyone-who-works-here roster, not a clinician roster -
+  // every staff-shaped invite mints a row, an office manager included, with
+  // no credential and capacity 0. Capacity and utilization are clinician
+  // concepts, so they're computed over ../lib/staff-roles' clinicians only;
+  // the Staff TAB deliberately still lists everyone (a hidden row is a row
+  // nobody can fix or delete). utilization() also guards the division: a
+  // capacity of 0 or null used to make this render the literal "NaN%".
+  const clinicians = employees.filter(isClinicalStaff);
+  const utilizationPct = clinicians.length
+    ? Math.round(clinicians.reduce((a, e) => a + utilization(e), 0) / clinicians.length * 100) : 0;
+  const openSlots = clinicians.reduce((a, e) => a + Math.max(0, (e.capacity ?? 0) - (e.booked ?? 0)), 0);
 
   // Denominator is sessions that have actually happened - completed +
   // no_show, dated today or earlier - not every booking ever made.
@@ -645,8 +660,8 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 28 }}>
         <StatCard label="Total sessions" value={activeBookings.length} sub="across all calendars" accent="#378ADD" />
         <StatCard label="Active clients" value={clients.filter(c => c.status === "active").length} sub={`${clients.filter(c => c.status === "waitlist").length} waitlisted`} accent="#5DCAA5" />
-        <StatCard label="Staff utilization" value={`${utilization}%`} sub="across all staff" accent="#EF9F27" />
-        <StatCard label="Open slots" value={employees.reduce((a, e) => a + (e.capacity - e.booked), 0)} sub="available this week" accent="#D4537E" />
+        <StatCard label="Staff utilization" value={`${utilizationPct}%`} sub="across clinicians" accent="#EF9F27" />
+        <StatCard label="Open slots" value={openSlots} sub="available this week" accent="#D4537E" />
         <StatCard label="No-show rate" value={`${noShowRate}%`} sub={pastBookings.length ? `${noShowCount} of ${pastBookings.length} past sessions` : "no past sessions yet"} accent="#8A5A1E" />
       </div>
       <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center" }}>
@@ -659,7 +674,7 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
         <select value={clientFilter} onChange={e => setClientFilter(e.target.value)}
           style={{ padding: "5px 10px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bgS, color: COLORS.text, fontSize: 13 }}>
           <option value="all">All clients</option>
-          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {filterClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         {(staffFilter !== "all" || clientFilter !== "all") && (
           <button onClick={() => { setStaffFilter("all"); setClientFilter("all"); }}
@@ -676,18 +691,24 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
             {filteredBookings.length === 0
               ? <div style={{ fontSize: 14, color: COLORS.textT, padding: "20px 0" }}>No sessions match this filter.</div>
               : filteredBookings.slice(0, 20).map(b => {
-                const client = clients.find(c => c.id === b.client_id);
+                // A clinician sees a colleague's session as its type and
+                // time, not who it is with (../lib/sessionPrivacy) - and a
+                // masked row carries no client to navigate to, so the name
+                // is plain text rather than a dead link. Admin and scheduler
+                // are unchanged. Initials re-identify in a clinic this size,
+                // so a masked avatar gets a neutral glyph, not "CP".
+                const { client, masked } = visibleClient(appUser, b, clients);
                 const emp = employees.find(e => e.id === b.employee_id);
                 const color = typeColors[b.type] || "#888888";
                 const bDay = b.session_date ? dayFromDate(b.session_date) : "—";
                 return (
                   <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 8, background: COLORS.bgS, border: `0.5px solid ${COLORS.border}` }}>
                     <div style={{ width: 3, height: 36, borderRadius: 2, background: color, flexShrink: 0 }} />
-                    <Avatar name={client?.name || "?"} size={32} color={color} />
+                    <Avatar name={masked ? "·" : (client?.name || "?")} size={32} color={color} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div>
                         <PersonLink
-                          name={client?.name}
+                          name={masked ? MASKED_CLIENT_LABEL : client?.name}
                           onClick={client && (() => onFocusPerson({ clientId: client.id, dateStr: b.session_date, label: client.name }))}
                         />
                       </div>
@@ -710,14 +731,22 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
           <div>
             <h3 style={{ fontSize: 15, fontWeight: 500, color: COLORS.text, marginBottom: 12 }}>Staff capacity</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {employees.map(e => {
-                const pct = e.booked / e.capacity;
+              {clinicians.length === 0 && (
+                <div style={{ fontSize: 13, color: COLORS.textT }}>
+                  No one has a clinical credential or a session capacity set yet — add either on the Staff screen and they'll appear here.
+                </div>
+              )}
+              {clinicians.map(e => {
+                const pct = utilization(e);
                 const color = pct > 0.85 ? "#E24B4A" : pct > 0.6 ? "#EF9F27" : "#5DCAA5";
                 return (
                   <div key={e.id} style={{ padding: "10px 14px", borderRadius: 8, background: COLORS.bgS, border: `0.5px solid ${COLORS.border}` }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>{e.name}</div>
-                      <span style={{ fontSize: 13, color: COLORS.textS }}>{e.booked}/{e.capacity}</span>
+                      {/* Was inert text while the client names beside it were
+                          already PersonLinks - and this is the list someone
+                          actually clicks to ask "what is this person up to". */}
+                      <PersonLink name={e.name} onClick={() => onFocusPerson({ employeeId: e.id, label: e.name })} />
+                      <span style={{ fontSize: 13, color: COLORS.textS }}>{e.booked ?? 0}/{e.capacity ?? 0}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 4, background: COLORS.border }}>
                       <div style={{ height: "100%", borderRadius: 4, background: color, width: `${Math.round(pct * 100)}%`, transition: "width 0.3s" }} />
@@ -849,7 +878,7 @@ function NeedsAttentionPanel({ clients, bookings, staleAfterDays, onNavigate }) 
   );
 }
 
-function ClientsView({ clients, locations, clientAvailability, setClientAvailability, showToast, workStart, workEnd, workDays, bookings, onNavigate }) {
+function ClientsView({ clients, locations, clientAvailability, setClientAvailability, workStart, workEnd, workDays, bookings, onNavigate }) {
   const [expandedId, setExpandedId] = useState(null);
   const [search, setSearch] = useState("");
   const filtered = clients.filter(c => JSON.stringify(c).toLowerCase().includes(search.toLowerCase()));
@@ -866,7 +895,9 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
     if (scoped.length) await supabase.from("client_availability").insert(scoped);
     setClientAvailability(prev => [...prev.filter(a => a.client_id !== clientId), ...scoped]);
     setExpandedId(null);
-    showToast("Availability saved");
+    // No showToast here: @summit/availability's grid announces its own save
+    // (and its own failure) now, which is what made it worth sharing - the
+    // two profile pages that use the same grid said nothing before.
   }
 
   // client.sessions is a stored counter, set to 0 at creation and never
@@ -941,7 +972,7 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
 
 // ─── Staff view ───────────────────────────────────────────────────────────────
 
-function EmployeesView({ employees, locations, staffAvailability, setStaffAvailability, typeColors, showToast, workStart, workEnd, workDays }) {
+function EmployeesView({ employees, locations, staffAvailability, setStaffAvailability, typeColors, workStart, workEnd, workDays }) {
   const [expandedId, setExpandedId] = useState(null);
   const [search, setSearch] = useState("");
   const filtered = employees.filter(e => JSON.stringify(e).toLowerCase().includes(search.toLowerCase()));
@@ -954,7 +985,7 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
     if (scoped.length) await supabase.from("staff_availability").insert(scoped);
     setStaffAvailability(prev => [...prev.filter(a => a.staff_id !== staffId), ...scoped]);
     setExpandedId(null);
-    showToast("Availability saved");
+    // See ClientsView's copy of this handler - the grid toasts for itself.
   }
 
   return (
@@ -974,7 +1005,13 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
   )}
 
   {filtered.map(emp => {
-          const pct = emp.booked / emp.capacity;
+          // Every row stays listed - this is the roster, and a row nobody can
+          // see is a row nobody can give a credential to or delete. Only the
+          // capacity METER is clinician-scoped, since a booking capacity on
+          // someone who is never booked is a number with no meaning (and,
+          // before utilization() guarded the division, a NaN-width bar).
+          const showCapacity = isClinicalStaff(emp);
+          const pct = utilization(emp);
           const barColor = pct > 0.85 ? "#E24B4A" : pct > 0.6 ? "#EF9F27" : "#5DCAA5";
           const loc = locations?.find(l => l.id === emp.location_id);
           const empAvail = (staffAvailability || []).filter(a => a.staff_id === emp.id);
@@ -999,12 +1036,18 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
                   {availSummary.length > 0 && <div style={{ fontSize: 12, color: COLORS.textT, marginTop: 5 }}>{availSummary.join(" · ")}</div>}
                 </div>
                 <div style={{ minWidth: 180 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: COLORS.textS, marginBottom: 5 }}>
-                    <span>Capacity</span><span>{emp.booked}/{emp.capacity}</span>
-                  </div>
-                  <div style={{ height: 5, borderRadius: 4, background: COLORS.border }}>
-                    <div style={{ height: "100%", borderRadius: 4, background: barColor, width: `${Math.round(pct * 100)}%` }} />
-                  </div>
+                  {showCapacity ? (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: COLORS.textS, marginBottom: 5 }}>
+                        <span>Capacity</span><span>{emp.booked ?? 0}/{emp.capacity ?? 0}</span>
+                      </div>
+                      <div style={{ height: 5, borderRadius: 4, background: COLORS.border }}>
+                        <div style={{ height: "100%", borderRadius: 4, background: barColor, width: `${Math.round(pct * 100)}%` }} />
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12, color: COLORS.textT }}>No credential or capacity set</div>
+                  )}
                 </div>
                 <button onClick={() => setExpandedId(isExp ? null : emp.id)} style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, border: `0.5px solid ${COLORS.border}`, background: isExp ? COLORS.bgT : COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
                   {isExp ? "Close" : "Edit availability"}
@@ -1102,6 +1145,155 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
           onClose={() => setEditingType(null)}
           showToast={showToast}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── Locations view ───────────────────────────────────────────────────────────
+
+/**
+ * Locations had no management screen at all until now: `locations` was read
+ * by the calendar, the matcher, the admin forms and the ICS feeds, and
+ * written by nothing. The only way a clinic could have one was a seed script
+ * or a hand-run INSERT.
+ *
+ * That is not cosmetic. Staff-to-client matching is gated on the two sharing
+ * a location_id (see quickSlot's eligibleStaff and the wizard's staff step),
+ * so a clinic with no locations - or with people whose location_id is null,
+ * which was every person created before location became settable - can never
+ * match anyone to anyone. "No available staff" with no explanation is what
+ * that looks like from the outside.
+ *
+ * Admin-only, matching the RLS: 0013 grants insert/update/delete on
+ * `locations` to admin alone, so offering these controls to a scheduler
+ * would produce writes that silently affect zero rows (CLAUDE.md's "RLS
+ * returns empty sets, not errors", on the write side).
+ */
+function LocationsView({ locations, setLocations, clients, employees, showToast }) {
+  const appUser = useContext(UserContext);
+  const isAdmin = appUser?.role === "admin";
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function save() {
+    if (!draft?.name?.trim()) { setError("Name is required."); return; }
+    setSaving(true); setError(null);
+    const payload = {
+      name: draft.name.trim(),
+      address: draft.address?.trim() || null,
+      clinic_id: appUser.clinic_id,
+    };
+    const res = draft.id
+      ? await supabase.from("locations").update(payload).eq("id", draft.id).select().single()
+      : await supabase.from("locations").insert([payload]).select().single();
+    setSaving(false);
+    if (res.error || !res.data) { setError(res.error?.message || "Could not save."); return; }
+    setLocations(prev => draft.id ? prev.map(l => l.id === res.data.id ? res.data : l) : [...prev, res.data]);
+    setDraft(null);
+    showToast(draft.id ? "Location saved" : "Location added");
+  }
+
+  async function remove(loc) {
+    // clients.location_id and staff.location_id are plain references with no
+    // cascade, so Postgres refuses the delete while anyone still points at
+    // this location - and Supabase surfaces that as a bare foreign-key
+    // message. Counting first turns it into a sentence someone can act on.
+    const attachedClients = (clients || []).filter(c => c.location_id === loc.id).length;
+    const attachedStaff = (employees || []).filter(e => e.location_id === loc.id).length;
+    if (attachedClients || attachedStaff) {
+      setError(`${loc.name} still has ${attachedClients} client${attachedClients === 1 ? "" : "s"} and ${attachedStaff} staff member${attachedStaff === 1 ? "" : "s"} assigned. Move them to another location first.`);
+      return;
+    }
+    if (!confirm(`Delete ${loc.name}? This cannot be undone.`)) return;
+    const { error: delErr } = await supabase.from("locations").delete().eq("id", loc.id);
+    if (delErr) { setError(delErr.message); return; }
+    setLocations(prev => prev.filter(l => l.id !== loc.id));
+    showToast("Location deleted");
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 500, color: COLORS.text, margin: 0 }}>Locations</h2>
+          <p style={{ fontSize: 14, color: COLORS.textS, margin: "4px 0 0" }}>
+            Where sessions happen. Staff and clients are matched within a location, so everyone needs one set.
+          </p>
+        </div>
+        {isAdmin && (
+          <button onClick={() => { setError(null); setDraft({ name: "", address: "" }); }}
+            style={{ padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", background: "#5DCAA5", color: "#fff", cursor: "pointer" }}>
+            + New location
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div role="alert" style={{ padding: "12px 16px", borderRadius: 8, background: "#FCEBEB", border: "0.5px solid #F7C1C1", color: "#A32D2D", fontSize: 14, marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
+
+      {locations.length === 0 && !draft && (
+        <div style={{ padding: "32px 0", textAlign: "center", fontSize: 14, color: COLORS.textT }}>
+          {isAdmin
+            ? "No locations yet. Add one before assigning staff and clients."
+            : "No locations set up yet — an admin can add them."}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {locations.map(loc => {
+          const clientCount = (clients || []).filter(c => c.location_id === loc.id).length;
+          const staffCount = (employees || []).filter(e => e.location_id === loc.id).length;
+          return (
+            <div key={loc.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderRadius: 10, background: COLORS.bgS, border: `0.5px solid ${COLORS.border}`, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ fontSize: 15, fontWeight: 500, color: COLORS.text }}>{loc.name}</div>
+                <div style={{ fontSize: 13, color: COLORS.textS }}>{loc.address || "No address"}</div>
+              </div>
+              <div style={{ fontSize: 13, color: COLORS.textS }}>
+                {staffCount} staff · {clientCount} client{clientCount === 1 ? "" : "s"}
+              </div>
+              {isAdmin && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => { setError(null); setDraft(loc); }}
+                    style={{ padding: "5px 14px", borderRadius: 8, fontSize: 13, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
+                    Edit
+                  </button>
+                  <button onClick={() => remove(loc)} aria-label={`Delete ${loc.name}`}
+                    style={{ padding: "5px 12px", borderRadius: 8, fontSize: 13, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: "#A32D2D", cursor: "pointer" }}>
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {draft && (
+        <div style={{ marginTop: 16, padding: "18px 20px", borderRadius: 12, background: COLORS.bgS, border: `0.5px solid ${COLORS.borderS}`, display: "grid", gap: 10, maxWidth: 440 }}>
+          <div style={{ fontSize: 15, fontWeight: 500, color: COLORS.text }}>{draft.id ? "Edit location" : "New location"}</div>
+          <input autoFocus placeholder="Name (e.g. Oshawa)" value={draft.name || ""}
+            onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
+            style={{ padding: "10px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.text, fontSize: 14 }} />
+          <input placeholder="Address (optional)" value={draft.address || ""}
+            onChange={e => setDraft(d => ({ ...d, address: e.target.value }))}
+            style={{ padding: "10px 12px", borderRadius: 8, border: `0.5px solid ${COLORS.borderS}`, background: COLORS.bg, color: COLORS.text, fontSize: 14 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={save} disabled={saving}
+              style={{ padding: "9px 20px", borderRadius: 8, background: "#5DCAA5", color: "#fff", border: "none", cursor: saving ? "progress" : "pointer", fontSize: 14, fontWeight: 500 }}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button onClick={() => { setDraft(null); setError(null); }}
+              style={{ padding: "9px 16px", borderRadius: 8, background: COLORS.bg, color: COLORS.textS, border: `0.5px solid ${COLORS.border}`, cursor: "pointer", fontSize: 14 }}>
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1393,6 +1585,18 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     ? employees.filter(e => e.id === myStaffId)
     : employees;
 
+  // Break, Lunch and Meeting carry session_types.is_client_optional
+  // (migration 0019, whose header calls them "clinician-only blocks on the
+  // calendar, not client sessions"). Every picker in this wizard books FOR a
+  // client, so offering them there presents a staff block as a billable
+  // service. Deliberately NOT applied to the Session Types catalogue, the
+  // Sessions/calendar type FILTERS, or any duration/gap/colour lookup -
+  // filtering those would hide sessions of that type that already exist.
+  // The fallback keeps a clinic that has flagged every one of its types from
+  // getting a step with no options and no explanation.
+  const filteredTypes = sessionTypes.filter(st => !st.is_client_optional);
+  const bookableTypes = filteredTypes.length ? filteredTypes : sessionTypes;
+
   const [editingCalId, setEditingCalId] = useState(null);
   const [editingCalName, setEditingCalName] = useState("");
   const [hoveredCalId, setHoveredCalId] = useState(null);
@@ -1451,6 +1655,9 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   // location), with a distinct home-visit case - the same location model
   // migration 0018 built for the Create flow generally, previously only
   // ever wired up in the quick-create modal this step replaced.
+  // Click-to-create books a client session by default; flipping this books a
+  // staff-only block (Break/Lunch/Meeting) against the same slot instead.
+  const [blockMode, setBlockMode] = useState(false);
   const [quickIsHome, setQuickIsHome] = useState(false);
   const [quickHomeAddress, setQuickHomeAddress] = useState("");
   // Conflict-resolution suggestions (never a hard block): set only for the
@@ -1475,7 +1682,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       ?? calendars.find(c => c.status !== "archived" && c.date_start <= prefill.dateStr && prefill.dateStr <= c.date_end);
     setSelectedCalendar(covering || null);
     setQuickClient(null); setQuickType(null); setQuickStaff(null);
-    setQuickIsHome(false); setQuickHomeAddress("");
+    setQuickIsHome(false); setQuickHomeAddress(""); setBlockMode(false);
     setRecurring("no"); setEndType(null); setEndDate(""); setEndCount("");
     setPendingConflict(null);
     setTrail([]);
@@ -1501,7 +1708,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     const covering = calendars.find(c => c.status === "active") ?? calendars.find(c => c.status !== "archived") ?? null;
     const location = locations.find(l => l.id === waitlistPrefill.location_id) ?? null;
     const client = clients.find(c => c.id === waitlistPrefill.id) ?? null;
-    const sessionType = sessionTypes.find(st => st.name === "Assessment") ?? sessionTypes[0] ?? null;
+    const sessionType = bookableTypes.find(st => st.name === "Assessment") ?? bookableTypes[0] ?? null;
     setSelectedCalendar(covering);
     setMatchCount("one");
     setSelectedLocation(location);
@@ -1779,7 +1986,9 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       }
       const { error: err } = await supabase.from("sessions").insert({
         recurrence_id: null,
-        client_id: quickClient.id,
+        // null for a staff block - the whole point of Break/Lunch/Meeting.
+        // Requires migration 0078; before it, 0016's trigger rejected this.
+        client_id: blockMode ? null : quickClient.id,
         employee_id: staff.id,
         hour, minute,
         session_date: dateStr,
@@ -1820,7 +2029,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   // clicked date itself via generateDatesFrom, not the calendar term's own
   // start date the way every other booking path in this wizard is.
   async function bookQuickSlot() {
-    if (!selectedCalendar || !quickClient || !quickStaff || !quickType || !prefill) return;
+    // blockMode has no client by design, so it is the one path here that may
+    // proceed without one.
+    if (!selectedCalendar || (!blockMode && !quickClient) || !quickStaff || !quickType || !prefill) return;
+    const quickClientId = blockMode ? null : quickClient.id;
 
     if (recurring === "yes") {
       setBooking(true);
@@ -1838,7 +2050,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
             skipped.push(date);
           } else {
             inserts.push({
-              recurrence_id: recurrenceId, client_id: quickClient.id, employee_id: quickStaff.id,
+              recurrence_id: recurrenceId, client_id: quickClientId, employee_id: quickStaff.id,
               hour: prefill.hour, minute: prefill.minute, session_date: date, type: quickType.name,
               calendar_id: selectedCalendar.id, status: "scheduled", clinic_id: appUser.clinic_id,
               location_id: quickIsHome ? null : (quickStaff.location_id ?? null),
@@ -1866,10 +2078,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
           const insertDates = new Set(inserts.map(i => i.session_date));
           const hit = bookings.find(b => {
             if (!insertDates.has(b.session_date) || b.status === "cancelled") return false;
-            if (b.employee_id !== quickStaff.id && b.client_id !== quickClient.id) return false;
+            if (b.employee_id !== quickStaff.id && (quickClientId == null || b.client_id !== quickClientId)) return false;
             const bType = sessionTypes.find(t => t.name === b.type);
             return gapsOverlap(
-              { sessionDate: b.session_date, employeeId: quickStaff.id, clientId: quickClient.id, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: candDuration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
+              { sessionDate: b.session_date, employeeId: quickStaff.id, clientId: quickClientId, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: candDuration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
               { sessionDate: b.session_date, employeeId: b.employee_id, clientId: b.client_id, startMinutes: b.hour * 60 + b.minute, durationMinutes: bType?.duration_minutes ?? bType?.duration ?? 60, gapBeforeMinutes: bType?.gap_before_minutes ?? 0, gapAfterMinutes: bType?.gap_after_minutes ?? 0 },
             );
           });
@@ -1930,10 +2142,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     const gapAfter = quickType.gap_after_minutes ?? 0;
     const gapHit = !exactConflict && (gapBefore || gapAfter) ? bookings.find(b => {
       if (b.status === "cancelled" || b.session_date !== prefill.dateStr) return false;
-      if (b.employee_id !== quickStaff.id && b.client_id !== quickClient.id) return false;
+      if (b.employee_id !== quickStaff.id && (quickClientId == null || b.client_id !== quickClientId)) return false;
       const bType = sessionTypes.find(t => t.name === b.type);
       return gapsOverlap(
-        { sessionDate: prefill.dateStr, employeeId: quickStaff.id, clientId: quickClient.id, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: duration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
+        { sessionDate: prefill.dateStr, employeeId: quickStaff.id, clientId: quickClientId, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: duration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
         { sessionDate: b.session_date, employeeId: b.employee_id, clientId: b.client_id, startMinutes: b.hour * 60 + b.minute, durationMinutes: bType?.duration_minutes ?? bType?.duration ?? 60, gapBeforeMinutes: bType?.gap_before_minutes ?? 0, gapAfterMinutes: bType?.gap_after_minutes ?? 0 },
       );
     }) : null;
@@ -1944,10 +2156,16 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       return;
     }
 
-    const otherClient = clients.find(c => c.id === other.client_id);
+    // Masked only where it is actually somebody else's: both finders above
+    // match on the SAME employee or the SAME client, so for a clinician the
+    // blocking session is usually their own and naming the client there is
+    // the whole value of the message. visibleClient() decides per session
+    // rather than per role for exactly that reason.
+    const otherView = visibleClient(appUser, other, clients);
+    const otherLabel = otherView.masked ? MASKED_CLIENT_LABEL : otherView.client?.name;
     const message = exactConflict
-      ? `${quickStaff.name} already has a session with ${otherClient?.name || "another client"} at that time.`
-      : `This lands inside the buffer time around ${otherClient?.name || "another session"}'s ${other.type}.`;
+      ? `${quickStaff.name} already has a session with ${otherLabel || "another client"} at that time.`
+      : `This lands inside the buffer time around ${otherLabel || "another session"}'s ${other.type}.`;
     const existing = bookings.filter(b => b.status !== "cancelled").map(b => {
       const t = sessionTypes.find(st => st.name === b.type);
       return { id: b.id, employee_id: b.employee_id, session_date: b.session_date, hour: b.hour, minute: b.minute, durationMinutes: t?.duration_minutes ?? t?.duration ?? 60, status: b.status };
@@ -1983,7 +2201,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       // (or nobody, if unlinked) - it would otherwise recommend a colleague
       // for a clinician to book, which the final insert rejects outright.
       const eligible = assignableEmployees.filter(e =>
-        e.booked < e.capacity &&
+        hasOpenCapacity(e) &&
         e.location_id === selectedClient.location_id &&
         (staffChoice === "any" || e.id === selectedStaff?.id)
       );
@@ -2014,10 +2232,12 @@ Respond ONLY with valid JSON — no extra text:
         // colleague's slot that would fail to book.
         const eligible = assignableEmployees
           .filter(e =>
-            e.booked < e.capacity &&
+            hasOpenCapacity(e) &&
             e.location_id === client.location_id
           )
-          .sort((a, b) => (a.booked / a.capacity) - (b.booked / b.capacity));
+          // utilization(), not booked/capacity: a capacity of 0 or null made
+          // this comparator NaN, which leaves Array.sort's order arbitrary.
+          .sort((a, b) => utilization(a) - utilization(b));
 
         const matches = eligible.slice(0, 3).map(emp => {
           const overlappingSlots = [];
@@ -2091,10 +2311,30 @@ finally { setLoading(false); }
     // picker on this click-to-create step offers only themselves (or
     // nobody, if not yet linked to a staff row), never a colleague who
     // would just fail the insert.
-    const eligibleStaff = quickType && quickClient
-      ? assignableEmployees.filter(e => e.location_id === quickClient.location_id)
-      : [];
-    const allThreeChosen = !!(quickClient && quickType && quickStaff);
+    //
+    // hasOpenCapacity is the predicate the wizard's "Staff preference?" step
+    // and both AI-match candidate lists already applied and this one alone
+    // did not - it filtered on location ONLY. An invite-created admin or
+    // scheduler row (null credential, capacity 0, and null location, which
+    // matches a client whose location is also unset) was therefore offered
+    // here as a bookable clinician, rendered "undefined · /0".
+    // A staff block (Break / Lunch / Meeting - session_types
+    // .is_client_optional, migration 0019) has no client by definition, so it
+    // skips the client step, offers only those types, and is not constrained
+    // to a client's location or to a clinician's remaining client capacity -
+    // a lunch break is not caseload. Migration 0078 is what makes the insert
+    // possible at all: 0016's clinic-consistency trigger used to reject any
+    // session with a null client_id, which is why these types existed in the
+    // catalogue for months without being bookable from anywhere.
+    const blockTypes = sessionTypes.filter(t => t.is_client_optional);
+    const eligibleStaff = blockMode
+      ? (quickType ? assignableEmployees : [])
+      : quickType && quickClient
+        ? assignableEmployees.filter(e => hasOpenCapacity(e) && e.location_id === quickClient.location_id)
+        : [];
+    const allThreeChosen = blockMode
+      ? !!(quickType && quickStaff)
+      : !!(quickClient && quickType && quickStaff);
     const ready = allThreeChosen && recurring && (recurring === "no" || (endType && (endType === "date" ? endDate : endCount)));
 
     return (
@@ -2139,40 +2379,68 @@ finally { setLoading(false); }
         {selectedCalendar && allThreeChosen && (
           <StepCard question="Selected">
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <SelectedPill label="Client" value={quickClient.name} onClear={() => { setQuickClient(null); setQuickStaff(null); }} />
-              <SelectedPill label="Session type" value={quickType.name} color={quickType.color} onClear={() => { setQuickType(null); setQuickStaff(null); }} />
-              <SelectedPill label="Clinician" value={quickStaff.name} color="#378ADD" onClear={() => setQuickStaff(null)} />
+              {!blockMode && quickClient && (
+                <SelectedPill label="Client" value={quickClient.name} onClear={() => { setQuickClient(null); setQuickStaff(null); }} />
+              )}
+              <SelectedPill label={blockMode ? "Block type" : "Session type"} value={quickType.name} color={quickType.color} onClear={() => { setQuickType(null); setQuickStaff(null); }} />
+              <SelectedPill label={blockMode ? "Staff" : "Clinician"} value={quickStaff.name} color="#378ADD" onClear={() => setQuickStaff(null)} />
             </div>
           </StepCard>
         )}
 
         {selectedCalendar && !allThreeChosen && (
           <>
-            <StepCard question="Client">
-              {/* Was a flat wall of pills - unusable once a clinic has more
-                  than a handful of clients (issue #133 item 5: "135 people
-                  plus for a large clinic"). Reuses the same filterable,
-                  alphabetical-by-last-name dropdown FilterPanel.tsx already
-                  built for the Clinicians/Clients calendar filters. */}
-              <SearchSelectMenu
-                label="client"
-                items={eligibleClients.map(c => ({ id: c.id, name: c.name }))}
-                selectedId={quickClient?.id ?? null}
-                onSelect={(id) => { setQuickClient(eligibleClients.find(c => c.id === id) || null); setQuickStaff(null); }}
-                placeholder="Search clients by name…"
-              />
-            </StepCard>
+            {blockTypes.length > 0 && (
+              <StepCard question="What are you booking?">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <OptionButton
+                    label="Client session" selected={!blockMode}
+                    onClick={() => { setBlockMode(false); setQuickType(null); setQuickStaff(null); }}
+                  />
+                  <OptionButton
+                    label="Staff block" sub={blockTypes.map(t => t.name).join(" · ")} selected={blockMode}
+                    onClick={() => { setBlockMode(true); setQuickClient(null); setQuickType(null); setQuickStaff(null); setQuickIsHome(false); }}
+                  />
+                </div>
+              </StepCard>
+            )}
 
-            <StepCard question="Session type">
+            {!blockMode && (
+              <StepCard question="Client">
+                {/* Was a flat wall of pills - unusable once a clinic has more
+                    than a handful of clients (issue #133 item 5: "135 people
+                    plus for a large clinic"). Reuses the same filterable,
+                    alphabetical-by-last-name dropdown FilterPanel.tsx already
+                    built for the Clinicians/Clients calendar filters. */}
+                <SearchSelectMenu
+                  label="client"
+                  items={eligibleClients.map(c => ({ id: c.id, name: c.name }))}
+                  selectedId={quickClient?.id ?? null}
+                  onSelect={(id) => { setQuickClient(eligibleClients.find(c => c.id === id) || null); setQuickStaff(null); }}
+                  placeholder="Search clients by name…"
+                />
+              </StepCard>
+            )}
+
+            <StepCard
+              question={blockMode ? "Block type" : "Session type"}
+              sub={
+                blockMode
+                  ? undefined
+                  : bookableTypes.length ? undefined : "No session types are configured for this clinic yet - add one under Session Types before booking."
+              }
+            >
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {sessionTypes.map(t => <OptionButton key={t.id} label={t.name} color={t.color} selected={quickType?.id === t.id} onClick={() => { setQuickType(t); setQuickStaff(null); }} />)}
+                {(blockMode ? blockTypes : bookableTypes).map(t => <OptionButton key={t.id} label={t.name} color={t.color} selected={quickType?.id === t.id} onClick={() => { setQuickType(t); setQuickStaff(null); }} />)}
               </div>
             </StepCard>
 
             <StepCard
-              question="Clinician"
+              question={blockMode ? "Who is this for?" : "Clinician"}
               sub={
-                !quickClient || !quickType
+                blockMode
+                  ? (!quickType ? "Pick a block type above first." : undefined)
+                  : !quickClient || !quickType
                   ? "Pick a client and a session type above to see qualified clinicians here - filtering stays live as you choose either one."
                   : !eligibleStaff.length
                     ? (isClinicianUser && myStaffId == null
@@ -2184,13 +2452,16 @@ finally { setLoading(false); }
               }
             >
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {eligibleStaff.map(e => <OptionButton key={e.id} label={e.name} sub={`${e.role} · ${e.booked}/${e.capacity}`} color="#378ADD" selected={quickStaff?.id === e.id} onClick={() => setQuickStaff(e)} />)}
+                {eligibleStaff.map(e => <OptionButton key={e.id} label={e.name} sub={`${e.role || "No credential set"} · ${e.booked ?? 0}/${e.capacity}`} color="#378ADD" selected={quickStaff?.id === e.id} onClick={() => setQuickStaff(e)} />)}
               </div>
             </StepCard>
           </>
         )}
 
-        {selectedCalendar && allThreeChosen && (
+        {/* A staff block has no client, so it has no home to visit - this
+            step would otherwise offer "Client's home" with nobody's address
+            to fill in. */}
+        {selectedCalendar && allThreeChosen && !blockMode && (
           <StepCard question="Location">
             <div style={{ display: "flex", gap: 10, marginBottom: quickIsHome ? 10 : 0 }}>
               <OptionButton label={locations.find(l => l.id === quickStaff.location_id)?.name || "Clinic"} sub="Clinician's location" selected={!quickIsHome} onClick={() => setQuickIsHome(false)} />
@@ -2382,9 +2653,12 @@ finally { setLoading(false); }
 
   if (step === "sessionType") return (
     <div>{PH}<Trail steps={trail} onBack={goBack} />
-      <StepCard question="Session type?">
+      <StepCard
+        question="Session type?"
+        sub={bookableTypes.length ? undefined : "No session types are configured for this clinic yet - add one under Session Types before booking."}
+      >
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {sessionTypes.map(st => <OptionButton key={st.id} label={st.name} sub={`${st.duration} min · $${st.price}`} selected={selectedSessionType?.id === st.id} color={typeColors[st.name] || "#888888"} onClick={() => { setSelectedSessionType(st); advance("staff", st.name); }} />)}
+          {bookableTypes.map(st => <OptionButton key={st.id} label={st.name} sub={`${st.duration} min · $${st.price}`} selected={selectedSessionType?.id === st.id} color={typeColors[st.name] || "#888888"} onClick={() => { setSelectedSessionType(st); advance("staff", st.name); }} />)}
         </div>
       </StepCard>
     </div>
@@ -2397,13 +2671,13 @@ finally { setLoading(false); }
     // runMatch's own assignableEmployees-filtered candidate list rather than
     // silently being able to pick a colleague from this list who'd fail the
     // final insert.
-    const eligible = assignableEmployees.filter(e => e.booked < e.capacity && e.location_id === selectedClient?.location_id);
+    const eligible = assignableEmployees.filter(e => hasOpenCapacity(e) && e.location_id === selectedClient?.location_id);
     return (
       <div>{PH}<Trail steps={trail} onBack={goBack} />
         <StepCard question="Staff preference?">
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <OptionButton label="Any" sub="AI selects best match" selected={staffChoice === "any"} onClick={() => { setStaffChoice("any"); setSelectedStaff(null); advance("time", "Any staff"); }} />
-            {eligible.map(e => <OptionButton key={e.id} label={e.name} sub={`${e.role} · ${e.booked}/${e.capacity}`} selected={selectedStaff?.id === e.id} color="#378ADD" onClick={() => { setStaffChoice("specific"); setSelectedStaff(e); advance("time", e.name); }} />)}
+            {eligible.map(e => <OptionButton key={e.id} label={e.name} sub={`${e.role || "No credential set"} · ${e.booked ?? 0}/${e.capacity}`} selected={selectedStaff?.id === e.id} color="#378ADD" onClick={() => { setStaffChoice("specific"); setSelectedStaff(e); advance("time", e.name); }} />)}
           </div>
         </StepCard>
       </div>
@@ -2444,7 +2718,7 @@ finally { setLoading(false); }
   }
 
   if (step === "multiClient") {
-    const currentTab = activeTab || sessionTypes[0]?.name || "";
+    const currentTab = activeTab || bookableTypes[0]?.name || "";
     const activeClients = currentTab === "Assessment"
       ? clients.filter(c => c.status === "active" || c.status === "waitlist")
       : clients.filter(c => c.status === "active");
@@ -2476,9 +2750,9 @@ finally { setLoading(false); }
       <div>{PH}<Trail steps={trail} onBack={goBack} />
         <StepCard question="Which clients do you want to match?">
           <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-            {sessionTypes.map(st => {
+            {bookableTypes.map(st => {
               const count = tabCount(st.name);
-              const active = (activeTab || sessionTypes[0]?.name) === st.name;
+              const active = (activeTab || bookableTypes[0]?.name) === st.name;
               return (
                 <button key={st.id} onClick={() => setActiveTab(st.name)}
                   style={{ padding: "6px 16px", borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: "pointer", border: `1.5px solid ${active ? st.color : COLORS.border}`, background: active ? st.color + "22" : COLORS.bg, color: active ? st.color : COLORS.textS, transition: "all 0.15s" }}>
@@ -2687,7 +2961,12 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
     if (typeFilter !== "all" && b.type !== typeFilter) return false;
     if (staffFilter !== "all" && b.employee_id !== Number(staffFilter)) return false;
     if (search) {
-      const client = clients.find(c => c.id === b.client_id);
+      // Searching a name the viewer isn't shown is the same leak by another
+      // route: type a client's name, see which of a colleague's sessions
+      // survive. visibleClient() returns no client row at all when masked,
+      // so there is nothing here to match on. Staff and type are unchanged -
+      // a clinician sees every colleague's name already (migration 0046).
+      const { client } = visibleClient(appUser, b, clients);
       const emp = employees.find(e => e.id === b.employee_id);
       const q = search.toLowerCase();
       if (!client?.name?.toLowerCase().includes(q) && !emp?.name?.toLowerCase().includes(q) && !b.type?.toLowerCase().includes(q)) return false;
@@ -2696,7 +2975,9 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   }).sort((a, b) => {
     let av, bv;
     if (sortKey === "session_date") { av = `${a.session_date}${a.hour}`; bv = `${b.session_date}${b.hour}`; }
-    else if (sortKey === "client") { av = clients.find(c => c.id === a.client_id)?.name || ""; bv = clients.find(c => c.id === b.client_id)?.name || ""; }
+    // Same reasoning as the search above: masked rows sort as one
+    // undifferentiated group rather than alphabetically by a hidden name.
+    else if (sortKey === "client") { av = visibleClient(appUser, a, clients).client?.name || ""; bv = visibleClient(appUser, b, clients).client?.name || ""; }
     else if (sortKey === "staff") { av = employees.find(e => e.id === a.employee_id)?.name || ""; bv = employees.find(e => e.id === b.employee_id)?.name || ""; }
     else if (sortKey === "location") { av = locations?.find(l => l.id === employees.find(e => e.id === a.employee_id)?.location_id)?.name || ""; bv = locations?.find(l => l.id === employees.find(e => e.id === b.employee_id)?.location_id)?.name || ""; }
     else if (sortKey === "type") { av = a.type || ""; bv = b.type || ""; }
@@ -2752,7 +3033,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
     // extract a date string from "now," which is a different, unsafe use.
     const toICSUTC = (date) => date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
     toExport.forEach(b => {
-      const client = clients.find(c => c.id === b.client_id);
+      const { client, masked } = visibleClient(appUser, b, clients);
       const emp = employees.find(e => e.id === b.employee_id);
       const st = sessionTypes.find(s => s.name === b.type);
       const dur = st?.duration || 60;
@@ -2764,10 +3045,14 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
       // start AND end time.
       const start = new Date(y, mo - 1, d, b.hour, b.minute || 0);
       const end = new Date(start.getTime() + dur * 60000);
+      // A colleague's session exports as time + type and nothing else -
+      // matching the wording lib/ics.ts and the token-backed feed route
+      // already emit, and for the same reason: a downloaded file outlives
+      // the screen it came from.
       lines.push("BEGIN:VEVENT",
         `DTSTART:${toICSUTC(start)}`,
         `DTEND:${toICSUTC(end)}`,
-        `SUMMARY:${b.type} – ${client?.name || "Client"}`,
+        `SUMMARY:${masked ? `Busy – ${b.type}` : `${b.type} – ${client?.name || "Client"}`}`,
         `DESCRIPTION:Staff: ${emp?.name || "—"} | Status: ${b.status}`,
         "END:VEVENT");
     });
@@ -2896,7 +3181,11 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   </div>
 ) : null}
         {filtered.map((b, i) => {
-          const client = clients.find(c => c.id === b.client_id);
+          // A clinician sees a colleague's session as its type and time, not
+          // who it is with (../lib/sessionPrivacy). Admin and scheduler are
+          // unchanged. The initials in the avatar re-identify at this
+          // clinic's size, so a masked row gets a neutral glyph instead.
+          const { client, masked } = visibleClient(appUser, b, clients);
           const emp = employees.find(e => e.id === b.employee_id);
           const col = typeColors[b.type] || "#888";
           const isSel = selected.has(b.id);
@@ -2915,13 +3204,13 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
             <div key={b.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 140px 100px 80px 80px", gap: 0, padding: "10px 12px", borderBottom: i < filtered.length - 1 ? `0.5px solid ${COLORS.border}` : "none", background: isSel ? COLORS.bgS : COLORS.bg, opacity: isCancelled ? 0.55 : 1, alignItems: "center", transition: "background 0.1s" }}>
               <input type="checkbox" checked={isSel} onChange={() => toggleSelect(b.id)} style={{ cursor: "pointer" }} />
               <div
-                role="button" tabIndex={0} aria-label={`View session details for ${client?.name || "this session"}`}
+                role="button" tabIndex={0} aria-label={`View session details for ${masked ? `a ${b.type} session` : (client?.name || "this session")}`}
                 onClick={() => setDetailSession(b)}
                 onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDetailSession(b); } }}
                 style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
               >
-                <Avatar name={client?.name || "?"} size={28} color="#378ADD" />
-                <span style={{ fontSize: 13, fontWeight: 500, color: COLORS.text }}>{client?.name || "—"}</span>
+                <Avatar name={masked ? "·" : (client?.name || "?")} size={28} color="#378ADD" />
+                <span style={{ fontSize: 13, fontWeight: 500, color: masked ? COLORS.textS : COLORS.text }}>{masked ? MASKED_CLIENT_LABEL : (client?.name || "—")}</span>
               </div>
               <div style={{ fontSize: 13, color: COLORS.textS }}>{emp?.name || "—"}</div>
               <div style={{ fontSize: 13, color: COLORS.textS }}>{locations?.find(l => l.id === emp?.location_id)?.name || "—"}</div>
@@ -3075,7 +3364,7 @@ export default function Scheduler() {
   useEffect(() => {
     if (!router.isReady) return;
     const requestedView = router.query.view;
-    const validViews = ["dashboard", "calendar", "sessions", "clients", "waitlist", "employees", "sessiontypes", "create", "settings"];
+    const validViews = ["dashboard", "calendar", "sessions", "clients", "waitlist", "employees", "sessiontypes", "locations", "create", "settings"];
     if (typeof requestedView === "string" && validViews.includes(requestedView)) {
       setView(requestedView);
       void router.replace("/", undefined, { shallow: true });
@@ -3089,8 +3378,15 @@ export default function Scheduler() {
   const [calendars, setCalendars] = useState([]);
   const [staffAvailability, setStaffAvailability] = useState([]);
   const [clientAvailability, setClientAvailability] = useState([]);
-  const [toast, setToast] = useState(null);
-  function showToast(message = "Changes saved") { setToast(message); }
+  // Adapter, not a wrapper worth removing: ~25 call sites below already read
+  // well as showToast(...), and keeping the name means collapsing onto
+  // @summit/toast is a one-line change here rather than 25 elsewhere.
+  function showToast(message = "Changes saved") { toast(message); }
+  // Set when loadData() came back with at least one failed query. Without
+  // this, supabase-js's resolve-on-failure ({data: null, error}) makes a
+  // rejected query indistinguishable on screen from an empty table - which
+  // is exactly why "the sessions list is blank" could not be diagnosed.
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // Working hours used to be this component's own useState - never saved
   // anywhere, resetting to Mon-Fri/8-18 on every refresh despite the
@@ -3116,24 +3412,56 @@ export default function Scheduler() {
       supabase.from("clients").select("*"),
       supabase.from("staff").select("*"),
       supabase.from("session_types").select("*"),
-      supabase.from("sessions").select("*"),
+      // `sessions_visible()`, not the `sessions` table - migration 0077.
+      // Unbounded on purpose (both date args default null): this list backs
+      // the Sessions tab, the dashboard counts and the Create wizard's
+      // conflict pre-check, none of which are windowed. For admin/scheduler
+      // the rows are identical to the table's; for a clinician, colleague
+      // rows arrive with client_id and home_address NULL and client_masked
+      // set, which is what lib/sessionPrivacy.ts renders from.
+      supabase.rpc("sessions_visible"),
       supabase.from("locations").select("*"),
       supabase.from("calendars").select("*"),
       supabase.from("staff_availability").select("*"),
       supabase.from("client_availability").select("*"),
     ]);
-    if (c.data) setClients(c.data);
-    if (e.data) setEmployees(e.data);
-    if (st.data) setSessionTypes(st.data);
-    if (b.data) setBookings(b.data);
-    if (l.data) setLocations(l.data);
-    if (cal.data) setCalendars(cal.data);
-    if (sa.data) setStaffAvailability(sa.data);
-    if (ca.data) setClientAvailability(ca.data);
+    // Every one of these used to be `if (x.data) setX(x.data)`, which reads
+    // the success half and throws the failure half away. supabase-js RESOLVES
+    // on a PostgREST/auth/network failure with {data: null, error} rather than
+    // rejecting, so a failed query left its array at [] with nothing logged,
+    // nothing on screen, and no way to tell "the table is empty" from "the
+    // query was rejected" - the two things a blank Sessions or Clients list
+    // could mean. Naming the table in the log is the point: this is the line
+    // the next report gets answered from.
+    const results = [
+      ["clients", c, setClients], ["staff", e, setEmployees],
+      ["session_types", st, setSessionTypes], ["sessions", b, setBookings],
+      ["locations", l, setLocations], ["calendars", cal, setCalendars],
+      ["staff_availability", sa, setStaffAvailability], ["client_availability", ca, setClientAvailability],
+    ];
+    let anyFailed = false;
+    for (const [table, res, setter] of results) {
+      if (res.error) {
+        anyFailed = true;
+        console.error(`[scheduler] loadData: ${table} query failed`, res.error);
+      }
+      setter(res.data ?? []);
+    }
+    setLoadFailed(anyFailed);
   }
 
+  // Deliberately NOT given loadData's `data ?? []` treatment. This runs after
+  // a create/cancel/reschedule on already-populated state, so blanking it on
+  // a transient error would wipe a correct list AND, because `bookings` is
+  // CalendarView's refreshSignal below, kick the calendar into a refetch off
+  // the emptied array. Keep the stale-but-correct rows; report the failure.
   async function refreshBookings() {
-    const { data } = await supabase.from("sessions").select("*");
+    const { data, error: err } = await supabase.rpc("sessions_visible");
+    if (err) {
+      console.error("[scheduler] refreshBookings: sessions query failed", err);
+      showToast("Couldn't refresh the session list — it may be out of date.");
+      return;
+    }
     if (data) setBookings(data);
   }
 
@@ -3187,7 +3515,7 @@ export default function Scheduler() {
     if (label) showToast(`Calendar filtered to ${label}`);
   }
 
-  const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, waitlist: WaitlistView, employees: EmployeesView, sessiontypes: SessionTypesView, create: CreateView, settings: SettingsView };
+  const views = { dashboard: Dashboard, calendar: CalendarView, sessions: SessionsView, clients: ClientsView, waitlist: WaitlistView, employees: EmployeesView, sessiontypes: SessionTypesView, locations: LocationsView, create: CreateView, settings: SettingsView };
   // Sidebar's NAV list controls which LINKS a clinician sees (2026-09-02,
   // migration 0046) - it does not, by itself, stop `?view=employees` (or
   // any of these ids) from being typed straight into the URL, which the
@@ -3199,7 +3527,7 @@ export default function Scheduler() {
   // screens this task's scope explicitly keeps admin/scheduler-only:
   // Clients, Staff, Session Types, Settings. Falls back to Dashboard rather
   // than rendering a components a clinician has no business seeing.
-  const CLINICIAN_EXCLUDED_VIEWS = new Set(["clients", "waitlist", "employees", "sessiontypes", "settings"]);
+  const CLINICIAN_EXCLUDED_VIEWS = new Set(["clients", "waitlist", "employees", "sessiontypes", "locations", "settings"]);
   const effectiveView = (appUser?.role === "clinician" && CLINICIAN_EXCLUDED_VIEWS.has(view)) ? "dashboard" : view;
   const ViewComp = views[effectiveView];
 
@@ -3217,7 +3545,6 @@ export default function Scheduler() {
       <label htmlFor="nav-toggle" className="nav-toggle-backdrop" aria-hidden="true" />
       <div className="scheduler-shell" style={{ display: "flex", minHeight: "100vh", background: COLORS.bgT, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", fontSize: 16 }}>
       <style>{`
-        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
         * { box-sizing: border-box; }
         input::placeholder { font-style: italic; }
@@ -3238,12 +3565,17 @@ export default function Scheduler() {
         calendars={calendars}
       />
       <main style={{ flex: 1, padding: "32px 36px", overflowY: "auto" }}>
+        {loadFailed && (
+          <div role="alert" style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 8, background: "#FCEBEB", border: "0.5px solid #F7C1C1", color: "#A32D2D", fontSize: 14 }}>
+            Some scheduling data couldn't be loaded, so lists on this screen may be incomplete or empty. Reload the page — if it keeps happening, the browser console names which table failed.
+          </div>
+        )}
         <ViewComp
           clients={clients} setClients={setClients}
           employees={employees} setEmployees={setEmployees}
           sessionTypes={sessionTypes} setSessionTypes={setSessionTypes}
           bookings={bookings}
-          locations={locations}
+          locations={locations} setLocations={setLocations}
           calendars={calendars} setCalendars={setCalendars}
           staffAvailability={staffAvailability} setStaffAvailability={setStaffAvailability}
           clientAvailability={clientAvailability} setClientAvailability={setClientAvailability}
@@ -3324,7 +3656,6 @@ export default function Scheduler() {
           </div>
         </div>
       )}
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
     </>
   );

@@ -26,6 +26,7 @@
  */
 
 import { IS_PREVIEW, getIdentity, type AppRole } from "@summit/session";
+import { toast, toastError } from "@summit/toast";
 import { createBrowserClient } from "@supabase/ssr";
 
 export type SettingScope = "org" | "role" | "user";
@@ -546,6 +547,18 @@ function matchColumns(level: SettingScope, key: string, identity: WriteIdentity)
 }
 
 /**
+ * A rejected write here is almost always an RLS denial, and PostgrestError is
+ * a plain `{ message, details, hint, code }` object rather than an Error, so
+ * `instanceof Error` drops exactly the message worth showing.
+ */
+function failureText(label: string, err: unknown): string {
+  const detail = typeof err === "object" && err !== null && "message" in err
+    ? String((err as { message: unknown }).message).trim()
+    : "";
+  return detail ? `Couldn't save ${label}: ${detail}` : `Couldn't save ${label}.`;
+}
+
+/**
  * Write a setting. Every call feels synchronous: the in-memory cache (and
  * every onSettingsChange subscriber) updates immediately, before the network
  * round trip even starts. In live mode the Supabase write happens in the
@@ -553,9 +566,24 @@ function matchColumns(level: SettingScope, key: string, identity: WriteIdentity)
  * write (wrong role, RLS) reverts the control to its real value instead of
  * silently pretending it worked. Preview mode is unchanged: fully
  * synchronous, localStorage only, nothing async happens under the hood.
+ *
+ * It also announces the outcome (@summit/toast), which is why a settings row
+ * anywhere in any portal - including ones nobody has written yet - confirms
+ * its save without the screen doing anything. Rollback on its own is not
+ * feedback: a control snapping back to its old value while the user is
+ * looking somewhere else reads as "it didn't take my click", not as "the
+ * server refused it". The toast store coalesces repeat successes, so a
+ * dragged slider or a per-keystroke text setting is one toast, not thirty.
+ *
+ * `opts.silent` suppresses BOTH toasts, not just the success one: a caller
+ * opts out precisely because it is reporting the outcome itself (a saved()
+ * wrapper, its own inline indicator), and two failure messages worded
+ * differently is worse than the one it already shows. Failure still throws
+ * either way, so a silent caller is never left with nothing to report.
  */
 export async function setSetting(
   key: string, value: SettingValue | null, level: SettingScope, who = "You",
+  opts: { silent?: boolean } = {},
 ): Promise<void> {
   const def = DEFS.get(key);
   if (!def) throw new Error(`Unknown setting ${key}`);
@@ -568,13 +596,21 @@ export async function setSetting(
     writeLocal(level, layer);
     appendLocalAudit({ key, label: def.label, level, previous, next: value, who, at: new Date().toISOString() });
     notify();
+    if (!opts.silent) toast();
     return;
   }
 
   await initSettings();
   const identity = await getIdentity();
   const match = matchColumns(level, key, identity);
-  if (!match || !identity.clinicId) throw new Error(`Cannot save ${def.label}: identity is not resolved.`);
+  if (!match || !identity.clinicId) {
+    // Same class of silent failure as a denied write, and the likelier one in
+    // practice: a null profiles.clinic_id makes every save here impossible
+    // while the control still looks live.
+    const err = new Error(`Cannot save ${def.label}: identity is not resolved.`);
+    if (!opts.silent) toastError(err.message);
+    throw err;
+  }
 
   if (!live) live = emptyLiveCache();
   const layer = live[level];
@@ -599,8 +635,11 @@ export async function setSetting(
     if (previous == null) delete layer[key]; else layer[key] = previous;
     notify();
     console.error(`Failed to save ${def.label}:`, err);
+    if (!opts.silent) toastError(failureText(def.label, err));
     throw err;
   }
+
+  if (!opts.silent) toast();
 
   const auditEntry: SettingsAuditEntry = {
     key, label: def.label, level, previous, next: value, who: "You", at: new Date().toISOString(),

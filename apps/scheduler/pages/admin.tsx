@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@summit/db';
 import { useContext } from 'react';
+import { toast } from '@summit/toast';
 import { UserContext } from '../lib/UserContext';
 import Sidebar from '../components/Sidebar';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { isClinicalStaff } from '../lib/staff-roles';
 
 type Tab = 'staff' | 'clients';
 
@@ -113,8 +115,10 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [staffForm, setStaffForm] = useState({ ...defaultStaffForm });
   const [clientForm, setClientForm] = useState({ ...defaultClientForm });
-  const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set when fetchAll() came back with at least one failed query - see the
+  // comment there for why `data || []` alone could not show this.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<Staff & Client>>({});
 
@@ -134,29 +138,57 @@ export default function AdminPage() {
 
 async function fetchAll() {
   setLoading(true);
-  const [{ data: staff }, { data: clients }, { data: bk }, { data: cal }, { data: types }, { data: locs }] = await Promise.all([
+  // `is_client_optional` was not selected here - this query asked for `name`
+  // alone, so the flag that says a type is a staff-only block was not
+  // available to filter on below.
+  const [staff, clients, bk, cal, types, locs] = await Promise.all([
     supabase.from('staff').select('*').order('name'),
     supabase.from('clients').select('*').order('name'),
     supabase.from('sessions').select('*'),
     supabase.from('calendars').select('*'),
-    supabase.from('session_types').select('name').order('name'),
+    supabase.from('session_types').select('name, is_client_optional').order('name'),
     supabase.from('locations').select('id, name').order('name'),
   ]);
-  setStaffList(staff || []);
-  setClientList(clients || []);
-  setBookings(bk || []);
-  setCalendars(cal || []);
-  setLocations(locs || []);
+  // Each of these used to be destructured as `{ data }` and stored as
+  // `data || []`, which reads the success half and discards the failure
+  // half. supabase-js resolves rather than rejecting on a failed query, so a
+  // rejected read rendered as "No staff yet - add your first member" with
+  // nothing logged and no way to tell the two apart.
+  const queries: [string, { error: unknown }][] = [
+    ['staff', staff], ['clients', clients], ['sessions', bk],
+    ['calendars', cal], ['session_types', types], ['locations', locs],
+  ];
+  let anyFailed = false;
+  for (const [table, res] of queries) {
+    if (res.error) {
+      anyFailed = true;
+      console.error(`[scheduler/admin] fetchAll: ${table} query failed`, res.error);
+    }
+  }
+  setLoadFailed(anyFailed);
+  setStaffList(staff.data || []);
+  setClientList(clients.data || []);
+  setBookings(bk.data || []);
+  setCalendars(cal.data || []);
+  setLocations(locs.data || []);
   // This clinic's own configured session types (SessionTypeEditModal,
   // migration 0019), not the fixed four-item list every clinic used to be
-  // stuck with here regardless of what it actually configured.
-  setSessionTypeNames(types?.length ? types.map((t: { name: string }) => t.name) : DEFAULT_SESSION_TYPES);
+  // stuck with here regardless of what it actually configured. Staff-only
+  // blocks (Break, Lunch, Meeting - is_client_optional, 0019) are dropped:
+  // this list backs a CLIENT record's own session_type, so "Lunch" was a
+  // selectable service for a child. DEFAULT_SESSION_TYPES is already all
+  // client-facing, so the fallback needs no filtering of its own.
+  const bookable = (types.data || []).filter((t: { is_client_optional?: boolean }) => !t.is_client_optional);
+  setSessionTypeNames(bookable.length ? bookable.map((t: { name: string }) => t.name) : DEFAULT_SESSION_TYPES);
   setLoading(false);
 }
 
+  // Adapter onto @summit/toast. This page used to render its own toast -
+  // bottom-right, dark, 3s - while pages/index.jsx rendered a different one
+  // top-right, light, 5s. Two toasts in one app was the drift the shared
+  // package exists to end; the call sites below are unchanged.
   function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
+    toast(msg);
   }
 
   function toggleSpecialty(s: string) {
@@ -559,16 +591,9 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
         <Sidebar view="admin" onNavigate={() => {}} appUser={appUser} bookings={bookings} calendars={calendars} />
         <main style={{ flex: 1, padding: '32px 36px', overflowY: 'auto' }}>
       <div style={s.page}>   {/* keep but remove padding/maxWidth since main handles it */}
-      {/* Toast */}
-      {toast && (
-        <div style={{
-          position: 'fixed', bottom: 24, right: 24,
-          background: '#111827', color: 'white',
-          padding: '12px 20px', borderRadius: 10,
-          fontSize: 14, zIndex: 2000,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-        }}>
-          ✓ {toast}
+      {loadFailed && (
+        <div role="alert" style={{ ...s.errorMsg, marginBottom: 20 }}>
+          Some records couldn't be loaded, so these lists may be incomplete or empty. Reload the page — if it keeps happening, the browser console names which table failed.
         </div>
       )}
 
@@ -617,7 +642,13 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
     <>
       <div>
         <div style={s.cardName}>{member.name}</div>
-        <div style={s.cardSub}>{member.booked ?? 0}/{member.capacity ?? '—'} sessions booked{member.specialties?.length ? ' · ' + member.specialties.join(', ') : ''} · {locations.find(l => l.id === member.location_id)?.name ?? 'No location set'}</div>
+        {/* Every staff row stays listed - this is the roster, and a hidden
+            row is one nobody can give a credential to or delete. Only the
+            booked/capacity figure is clinician-scoped: every staff-shaped
+            invite mints a row (an office manager included) with no
+            credential and capacity 0, and "0/— sessions booked" on someone
+            who is never booked is noise. See ../lib/staff-roles. */}
+        <div style={s.cardSub}>{isClinicalStaff(member) ? `${member.booked ?? 0}/${member.capacity ?? 0} sessions booked` : 'No credential or capacity set'}{member.specialties?.length ? ' · ' + member.specialties.join(', ') : ''} · {locations.find(l => l.id === member.location_id)?.name ?? 'No location set'}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(roleColors[member.role] || '#6B7280')}>{member.role}</span>

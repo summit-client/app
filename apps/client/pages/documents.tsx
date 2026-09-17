@@ -433,17 +433,23 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
   // select policy on `clients` at all (only admin/scheduler/clinical staff
   // do; see migrations 0013/0014), but always has profiles_self_read on
   // their own row (migration 0032).
-  const { data: profileRow } = await supabase
-    .from("profiles")
-    .select("clinic_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  // Neither read needs the other, so they go together rather than adding a
+  // second round trip to this page's TTFB.
+  const [profileRes, docsRes] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("clinic_id")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("client_documents")
+      .select("id, title, direction, file_path, created_at")
+      .eq("client_id", viewed.clientId)
+      .order("created_at", { ascending: false }),
+  ]);
 
-  const { data: docRows, error: documentsError } = await supabase
-    .from("client_documents")
-    .select("id, title, direction, file_path, created_at")
-    .eq("client_id", viewed.clientId)
-    .order("created_at", { ascending: false });
+  const { data: profileRow } = profileRes;
+  const { data: docRows, error: documentsError } = docsRes;
 
   if (documentsError) {
     console.error("Failed to load documents page rows:", documentsError.message);

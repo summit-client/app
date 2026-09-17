@@ -1,6 +1,7 @@
 "use client";
 
 import { HubGate } from "@/components/hub-provider";
+import { saved } from "@summit/toast";
 
 import * as React from "react";
 import {
@@ -33,8 +34,12 @@ function TimeOffScreen() {
   const days = f.start && f.end ? inclusiveDays(f.start, f.end) : 0;
 
   const submit = async () => {
-    await requestTimeOff({ type: f.type, startDate: f.start, endDate: f.end, note: f.note });
-    setF({ type: "VACATION", start: "", end: "", note: "" });
+    await saved(async () => {
+      await requestTimeOff({ type: f.type, startDate: f.start, endDate: f.end, note: f.note });
+      // Clearing the form is the only thing that said "sent" before, so it
+      // stays inside the write - a rejected request keeps what was typed.
+      setF({ type: "VACATION", start: "", end: "", note: "" });
+    });
     force();
   };
 
@@ -82,7 +87,7 @@ function TimeOffScreen() {
                 <td><span className={`pill ${STATUS_PILL[r.status]}`}>{r.status.toLowerCase()}</span></td>
                 <td style={{ textAlign: "right" }}>
                   {r.status === "REQUESTED" ? (
-                    <button className="btn ghost" onClick={() => void decideTimeOff(r.id, "CANCELLED").then(force)}>Cancel</button>
+                    <button className="btn ghost" onClick={() => void saved(decideTimeOff(r.id, "CANCELLED")).then(force)}>Cancel</button>
                   ) : null}
                 </td>
               </tr>

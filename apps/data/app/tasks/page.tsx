@@ -5,6 +5,7 @@ import {
   getMyTasks, setTaskStatus, TASK_TYPE_LABEL,
   type ClinicianTask, type TaskType,
 } from "@/lib/tasks";
+import { toast } from "@summit/toast";
 
 const TYPE_PILL: Record<TaskType, string> = {
   sign_off: "warn", note_due: "danger", pd_requirement: "accent", other: "neutral",
@@ -34,6 +35,7 @@ export default function TasksPage() {
     setTasks((cur) => (cur ?? []).map((x) => (x.id === t.id ? { ...x, status: next, completedAt: next === "completed" ? new Date().toISOString() : null } : x)));
     try {
       await setTaskStatus(t.id, next);
+      toast(next === "completed" ? "Task completed" : "Task reopened");
     } catch {
       setError("Could not update that task — try again.");
       load();

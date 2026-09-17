@@ -70,13 +70,18 @@ interface Props {
    *  Dashboard's Sessions list (see pages/index.jsx's focusPersonOnCalendar) -
    *  there's no per-person profile page anywhere in this app, so that click
    *  lands here instead: scope this tab to that person via the same
-   *  filters/date-anchor a user could set by hand. */
+   *  filters/date-anchor a user could set by hand, releasing everything
+   *  else that was narrowing the view. Applied on every new value, not
+   *  only on mount - a second click while this tab is already open is a
+   *  fresh focus with nothing else changing. */
   focus?: { employeeId?: number | null; clientId?: number | null; dateStr?: string | null } | null;
   /** Called once the incoming `focus` has been applied, so the parent can
-   *  clear it - this view fully unmounts whenever pages/index.jsx's `view`
-   *  switches away from "calendar" (see its `views` map), so without this
-   *  a stale focus would silently reapply itself on the next visit to this
-   *  tab even after someone had since cleared filters by hand. */
+   *  clear it. Two things depend on it: this view fully unmounts whenever
+   *  pages/index.jsx's `view` switches away from "calendar" (see its
+   *  `views` map), so a stale focus would otherwise silently reapply itself
+   *  on the next visit to this tab even after someone had cleared filters
+   *  by hand; and clearing it to null is what keeps the effect below from
+   *  re-running over filters the user has since changed. */
   onConsumedFocus?: () => void;
   /** Any new value (object/array identity change, not equality) re-runs
    *  this tab's own `sessions` fetch. This view keeps its own independent
@@ -100,8 +105,14 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   // 0046): admin/scheduler can drag/reschedule/cancel any session on this
   // grid; a clinician can only ever act on a session whose employee_id is
   // their own linked staff row (appUser.staffId, resolved by useUser.ts via
-  // employment_records). Read access to every session, including a
-  // colleague's, is unaffected - only the write affordances are scoped.
+  // employment_records).
+  //
+  // This gates WRITES. It used to be paired with "read access to every
+  // session, including a colleague's, is unaffected", which is no longer
+  // the whole story: a colleague's block still renders, but without the
+  // client's name or a home-visit address (lib/sessionPrivacy.ts, applied
+  // inside TimeGrid / MonthGrid / SessionDetail). The two now agree on the
+  // same ownership test, which is why they share one shape.
   const canManageSession = React.useCallback((s: CalSession | null | undefined): boolean => {
     if (!s || !appUser) return false;
     if (appUser.role === "admin" || appUser.role === "scheduler") return true;
@@ -118,24 +129,6 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const [rescheduling, setRescheduling] = React.useState<CalSession | null>(null);
   const [rescheduleInitialSlot, setRescheduleInitialSlot] = React.useState<{ dateStr: string; hour: number; minute: number } | null>(null);
   const [, forceTick] = React.useState(0);
-
-  // Applied once on mount only (empty dep array - this component remounts
-  // fresh on every navigation into this tab, per the comment on `focus`
-  // above, so there is no later prop change to react to). Reads `focus` via
-  // closure rather than as a dependency for exactly that reason.
-  React.useEffect(() => {
-    if (!focus) return;
-    if (focus.employeeId != null || focus.clientId != null) {
-      setFilters({
-        ...emptyFilters(),
-        employeeIds: focus.employeeId != null ? new Set([focus.employeeId]) : new Set(),
-        clientIds: focus.clientId != null ? new Set([focus.clientId]) : new Set(),
-      });
-    }
-    if (focus.dateStr) setAnchor(parseDateStr(focus.dateStr));
-    onConsumedFocus?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Measures the actual viewport-fit container so the time grid scales its
   // px-per-minute to the device instead of always rendering at one fixed
@@ -177,12 +170,27 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
     [mode, anchor, nDays, weekendsInView, workDays.join(",")],
   );
 
+  // Reads `sessions_visible()` (migration 0077), not the `sessions` table.
+  // For admin, scheduler and supervisor the two are identical. For a
+  // clinician the table now returns their OWN sessions only - every
+  // colleague's row, which this calendar needs for conflict detection and
+  // availability shading, comes back through the function with client_id and
+  // home_address already NULL and client_masked set. See lib/sessionPrivacy.ts.
+  // PostgREST filters chain onto a set-returning function exactly as onto a
+  // table, so the filter panel below is unchanged - except that filtering by
+  // client necessarily matches only rows whose client this viewer may see,
+  // which is the same thing the picker already offers them.
   const loadRange = React.useCallback(async () => {
     if (!clinicId) return;
-    let q = supabase.from("sessions").select("*")
+    let q = supabase
+      .rpc("sessions_visible", {
+        p_from: toDateStr(range.queryStart),
+        p_to: toDateStr(range.queryEnd),
+      })
+      // Redundant with the function's own tenant scoping, kept because a
+      // read that names the clinic it means is worth more than one saved
+      // predicate if this ever moves back onto a table.
       .eq("clinic_id", clinicId)
-      .gte("session_date", toDateStr(range.queryStart))
-      .lte("session_date", toDateStr(range.queryEnd))
       .neq("status", "cancelled");
     if (filters.locationIds.size) q = q.in("location_id", [...filters.locationIds]);
     if (filters.typeNames.size) q = q.in("type", [...filters.typeNames]);
@@ -217,11 +225,17 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
   const loadOverlay = React.useCallback(async () => {
     if (!clinicId || overlayStaffIds.length === 0) { setOverlaySessions([]); return; }
-    const { data } = await supabase.from("sessions").select("*")
+    // Same path as loadRange - this overlay is specifically OTHER people's
+    // days, so for a clinician it is entirely rows the `sessions` table no
+    // longer returns. It shows their occupancy, masked; that is what the
+    // panel is for.
+    const { data } = await supabase
+      .rpc("sessions_visible", {
+        p_from: toDateStr(range.queryStart),
+        p_to: toDateStr(range.queryEnd),
+      })
       .eq("clinic_id", clinicId)
       .in("employee_id", overlayStaffIds)
-      .gte("session_date", toDateStr(range.queryStart))
-      .lte("session_date", toDateStr(range.queryEnd))
       .neq("status", "cancelled");
     setOverlaySessions((data as CalSession[]) || []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -279,6 +293,37 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   const displaySessions = selectedCalendarId != null
     ? sessions.filter((s) => s.calendar_id === selectedCalendarId)
     : (showDrafts ? sessions : liveSessions);
+
+  // Deliberately sits down here rather than up with the other state: it
+  // touches setOverlayStaffIds / setShowDrafts / setSelectedCalendarId,
+  // all declared above this line.
+  //
+  // "Show me this person" has to mean this person and nothing else, so
+  // every control that independently narrows what reaches the grid is
+  // released explicitly. Those three used to reset only as a side effect of
+  // the remount pages/index.jsx's `views` map forces on a tab change -
+  // true, but nothing stated it, and it stopped being true the moment this
+  // effect started re-running without a remount.
+  //
+  // Deps are [focus], not []: the same click from the Dashboard while this
+  // tab is ALREADY open changes nothing but this prop, and a mount-only
+  // effect silently did nothing for it. onConsumedFocus clears the prop to
+  // null, so the next run early-returns instead of stomping filters the
+  // user has since set by hand.
+  React.useEffect(() => {
+    if (!focus) return;
+    setFilters({
+      ...emptyFilters(),
+      employeeIds: focus.employeeId != null ? new Set([focus.employeeId]) : new Set(),
+      clientIds: focus.clientId != null ? new Set([focus.clientId]) : new Set(),
+    });
+    setSelectedCalendarId(null);
+    setShowDrafts(false);
+    setOverlayStaffIds([]);
+    if (focus.dateStr) setAnchor(parseDateStr(focus.dateStr));
+    onConsumedFocus?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus]);
 
   // Confirming a draft calendar was previously only reachable from the
   // Create wizard's very first step (hover a calendar pill there to reveal
@@ -439,6 +484,9 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       failed = !!error;
       conflict = isBookingConflictError(error);
     } else {
+      // The `sessions` table on purpose - same reasoning as RescheduleModal:
+      // these are siblings of a series about to be written, so they are rows
+      // this user may write and therefore rows 0077 still returns directly.
       const { data: rows } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
       const oldDate = parseDateStr(session.session_date);
       const newDate = parseDateStr(dateStr);
@@ -595,20 +643,25 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 4 }}>
+        {/* Each group wraps on its own: the four view-mode buttons alone are
+            wider than <main>'s content box on a phone, and without this the
+            group overflows sideways inside main's scroll area rather than
+            folding. Cosmetic - the dropdown clipping that overflow used to
+            be blamed for is fixed in globals.css's .toolbar-menu, not here. */}
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           <button aria-label="Previous" onClick={() => go(-1)} style={navBtn}>‹</button>
           <button onClick={goToday} style={navBtn}>Today</button>
           <button aria-label="Next" onClick={() => go(1)} style={navBtn}>›</button>
         </div>
 
-        <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+        <div style={{ display: "flex", gap: 4, marginLeft: 8, flexWrap: "wrap" }}>
           <ModeButton active={mode === "day"} label="Day" onClick={() => setMode("day")} />
           <ModeButton active={mode === "week" && !weekendsInView} label="Work week" onClick={() => { setMode("week"); setWeekendsInView(false); }} />
           <ModeButton active={mode === "week" && weekendsInView} label="Full week" onClick={() => { setMode("week"); setWeekendsInView(true); }} />
           <ModeButton active={mode === "month"} label="Month" onClick={() => setMode("month")} />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12.5, color: "var(--color-text-secondary)" }}>Days:</span>
           <input
             type="number" min={1} max={7} value={nDays}
@@ -846,6 +899,10 @@ const overlayStyle: React.CSSProperties = {
   position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center",
 };
 const modalStyle: React.CSSProperties = {
-  width: 340, background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+  // min(), not a flat 340: below 340px a fixed-width modal in an unpadded
+  // overlay clips symmetrically, and the left half of that clip can't be
+  // scrolled to.
+  width: "min(340px, calc(100% - 32px))",
+  background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
 };
 

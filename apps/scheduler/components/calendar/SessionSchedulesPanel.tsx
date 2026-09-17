@@ -35,6 +35,8 @@ import type { AvailabilityRow, ExistingSession } from "./suggestions";
 import { sessionDuration } from "./types";
 import type { CalSession, CalClient, CalEmployee, CalSessionType } from "./types";
 import { useFocusTrap } from "../../lib/useFocusTrap";
+import { useAppUser } from "../../lib/UserContext";
+import { canSeeClientIdentity } from "../../lib/sessionPrivacy";
 
 interface ClientAvailabilityRow { client_id: number; day: string; start_time: string; end_time: string }
 
@@ -56,13 +58,17 @@ interface Props {
   onProposeSlot: (dateStr: string, hour: number, minute: number) => void;
   /**
    * Whether the viewer may propose a new time for THIS session at all -
-   * mirrors SessionDetail's `canManage` (2026-09-02, migration 0046): false
-   * for a clinician viewing a colleague's session. Defaults to true so
-   * every existing caller (admin/scheduler, always true) needs no change.
-   * When false, the dual-schedule comparison itself still renders in full
-   * (this is a read, and clinician has full read parity) - only the
-   * slot-picker and "Continue to reschedule" are omitted, since picking a
-   * slot here hands off to RescheduleModal, which actually writes.
+   * mirrors SessionDetail's `canManage` (2026-09-02, migration 0046). When
+   * false, only the slot-picker and "Continue to reschedule" are omitted,
+   * since picking a slot here hands off to RescheduleModal, which writes.
+   *
+   * This is NOT the privacy gate, and used to be described as though the
+   * comparison "still renders in full" for a clinician viewing a
+   * colleague's session. It no longer does: SessionDetail won't open this
+   * panel at all for a session whose client the viewer may not see, and the
+   * two places below that would otherwise name the client fall back to
+   * "Client" on their own (lib/sessionPrivacy.ts). Nothing here depends on
+   * the caller remembering that.
    */
   canPropose?: boolean;
 }
@@ -97,6 +103,11 @@ export function SessionSchedulesPanel({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   const trapRef = useFocusTrap<HTMLDivElement>();
+  // Re-derived here rather than trusted from the caller: the two labels
+  // below are the only places in this panel that name anyone, and they
+  // should fall back on their own if this ever gets a new caller.
+  const viewer = useAppUser();
+  const clientLabel = canSeeClientIdentity(viewer, session) ? client?.name : undefined;
 
   const duration = sessionDuration(session, sessionTypes);
   const [weekStart, setWeekStart] = React.useState(() => startOfWeek(parseDateStr(session.session_date)));
@@ -123,12 +134,18 @@ export function SessionSchedulesPanel({
       if (!clinicId || !employee || !client) { setLoading(false); return; }
       setLoading(true);
       setError(null);
+      // `sessions_visible()` (migration 0077), not the `sessions` table -
+      // and for this panel specifically that is a correctness requirement,
+      // not a formality. Its whole job is finding a slot where the clinician
+      // AND the child are both free, so the `client_id.eq` half has to match
+      // that child's sessions with OTHER clinicians; read from the table, a
+      // clinician now sees none of those and the panel would report "free"
+      // for a child who is already booked. The function reveals client_id
+      // for a client the caller demonstrably works with themselves, which is
+      // exactly this case - see migration 0077's header.
       const { data, error: err } = await supabase
-        .from("sessions")
-        .select("id, client_id, employee_id, session_date, hour, minute, type, status")
+        .rpc("sessions_visible", { p_from: rangeStart, p_to: rangeEnd })
         .eq("clinic_id", clinicId)
-        .gte("session_date", rangeStart)
-        .lte("session_date", rangeEnd)
         .neq("status", "cancelled")
         .or(`employee_id.eq.${employee.id},client_id.eq.${client.id}`);
       if (cancelled) return;
@@ -253,11 +270,15 @@ export function SessionSchedulesPanel({
   }
 
   return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Both schedules" style={{ ...modalStyle, width: "min(560px, 96vw)" }} onClick={(e) => e.stopPropagation()}>
+    // stopPropagation: this overlay renders INSIDE SessionDetail's own
+    // overlay, whose onClick is also onClose - without it, tapping the
+    // backdrop around this dialog closed both at once, which on a phone is
+    // most of the screen.
+    <div style={overlayStyle} onClick={(e) => { e.stopPropagation(); onClose(); }}>
+      <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Both schedules" className="modal-sheet" style={{ ...modalStyle, width: "min(560px, 100%)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Both schedules</div>
         <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 12 }}>
-          {employee?.name || "Clinician"} &amp; {client?.name || "Client"} — other sessions on either calendar show only as &quot;Busy&quot;, never who they belong to.
+          {employee?.name || "Clinician"} &amp; {clientLabel || "Client"} — other sessions on either calendar show only as &quot;Busy&quot;, never who they belong to.
         </div>
 
         {/* A day strip showing just "31, 1, 2, 3" is ambiguous the moment a
@@ -303,7 +324,7 @@ export function SessionSchedulesPanel({
         ) : (
           <>
             {renderLane(employee?.name ? `${employee.name} (clinician)` : "Clinician", clinicianBlocks)}
-            {renderLane(client?.name ? `${client.name} (client)` : "Client", clientBlocks)}
+            {renderLane(clientLabel ? `${clientLabel} (client)` : "Client", clientBlocks)}
             <div style={{ fontSize: 10.5, color: "var(--color-text-tertiary)", marginBottom: 10 }}>
               {workStartHour}:00 – {workEndHour}:00, {WEEKDAY_ABBR[parseDateStr(selectedDate).getDay()]} {selectedDate}
             </div>
@@ -319,7 +340,12 @@ export function SessionSchedulesPanel({
                     </span>
                   ))}
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, maxHeight: 140, overflowY: "auto" }}>
+                {/* No maxHeight: a nested scroll region inside a modal that
+                    already scrolls is close to unusable on touch (the outer
+                    one swallows the gesture at either end). The modal grows
+                    and scrolls as one piece instead - the same argument
+                    RescheduleModal's own slot grid already makes. */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
                   {slots.map((s, i) => {
                     const isSel = proposed?.hour === s.hour && proposed?.minute === s.minute;
                     const c = slotColors[s.state];
@@ -371,12 +397,19 @@ export function SessionSchedulesPanel({
 }
 
 const overlayStyle: React.CSSProperties = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center",
+  // flex-start + the overlay's own scroll, not alignItems:center: a centred
+  // modal taller than the viewport overflows equally in BOTH directions,
+  // and the half above the top edge cannot be scrolled to. iOS Safari hits
+  // that routinely, since vh there resolves against the large viewport.
+  position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 110, display: "flex", alignItems: "flex-start", justifyContent: "center",
+  padding: 16, overflowY: "auto",
   backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)",
 };
+// The height cap is .modal-sheet in styles/globals.css (max-height: 94vh
+// then 94dvh, two declarations an inline style object can't express).
 const modalStyle: React.CSSProperties = {
   background: "var(--color-background-primary)", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-  maxHeight: "94vh", overflowY: "auto",
+  margin: "auto 0", overflowY: "auto",
 };
 const navBtnSmall: React.CSSProperties = {
   padding: "5px 10px", borderRadius: 7, fontSize: 12, border: "0.5px solid var(--color-border-tertiary)",

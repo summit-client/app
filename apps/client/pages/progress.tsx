@@ -361,16 +361,21 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // defense-in-depth on top of it, not the only thing enforcing it. No
   // .limit() here, unlike the dashboard - the whole point of this page is
   // every goal, not a preview.
-  const { data: programs, error: programsError } = await supabase
-    .from("programs")
-    .select("id, name, domain, status")
-    .eq("client_id", viewed.clientId)
-    .order("name", { ascending: true });
+  const [programsRes, goalsRes] = await Promise.all([
+    supabase
+      .from("programs")
+      .select("id, name, domain, status")
+      .eq("client_id", viewed.clientId)
+      .order("name", { ascending: true }),
 
-  // Both views read this one function: it applies the per-child clinical
-  // permission, so a guardian with appointments but not progress gets nothing
-  // rather than an empty-looking page they assume is a bug.
-  const { data: goalRows, error: goalsError } = await supabase.rpc("my_goal_progress");
+    // Both views read this one function: it applies the per-child clinical
+    // permission, so a guardian with appointments but not progress gets nothing
+    // rather than an empty-looking page they assume is a bug.
+    supabase.rpc("my_goal_progress"),
+  ]);
+
+  const { data: programs, error: programsError } = programsRes;
+  const { data: goalRows, error: goalsError } = goalsRes;
   if (goalsError) {
     console.error("Failed to load goal progress:", goalsError.message);
   }

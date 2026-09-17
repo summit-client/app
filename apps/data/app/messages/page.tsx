@@ -6,6 +6,7 @@ import {
   sortQueue, statusLabel, updateThread, waitingFor,
   type Message, type Thread,
 } from "@/lib/messaging";
+import { toast } from "@summit/toast";
 
 /**
  * Family messages, from the clinic's side.
@@ -65,7 +66,7 @@ export default function MessagesPage() {
 
   async function setStatus(id: string, status: Thread["status"]) {
     setBusy(true); setError(null);
-    try { await updateThread(id, { status }); setThreads(await getThreads()); }
+    try { await updateThread(id, { status }); toast(status === "resolved" ? "Marked resolved" : "Reopened"); setThreads(await getThreads()); }
     catch (e) { setError(e instanceof Error ? e.message : "That did not save."); }
     finally { setBusy(false); }
   }

@@ -519,10 +519,40 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   const { viewed } = resolved;
 
-  const { data: familyRows, error: familyError } = await supabase
-    .from("my_family")
-    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, relationship, permissions");
+  // The sessions query below needs this page's family first (it filters on
+  // the children this guardian may see), but the change-request list does
+  // not - it is keyed on the viewed child alone, so it rides along here
+  // instead of adding a third serial hop to TTFB.
+  const [familyRes, changeRequestsRes] = await Promise.all([
+    supabase
+      .from("my_family")
+      .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, relationship, permissions"),
+
+    // Every reschedule/cancel request this family has ever filed, newest
+    // first - pages/api/sessions/request-change.ts is the only writer.
+    // Skipped for an admin's "view as" (see that endpoint's own header for why
+    // the write path itself is blocked too): resolveViewedClient's admin
+    // branch signs the caller in as an admin, not a client, and the
+    // session_change_requests_client_select RLS policy (migration 0035) only
+    // ever matches auth_role() = 'client' - an admin's own query here would
+    // just come back empty under RLS rather than erroring, but there's no
+    // reason to spend the round trip on a screen that never renders anything
+    // from it.
+    viewed.isAdminViewingAs
+      ? Promise.resolve({ data: [] as ChangeRequest[], error: null })
+      : supabase
+          .from("session_change_requests")
+          .select("id, session_id, request_type, status, created_at")
+          .eq("client_id", viewed.clientId)
+          .order("created_at", { ascending: false }),
+  ]);
+
+  const { data: familyRows, error: familyError } = familyRes;
+  const { data: changeRequests, error: changeRequestsError } = changeRequestsRes;
   if (familyError) console.error("Failed to load family:", familyError.message);
+  if (changeRequestsError) {
+    console.error("Failed to load session change requests:", changeRequestsError.message);
+  }
 
   const family = familyFromRows(familyRows ?? []);
 
@@ -572,28 +602,6 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   if (sessionsError) {
     console.error("Failed to load appointments:", sessionsError.message);
-  }
-
-  // Every reschedule/cancel request this family has ever filed, newest
-  // first - pages/api/sessions/request-change.ts is the only writer.
-  // Skipped for an admin's "view as" (see that endpoint's own header for why
-  // the write path itself is blocked too): resolveViewedClient's admin
-  // branch signs the caller in as an admin, not a client, and the
-  // session_change_requests_client_select RLS policy (migration 0035) only
-  // ever matches auth_role() = 'client' - an admin's own query here would
-  // just come back empty under RLS rather than erroring, but there's no
-  // reason to spend the round trip on a screen that never renders anything
-  // from it.
-  const { data: changeRequests, error: changeRequestsError } = viewed.isAdminViewingAs
-    ? { data: [] as ChangeRequest[], error: null }
-    : await supabase
-        .from("session_change_requests")
-        .select("id, session_id, request_type, status, created_at")
-        .eq("client_id", viewed.clientId)
-        .order("created_at", { ascending: false });
-
-  if (changeRequestsError) {
-    console.error("Failed to load session change requests:", changeRequestsError.message);
   }
 
   return {

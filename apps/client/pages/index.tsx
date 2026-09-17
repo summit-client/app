@@ -156,12 +156,6 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
 
   const { viewed } = resolved;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", user.id)
-    .maybeSingle();
-
   // "Upcoming Sessions" - the card's own label - had no date filter at all,
   // so it fetched every session ever booked (past and future) in ascending
   // date order: with months of history, the card showed the oldest already-
@@ -173,18 +167,34 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   // day, not the UTC server's - see lib/clinic-date.ts for why that
   // mattered here specifically.
   const todayDateStr = clinicTodayDateStr();
-  // { count: "exact" } so `sessionsCount` below is the true number of
-  // upcoming sessions, not just how many fit in this capped preview list -
-  // the "Sessions / Upcoming" stat tile used to read `sessions.length`
-  // directly, which is this same query's own .limit(5) result: a family
-  // with 6+ upcoming sessions saw a tile permanently stuck at "5" no
-  // matter how many they actually had booked. PostgREST returns the exact
-  // total alongside the limited page in one round trip, so this doesn't
-  // need a second query.
-  const { data: sessions, error: sessionsError, count: sessionsCount } = await supabase
-    .from("sessions")
-    .select(
-      `
+
+  // Eight reads that need nothing from each other, issued together. They used
+  // to run one after the next, and because this is getServerSideProps the
+  // whole chain sat inside TTFB - the family saw a blank tab until the last
+  // of eight round trips came back. Only budget_entries genuinely depends on
+  // a result here, so it follows in its own wave below.
+  const [
+    profileRes, sessionsRes, programsRes, budgetsRes,
+    soapNotesRes, familyRes, tasksRes, alertsRes,
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", user.id)
+      .maybeSingle(),
+
+    // { count: "exact" } so `sessionsCount` below is the true number of
+    // upcoming sessions, not just how many fit in this capped preview list -
+    // the "Sessions / Upcoming" stat tile used to read `sessions.length`
+    // directly, which is this same query's own .limit(5) result: a family
+    // with 6+ upcoming sessions saw a tile permanently stuck at "5" no
+    // matter how many they actually had booked. PostgREST returns the exact
+    // total alongside the limited page in one round trip, so this doesn't
+    // need a second query.
+    supabase
+      .from("sessions")
+      .select(
+        `
       id,
       hour,
       minute,
@@ -192,15 +202,84 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       session_date,
       status
     `,
-      { count: "exact" }
-    )
-    .eq("client_id", viewed.clientId)
-    .gte("session_date", todayDateStr)
-    .neq("status", "cancelled")
-    .order("session_date", { ascending: true })
-    .order("hour", { ascending: true })
-    .order("minute", { ascending: true })
-    .limit(5);
+        { count: "exact" }
+      )
+      .eq("client_id", viewed.clientId)
+      .gte("session_date", todayDateStr)
+      .neq("status", "cancelled")
+      .order("session_date", { ascending: true })
+      .order("hour", { ascending: true })
+      .order("minute", { ascending: true })
+      .limit(5),
+
+    // Goals: migration 0020 scopes this to the signed-in family's own child
+    // via RLS (programs_client_read) - the client_id filter here is
+    // defense-in-depth, matching the same pattern sessions already uses,
+    // not the only thing standing between one family and another's data.
+    // Ordered by name from the DB; re-sorted by a deliberate status
+    // priority below rather than alphabetically (see sortProgramsForFamily).
+    supabase
+      .from("programs")
+      .select("id, name, domain, status")
+      .eq("client_id", viewed.clientId)
+      .order("name", { ascending: true }),
+
+    // Budgets: funding-source agnostic. RLS (client_budgets_client_read) scopes
+    // these to the signed-in family's own child; the client_id filter is
+    // defense-in-depth, matching the pattern above. Spent-to-date is summed
+    // from entries rather than read off a stored total, so the dashboard and
+    // the statement can never disagree.
+    supabase
+      .from("client_budgets")
+      .select("id, client_id, name, funding_source, reference, allocated_amount, currency, period_start, period_end, status, notes")
+      .eq("client_id", viewed.clientId)
+      .neq("status", "CLOSED")
+      .order("period_start", { ascending: false }),
+
+    // SOAP notes: RLS (session_notes_client_read) also enforces status in
+    // ('signed','countersigned') server-side - a draft is never selectable
+    // here even if this query's own filter were ever removed by mistake.
+    // nullsFirst: false because Postgres's default for `order by ... desc`
+    // is NULLS FIRST: a note with no signed_at (if a countersigned note can
+    // ever have one) would sort ahead of every actually-signed note
+    // regardless of how recent it is, not to the back where a null date
+    // belongs in a "most recent first" list.
+    supabase
+      .from("session_notes")
+      .select("id, status, signed_at, countersigned_at, body")
+      .eq("client_id", viewed.clientId)
+      .in("status", ["signed", "countersigned"])
+      .order("signed_at", { ascending: false, nullsFirst: false })
+      .limit(5),
+
+    // The family behind this login. Read from `my_family` (0035) rather than
+    // assembled here: that view already resolves the household and the
+    // permissions held over each child, and doing the permission join in the
+    // page is how one screen ends up disagreeing with another.
+    supabase
+      .from("my_family")
+      .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, permissions"),
+
+    // Tasks come from the function, not the view: the function applies the
+    // per-child permission filter, so a guardian without billing access is never
+    // handed a funding task to render.
+    supabase.rpc("my_family_tasks"),
+
+    // The notification centre (migration 0045). Assembled from live rows, so
+    // nothing here can outlive the thing that caused it. Filtered to the two
+    // sources the per-child task panel below cannot carry: a message thread and
+    // a clinic notice belong to the household, not to one child.
+    supabase.rpc("my_notifications"),
+  ]);
+
+  const { data: profile } = profileRes;
+  const { data: sessions, error: sessionsError, count: sessionsCount } = sessionsRes;
+  const { data: programs, error: programsError } = programsRes;
+  const { data: budgetRows, error: budgetsError } = budgetsRes;
+  const { data: soapNotes, error: soapNotesError } = soapNotesRes;
+  const { data: familyRows, error: familyError } = familyRes;
+  const { data: taskRows, error: tasksError } = tasksRes;
+  const { data: alertRows, error: alertsError } = alertsRes;
 
   if (sessionsError) {
     console.error(
@@ -208,42 +287,21 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
       sessionsError.message
     );
   }
-
-  // Goals: migration 0020 scopes this to the signed-in family's own child
-  // via RLS (programs_client_read) - the client_id filter here is
-  // defense-in-depth, matching the same pattern sessions already uses,
-  // not the only thing standing between one family and another's data.
-  // Ordered by name from the DB; re-sorted by a deliberate status
-  // priority below rather than alphabetically (see sortProgramsForFamily).
-  const { data: programs, error: programsError } = await supabase
-    .from("programs")
-    .select("id, name, domain, status")
-    .eq("client_id", viewed.clientId)
-    .order("name", { ascending: true });
-
   if (programsError) {
     console.error("Failed to load dashboard programs:", programsError.message);
   }
-
-  // SOAP notes: RLS (session_notes_client_read) also enforces status in
-  // ('signed','countersigned') server-side - a draft is never selectable
-  // here even if this query's own filter were ever removed by mistake.
-  // Budgets: funding-source agnostic. RLS (client_budgets_client_read) scopes
-  // these to the signed-in family's own child; the client_id filter is
-  // defense-in-depth, matching the pattern above. Spent-to-date is summed
-  // from entries rather than read off a stored total, so the dashboard and
-  // the statement can never disagree.
-  const { data: budgetRows, error: budgetsError } = await supabase
-    .from("client_budgets")
-    .select("id, client_id, name, funding_source, reference, allocated_amount, currency, period_start, period_end, status, notes")
-    .eq("client_id", viewed.clientId)
-    .neq("status", "CLOSED")
-    .order("period_start", { ascending: false });
-
   if (budgetsError) {
     console.error("Failed to load client budgets:", budgetsError.message);
   }
+  if (soapNotesError) {
+    console.error("Failed to load dashboard SOAP notes:", soapNotesError.message);
+  }
+  if (alertsError) console.error("Failed to load notifications:", alertsError.message);
+  if (familyError) console.error("Failed to load family:", familyError.message);
+  if (tasksError) console.error("Failed to load family tasks:", tasksError.message);
 
+  // The one genuinely dependent read: it needs the ids the budgets query
+  // above returned, so it cannot join the wave.
   const budgetIds = (budgetRows ?? []).map((b) => b.id as string);
   const { data: entryRows, error: entriesError } = budgetIds.length
     ? await supabase
@@ -256,23 +314,6 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     console.error("Failed to load budget entries:", entriesError.message);
   }
 
-  // nullsFirst: false because Postgres's default for `order by ... desc`
-  // is NULLS FIRST: a note with no signed_at (if a countersigned note can
-  // ever have one) would sort ahead of every actually-signed note
-  // regardless of how recent it is, not to the back where a null date
-  // belongs in a "most recent first" list.
-  const { data: soapNotes, error: soapNotesError } = await supabase
-    .from("session_notes")
-    .select("id, status, signed_at, countersigned_at, body")
-    .eq("client_id", viewed.clientId)
-    .in("status", ["signed", "countersigned"])
-    .order("signed_at", { ascending: false, nullsFirst: false })
-    .limit(5);
-
-  if (soapNotesError) {
-    console.error("Failed to load dashboard SOAP notes:", soapNotesError.message);
-  }
-
   const clientLastName = viewed.clientName
     ? viewed.clientName.trim().split(/\s+/).pop()
     : null;
@@ -280,29 +321,6 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   const familyName = clientLastName
     ? `${clientLastName} Family`
     : profile?.full_name || "Family";
-
-  // The family behind this login. Read from `my_family` (0035) rather than
-  // assembled here: that view already resolves the household and the
-  // permissions held over each child, and doing the permission join in the
-  // page is how one screen ends up disagreeing with another.
-  const { data: familyRows, error: familyError } = await supabase
-    .from("my_family")
-    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, permissions");
-
-  // Tasks come from the function, not the view: the function applies the
-  // per-child permission filter, so a guardian without billing access is never
-  // handed a funding task to render.
-  const { data: taskRows, error: tasksError } = await supabase.rpc("my_family_tasks");
-
-  // The notification centre (migration 0045). Assembled from live rows, so
-  // nothing here can outlive the thing that caused it. Filtered to the two
-  // sources the per-child task panel below cannot carry: a message thread and
-  // a clinic notice belong to the household, not to one child.
-  const { data: alertRows, error: alertsError } = await supabase.rpc("my_notifications");
-  if (alertsError) console.error("Failed to load notifications:", alertsError.message);
-
-  if (familyError) console.error("Failed to load family:", familyError.message);
-  if (tasksError) console.error("Failed to load family tasks:", tasksError.message);
 
   return {
     props: {
