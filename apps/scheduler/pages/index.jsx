@@ -21,6 +21,38 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { WaitlistView } from "../components/WaitlistView";
 import { FrontDeskFeedPanel } from "../components/FrontDeskFeedPanel";
 
+// PostgREST answers a select with at most `db-max-rows` rows - 1000 on hosted
+// Supabase - and says nothing about having stopped: a truncated read looks
+// exactly like a small table. Every list on this page is unwindowed (the
+// Sessions tab, the dashboard counts, the "Needs attention" leaderboard, the
+// Create wizard's conflict pre-check all scan the whole set), so once a clinic
+// passes that mark they were quietly under-reporting - fewer sessions, a
+// flattering no-show rate, and clients dropping off "Needs attention" because
+// their only recent session sat past row 1000.
+//
+// Takes a factory rather than a query because a PostgREST builder is
+// single-use: each page needs a fresh one. Works on .rpc() the same as on
+// .from().select(). On a failed page it reports the error and no rows, which
+// is what the callers already expect from a failed query - a partial list
+// silently presented as complete is the bug this exists to fix.
+const PAGE_SIZE = 1000;
+const MAX_PAGES = 100;
+async function fetchAllRows(makeQuery) {
+  const rows = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE_SIZE;
+    const res = await makeQuery().range(from, from + PAGE_SIZE - 1);
+    if (res.error) return { data: null, error: res.error };
+    const batch = res.data ?? [];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) return { data: rows, error: null };
+  }
+  // Only reachable past MAX_PAGES * PAGE_SIZE rows. Loud, because the list is
+  // short again and this time we know it.
+  console.error(`[scheduler] fetchAllRows: stopped at ${MAX_PAGES * PAGE_SIZE} rows; the list is truncated`);
+  return { data: rows, error: null };
+}
+
 const COLORS = {
   bg: "var(--color-background-primary)",
   bgS: "var(--color-background-secondary)",
@@ -3416,21 +3448,22 @@ export default function Scheduler() {
 
   async function loadData() {
     const [c, e, st, b, l, cal, sa, ca] = await Promise.all([
-      supabase.from("clients").select("*"),
-      supabase.from("staff").select("*"),
-      supabase.from("session_types").select("*"),
+      fetchAllRows(() => supabase.from("clients").select("*")),
+      fetchAllRows(() => supabase.from("staff").select("*")),
+      fetchAllRows(() => supabase.from("session_types").select("*")),
       // `sessions_visible()`, not the `sessions` table - migration 0077.
-      // Unbounded on purpose (both date args default null): this list backs
+      // Unwindowed on purpose (both date args default null): this list backs
       // the Sessions tab, the dashboard counts and the Create wizard's
       // conflict pre-check, none of which are windowed. For admin/scheduler
       // the rows are identical to the table's; for a clinician, colleague
       // rows arrive with client_id and home_address NULL and client_masked
-      // set, which is what lib/sessionPrivacy.ts renders from.
-      supabase.rpc("sessions_visible"),
-      supabase.from("locations").select("*"),
-      supabase.from("calendars").select("*"),
-      supabase.from("staff_availability").select("*"),
-      supabase.from("client_availability").select("*"),
+      // set, which is what lib/sessionPrivacy.ts renders from. Unwindowed is
+      // not the same as unbounded - see fetchAllRows.
+      fetchAllRows(() => supabase.rpc("sessions_visible")),
+      fetchAllRows(() => supabase.from("locations").select("*")),
+      fetchAllRows(() => supabase.from("calendars").select("*")),
+      fetchAllRows(() => supabase.from("staff_availability").select("*")),
+      fetchAllRows(() => supabase.from("client_availability").select("*")),
     ]);
     // Every one of these used to be `if (x.data) setX(x.data)`, which reads
     // the success half and throws the failure half away. supabase-js RESOLVES
@@ -3463,7 +3496,7 @@ export default function Scheduler() {
   // CalendarView's refreshSignal below, kick the calendar into a refetch off
   // the emptied array. Keep the stale-but-correct rows; report the failure.
   async function refreshBookings() {
-    const { data, error: err } = await supabase.rpc("sessions_visible");
+    const { data, error: err } = await fetchAllRows(() => supabase.rpc("sessions_visible"));
     if (err) {
       console.error("[scheduler] refreshBookings: sessions query failed", err);
       showToast("Couldn't refresh the session list — it may be out of date.");
