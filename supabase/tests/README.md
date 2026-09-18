@@ -32,6 +32,94 @@ Two things PGlite cannot do, so neither script tests them:
   it (`employment_positions`, `pay_periods`, `pay_rates` overlap guards) are
   stripped for the run and reported as unverified. They are fine on Supabase.
 
+## Tenancy doctrine — one run with no credentials, one with
+
+    cd supabase/tests
+    node tenancy.mjs ../migrations           # reads the migration files
+    node tenancy.mjs ../migrations --live    # reads the live database
+
+Every PHI table carries `clinic_id` and every policy on one names it. That is
+the rule in CLAUDE.md; this is the thing that checks it, and both runs are in
+CI.
+
+**The file run cannot see the database, and that limit is not theoretical.** On
+2026-09-18 it reported `sessions` cleanly scoped while production carried two
+policies with no clinic predicate that appear in no migration in this repo. A
+policy added in the dashboard, a migration applied out of order, anything older
+than this history — the files know nothing about any of it. So the live run is
+the one that matters, and a live run that is skipped must fail rather than
+report green.
+
+### The credential for the live run
+
+Two are accepted, and which one you use is a security decision.
+
+`SUPABASE_DB_URL` — a Postgres connection string. **Use this one.** Point it at
+a role that can log in and read catalogs and nothing else. Policy definitions,
+table lists and function bodies are readable without a grant on a single
+application table, so that role needs none. If the string leaks, somebody
+learns what your policies say: no PHI, no writes, no other project.
+
+`SUPABASE_ACCESS_TOKEN` — a Supabase personal access token (`sbp_…`). It works
+and the suite only ever issues SELECTs, but the token itself is **account-wide
+and can write**. Anyone who can edit a workflow file in a pull request can
+print a secret the workflow binds. Reasonable on your own machine; a poor thing
+to store in CI.
+
+The suite prefers `SUPABASE_DB_URL` when both are set, and prints a warning
+when it falls back to the token.
+
+### Creating the scoped role
+
+Run this in the SQL editor. **Pick your own password — nothing in this repo,
+and nobody working in it, should ever see it.**
+
+```sql
+create role tenancy_audit with login password 'PUT-A-LONG-RANDOM-PASSWORD-HERE';
+grant connect on database postgres to tenancy_audit;
+grant usage on schema public to tenancy_audit;
+```
+
+That is the whole grant. No `select` on any table, ever — the suite reads
+`pg_policies`, `pg_class`, `pg_attribute` and `pg_proc`, which are world-
+readable in Postgres. Confirm the role really is powerless before you trust it:
+
+```sql
+set role tenancy_audit;
+select count(*) from pg_policies;     -- works
+select count(*) from public.clients;  -- must fail: permission denied
+reset role;
+```
+
+If the second one returns a number, stop and fix the grants; a suite running
+with table access is a credential in CI that can read PHI.
+
+Then build the connection string from Supabase's **Connection pooling** tab
+(Settings → Database), not the direct one — GitHub's runners are IPv4-only and
+the direct host is IPv6-only, so a direct string times out there with no useful
+error. Substitute the role and its password into the pooler's host and port:
+
+    postgresql://tenancy_audit.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+
+Store it as the `SUPABASE_DB_URL` repository secret under Settings → Secrets
+and variables → Actions. The runner has `psql` preinstalled; nothing else is
+needed.
+
+**Rotate it by dropping the role**, not by editing the secret alone:
+
+```sql
+drop role tenancy_audit;
+```
+
+### Reading the output
+
+`known` is not `passed`. It is a baseline of policies already found unscoped
+and not yet fixed; each prints with the reason it is still there and what it
+would take to close. The list is meant to reach zero. Anything *not* on it
+fails the run — new drift is the whole point of the suite, and the baseline
+exists so that drift is visible instead of buried under six pre-existing
+failures.
+
 ## Edge Function authorization — no install needed
 
     node supabase/tests/edit_teammate_authz.mjs

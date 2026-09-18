@@ -18,9 +18,22 @@
  * only as comments. A check that can only see the migrations is blind to
  * anything applied by hand, applied out of order, or older than the history.
  *
- * So the live mode is the real one. It reads pg_policies over the Supabase
- * Management API with SUPABASE_ACCESS_TOKEN, and it is READ ONLY by
- * construction - every statement below is a SELECT against a catalog.
+ * So the live mode is the real one. It reads the catalogs two ways, and which
+ * one you give it is a security decision:
+ *
+ *   SUPABASE_DB_URL         a Postgres connection string. PREFERRED. Point it
+ *                           at a role that can connect and read catalogs and
+ *                           nothing else (see README). If that credential
+ *                           leaks, somebody learns what your policies say.
+ *
+ *   SUPABASE_ACCESS_TOKEN   a Supabase personal access token (sbp_...). Works,
+ *                           and is ACCOUNT-WIDE: it can do anything to any
+ *                           project on the account, including writes. Fine
+ *                           from a developer's own machine, a poor thing to
+ *                           store in CI.
+ *
+ * Read only either way, by construction - every statement below is a SELECT
+ * against a catalog - but only the first is read-only by PERMISSION.
  *
  * WHAT COUNTS AS SCOPED
  *
@@ -122,16 +135,37 @@ async function fromFiles() {
   return async (sql) => (await db.query(sql)).rows;
 }
 
+/** psql, one round trip per query, JSON in and out. Preferred: the credential
+ *  can be scoped to "connect and read catalogs", which the Management API
+ *  token cannot be. */
+function fromConnection(url) {
+  return async (sql) => {
+    // Wrapped so Postgres does the serialising - parsing psql's own column
+    // output would break on any predicate containing the separator, and RLS
+    // predicates are full of punctuation.
+    const wrapped = `select coalesce(json_agg(row_to_json(x)), '[]'::json)::text from (${sql}) x`;
+    const out = execFileSync("psql", [url, "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1", "-c", wrapped],
+      { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    return JSON.parse(out.trim() || "[]");
+  };
+}
+
 function fromProduction() {
+  const url = process.env.SUPABASE_DB_URL;
+  if (url) return fromConnection(url);
+
   const token = process.env.SUPABASE_ACCESS_TOKEN;
   if (!token) {
     console.error(
-      "FAIL: --live was asked for and SUPABASE_ACCESS_TOKEN is not set.\n" +
+      "FAIL: --live was asked for and neither SUPABASE_DB_URL nor\n" +
+      "      SUPABASE_ACCESS_TOKEN is set.\n" +
       "      Refusing to fall back to the migration files: that check reports\n" +
       "      clean on a database it cannot see, which is how two unscoped\n" +
-      "      policies went unnoticed. Set the token or drop --live.");
+      "      policies went unnoticed. Set one, or drop --live.");
     process.exit(1);
   }
+  console.log("  (using SUPABASE_ACCESS_TOKEN - account-wide. SUPABASE_DB_URL with a");
+  console.log("   read-only role is the safer credential; see README.)");
   return async (sql) => {
     const out = execFileSync("curl", [
       "-s", "--max-time", "60", "-X", "POST",
@@ -149,18 +183,44 @@ function fromProduction() {
 /* ---------- the checks -------------------------------------------------- */
 
 const q = LIVE ? fromProduction() : await fromFiles();
-console.log(`\nTenancy doctrine — ${LIVE ? `LIVE (project ${REF})` : "migration files"}\n`);
+console.log(`\nTenancy doctrine — ${LIVE ? (process.env.SUPABASE_DB_URL ? "LIVE (scoped role)" : `LIVE (project ${REF})`) : "migration files"}\n`);
 
+// pg_catalog, not information_schema, and this is not a style preference.
+// information_schema's views FILTER BY PRIVILEGE: they only show you objects
+// you hold some grant on. The read-only role this suite is meant to run as in
+// CI holds no table grants at all, so information_schema.columns returns ZERO
+// ROWS for it - and a suite that finds no clinic-scoped tables passes
+// everything, loudly and wrongly. pg_class and pg_attribute are not filtered.
 const clinicTables = (await q(`
-  select table_name from information_schema.columns
-   where table_schema='public' and column_name='clinic_id'`)).map((r) => r.table_name);
+  select c.relname as table_name
+    from pg_attribute a
+    join pg_class c on c.oid = a.attrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and a.attname = 'clinic_id' and not a.attisdropped
+     and a.attnum > 0
+     -- Tables, partitioned tables, views and materialised views only.
+     -- pg_attribute also carries indexes and composite types, and 0077's
+     -- visible_session type has a clinic_id column - counting those
+     -- inflated this from 129 to 186 and meant nothing.
+     and c.relkind in ('r', 'p', 'v', 'm')`)).map((r) => r.table_name);
+
+// A suite that checks nothing reports the same as a suite that finds nothing
+// wrong. Refuse to be the second one.
+if (clinicTables.length === 0) {
+  console.error(
+    "FAIL: no clinic-scoped tables found at all.\n" +
+    "      Every check below would pass vacuously. Either the connection is\n" +
+    "      pointed somewhere unexpected, or the role cannot see pg_catalog.");
+  process.exit(1);
+}
 
 // 1. Row security is on wherever a clinic owns the row.
 const rlsOff = await q(`
   select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where n.nspname='public' and c.relkind='r' and not c.relrowsecurity
-     and exists (select 1 from information_schema.columns
-                  where table_schema='public' and table_name=c.relname and column_name='clinic_id')`);
+     and exists (select 1 from pg_attribute a
+                  where a.attrelid = c.oid and a.attname = 'clinic_id'
+                    and not a.attisdropped and a.attnum > 0)`);
 t(`row security is on for all ${clinicTables.length} clinic-scoped tables`,
   rlsOff.length === 0, rlsOff.map((r) => r.relname).join(", "));
 
@@ -249,8 +309,12 @@ t("no policy is written `for all`", forAll.length === 0,
 /* ---------- the baseline ------------------------------------------------ */
 if (known) {
   console.log(`\n  ${known} known unscoped ${known === 1 ? "policy" : "policies"}, each with a reason in KNOWN:`);
+  // Both lists, not just `unscoped`. The counter above adds the indirect ones
+  // too, so filtering on one list printed a heading with nothing under it -
+  // which reads as the finding having gone away.
+  const found = [...unscoped, ...indirect].map((p) => `${p.tablename}/${p.policyname}`);
   for (const [k, why] of KNOWN) {
-    if (unscoped.some((p) => `${p.tablename}/${p.policyname}` === k)) console.log(`    - ${k}\n        ${why}`);
+    if (found.includes(k)) console.log(`    - ${k}\n        ${why}`);
   }
   console.log("  These do not fail the run. They are meant to reach zero.");
 }
