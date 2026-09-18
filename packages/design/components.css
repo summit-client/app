@@ -20,7 +20,14 @@
   border-right: 1px solid var(--line);
   display: flex; flex-direction: column;
   padding: 0;
-  position: sticky; top: 0; height: calc(100vh - var(--portalnav-h));
+  /* top offsets by the bar, as the --portalnav-h comment in tokens.css says
+     everything under it must. It was `top: 0`, which sticks the sidebar to
+     the viewport rather than to the space below the bar: AppNav is itself
+     sticky at top: 0 with z-index 50 and an opaque --brand-800 background,
+     and .sidebar sets no z-index, so once the page scrolled past 51px the
+     whole .brand block - logo and portal name - and the first nav rows slid
+     underneath the bar and stayed there. The height already offsets. */
+  position: sticky; top: var(--portalnav-h); height: calc(100vh - var(--portalnav-h));
 }
 
 .brand {
