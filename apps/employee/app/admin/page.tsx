@@ -6,7 +6,12 @@ import * as React from "react";
 import { admitsAdminConsole, type AppRole } from "@summit/portals";
 import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/settings";
 import { HUB_TASKS } from "@/lib/content";
-import { directory, hr } from "@/lib/hr-store";
+import {
+  directory, hr,
+  listPendingCredentials, verifyCredential, saveCredentialType, retireCredentialType,
+  type PendingCredential,
+} from "@/lib/hr-store";
+import type { CredentialType } from "@/lib/credentials";
 import {
   decideTimeOff, issueOnboardingCertificate, listPendingCertificatesToIssue,
   listPendingPdVerifications, listPendingSignoffs, listPendingTimeOffRequests, listRecentActivity,
@@ -119,7 +124,18 @@ function AdminConsole() {
       <div>
         <AdminTabs tab={tab} setTab={setTab} role={role} appRole={identity.appRole} />
         {tab === "staff" ? (
-          <StaffTab isAdmin={role === "ADMIN"} isScheduler={identity.appRole === "scheduler"} isPreview={identity.isPreview} />
+          <StaffTab
+            isAdmin={role === "ADMIN"}
+            isScheduler={identity.appRole === "scheduler"}
+            isPreview={identity.isPreview}
+            /* Who may confirm a credential, matching migration 0086's
+               hr.credential.verify exactly: admin, supervisor and hr_admin.
+               A scheduler reaches this console and is deliberately NOT one of
+               them - a clinical credential is not a scheduling concern, and
+               0086 denies them the action in the database, so offering the
+               button would hand them a refusal. */
+            canVerify={role === "ADMIN" || identity.appRole === "supervisor" || identity.appRole === "hr_admin"}
+          />
         ) : tab === "families" ? (
           <FamiliesTab isAdmin={role === "ADMIN"} canReadGuardians={role === "ADMIN" || identity.appRole === "scheduler"} isPreview={identity.isPreview} actorId={identity.userId} />
         ) : <BackendSettingsTab />}
@@ -552,7 +568,235 @@ const ACCESS_LEVELS = ["EMPLOYEE", "SUPERVISOR", "ADMIN"] as const;
  * can invite a scheduler, or a client onto an existing intake record, from
  * apps/scheduler's admin page instead, next to where that data actually lives.
  */
-function StaffTab({ isAdmin, isScheduler, isPreview }: { isAdmin: boolean; isScheduler: boolean; isPreview: boolean }) {
+/**
+ * Credentials waiting on somebody to confirm them.
+ *
+ * Read from the BACKEND, not from `hr()`'s snapshot. That snapshot is always
+ * the signed-in user's own - `load()` filters `employee_credentials` on their
+ * uid - so a queue built from it would show an admin their own credentials in
+ * a console whose whole point is everyone else's. That is exactly the bug the
+ * pending sign-offs queue had before PR #91, and CLAUDE.md records it; it is
+ * cheap to repeat by accident and expensive to notice.
+ *
+ * Scope comes from RLS: an admin sees the clinic, a supervisor their own team.
+ */
+function CredentialQueue({ canVerify }: { canVerify: boolean }) {
+  const [rows, setRows] = React.useState<PendingCredential[] | null>(null);
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const reload = React.useCallback(async () => {
+    try { setRows(await listPendingCredentials()); }
+    catch (e) { setNotice({ kind: "err", text: e instanceof Error ? e.message : "Could not load the credential queue." }); setRows([]); }
+  }, []);
+  React.useEffect(() => { void reload(); }, [reload]);
+
+  if (rows === null) return <p className="sub" style={{ marginTop: 16 }}>Loading credentials…</p>;
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h2 className="section-title" style={{ marginTop: 0 }}>Credentials to confirm</h2>
+      <p className="sub" style={{ marginTop: 4 }}>
+        Look the number up on the issuer&rsquo;s register, then confirm it here. Confirming records that{" "}
+        <b>you</b>{" "}checked it — that is what the confirmation means, and it is what puts the number on
+        a client&rsquo;s receipt. Nobody can confirm their own.
+      </p>
+
+      {!rows.length ? (
+        <div className="card card-pad" style={{ marginTop: 12 }}>
+          <p className="sub" style={{ margin: 0 }}>
+            {canVerify
+              ? "Nothing waiting. Every credential in reach has been confirmed."
+              : "Nothing to show here for your role."}
+          </p>
+        </div>
+      ) : (
+        <div className="card table-wrap" style={{ marginTop: 12 }}>
+          <table className="data">
+            <thead>
+              <tr><th>Person</th><th>Credential</th><th>Number</th><th>Cycle</th>{canVerify ? <th></th> : null}</tr>
+            </thead>
+            <tbody>
+              {rows.map((c) => (
+                <tr key={c.id}>
+                  <td><b>{c.personName}</b></td>
+                  <td>
+                    {c.label}
+                    {c.issuer ? <span className="pill neutral" style={{ marginLeft: 6 }}>{c.issuer}</span> : null}
+                    {c.status === "LAPSED" ? <span className="pill warn" style={{ marginLeft: 6 }}>lapsed</span> : null}
+                  </td>
+                  <td>
+                    {c.number
+                      ? (c.verificationUrl
+                          ? <a href={c.verificationUrl} target="_blank" rel="noreferrer noopener">{c.number}</a>
+                          : <span>{c.number}</span>)
+                      : <span style={{ color: "var(--warn)" }}>
+                          {c.requiresNumber ? "no number recorded" : "not required"}
+                        </span>}
+                  </td>
+                  <td className="sub">{c.cycleStart} → {c.cycleEnd}</td>
+                  {canVerify ? (
+                    <td>
+                      <button
+                        className="btn"
+                        /* A credential that needs a number and has none cannot
+                           be checked against anything, so there is nothing to
+                           confirm yet - the person has to add it first. */
+                        disabled={busyId === c.id || (c.requiresNumber && !c.number)}
+                        onClick={async () => {
+                          setBusyId(c.id); setNotice(null);
+                          try {
+                            await verifyCredential(c.id, c.personName, c.label);
+                            setNotice({ kind: "ok", text: `Confirmed ${c.label} for ${c.personName}.` });
+                            await reload();
+                          } catch (e) {
+                            setNotice({ kind: "err", text: e instanceof Error ? e.message : "Could not confirm that credential." });
+                          } finally { setBusyId(null); }
+                        }}
+                      >
+                        {busyId === c.id ? "Confirming…" : "Confirm"}
+                      </button>
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {notice ? (
+        <p className="sub" style={{ marginTop: 10, color: notice.kind === "err" ? "var(--danger, #b3261e)" : "var(--muted)" }}>
+          {notice.text}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The clinic's credential vocabulary.
+ *
+ * Migration 0086 seeds seven and a clinic may add its own. Retiring is a flag,
+ * never a delete: an existing credential keeps pointing at the row, and 0034's
+ * receipt join keeps resolving.
+ */
+function CredentialCatalogue({ isPreview }: { isPreview: boolean }) {
+  const types = [...hr().credentialTypes].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+  const [editing, setEditing] = React.useState<CredentialType | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const blank = (): CredentialType => ({
+    id: `new-${Date.now().toString(36)}`, code: "", label: "", issuer: "",
+    verificationUrl: "", requiresNumber: true, isActive: true,
+    sortOrder: (types[types.length - 1]?.sortOrder ?? 0) + 10,
+  });
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+        <h2 className="section-title" style={{ marginTop: 0 }}>Credential types</h2>
+        <button className="btn" disabled={isPreview} onClick={() => setEditing(blank())}>Add type</button>
+      </div>
+      <p className="sub" style={{ marginTop: 4 }}>
+        What your clinic recognises. A retired type stays on the records that already use it — it just stops
+        being offered to anyone new.
+      </p>
+
+      {editing ? (
+        <div className="card card-pad" style={{ marginTop: 12, display: "grid", gap: 12 }}>
+          <b>{editing.id.startsWith("new-") ? "Add a credential type" : `Edit ${editing.label || editing.code}`}</b>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div className="field" style={{ minWidth: 140 }}>
+              <label htmlFor="ct-code">Code</label>
+              <input id="ct-code" className="input" value={editing.code} placeholder="BCBA"
+                onChange={(e) => setEditing({ ...editing, code: e.target.value })} />
+            </div>
+            <div className="field" style={{ minWidth: 220 }}>
+              <label htmlFor="ct-label">Label</label>
+              <input id="ct-label" className="input" value={editing.label} placeholder="BCBA / BCBA-D"
+                onChange={(e) => setEditing({ ...editing, label: e.target.value })} />
+            </div>
+            <div className="field" style={{ minWidth: 140 }}>
+              <label htmlFor="ct-issuer">Issuer</label>
+              <input id="ct-issuer" className="input" value={editing.issuer ?? ""} placeholder="BACB"
+                onChange={(e) => setEditing({ ...editing, issuer: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="ct-url">Register to check numbers against</label>
+            <input id="ct-url" className="input" value={editing.verificationUrl ?? ""} placeholder="https://…"
+              onChange={(e) => setEditing({ ...editing, verificationUrl: e.target.value })} />
+            <p className="trend" style={{ marginTop: 4 }}>
+              Shown to whoever confirms a credential of this type, as a link on the number. Left empty on
+              purpose when the catalogue was created: a registry link that has moved is worse than none.
+            </p>
+          </div>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" checked={editing.requiresNumber}
+              onChange={(e) => setEditing({ ...editing, requiresNumber: e.target.checked })} />
+            <span className="sub">A registration number is required</span>
+          </label>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button className="btn primary" disabled={busy || !editing.code.trim() || !editing.label.trim()}
+              onClick={async () => {
+                setBusy(true); setNotice(null);
+                try { await saveCredentialType(editing); setEditing(null); setNotice({ kind: "ok", text: "Saved." }); }
+                catch (e) { setNotice({ kind: "err", text: e instanceof Error ? e.message : "Could not save that type." }); }
+                finally { setBusy(false); }
+              }}>
+              {busy ? "Saving…" : "Save"}
+            </button>
+            <button className="btn ghost" onClick={() => { setEditing(null); setNotice(null); }}>Cancel</button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="card table-wrap" style={{ marginTop: 12 }}>
+        <table className="data">
+          <thead><tr><th>Code</th><th>Label</th><th>Issuer</th><th>Number</th><th></th></tr></thead>
+          <tbody>
+            {types.map((t) => (
+              <tr key={t.id} style={t.isActive ? undefined : { opacity: 0.6 }}>
+                <td><b>{t.code}</b></td>
+                <td>{t.label}{t.isActive ? null : <span className="pill" style={{ marginLeft: 6 }}>retired</span>}</td>
+                <td className="sub">{t.issuer || "—"}</td>
+                <td className="sub">{t.requiresNumber ? "required" : "optional"}</td>
+                <td style={{ display: "flex", gap: 8 }}>
+                  <button className="btn ghost" style={{ padding: "3px 9px" }} disabled={isPreview}
+                    onClick={() => setEditing({ ...t })}>Edit</button>
+                  <button className="btn ghost" style={{ padding: "3px 9px" }} disabled={isPreview || busy}
+                    onClick={async () => {
+                      setBusy(true); setNotice(null);
+                      try { await retireCredentialType(t.id, !t.isActive); }
+                      catch (e) { setNotice({ kind: "err", text: e instanceof Error ? e.message : "Could not change that type." }); }
+                      finally { setBusy(false); }
+                    }}>
+                    {t.isActive ? "Retire" : "Restore"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!types.length ? (
+              <tr><td colSpan={5} style={{ color: "var(--muted)" }}>
+                No credential types yet. Nobody can record a credential until there is at least one.
+              </td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      {notice ? (
+        <p className="sub" style={{ marginTop: 10, color: notice.kind === "err" ? "var(--danger, #b3261e)" : "var(--muted)" }}>
+          {notice.text}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function StaffTab({ isAdmin, isScheduler, isPreview, canVerify }: { isAdmin: boolean; isScheduler: boolean; isPreview: boolean; canVerify: boolean }) {
   const people = directory();
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -605,6 +849,9 @@ function StaffTab({ isAdmin, isScheduler, isPreview }: { isAdmin: boolean; isSch
           {notice.text}
         </p>
       ) : null}
+
+      <CredentialQueue canVerify={canVerify} />
+      {isAdmin ? <CredentialCatalogue isPreview={isPreview} /> : null}
 
       {(isAdmin || isScheduler) && !isPreview ? (
         <InviteForm

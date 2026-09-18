@@ -52,7 +52,12 @@ interface Client {
   name: string;
   status: string;
   location_id?: number | null;
+  /** The service this child is waiting for. `session_type` is the label as
+   *  it stood when the row was written; `session_type_id` (migration 0086) is
+   *  the pointer, and is what the admin page writes now. Resolve the id, fall
+   *  back to the text for a row written before 0086. */
   session_type?: string | null;
+  session_type_id?: number | null;
   created_at?: string | null;
   // Migration 0071 - see that migration's header for why these live on
   // `clients` rather than a separate waitlist-entries table.
@@ -94,6 +99,7 @@ interface WaitlistViewProps {
   // optional below.
   setClients?: (updater: (prev: Client[]) => Client[]) => void;
   locations?: Location[];
+  sessionTypes?: { id: number; name: string }[];
   showToast?: (message?: string) => void;
   // This view is rendered through pages/index.jsx's shared `views` lookup
   // (Scheduler()'s <ViewComp ... /> gets one large prop bag common to every
@@ -115,7 +121,7 @@ function daysWaiting(createdAt?: string | null): number | null {
   return Math.max(0, Math.floor(ms / 86400000));
 }
 
-export function WaitlistView({ clients, setClients, locations, showToast, onNavigate, onRequestBookFromWaitlist }: WaitlistViewProps) {
+export function WaitlistView({ clients, setClients, locations, sessionTypes, showToast, onNavigate, onRequestBookFromWaitlist }: WaitlistViewProps) {
   const [promotingId, setPromotingId] = useState<number | null>(null);
   const [priorityUpdatingId, setPriorityUpdatingId] = useState<number | null>(null);
   // Which row's notes editor is expanded, and its in-progress draft text -
@@ -250,7 +256,11 @@ export function WaitlistView({ clients, setClients, locations, showToast, onNavi
                       <span style={{ fontSize: 15, fontWeight: 500, color: COLORS.text }}>{client.name}</span>
                       <Badge label={PRIORITY_LABELS[priority] || PRIORITY_LABELS.normal} color={PRIORITY_COLORS[priority] || PRIORITY_COLORS.normal} />
                     </div>
-                    <div style={{ fontSize: 13, color: COLORS.textS }}>{client.session_type || "Not specified"}</div>
+                    <div style={{ fontSize: 13, color: COLORS.textS }}>
+                      {sessionTypes?.find((t) => t.id === client.session_type_id)?.name
+                        || client.session_type
+                        || "Not specified"}
+                    </div>
                     {loc && <div style={{ fontSize: 12, color: COLORS.textT }}>{loc.name}</div>}
                     {(client.contact_phone || client.contact_email) && (
                       <div style={{ fontSize: 12, color: COLORS.textT, marginTop: 2 }}>

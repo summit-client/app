@@ -1626,9 +1626,21 @@ await check("a family still cannot read the staff table itself", async () => {
 });
 
 await check("the care team names the people who actually deliver the sessions", async () => {
+  // The job title a family sees comes from hub_employee_profiles, reached
+  // through staff.user_id - not from `staff.role`, which migration 0086
+  // dropped. A clinical credential is not free text on a scheduling row; it
+  // lives in employee_credentials with its issuer and number, confirmed by a
+  // named person. So this fixture links the staff row to a real account with
+  // an HR profile, which is what a clinic that has onboarded somebody has.
+  const danaUser = (await db.query(
+    `insert into auth.users (email) values ('dana@t.test') returning id`)).rows[0].id;
+  await db.exec(`insert into profiles (id, full_name, role, clinic_id)
+                 values ('${danaUser}','Dana Okafor','clinician','${clinicA}')`);
+  await db.exec(`insert into hub_employee_profiles (user_id, clinic_id, job_title)
+                 values ('${danaUser}','${clinicA}','Behaviour Therapist')`);
   const st = (await db.query(
-    `insert into staff (name, role, capacity, clinic_id)
-     values ('Dana Okafor', 'Behaviour Therapist', 12, '${clinicA}') returning id`)).rows[0].id;
+    `insert into staff (name, capacity, clinic_id, user_id)
+     values ('Dana Okafor', 12, '${clinicA}', '${danaUser}') returning id`)).rows[0].id;
   await db.exec(`insert into sessions (clinic_id, client_id, employee_id, session_date, hour, status, type)
                  values ('${clinicA}', ${maya}, ${st}, current_date - 7, 10, 'completed', 'Session'),
                         ('${clinicA}', ${maya}, ${st}, current_date + 5, 10, 'scheduled', 'Session')`);
@@ -1636,7 +1648,7 @@ await check("the care team names the people who actually deliver the sessions", 
     const row = await one(`select staff_name, staff_role, sessions_delivered, last_seen_on, next_on
                              from public.my_care_team() where staff_id = ${st}`);
     eq(row.staff_name, "Dana Okafor", "name");
-    eq(row.staff_role, "Behaviour Therapist", "role");
+    eq(row.staff_role, "Behaviour Therapist", "job title, now from hub_employee_profiles");
     eq(row.sessions_delivered, 1, "delivered");
     if (!row.last_seen_on) throw new Error("no last seen date");
     if (!row.next_on) throw new Error("no next date");
@@ -2090,9 +2102,9 @@ await check("the catalogue counts every resource, including ones the reader cann
 // link but booking power does.
 // --------------------------------------------------------------------------
 const staff1 = (await db.query(
-  `insert into staff (name, role, clinic_id) values ('Staff One','RBT','${clinicA}') returning id`)).rows[0].id;
+  `insert into staff (name, clinic_id) values ('Staff One','${clinicA}') returning id`)).rows[0].id;
 const staff2 = (await db.query(
-  `insert into staff (name, role, clinic_id) values ('Staff Two','RBT','${clinicA}') returning id`)).rows[0].id;
+  `insert into staff (name, clinic_id) values ('Staff Two','${clinicA}') returning id`)).rows[0].id;
 await db.exec(`update employment_records set staff_id = ${staff1} where id = '${empClin}'`);
 await db.exec(`update employment_records set staff_id = ${staff2} where id = '${empOther}'`);
 
@@ -2148,9 +2160,78 @@ await check("a clinician cannot create a session for a colleague", async () => {
     "booking a session for a colleague"));
 });
 
-await check("a clinician cannot reschedule or cancel a colleague's session - it visibly exists, but no write reaches it", async () => {
+// Migration 0077 moved the clinician/colleague boundary from the app into the
+// database, and these two cases are what that looks like from the outside.
+// They used to assert the OPPOSITE - that a clinician reads every session in
+// the clinic straight off the table - which is what 0077 was written to end.
+//
+// What a clinician actually needs is the occupancy: a colleague's session type
+// and its date and time, so they can find a slot to meet in. What must not
+// come through is WHICH CLIENT that session is for. So the table read narrows
+// to their own rows, and the colleague rows come back through
+// `sessions_visible()` with `client_id` and `home_address` NULLed and
+// `client_masked` set.
+await check("a clinician reads none of a colleague's sessions off the `sessions` table", async () => {
   await as(aClin, async () => {
-    eq(await visible("sessions", `id = ${sess2}`), 1, "colleague's session is still readable (full visibility rule)");
+    eq(await visible("sessions", `id = ${sess2}`), 0, "colleague's session readable directly (0077 narrowed this)");
+    eq(await visible("sessions", `id = ${sess3}`), 1, "their OWN session is not readable");
+  });
+});
+
+// sess2 is a COLLEAGUE's session with clientA - and aClin has their own
+// sessions with clientA, so 0077 reveals that client_id on purpose. Its
+// header explains why at length: they are both on that child's team, and
+// `client_sessions`/`session_notes` for that child are already clinic-wide
+// readable to them, so withholding the id here would hide nothing while
+// breaking the "compare schedules" panel, whose job is finding a slot where
+// the clinician AND the client are both free.
+//
+// The masking case therefore needs a client aClin has never worked with,
+// which is what sessMasked is for. Both halves are asserted, because a test
+// that only covered the first would pass against a function that masked
+// nothing at all.
+// A second client IN THIS CLINIC - clientB belongs to clinicB, and 0016's
+// clinic-consistency trigger refuses a session whose client is elsewhere.
+const clientUnseen = (await db.query(
+  `insert into clients (name, status, clinic_id) values ('Never Met','active','${clinicA}') returning id`)).rows[0].id;
+const sessMasked = (await db.query(
+  `insert into sessions (client_id, employee_id, clinic_id, session_date, hour, minute, type, status)
+   values (${clientUnseen}, ${staff2}, '${clinicA}', '2026-04-08', 13, 0, 'Direct Therapy', 'scheduled') returning id`)).rows[0].id;
+
+await check("occupancy comes back through sessions_visible() - the type and the time, which is what a clinician needs", async () => {
+  await as(aClin, async () => {
+    const row = (await db.query(
+      `select id, type, session_date, hour, minute, client_masked
+         from public.sessions_visible() where id = ${sessMasked}`)).rows[0];
+    if (!row) throw new Error("the colleague's session is invisible - occupancy is gone, and nobody can find a slot to meet in");
+    if (!row.type) throw new Error("no session type - this is half of what a clinician books around");
+    if (row.session_date == null || row.hour == null) throw new Error("no date or time - the other half");
+  });
+});
+
+await check("a colleague's client does NOT come through when it is a client this clinician has never seen", async () => {
+  await as(aClin, async () => {
+    const row = (await db.query(
+      `select client_id, home_address, client_masked
+         from public.sessions_visible() where id = ${sessMasked}`)).rows[0];
+    if (row.client_id !== null) throw new Error(`client_id came through as ${row.client_id}`);
+    if (row.home_address !== null) throw new Error("home_address came through");
+    if (row.client_masked !== true) throw new Error("client_masked not set, so the app cannot tell a masked row from a session with no client at all");
+  });
+});
+
+await check("a client this clinician DOES work with is revealed, which is 0077's deliberate exception", async () => {
+  await as(aClin, async () => {
+    const row = (await db.query(
+      `select client_id, client_masked from public.sessions_visible() where id = ${sess2}`)).rows[0];
+    if (row.client_id === null)
+      throw new Error("masked a client aClin demonstrably already works with - this breaks the compare-schedules panel, which then reports a booked child as free");
+    if (row.client_masked !== false) throw new Error("client_masked set on an unmasked row");
+  });
+});
+
+await check("a clinician cannot reschedule or cancel a colleague's session", async () => {
+  await as(aClin, async () => {
     await updateAffects(`update sessions set hour = 15 where id = ${sess2}`, 0, "reschedule a colleague's session");
     await updateAffects(`update sessions set status = 'cancelled' where id = ${sess2}`, 0, "cancel a colleague's session");
   });
@@ -2168,10 +2249,20 @@ await check("a clinician cannot reassign their own session to a colleague", asyn
     "session's employee_id after the rejected reassignment");
 });
 
-await check("an unlinked clinician (no employment_records.staff_id) keeps full read parity but has zero booking power", async () => {
+// An unlinked clinician - no employment_records.staff_id - has no staff row to
+// match, so 0077's own-rows policy matches nothing. That is correct and not a
+// bug: they cannot be the clinician on any session, so none of them is theirs.
+// They still need the catalogue and still need occupancy to book around, which
+// is what this checks.
+await check("an unlinked clinician reads the catalogue and masked occupancy, and nothing else", async () => {
   await as(aUnlinked, async () => {
     eq(await visible("session_types", `id = ${typeA}`), 1, "still reads session_types clinic-wide");
-    eq(await visible("sessions", `id = ${sess1}`), 1, "still reads every session clinic-wide, same as a linked clinician");
+    eq(await visible("sessions", `id = ${sess1}`), 0, "reads a session off the table with no staff row to match");
+    const row = (await db.query(
+      `select client_id, client_masked, type from public.sessions_visible() where id = ${sess1}`)).rows[0];
+    if (!row) throw new Error("no occupancy at all - they cannot see when anyone is busy");
+    if (row.client_id !== null || row.client_masked !== true)
+      throw new Error("an unlinked clinician saw a client association");
   });
   await as(aUnlinked, () => insertRaises(
     `insert into sessions (client_id, employee_id, clinic_id, session_date, hour, minute, type, status)

@@ -164,16 +164,18 @@ These are never violated regardless of what a task seems to ask for:
   `0029`'s `time_entry_economics` view and `0031`'s `session_delivery`
   function still join `session_types` on the name. They are correct only
   because the rename trigger keeps that name true — do not remove that
-  trigger without moving them onto the key first. `clients.session_type`
-  (the waitlist's "what service") is untouched and is the same shape of bug.
-  `staff.specialties` looks like it and is not: those are descriptive tags
-  from a fixed list, matched against nothing since PR #175.
+  trigger without moving them onto the key first.
 
-  Three places still match a session type's name against the literal
-  `"Assessment"` — the waitlist prefill, the multi-client waitlist filter and
-  the post-booking auto-promotion. That is not fixable by an id: no column
-  records that a type IS the intake visit. An `is_intake` flag on
-  `session_types` is the one fix for all three.
+  `clients.session_type_id` landed in `0086` with the same backfill, so the
+  waitlist's "what service" is a pointer too. `staff.specialties` looks like
+  the same bug and is not: those are descriptive tags from a fixed list,
+  matched against nothing since PR #175.
+
+  `session_types.is_intake` (`0086`) replaced the three places that matched a
+  session type's name against the literal `"Assessment"` — the waitlist
+  prefill, the multi-client waitlist filter and the post-booking
+  auto-promotion. Seeded from that literal, so nothing moved the day it
+  applied; it is a checkbox an admin owns now.
 
 ## One role vocabulary
 
@@ -210,9 +212,21 @@ return data for a scheduler instead of rendering empty (the
 `ACCESS.employee` "renders and shows nothing" trap this same section's
 comment already warns about, for exactly this reason).
 
-Do not confuse `profiles.role` with `staff.role`, a different column on a
-different table holding the clinical credential (`BCBA | BCaBA | RBT |
-Supervisor`), written by the scheduler's admin page.
+**`staff.role` is gone (migration `0086`).** It was a different column on a
+different table holding a clinical credential as free text (`BCBA | BCaBA |
+RBT | Supervisor`), typed into the scheduler's admin page, verified by
+nothing, and a fourth copy of a vocabulary that already existed three times
+over. A credential now lives in `employee_credentials`, pointing at a
+per-clinic `credential_types` catalogue, and it is **confirmed by somebody
+else** — see the credentials note under "Traps" below.
+
+Two consumers had to move with it, and the second is the one that would have
+been easy to miss: `apps/scheduler`'s `isClinicalStaff()` is now
+`carriesSessions()` and tests capacity alone (a roster filter built on
+credentials would answer differently depending on who was looking, since a
+clinician reads only their own); and `my_care_team()` published `staff.role`
+to FAMILIES as a job title, which is a second, unrelated meaning the column
+carried. That function reads `hub_employee_profiles.job_title` now.
 
 Confirmed shipped: `fix/role-vocabulary` merged as PR #48 (2026-08-27). Any
 older doc that calls this "merge status unverified" is stale.
@@ -363,6 +377,26 @@ rejected the JWT" and gives no hint that CORS is the actual cause. Fixed via
 `handlePreflight()`/`CORS_HEADERS` in `supabase/functions/_shared/auth.ts`,
 called first in every function's handler, before any method or auth check.
 Any new Edge Function needs the same call.
+
+**A credential's standing is something somebody else asserts, and it reaches
+a bill (migration `0086`).** `credentials_own_update` (0007) let a person
+update their own `employee_credentials` row including `status`, and migration
+`0034`'s receipt view puts a `GOOD_STANDING` credential number on a client's
+receipt under that clinician's name. So a self-entered, self-approved number
+was the clinic's assertion of who delivered the service, checked by nothing.
+`0086` keeps the self-write — a person must be able to enter and correct
+their own credential — and adds a trigger: entering or amending one sets
+`PENDING`, and moving it to `GOOD_STANDING` stamps `verified_by`/`verified_at`
+and is **refused when the actor is the holder**, for every role, admin
+included. The verification is a human act (a supervisor looks the number up on
+the issuer's register; nothing in Summit contacts an issuer), which is exactly
+why the row records who made it.
+
+Gated on `hr.credential.verify`, a new action seeded to admin, supervisor and
+`hr_admin`. Not `hr.record.write` — that looks right and is not: `0024` grants
+it to admin and `hr_admin` only, so a supervisor would have got a screen that
+refuses them. `scheduler` is explicitly denied, because `hub_can_manage()`
+admits schedulers and absence alone would not have been enough.
 
 **Check what `main` has that you do not.** `git log <branch>..origin/main`, not
 just the reverse. A review once concluded `deploy.yml` excluded `apps/employee`
