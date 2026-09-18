@@ -24,6 +24,39 @@ not where plain contact fields belong regardless of how convenient the
 shortcut is. Reverted. The user's own words: "Plan first to get my approval
 then act on it.")
 
+## How to explain things here
+
+The account owner reads these explanations to make decisions, not to admire
+the work. Write for that.
+
+**Lead with what it means, not what it is.** "A person could award themselves
+a credential, and it printed on a client's bill" — not "0086 adds a
+verification trigger to employee_credentials".
+
+**One idea per paragraph, and say the consequence.** Every claim should land
+on something real: what breaks, who sees it, what it costs. If a paragraph
+does not reach a consequence, cut it.
+
+**Cash out every technical term the moment you use it.** Not "security
+definer, so the drop was permitted" — "normally Postgres refuses to delete a
+column something depends on; this kind of thing is invisible to that check,
+so nothing would have stopped me."
+
+**Name the cost honestly, at the end, unhedged.** "Your team re-enters their
+credentials once. That's the bit you might want to push back on." If a
+decision has a downside, it goes in the explanation, not in a footnote.
+
+**Short.** A finding is three or four sentences. Three findings are not a
+page. Bullet lists of everything you did are not an explanation.
+
+**Do not narrate process.** What you checked, what you considered and
+rejected, how long something took — none of that is the answer unless it
+changed the outcome.
+
+(2026-09-18: asked for directly, after a run of explanations that were
+accurate and unreadable. The user's own words: "The drivel you usually spill
+is hard to follow.")
+
 ## What this is
 
 A pnpm + Turborepo monorepo, Next.js 16.2.x with Turbopack. Mount Etna is the
