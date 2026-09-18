@@ -750,7 +750,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
 
       {mode === "month" ? (
         <MonthGrid
-          days={range.days} anchorMonth={anchor} sessions={mergedSessions} clients={clients} sessionTypes={sessionTypes}
+          days={range.days} anchorMonth={anchor} sessions={mergedSessions} clients={clients} employees={employees} locations={locations} sessionTypes={sessionTypes}
           typeColors={typeColors} draftSessionIds={draftSessionIds} sessionColorOverrides={sessionColorOverrides}
           onSelectDay={(dateStr) => { setMode("day"); setAnchor(parseDateStr(dateStr)); }}
           onSessionClick={setSelected}

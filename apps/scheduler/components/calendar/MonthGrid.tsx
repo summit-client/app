@@ -8,7 +8,8 @@
 import * as React from "react";
 import { toDateStr, isSameDate } from "./dateUtils";
 import { RecurringIcon, SessionTypeDot } from "./icons";
-import type { CalSession, CalClient, CalSessionType } from "./types";
+import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
+import { Tooltip } from "./TimeGrid";
 import { useAppUser } from "../../lib/UserContext";
 import { sessionPrimaryLabel } from "../../lib/sessionPrivacy";
 
@@ -19,6 +20,10 @@ interface Props {
   anchorMonth: Date;
   sessions: CalSession[];
   clients: CalClient[];
+  /** Only used by the hover card; month chips themselves name nobody the
+   *  viewer may not see (sessionPrimaryLabel). */
+  employees: CalEmployee[];
+  locations: CalLocation[];
   sessionTypes: CalSessionType[];
   typeColors: Record<string, string>;
   draftSessionIds: Set<number>;
@@ -29,7 +34,8 @@ interface Props {
   sessionColorOverrides?: Record<number, string>;
 }
 
-export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, typeColors, draftSessionIds, onSelectDay, onSessionClick, sessionColorOverrides }: Props) {
+export function MonthGrid({ days, anchorMonth, sessions, clients, employees, locations, sessionTypes, typeColors, draftSessionIds, onSelectDay, onSessionClick, sessionColorOverrides }: Props) {
+  const [hovered, setHovered] = React.useState<number | null>(null);
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const viewer = useAppUser();
   const today = toDateStr(new Date());
@@ -90,8 +96,16 @@ export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, 
                 <div
                   key={s.id}
                   onClick={(e) => { e.stopPropagation(); onSessionClick(s); }}
+                  // Focus as well as hover, so the card is reachable without a
+                  // pointer - same pairing TimeGrid's blocks use.
+                  onMouseEnter={() => setHovered(s.id)}
+                  onMouseLeave={() => setHovered((h) => (h === s.id ? null : h))}
+                  onFocus={() => setHovered(s.id)}
+                  onBlur={() => setHovered((h) => (h === s.id ? null : h))}
+                  tabIndex={0}
                   title={noShow ? "No-show" : undefined}
                   style={{
+                    position: "relative",
                     display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, padding: "1.5px 4px", marginBottom: 2, borderRadius: 4,
                     background: color + (draft ? "12" : "22"), border: draft ? `1px dashed ${color}88` : noShow ? "1px solid #EF9F2788" : "none",
                     cursor: "pointer", overflow: "hidden", opacity: draft ? 0.75 : noShow ? 0.7 : 1,
@@ -102,6 +116,12 @@ export function MonthGrid({ days, anchorMonth, sessions, clients, sessionTypes, 
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
                   {draft && <span style={{ fontSize: 8, fontWeight: 700, color, flexShrink: 0 }}>D</span>}
                   {noShow && <span style={{ fontSize: 8, fontWeight: 700, color: "#8A5A1E", flexShrink: 0 }}>⚠</span>}
+                  {hovered === s.id && (
+                    <Tooltip
+                      session={s} clients={clients} employees={employees} locations={locations}
+                      sessionTypes={sessionTypes} typeColors={typeColors} colorOverride={sessionColorOverrides?.[s.id]}
+                    />
+                  )}
                 </div>
               );
             })}
