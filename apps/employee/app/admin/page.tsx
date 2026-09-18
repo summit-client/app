@@ -615,6 +615,19 @@ function InviteForm({
 // which is invite-teammate's list and answers a different question.
 const EDIT_ROLES = ["admin", "supervisor", "clinician"] as const;
 
+// `accessLevel` is the three-value display ladder the directory renders
+// (hr-backend's ACCESS maps clinician -> "EMPLOYEE"), not a profiles.role
+// value. Seeding the select with `accessLevel.toLowerCase()` therefore fed
+// it "employee" for every clinician -- which matches no <option>, so the
+// browser showed the first one and the dropdown claimed the person was an
+// admin while the Access pill beside it read "employee". Saving then sent
+// role: "employee", which edit-teammate rejects, so changing a clinician's
+// supervisor was impossible and the only feedback was "Could not save the
+// change."
+const EDIT_ROLE_FOR_ACCESS: Record<"EMPLOYEE" | "SUPERVISOR" | "ADMIN", (typeof EDIT_ROLES)[number]> = {
+  EMPLOYEE: "clinician", SUPERVISOR: "supervisor", ADMIN: "admin",
+};
+
 function TeammateActions({
   person, people, busy, onBusy, onDone, onError, onDeactivated,
 }: {
@@ -627,7 +640,7 @@ function TeammateActions({
   onDeactivated: () => void;
 }) {
   const [editing, setEditing] = React.useState(false);
-  const [role, setRole] = React.useState(person.accessLevel.toLowerCase());
+  const [role, setRole] = React.useState<string>(EDIT_ROLE_FOR_ACCESS[person.accessLevel]);
   const [supervisorId, setSupervisorId] = React.useState(person.supervisorId ?? "");
 
   async function saveEdit() {
