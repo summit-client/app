@@ -121,7 +121,7 @@ function AdminConsole() {
         {tab === "staff" ? (
           <StaffTab isAdmin={role === "ADMIN"} isScheduler={identity.appRole === "scheduler"} isPreview={identity.isPreview} />
         ) : tab === "families" ? (
-          <FamiliesTab isAdmin={role === "ADMIN"} isPreview={identity.isPreview} actorId={identity.userId} />
+          <FamiliesTab isAdmin={role === "ADMIN"} canReadGuardians={role === "ADMIN" || identity.appRole === "scheduler"} isPreview={identity.isPreview} actorId={identity.userId} />
         ) : <BackendSettingsTab />}
       </div>
     );
@@ -329,15 +329,21 @@ function AdminConsole() {
  * that decides what a parent sees about their child.
  *
  * Two different limits apply here and they are NOT the same limit:
- *  - reading the guardian rows needs `clinical.client.read`, which admin and
- *    supervisor hold and scheduler does not;
+ *  - reading the guardian rows: admin and supervisor through
+ *    `clinical.client.read`, and scheduler through migration 0084, which
+ *    grants those three tables narrowly rather than handing a scheduler a
+ *    PHI-flagged clinical action;
  *  - changing one needs `admin.staff.manage`, which only admin holds.
- * A scheduler therefore gets the client list (theirs to read, and where the
- * client invite lives) and an explanation instead of an empty guardian
- * section, because an empty list would read as "this family has no
- * guardians" when it means "you cannot see them".
+ *
+ * Supervisor is not offered this tab even though they can read the data: a
+ * supervisor is a clinician, not an app administrator, and managing who in a
+ * family sees what is administration.
+ *
+ * The unreadable branch below is kept rather than deleted. Until 0084 is
+ * applied a scheduler still reads nothing, and an empty list would read as
+ * "this family has no guardians" when it means "you cannot see them".
  */
-function FamiliesTab({ isAdmin, isPreview, actorId }: { isAdmin: boolean; isPreview: boolean; actorId: string }) {
+function FamiliesTab({ isAdmin, canReadGuardians, isPreview, actorId }: { isAdmin: boolean; canReadGuardians: boolean; isPreview: boolean; actorId: string }) {
   const [snap, setSnap] = React.useState<FamiliesSnapshot | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -347,12 +353,12 @@ function FamiliesTab({ isAdmin, isPreview, actorId }: { isAdmin: boolean; isPrev
   const load = React.useCallback(async () => {
     if (isPreview) { setSnap(null); setError(null); return; }
     try {
-      setSnap(await listClientFamilies(isAdmin));
+      setSnap(await listClientFamilies(canReadGuardians));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load families.");
     }
-  }, [isPreview, isAdmin]);
+  }, [isPreview, canReadGuardians]);
   React.useEffect(() => { void load(); }, [load]);
 
   async function toggle(rel: GuardianLink, kind: GuardianPermissionKind, next: boolean) {
@@ -404,9 +410,8 @@ function FamiliesTab({ isAdmin, isPreview, actorId }: { isAdmin: boolean; isPrev
         <div className="card card-pad" style={{ marginTop: 12 }}>
           <b>Guardian permissions are not visible to your role.</b>
           <p className="sub" style={{ marginBottom: 0 }}>
-            Reading a family&apos;s permissions needs clinical client access, which a
-            scheduler account does not have. The clients below are yours to see and
-            invite; an administrator manages who in each family sees what.
+            The clients below are yours to see and invite; an administrator manages
+            who in each family sees what.
           </p>
         </div>
       ) : null}

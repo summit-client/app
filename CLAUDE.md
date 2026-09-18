@@ -144,6 +144,16 @@ These are never violated regardless of what a task seems to ask for:
   matching.
 - RLS policies are written per command, never `for all` — deletes are denied
   by default across this schema and `for all` would silently reopen them.
+- **Join on generated ids, never on names.** Locations, clients, staff,
+  session types — everything. A name is display data: it is edited, it
+  repeats (two staff called the same thing), and matching on it silently
+  attaches a record to the wrong row rather than failing. This applies to
+  code and to schema: a column that identifies another row holds that row's
+  id, not its label. `sessions.type` is the standing counter-example — it
+  stores a session type's NAME as text, which is why roughly a dozen places
+  in `apps/scheduler` do `sessionTypes.find(t => t.name === session.type)`.
+  Fixing that needs a migration, not a refactor; until it lands, do not add
+  new name-matching anywhere.
 
 ## One role vocabulary
 

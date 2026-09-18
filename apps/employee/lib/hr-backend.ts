@@ -994,13 +994,21 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
  * RLS reserves the write to `auth_can('admin.staff.manage')`, so it was a
  * Supabase-dashboard operation.
  *
- * Read scope is narrower than this console's own gate, and that matters.
- * `guardian_relationships_staff_read` and `relationship_permissions_staff_read`
- * (0047:409, :434) both require `auth_can('clinical.client.read')`, which
- * per 0024's seed the `scheduler` role does NOT hold. A scheduler therefore
- * reads an empty set from both tables with no error - the RLS-returns-empty
- * trap CLAUDE.md documents. So the caller's reach is reported explicitly
- * rather than inferred from a row count, and the screen says so.
+ * Reading and writing are two different permissions here, and the split is
+ * the whole shape of this screen:
+ *
+ *   read  - admin and supervisor via `clinical.client.read` (0047), and
+ *           scheduler via migration 0084's scheduling-staff policies, which
+ *           grant those three tables and nothing else. Granting a scheduler
+ *           `clinical.client.read` instead would have opened client records,
+ *           session notes, programs and assessments - it is one of 0024's
+ *           nine PHI-flagged clinical actions.
+ *   write - `admin.staff.manage`, admin only. Unchanged by 0084, so a
+ *           scheduler sees a family's permissions and changes none.
+ *
+ * The reach is still passed in rather than inferred from a row count: zero
+ * guardians is a legitimate answer for a family with none, and it must not
+ * look the same as "you may not see them".
  */
 
 export interface GuardianPermissionKind {
@@ -1046,7 +1054,7 @@ export interface FamiliesSnapshot {
  * sharing screen uses cannot resolve as a PostgREST relationship. Names are
  * matched here on (household_id, user_id) instead.
  */
-export async function listClientFamilies(canReadClinicalClients: boolean): Promise<FamiliesSnapshot> {
+export async function listClientFamilies(canReadGuardians: boolean): Promise<FamiliesSnapshot> {
   const kindsRes = await sb()
     .from("guardian_permission_kinds")
     .select("permission, label, description, is_default, exposes_clinical, exposes_financial")
@@ -1066,9 +1074,9 @@ export async function listClientFamilies(canReadClinicalClients: boolean): Promi
   const clients = (clientsRes.data ?? []) as { id: number; name: string | null }[];
 
   // Asked, not inferred: zero guardian rows is a legitimate answer for a
-  // clinic that has linked none, and it is also what a scheduler always
+  // clinic that has linked none, and it is what any role without the read
   // gets. Those two must not look the same on screen.
-  if (!canReadClinicalClients) {
+  if (!canReadGuardians) {
     return {
       kinds,
       canSeeGuardians: false,
