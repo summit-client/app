@@ -20,7 +20,7 @@ import { createBrowserClient } from "@supabase/ssr";
 // to spell it out and fell behind when hr_admin and payroll_admin joined it.
 import type { AppRole } from "@summit/portals";
 import type { Session } from "./session";
-import type { CreditAllocation, EmployeeCredential, PdActivity } from "./credentials";
+import type { CreditAllocation, CredentialType, EmployeeCredential, PdActivity } from "./credentials";
 import type { EducationLevel, EmployeeEducation } from "./education";
 import type { MetricResponse, Recognition } from "./ecosystem";
 import type { ForumPost, Goal, HrAudit, PolicyAck, PolicyDoc, StaffMember } from "./hr-types";
@@ -63,6 +63,22 @@ export interface ScoreboardSite {
   domains: Record<string, number>;
 }
 
+/** One row of the Admin console's credential queue. */
+export interface PendingCredential {
+  id: string;
+  userId: string;
+  personName: string;
+  code: string;
+  label: string;
+  issuer: string | null;
+  verificationUrl: string | null;
+  number: string;
+  requiresNumber: boolean;
+  cycleStart: string;
+  cycleEnd: string;
+  status: "GOOD_STANDING" | "PENDING" | "LAPSED";
+}
+
 export interface HrSnapshot {
   cycle: string;
   directory: Person[];
@@ -71,6 +87,10 @@ export interface HrSnapshot {
   recognition: Recognition[];
   goals: Goal[];
   credentials: EmployeeCredential[];
+  /** The clinic's credential catalogue (migration 0086). Readable by anyone in
+   *  the clinic - it is a dropdown, not a confidence - and editable only with
+   *  `admin.staff.manage`. */
+  credentialTypes: CredentialType[];
   education: EmployeeEducation[];
   activities: PdActivity[];
   allocations: CreditAllocation[];
@@ -96,6 +116,16 @@ export interface HrBackend {
   addActivity(a: PdActivity, allocations: CreditAllocation[]): Promise<PdActivity>;
   saveCredential(c: EmployeeCredential): Promise<EmployeeCredential>;
   removeCredential(id: string): Promise<void>;
+  /** Every credential in the clinic still awaiting confirmation, with the
+   *  holder's name. Relies on RLS for scope, the same way
+   *  `listPendingSignoffs()` does - an admin sees the clinic, a supervisor
+   *  their own team, and a scheduler nothing (0086 denies it the action). */
+  listPendingCredentials(): Promise<PendingCredential[]>;
+  /** Confirm one against the issuer's register. The tick IS the check: the
+   *  database records who made it and refuses it from the holder. */
+  verifyCredential(id: string): Promise<void>;
+  saveCredentialType(t: CredentialType): Promise<CredentialType>;
+  retireCredentialType(id: string, isActive: boolean): Promise<void>;
   saveEducation(e: EmployeeEducation): Promise<EmployeeEducation>;
   removeEducation(id: string): Promise<void>;
   rate(r: MetricResponse): Promise<void>;
@@ -448,6 +478,20 @@ export async function computeStaffPriorityStatus(userId: string, appRole: string
 
 const KEY = "summit-hr-store";
 
+/** The seven kinds migration 0086 seeds every clinic with, so preview mode
+ *  shows the same picker a real one does. Ids are stable strings rather than
+ *  uuids: nothing here reaches a database, and a stable id is what lets a
+ *  saved preview credential still resolve its type after a reload. */
+const PREVIEW_CREDENTIAL_TYPES: CredentialType[] = [
+  { id: "ct-bcba", code: "BCBA", label: "BCBA / BCBA-D", issuer: "BACB", verificationUrl: null, requiresNumber: true, isActive: true, sortOrder: 10 },
+  { id: "ct-bcaba", code: "BCaBA", label: "BCaBA", issuer: "BACB", verificationUrl: null, requiresNumber: true, isActive: true, sortOrder: 20 },
+  { id: "ct-rbt", code: "RBT", label: "RBT", issuer: "BACB", verificationUrl: null, requiresNumber: true, isActive: true, sortOrder: 30 },
+  { id: "ct-rba", code: "ONT_RBA", label: "Ontario RBA (CPBAO)", issuer: "CPBAO", verificationUrl: null, requiresNumber: true, isActive: true, sortOrder: 40 },
+  { id: "ct-ibapre", code: "IBA_PRECERT", label: "IBA (pre-certification)", issuer: "IBAO", verificationUrl: null, requiresNumber: true, isActive: true, sortOrder: 50 },
+  { id: "ct-ibarec", code: "IBA_RECERT", label: "IBA (recertification)", issuer: "IBAO", verificationUrl: null, requiresNumber: true, isActive: true, sortOrder: 60 },
+  { id: "ct-ibt", code: "IBT", label: "IBT", issuer: "IBAO", verificationUrl: null, requiresNumber: true, isActive: true, sortOrder: 70 },
+];
+
 export function emptySnapshot(session: Session, seedPolicies: PolicyDoc[]): HrSnapshot {
   return {
     cycle: thisCycle(),
@@ -458,7 +502,12 @@ export function emptySnapshot(session: Session, seedPolicies: PolicyDoc[]): HrSn
       supervisorId: null,
     }],
     responses: [], history: [], recognition: [], goals: [],
-    credentials: [], education: [], activities: [], allocations: [],
+    credentials: [],
+    // Preview mode has no clinic, so it has no catalogue to read - it gets the
+    // same seven kinds migration 0086 seeds a real clinic with, so the picker
+    // on the credentials screen is not empty when there is nothing behind it.
+    credentialTypes: PREVIEW_CREDENTIAL_TYPES,
+    education: [], activities: [], allocations: [],
     policies: seedPolicies, acks: [], posts: [], audit: [],
     sites: [], peerScores: [], team: [],
   };
@@ -516,6 +565,51 @@ export function previewBackend(session: Session, seedPolicies: PolicyDoc[]): HrB
       snap.credentials = snap.credentials.filter((x) => x.id !== id);
       persist();
     },
+
+    // The queue and the verification are modelled rather than stubbed, so
+    // preview mode shows the real flow: a credential you entered sits in the
+    // queue, and you cannot confirm your own.
+    async listPendingCredentials() {
+      return snap.credentials
+        .filter((c) => c.status !== "GOOD_STANDING")
+        .map((c) => {
+          const t = snap.credentialTypes.find((x) => x.id === c.typeId);
+          return {
+            id: c.id, userId: session.userId,
+            personName: session.fullName ?? "You",
+            code: t?.code ?? c.credential,
+            label: t?.label ?? `${c.credential} (not in this clinic's catalogue)`,
+            issuer: t?.issuer ?? null, verificationUrl: t?.verificationUrl ?? null,
+            number: c.number, requiresNumber: t?.requiresNumber ?? true,
+            cycleStart: c.cycleStart, cycleEnd: c.cycleEnd, status: c.status,
+          };
+        });
+    },
+
+    async verifyCredential(id) {
+      if (!snap.credentials.some((x) => x.id === id)) {
+        throw new Error("That credential could not be found.");
+      }
+      // The one rule 0086 turns on, reproduced rather than skipped: in preview
+      // mode every credential belongs to the only person there is, so this
+      // always refuses - which is exactly what the live database does.
+      throw new Error("a credential cannot be verified by the person it belongs to");
+    },
+
+    async saveCredentialType(t) {
+      const i = snap.credentialTypes.findIndex((x) => x.id === t.id);
+      if (i >= 0) { snap.credentialTypes[i] = t; persist(); return t; }
+      const saved = { ...t, id: `ct-${Date.now().toString(36)}` };
+      snap.credentialTypes.push(saved);
+      persist();
+      return saved;
+    },
+
+    async retireCredentialType(id, isActive) {
+      const t = snap.credentialTypes.find((x) => x.id === id);
+      if (t) { t.isActive = isActive; persist(); }
+    },
+
     async saveEducation(e) {
       const i = snap.education.findIndex((x) => x.id === e.id);
       if (i >= 0) { snap.education[i] = e; persist(); return e; }
@@ -602,12 +696,13 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
   return {
     async load(): Promise<HrSnapshot> {
       const db = sb();
-      const [people, goals, creds, edu, acts, allocs, pols, acks, posts, comments, recog, cycles, audit,
+      const [people, goals, creds, credTypes, edu, acts, allocs, pols, acks, posts, comments, recog, cycles, audit,
         boardSites, boardScores] =
         await Promise.all([
           db.from("profiles").select("id, full_name, role, supervisor_id").eq("clinic_id", clinic),
           db.from("development_goals").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
           db.from("employee_credentials").select("*").eq("user_id", uid),
+          db.from("credential_types").select("*").eq("clinic_id", clinic).order("sort_order"),
           db.from("employee_education").select("*").eq("user_id", uid),
           db.from("pd_activities").select("*").eq("user_id", uid).order("completion_date", { ascending: false }),
           // Scoped at the query level via the FK to pd_activities, not just
@@ -734,10 +829,22 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
           status: g.status as Goal["status"],
         })),
         credentials: (creds.data ?? []).map((c) => ({
-          id: c.id as string, credential: c.credential as EmployeeCredential["credential"],
+          id: c.id as string,
+          typeId: (c.credential_type_id as string | null) ?? null,
+          credential: c.credential as EmployeeCredential["credential"],
           number: (c.credential_number as string) ?? "",
           cycleStart: c.cycle_start as string, cycleEnd: c.cycle_end as string,
           status: c.status as EmployeeCredential["status"],
+          verifiedBy: (c.verified_by as string | null) ?? null,
+          verifiedAt: (c.verified_at as string | null) ?? null,
+        })),
+        credentialTypes: (credTypes.data ?? []).map((t) => ({
+          id: t.id as string, code: t.code as string, label: t.label as string,
+          issuer: (t.issuer as string | null) ?? null,
+          verificationUrl: (t.verification_url as string | null) ?? null,
+          requiresNumber: (t.requires_number as boolean) ?? true,
+          isActive: (t.is_active as boolean) ?? true,
+          sortOrder: (t.sort_order as number) ?? 0,
         })),
         education: (edu.data ?? []).map((e) => ({
           id: e.id as string, level: e.level as EducationLevel,
@@ -842,9 +949,14 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
     },
 
     async saveCredential(c) {
+      // No `status` and no `credential`. Migration 0086 derives the code from
+      // the pointer and sets the status itself: entering or amending a
+      // credential is always PENDING, and only somebody else can move it on.
+      // Sending either would be writing a value the database overrules, which
+      // reads as though this screen decides them.
       const row = scoped({
-        user_id: uid, credential: c.credential, credential_number: c.number,
-        cycle_start: c.cycleStart, cycle_end: c.cycleEnd, status: c.status,
+        user_id: uid, credential_type_id: c.typeId, credential_number: c.number,
+        cycle_start: c.cycleStart, cycle_end: c.cycleEnd,
       });
       // A blank id means a new credential; otherwise update in place.
       if (c.id && !c.id.startsWith("new-")) {
@@ -857,6 +969,85 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
     },
     async removeCredential(id) {
       ok("credential removal", await sb().from("employee_credentials").delete().eq("id", id));
+    },
+
+    async listPendingCredentials() {
+      const db = sb();
+      // No user_id filter: RLS decides the scope, exactly as
+      // listPendingSignoffs() does. 0086's credentials_verify_update gates the
+      // WRITE on hr.credential.verify; the READ is 0007's credentials_manage,
+      // which is hub_can_manage() - so an admin sees the clinic and a
+      // supervisor their own team.
+      const [rows, types, people] = await Promise.all([
+        db.from("employee_credentials").select("*").eq("clinic_id", clinic).neq("status", "GOOD_STANDING"),
+        db.from("credential_types").select("*").eq("clinic_id", clinic),
+        db.from("profiles").select("id, full_name").eq("clinic_id", clinic),
+      ]);
+      firstReadError([["the credential queue", rows], ["credential types", types], ["the directory", people]]);
+
+      const typeById = new Map((types.data ?? []).map((t) => [t.id as string, t]));
+      const nameFor = new Map((people.data ?? []).map((p) => [p.id as string, (p.full_name as string) ?? "Team member"]));
+
+      return (rows.data ?? []).map((c) => {
+        const t = typeById.get((c.credential_type_id as string) ?? "");
+        return {
+          id: c.id as string,
+          userId: c.user_id as string,
+          personName: nameFor.get(c.user_id as string) ?? "Team member",
+          code: (t?.code as string) ?? (c.credential as string) ?? "",
+          // A row whose pointer resolves to nothing is a pre-0086 credential
+          // whose text matched no catalogue entry. Say so rather than showing
+          // a blank line: somebody has to pick the real type for it.
+          label: (t?.label as string) ?? `${(c.credential as string) ?? "Unknown"} (not in this clinic's catalogue)`,
+          issuer: (t?.issuer as string | null) ?? null,
+          verificationUrl: (t?.verification_url as string | null) ?? null,
+          number: (c.credential_number as string) ?? "",
+          requiresNumber: (t?.requires_number as boolean) ?? true,
+          cycleStart: c.cycle_start as string,
+          cycleEnd: c.cycle_end as string,
+          status: c.status as PendingCredential["status"],
+        };
+      }).sort((a, b) => a.personName.localeCompare(b.personName) || a.label.localeCompare(b.label));
+    },
+
+    async verifyCredential(id) {
+      // `.select()` and a zero-row check, for the same reason the guardian
+      // permission flip does it: an RLS-refused update matches no rows and
+      // raises nothing, so without this a refusal renders as a success. The
+      // database also refuses this outright when the caller is the holder -
+      // that one arrives as an error, which ok() surfaces.
+      const res = await sb().from("employee_credentials")
+        .update({ status: "GOOD_STANDING" })
+        .eq("id", id).eq("clinic_id", clinic).neq("status", "GOOD_STANDING")
+        .select("id");
+      ok("credential verification", res);
+      if (!res.data?.length) {
+        throw new Error("That credential could not be confirmed - it may already be confirmed, or you may not have permission to confirm this person's.");
+      }
+    },
+
+    async saveCredentialType(t) {
+      const row = scoped({
+        code: t.code.trim(), label: t.label.trim(),
+        issuer: t.issuer?.trim() || null,
+        verification_url: t.verificationUrl?.trim() || null,
+        requires_number: t.requiresNumber,
+        is_active: t.isActive,
+        sort_order: t.sortOrder,
+      });
+      if (t.id && !t.id.startsWith("new-")) {
+        ok("credential type", await sb().from("credential_types").update(row).eq("id", t.id));
+        return t;
+      }
+      const res = await sb().from("credential_types").insert(row).select("id").single();
+      ok("credential type", res);
+      return { ...t, id: res.data!.id as string };
+    },
+
+    async retireCredentialType(id, isActive) {
+      // Retired, never deleted: an existing employee_credentials row keeps
+      // pointing at it and 0034's receipts keep resolving.
+      ok("credential type", await sb().from("credential_types").update({ is_active: isActive }).eq("id", id));
     },
     async saveEducation(e) {
       const row = scoped({

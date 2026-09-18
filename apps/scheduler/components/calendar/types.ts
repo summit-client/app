@@ -64,6 +64,11 @@ export interface CalSessionType {
    *  15-minute grid). */
   grid_increment_minutes?: number | null;
   is_client_optional?: boolean;
+  /** This type is the clinic's intake/assessment visit (migration 0086):
+   *  booking one promotes a waitlisted client to active, and waitlisted
+   *  clients are offered for it. Replaces three places that compared the
+   *  type's NAME to the literal "Assessment". */
+  is_intake?: boolean;
 }
 
 export function sessionDuration(session: CalSession, sessionTypes: CalSessionType[]): number {

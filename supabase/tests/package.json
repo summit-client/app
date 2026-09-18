@@ -6,8 +6,9 @@
     "apply": "node apply.mjs ../migrations",
     "behaviour": "node behaviour.mjs ../migrations",
     "rls": "node rls.mjs ../migrations",
-    "test": "npm run apply && npm run behaviour && npm run session-types && npm run rls",
-    "session-types": "node session_type_id.mjs ../migrations"
+    "test": "npm run apply && npm run behaviour && npm run session-types && npm run credentials && npm run rls",
+    "session-types": "node session_type_id.mjs ../migrations",
+    "credentials": "node credential_verification.mjs ../migrations"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8"

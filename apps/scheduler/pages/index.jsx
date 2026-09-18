@@ -16,7 +16,7 @@ import { AvailabilityGrid, generateTimeSlots } from "@summit/availability";
 import { toast } from "@summit/toast";
 import { refreshUrl } from "@summit/portals";
 import { canSeeClientIdentity, visibleClient, MASKED_CLIENT_LABEL } from "../lib/sessionPrivacy";
-import { isClinicalStaff, utilization, hasOpenCapacity } from "../lib/staff-roles";
+import { carriesSessions, utilization, hasOpenCapacity } from "../lib/staff-roles";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../lib/checkSlotConflict";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { WaitlistView } from "../components/WaitlistView";
@@ -642,7 +642,7 @@ function Dashboard({ clients, employees, bookings, typeColors, onFocusPerson }) 
   // the Staff TAB deliberately still lists everyone (a hidden row is a row
   // nobody can fix or delete). utilization() also guards the division: a
   // capacity of 0 or null used to make this render the literal "NaN%".
-  const clinicians = employees.filter(isClinicalStaff);
+  const clinicians = employees.filter(carriesSessions);
   const utilizationPct = clinicians.length
     ? Math.round(clinicians.reduce((a, e) => a + utilization(e), 0) / clinicians.length * 100) : 0;
   const openSlots = clinicians.reduce((a, e) => a + Math.max(0, (e.capacity ?? 0) - (e.booked ?? 0)), 0);
@@ -1021,7 +1021,7 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
           // capacity METER is clinician-scoped, since a booking capacity on
           // someone who is never booked is a number with no meaning (and,
           // before utilization() guarded the division, a NaN-width bar).
-          const showCapacity = isClinicalStaff(emp);
+          const showCapacity = carriesSessions(emp);
           const pct = utilization(emp);
           const barColor = pct > 0.85 ? "#E24B4A" : pct > 0.6 ? "#EF9F27" : "#5DCAA5";
           const loc = locations?.find(l => l.id === emp.location_id);
@@ -1039,7 +1039,7 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
                 <Avatar name={emp.name} color="#378ADD" size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 500, color: COLORS.text }}>{emp.name}</div>
-                  <div style={{ fontSize: 13, color: COLORS.textS }}>{emp.role}</div>
+                  <div style={{ fontSize: 13, color: COLORS.textS }}>{(emp.capacity ?? 0) > 0 ? `${emp.booked ?? 0}/${emp.capacity} sessions` : "No capacity set"}</div>
                   {loc && <div style={{ fontSize: 12, color: COLORS.textT }}>{loc.name}</div>}
                   <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                     {emp.specialties?.map(s => <Badge key={s} label={s} color={typeColors[s] || "#888888"} />)}
@@ -1726,20 +1726,21 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   // location/client/sessionType already answered the same way clicking
   // through each of those steps would have set them - staff and an
   // available time are the only things actually left to pick. Session type
-  // defaults to "Assessment" (still changeable) because handleConfirmAndBook
-  // already auto-promotes a waitlist client off the list on a booked
-  // Assessment session - this path leads straight into that existing
-  // behavior rather than around it.
+  // defaults to the clinic's INTAKE type (still changeable) because
+  // handleConfirmAndBook already auto-promotes a waitlist client off the list
+  // when one is booked - this path leads straight into that existing
+  // behaviour rather than around it. Both now read session_types.is_intake
+  // (migration 0086) rather than comparing a label to "Assessment".
   useEffect(() => {
     if (!waitlistPrefill) return;
     const covering = calendars.find(c => c.status === "active") ?? calendars.find(c => c.status !== "archived") ?? null;
     const location = locations.find(l => l.id === waitlistPrefill.location_id) ?? null;
     const client = clients.find(c => c.id === waitlistPrefill.id) ?? null;
-    // Name-matched, and it has to be: "the assessment is the intake visit" is
-    // a fact about what the service MEANS and session_types records nothing to
-    // key it on. Same gap as the waitlist filter and the auto-promotion below;
-    // an is_intake flag on session_types is the one fix for all three.
-    const sessionType = bookableTypes.find(st => st.name === "Assessment") ?? bookableTypes[0] ?? null;
+    // `is_intake` (migration 0086), not the literal name "Assessment". A
+    // clinic that calls its intake visit something else - and the seed for
+    // this flag came from that very literal, so nothing moved on the day it
+    // applied - now gets the right default here.
+    const sessionType = bookableTypes.find(st => st.is_intake) ?? bookableTypes[0] ?? null;
     setSelectedCalendar(covering);
     setMatchCount("one");
     setSelectedLocation(location);
@@ -1980,11 +1981,12 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
 
       // Auto-promote waitlist clients booked for Assessment
       const assessmentClientIds = [...new Set(
-        // Name-keyed for the same reason as the multiClient step's waitlist
-        // filter: "an assessment promotes a waitlisted child" is a fact about
-        // what the service MEANS, and session_types records nothing to key it
-        // on. An is_intake flag is the real fix.
-        proposedSessions.filter(ps => ps.sessionType === "Assessment").map(ps => ps.clientId)
+        // Booking the intake visit is what takes a child off the waitlist.
+        // By the type's own flag (0086), resolved through the id the proposal
+        // carries rather than by comparing its label to a literal.
+        proposedSessions
+          .filter(ps => sessionTypes.some(t => t.id === ps.sessionTypeId && t.is_intake))
+          .map(ps => ps.clientId)
       )];
       let promoted = 0;
       if (assessmentClientIds.length) {
@@ -2817,12 +2819,10 @@ finally { setLoading(false); }
 
   if (step === "multiClient") {
     const currentType = bookableTypes.find(t => t.id === activeTab) ?? bookableTypes[0] ?? null;
-    // Waitlisted children are offered for assessments and not for therapy.
-    // Still keyed on the name, deliberately: this is a judgement about what
-    // "Assessment" MEANS as a service, which no column on session_types
-    // records, so there is no id to key it on. Flagged rather than hidden -
-    // an is_intake flag on session_types is the real fix.
-    const activeClients = currentType?.name === "Assessment"
+    // Waitlisted children are offered for the intake visit and not for
+    // ongoing therapy - the point of the waitlist is that they have not
+    // started yet. `is_intake` is what says which visit that is (0086).
+    const activeClients = currentType?.is_intake
       ? clients.filter(c => c.status === "active" || c.status === "waitlist")
       : clients.filter(c => c.status === "active");
 

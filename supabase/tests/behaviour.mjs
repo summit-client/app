@@ -821,9 +821,24 @@ await check("a receipt line carries the client, clinician, credential number and
   await db.exec(`update clinics set legal_name='Test Clinic Inc.', address_line1='1 Main St',
                   city='Oshawa', province='ON', postal_code='L1H 1A1', business_number='12345 6789 RT0001'
                   where id='${clinic}'`);
+  // The credential has to go through the real flow, because migration 0086
+  // is what makes this receipt line mean anything. The clinician enters it
+  // (always PENDING, whatever is sent), and their SUPERVISOR confirms it
+  // against the issuer's register - which is what a number on a client's bill
+  // is asserting. Inserting it GOOD_STANDING in one statement, as this fixture
+  // used to, is exactly the self-attestation 0086 closed.
+  const credType = (await one(
+    `insert into credential_types (clinic_id, code, label, issuer)
+     values ('${clinic}','BCBA','BCBA / BCBA-D','BACB') returning id`)).id;
+  await be(people.clinician);
   await db.exec(`insert into employee_credentials
-    (clinic_id, user_id, credential, credential_number, cycle_start, cycle_end, status)
-    values ('${clinic}','${people.clinician}','BCBA','1-23-45678','2026-01-01','2028-12-31','GOOD_STANDING')`);
+    (clinic_id, user_id, credential_type_id, credential_number, cycle_start, cycle_end)
+    values ('${clinic}','${people.clinician}','${credType}','1-23-45678','2026-01-01','2028-12-31')`);
+  eq((await one(`select status from employee_credentials where user_id='${people.clinician}'`)).status,
+     "PENDING", "a freshly entered credential");
+  await be(people.supervisor);
+  await db.exec(`update employee_credentials set status='GOOD_STANDING' where user_id='${people.clinician}'`);
+  await be(people.admin);
 
   const line = await one(`select * from receipt_lines
     where clinic_id='${clinic}' and clinician_user_id='${people.clinician}' limit 1`);
@@ -842,12 +857,14 @@ await check("a receipt line carries the client, clinician, credential number and
 });
 
 await check("a lapsed credential never reaches a receipt", async () => {
+  await be(people.supervisor);
   await db.exec(`update employee_credentials set status='LAPSED' where user_id='${people.clinician}'`);
   const line = await one(`select clinician_credential_number from receipt_lines
     where clinic_id='${clinic}' and clinician_user_id='${people.clinician}' limit 1`);
   if (line.clinician_credential_number !== null)
     throw new Error(`lapsed number leaked: ${line.clinician_credential_number}`);
   await db.exec(`update employee_credentials set status='GOOD_STANDING' where user_id='${people.clinician}'`);
+  await be(people.admin);
 });
 
 await check("a credit is not a receipt line", async () => {

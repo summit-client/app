@@ -171,13 +171,48 @@ export function ruleFor(credential: CredentialKind, cycleStart: string): Credent
 
 /* ---- employee credentials, universal activities, allocations ---------------- */
 
+/**
+ * A row in the clinic's own credential catalogue (migration 0086).
+ *
+ * `CredentialKind` above is the seven kinds this module carries CE rules for.
+ * A clinic's catalogue is seeded from exactly those, so `code` is normally one
+ * of them - but a clinic may add its own, and `ruleFor()` simply finds no rule
+ * for that one, which is the honest answer rather than a wrong one.
+ */
+export interface CredentialType {
+  id: string;
+  code: string;
+  label: string;
+  issuer: string | null;
+  /** Where a verifier looks the number up. Empty until an admin fills it in:
+   *  0086 seeds it null rather than baking in a registry URL that may rot. */
+  verificationUrl: string | null;
+  requiresNumber: boolean;
+  isActive: boolean;
+  sortOrder: number;
+}
+
 export interface EmployeeCredential {
   id: string;
+  /** The catalogue row this credential IS (migration 0086). `credential` is
+   *  that row's code, derived from this by a database trigger. Null only for a
+   *  row written before 0086 whose text matched no catalogue entry. */
+  typeId: string | null;
   credential: CredentialKind;
   number: string;
   cycleStart: string;   // ISO
   cycleEnd: string;     // ISO (renewal)
+  /**
+   * GOOD_STANDING means SOMEBODY ELSE confirmed this against the issuer's
+   * register - it is not a claim the holder can make. Entering or amending a
+   * credential sets PENDING; a supervisor or admin moving it to GOOD_STANDING
+   * is the verification, and the database refuses that move when the actor is
+   * the holder, whatever role they hold. See migration 0086.
+   */
   status: "GOOD_STANDING" | "PENDING" | "LAPSED";
+  /** Who confirmed it, and when. Null while PENDING. */
+  verifiedBy: string | null;
+  verifiedAt: string | null;
 }
 
 /** The universal professional development record: one activity, stored once. */

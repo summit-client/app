@@ -14,17 +14,17 @@
  * snapshot before they render.
  */
 
-import type { CreditAllocation, EmployeeCredential, PdActivity } from "./credentials";
+import type { CreditAllocation, CredentialType, EmployeeCredential, PdActivity } from "./credentials";
 import { highestEducation as computeHighestEducation, type EmployeeEducation } from "./education";
 import type { MetricResponse, Recognition } from "./ecosystem";
 import { IS_PREVIEW, type Session } from "./session";
 import {
   previewBackend, supabaseBackend, thisCycle,
-  type HrBackend, type HrSnapshot, type Person,
+  type HrBackend, type HrSnapshot, type PendingCredential, type Person,
 } from "./hr-backend";
 
 export * from "./hr-types";
-export type { HrSnapshot, Person, ScoreboardSite } from "./hr-backend";
+export type { HrSnapshot, PendingCredential, Person, ScoreboardSite } from "./hr-backend";
 export { HrWriteError } from "./hr-backend";
 import type { ForumPost, Goal, HrAudit, PolicyAck, PolicyDoc } from "./hr-types";
 
@@ -217,6 +217,57 @@ export async function removeCredential(id: string): Promise<void> {
   await be().removeCredential(id);
   s.credentials = s.credentials.filter((x) => x.id !== id);
   if (c) await hrAudit("credential.removed", `${c.credential}${c.number ? ` (${c.number})` : ""}`);
+  changed();
+}
+
+/**
+ * Every credential in reach still awaiting confirmation.
+ *
+ * Deliberately NOT read off `hr()`'s snapshot: that snapshot is always the
+ * signed-in user's own (`load()` filters `employee_credentials` on `uid`), and
+ * a queue whose whole job is other people's records has to ask the backend for
+ * them. This is the same bug the Admin console's pending sign-offs had before
+ * PR #91 - see CLAUDE.md - so it is worth saying out loud rather than
+ * rediscovering.
+ */
+export async function listPendingCredentials(): Promise<PendingCredential[]> {
+  return be().listPendingCredentials();
+}
+
+/**
+ * Confirm somebody else's credential against the issuer's register.
+ *
+ * The caller has already looked the number up - that is what this records. The
+ * database stamps who and when, and refuses the write outright when the actor
+ * is the holder (migration 0086), so this needs no check of its own beyond
+ * letting that error surface.
+ */
+export async function verifyCredential(id: string, personName: string, label: string): Promise<void> {
+  await be().verifyCredential(id);
+  await hrAudit("credential.verified", `${label} for ${personName}`);
+  changed();
+}
+
+/** Add or amend one entry in the clinic's credential catalogue. */
+export async function saveCredentialType(t: CredentialType): Promise<CredentialType> {
+  const s = hr();
+  const saved = await be().saveCredentialType(t);
+  const i = s.credentialTypes.findIndex((x) => x.id === saved.id);
+  if (i >= 0) s.credentialTypes[i] = saved;
+  else s.credentialTypes.push(saved);
+  await hrAudit("credential_type.saved", `${saved.code} — ${saved.label}`);
+  changed();
+  return saved;
+}
+
+/** Retire or restore one. Never a delete: an existing credential keeps
+ *  pointing at it, and 0034's receipts keep resolving. */
+export async function retireCredentialType(id: string, isActive: boolean): Promise<void> {
+  const s = hr();
+  await be().retireCredentialType(id, isActive);
+  const t = s.credentialTypes.find((x) => x.id === id);
+  if (t) t.isActive = isActive;
+  if (t) await hrAudit(isActive ? "credential_type.restored" : "credential_type.retired", `${t.code} — ${t.label}`);
   changed();
 }
 

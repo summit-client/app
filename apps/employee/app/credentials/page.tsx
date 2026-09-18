@@ -6,7 +6,7 @@ import * as React from "react";
 import Link from "next/link";
 import {
   CATEGORY_LABEL, computeCompliance, CREDENTIAL_LABEL, CREDENTIAL_RULES, maximizeMyCredits,
-  type CredentialKind, type EmployeeCredential,
+  type CredentialKind, type CredentialType, type EmployeeCredential,
 } from "@/lib/credentials";
 import {
   EDUCATION_LEVEL_LABEL, educationLine, highestEducation as computeHighest,
@@ -55,7 +55,7 @@ function CredentialsScreen() {
           <h1 className="h-page">My Credentials</h1>
           <p className="sub">One activity, recorded once, allocated per credential.</p>
         </div>
-        <button className="btn" onClick={() => setEditing(blankCredential())}>Add credential</button>
+        <button className="btn" onClick={() => setEditing(blankCredential(s.credentialTypes))}>Add credential</button>
       </div>
 
       {err ? <div className="card card-pad" role="alert" style={{ marginTop: 12, borderLeft: "3px solid var(--danger)" }}><p className="sub" style={{ color: "var(--ink)" }}>{err}</p></div> : null}
@@ -63,6 +63,7 @@ function CredentialsScreen() {
       {editing ? (
         <CredentialForm
           value={editing}
+          types={s.credentialTypes}
           busy={busy}
           onCancel={() => { setEditing(null); setErr(null); }}
           onSave={async (c) => {
@@ -77,7 +78,7 @@ function CredentialsScreen() {
       {!s.credentials.length && !editing ? (
         <div className="card card-pad" style={{ marginTop: 14 }}>
           <b>No credentials recorded</b>
-          <p className="sub">Add your BCBA, Ontario RBA, IBA or other registration, including its number, and Summit tracks the cycle against the governing rules.</p>
+          <p className="sub">Add your BCBA, Ontario RBA, IBA or other registration, including its number, and Summit tracks the cycle against the governing rules. Your supervisor confirms it against the issuer's register before it counts.</p>
         </div>
       ) : null}
 
@@ -90,8 +91,14 @@ function CredentialsScreen() {
               <div>
                 <b>{c.rule.label}</b>
                 <span className="pill neutral" style={{ marginLeft: 8 }}>{c.rule.issuer}</span>
+                {/* "Confirmed" rather than "good standing": the word describes
+                    who did what, not a state this screen can set. A PENDING
+                    credential is not a problem with the person, it is a step
+                    that has not happened yet, so it reads as one. */}
                 <span className={`pill ${c.credential.status === "GOOD_STANDING" ? "good" : "warn"}`} style={{ marginLeft: 6 }}>
-                  {c.credential.status.replace(/_/g, " ").toLowerCase()}
+                  {c.credential.status === "GOOD_STANDING" ? "confirmed"
+                    : c.credential.status === "PENDING" ? "awaiting confirmation"
+                    : "lapsed"}
                 </span>
               </div>
               <span className="trend" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -99,6 +106,11 @@ function CredentialsScreen() {
                   {c.credential.number ? <>No. <b>{c.credential.number}</b> · </> : <span style={{ color: "var(--warn)" }}>number not recorded · </span>}
                   cycle {c.credential.cycleStart} to {c.credential.cycleEnd}
                   {daysLeft <= 120 && daysLeft >= 0 ? ` · renews in ${daysLeft} days` : ""}
+                  {c.credential.status === "PENDING"
+                    ? " · with your supervisor to confirm"
+                    : c.credential.verifiedAt
+                      ? ` · confirmed ${c.credential.verifiedAt.slice(0, 10)}`
+                      : ""}
                 </span>
                 <button className="btn ghost" style={{ padding: "3px 9px" }} onClick={() => setEditing({ ...c.credential })}>Edit</button>
               </span>
@@ -254,14 +266,22 @@ function CredentialsScreen() {
 
 
 /** A credential the employee has not saved yet. */
-function blankCredential(): EmployeeCredential {
+function blankCredential(types: CredentialType[]): EmployeeCredential {
   const today = new Date();
   const start = today.toISOString().slice(0, 10);
   const end = new Date(today.getFullYear() + 2, today.getMonth(), today.getDate()).toISOString().slice(0, 10);
-  return { id: `new-${Date.now().toString(36)}`, credential: "BCBA", number: "", cycleStart: start, cycleEnd: end, status: "GOOD_STANDING" };
+  const first = types.find((t) => t.isActive) ?? types[0] ?? null;
+  return {
+    id: `new-${Date.now().toString(36)}`,
+    typeId: first?.id ?? null,
+    credential: (first?.code as CredentialKind) ?? "BCBA",
+    number: "", cycleStart: start, cycleEnd: end,
+    // Always PENDING, and not a choice. Migration 0086 sets it server-side
+    // whatever arrives; this matches so the form never shows a standing the
+    // save is about to overrule.
+    status: "PENDING", verifiedBy: null, verifiedAt: null,
+  };
 }
-
-const KINDS: CredentialKind[] = ["BCBA", "BCaBA", "RBT", "ONT_RBA", "IBA_PRECERT", "IBA_RECERT", "IBT"];
 
 /** An education record the employee has not saved yet. */
 function blankEducation(): EmployeeEducation {
@@ -349,10 +369,25 @@ function EducationForm({
  * funders ask for, so it sits beside the credential itself and appears on the
  * card once saved.
  */
+/**
+ * Add or edit one regulatory credential.
+ *
+ * There is no "Standing" control here, and its absence is the point. It used
+ * to be a dropdown with "Good standing" in it, which meant a person could
+ * award themselves a credential - and migration 0034's receipt view puts a
+ * GOOD_STANDING credential number on a client's bill, under that person's
+ * name, as the clinic's assertion of who delivered the service. Standing is
+ * now something a supervisor or admin confirms against the issuer's register
+ * (migration 0086), and the database refuses that move from the holder.
+ *
+ * Amending a verified credential deliberately sends it back for confirmation:
+ * the verifier checked the OLD number.
+ */
 function CredentialForm({
-  value, busy, onSave, onCancel,
+  value, types, busy, onSave, onCancel,
 }: {
   value: EmployeeCredential;
+  types: CredentialType[];
   busy: boolean;
   onSave: (c: EmployeeCredential) => void;
   onCancel: () => void;
@@ -361,33 +396,46 @@ function CredentialForm({
   React.useEffect(() => setF(value), [value]);
   const isNew = f.id.startsWith("new-");
   const set = <K extends keyof EmployeeCredential>(k: K, v: EmployeeCredential[K]) => setF((x) => ({ ...x, [k]: v }));
+  const selected = types.find((t) => t.id === f.typeId) ?? null;
+  // A retired type stays selectable while it is the one already on this
+  // record - otherwise editing the cycle dates of an old credential would
+  // silently move it to a different type on save.
+  const offered = types.filter((t) => t.isActive || t.id === f.typeId);
 
   return (
     <div className="card card-pad" style={{ marginTop: 14, display: "grid", gap: 12 }}>
-      <b>{isNew ? "Add a credential" : `Edit ${CREDENTIAL_LABEL[f.credential] ?? f.credential}`}</b>
+      <b>{isNew ? "Add a credential" : `Edit ${selected?.label ?? CREDENTIAL_LABEL[f.credential] ?? f.credential}`}</b>
+      {offered.length === 0 && (
+        <p className="sub" style={{ color: "var(--warn)" }}>
+          Your clinic has no credential types set up yet. An admin adds them in the Admin console before a
+          credential can be recorded here.
+        </p>
+      )}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div className="field" style={{ minWidth: 220 }}>
           <label htmlFor="cr-kind">Credential</label>
-          <select id="cr-kind" className="input" value={f.credential}
-            onChange={(e) => set("credential", e.target.value as CredentialKind)}>
-            {KINDS.map((k) => <option key={k} value={k}>{CREDENTIAL_LABEL[k] ?? k}</option>)}
+          <select id="cr-kind" className="input" value={f.typeId ?? ""}
+            onChange={(e) => {
+              const t = types.find((x) => x.id === e.target.value) ?? null;
+              setF((x) => ({ ...x, typeId: t?.id ?? null, credential: (t?.code as CredentialKind) ?? x.credential }));
+            }}>
+            {f.typeId === null && <option value="">{f.credential || "Select a credential"}</option>}
+            {offered.map((t) => <option key={t.id} value={t.id}>{t.label}{t.isActive ? "" : " (retired)"}</option>)}
           </select>
         </div>
         <div className="field" style={{ minWidth: 200 }}>
-          <label htmlFor="cr-number">Credential / registration number</label>
+          <label htmlFor="cr-number">
+            {selected?.issuer ? `${selected.issuer} registration number` : "Credential / registration number"}
+          </label>
           <input id="cr-number" className="input" value={f.number} placeholder="e.g. 1-24-88104"
             onChange={(e) => set("number", e.target.value)} />
         </div>
-        <div className="field">
-          <label htmlFor="cr-status">Standing</label>
-          <select id="cr-status" className="input" value={f.status}
-            onChange={(e) => set("status", e.target.value as EmployeeCredential["status"])}>
-            <option value="GOOD_STANDING">Good standing</option>
-            <option value="PENDING">Pending</option>
-            <option value="LAPSED">Lapsed</option>
-          </select>
-        </div>
       </div>
+      <p className="trend">
+        {f.status === "GOOD_STANDING"
+          ? "This credential has been confirmed. Changing the number or the cycle sends it back for confirmation — whoever checked it checked the old one."
+          : "Saving this sends it to your supervisor to confirm against the issuer's register. It counts as confirmed once they have."}
+      </p>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div className="field">
           <label htmlFor="cr-start">Cycle starts</label>

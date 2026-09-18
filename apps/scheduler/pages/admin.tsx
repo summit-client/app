@@ -6,7 +6,7 @@ import { toast } from '@summit/toast';
 import { UserContext } from '../lib/UserContext';
 import Sidebar from '../components/Sidebar';
 import { useFocusTrap } from '../lib/useFocusTrap';
-import { isClinicalStaff } from '../lib/staff-roles';
+import { carriesSessions } from '../lib/staff-roles';
 
 type Tab = 'staff' | 'clients';
 
@@ -27,15 +27,13 @@ type Tab = 'staff' | 'clients';
 // slots regardless of day-format matching - but it's a real data-integrity
 // bug waiting for the day something reads these rows directly.
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const ROLES = ['BCBA', 'BCaBA', 'RBT', 'Supervisor'];
-// Fallback only, for a clinic that has not configured any session_types row
-// yet (migration 0019 seeds a default set for every clinic, so this should
-// not normally be reached). Every clinic's real, editable list lives in the
-// session_types table (see SessionTypeEditModal / CalendarView) - this used
-// to be the only list a client's `session_type` field could ever be set to,
-// hardcoded and identical for every clinic regardless of what session types
-// that clinic actually configured. See BLOCKED-scheduler.md.
-const DEFAULT_SESSION_TYPES = ['Assessment', 'RBA Supervision', 'Direct Therapy', 'Group Therapy'];
+// A clinic that has configured no session_types row gets an empty picker and
+// a line of copy saying so, rather than four hardcoded names it never chose.
+// There used to be a DEFAULT_SESSION_TYPES fallback here - identical for every
+// clinic - and it could not survive migration 0086: a client's service is
+// stored as `session_type_id` now, and a name with no row behind it has no id
+// to write. Migration 0019 seeds every clinic a real set, so the empty case is
+// a clinic mid-setup. See BLOCKED-scheduler.md.
 // Descriptive only (2026-09-16) - staff-matching eligibility (pages/index.jsx's
 // quickSlot/staff-step/AI-match filters) used to require a specialty chip
 // whose text exactly matched a session type's name, which almost never
@@ -50,7 +48,6 @@ const STATUSES = ['active', 'inactive', 'waitlist'];
 interface Staff {
   id: number;
   name: string;
-  role: string;
   specialties: string[];
   availability: string[];
   capacity: number;
@@ -62,7 +59,8 @@ interface Client {
   id: number;
   name: string;
   email: string;
-  session_type: string;
+  session_type: string | null;
+  session_type_id: number | null;
   availability: string[];
   status: string;
   sessions: number;
@@ -89,15 +87,12 @@ interface Client {
 
 interface Location { id: number; name: string; }
 
-const defaultStaffForm = { name: '', role: 'RBT', specialties: [] as string[], capacity: 20, location_id: null as number | null };
+const defaultStaffForm = { name: '', specialties: [] as string[], capacity: 20, location_id: null as number | null };
 const defaultClientForm = {
-  name: '', email: '', session_type: 'Direct Therapy', status: 'active', address: '',
+  name: '', email: '', session_type_id: null as number | null, status: 'active', address: '',
   contact_phone: '', contact_email: '', referral_source: '', location_id: null as number | null,
 };
 
-const roleColors: Record<string, string> = {
-  BCBA: '#7C3AED', BCaBA: '#2563EB', RBT: '#16A34A', Supervisor: '#D97706',
-};
 const statusColors: Record<string, string> = {
   active: '#16A34A', inactive: '#6B7280', waitlist: '#D97706',
 };
@@ -110,7 +105,7 @@ export default function AdminPage() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [clientList, setClientList] = useState<Client[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [sessionTypeNames, setSessionTypeNames] = useState<string[]>(DEFAULT_SESSION_TYPES);
+  const [bookableTypes, setBookableTypes] = useState<{ id: number; name: string }[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -151,7 +146,7 @@ async function fetchAll() {
     // same read this way.
     fetchAllRows(() => supabase.from('sessions').select('*')),
     supabase.from('calendars').select('*'),
-    supabase.from('session_types').select('name, is_client_optional').order('name'),
+    supabase.from('session_types').select('id, name, is_client_optional').order('name'),
     supabase.from('locations').select('id, name').order('name'),
   ]);
   // Each of these used to be destructured as `{ data }` and stored as
@@ -180,11 +175,10 @@ async function fetchAll() {
   // migration 0019), not the fixed four-item list every clinic used to be
   // stuck with here regardless of what it actually configured. Staff-only
   // blocks (Break, Lunch, Meeting - is_client_optional, 0019) are dropped:
-  // this list backs a CLIENT record's own session_type, so "Lunch" was a
-  // selectable service for a child. DEFAULT_SESSION_TYPES is already all
-  // client-facing, so the fallback needs no filtering of its own.
+  // this list backs a CLIENT record's own service, so "Lunch" was a
+  // selectable service for a child.
   const bookable = (types.data || []).filter((t: { is_client_optional?: boolean }) => !t.is_client_optional);
-  setSessionTypeNames(bookable.length ? bookable.map((t: { name: string }) => t.name) : DEFAULT_SESSION_TYPES);
+  setBookableTypes(bookable.map((t: { id: number; name: string }) => ({ id: t.id, name: t.name })));
   setLoading(false);
 }
 
@@ -213,7 +207,6 @@ async function fetchAll() {
       .from('staff')
       .insert([{
         name: staffForm.name.trim(),
-        role: staffForm.role,
         specialties: staffForm.specialties,
         capacity: staffForm.capacity,
         location_id: staffForm.location_id,
@@ -256,7 +249,9 @@ async function fetchAll() {
       .insert([{
         name: clientForm.name.trim(),
         email: clientForm.email.trim() || null,
-        session_type: clientForm.session_type,
+        // The pointer, not the label (migration 0086). `session_type` stays on
+        // the row as the text it always was, for a record written before it.
+        session_type_id: clientForm.session_type_id,
         status: clientForm.status,
         address: clientForm.address.trim() || null,
         contact_phone: clientForm.contact_phone.trim() || null,
@@ -632,9 +627,6 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
   {editingId === member.id ? (
     <div style={{ flex: 1, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
       <input style={{ ...s.input, marginBottom: 0, width: 160 }} value={editForm.name ?? member.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
-      <select style={{ ...s.select, marginBottom: 0, width: 120 }} value={editForm.role ?? member.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}>
-        {ROLES.map(r => <option key={r}>{r}</option>)}
-      </select>
       <input style={{ ...s.input, marginBottom: 0, width: 80 }} type="number" value={editForm.capacity ?? member.capacity} onChange={e => setEditForm(f => ({ ...f, capacity: Number(e.target.value) }))} />
       <select style={{ ...s.select, marginBottom: 0, width: 140 }} value={editForm.location_id ?? member.location_id ?? ''} onChange={e => setEditForm(f => ({ ...f, location_id: e.target.value ? Number(e.target.value) : null }))}>
         <option value="">No location set</option>
@@ -648,15 +640,16 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
       <div>
         <div style={s.cardName}>{member.name}</div>
         {/* Every staff row stays listed - this is the roster, and a hidden
-            row is one nobody can give a credential to or delete. Only the
-            booked/capacity figure is clinician-scoped: every staff-shaped
-            invite mints a row (an office manager included) with no
-            credential and capacity 0, and "0/— sessions booked" on someone
-            who is never booked is noise. See ../lib/staff-roles. */}
-        <div style={s.cardSub}>{isClinicalStaff(member) ? `${member.booked ?? 0}/${member.capacity ?? 0} sessions booked` : 'No credential or capacity set'}{member.specialties?.length ? ' · ' + member.specialties.join(', ') : ''} · {locations.find(l => l.id === member.location_id)?.name ?? 'No location set'}</div>
+            row is one nobody can configure or delete. Only the booked/capacity
+            figure is scoped: every staff-shaped invite mints a row (an office
+            manager included) with capacity 0, and "0/— sessions booked" on
+            somebody who is never booked is noise. See ../lib/staff-roles. */}
+        <div style={s.cardSub}>{carriesSessions(member) ? `${member.booked ?? 0}/${member.capacity ?? 0} sessions booked` : 'No capacity set - cannot be booked'}{member.specialties?.length ? ' · ' + member.specialties.join(', ') : ''} · {locations.find(l => l.id === member.location_id)?.name ?? 'No location set'}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={s.badge(roleColors[member.role] || '#6B7280')}>{member.role}</span>
+        {/* The credential badge that stood here read `staff.role`, retired by
+            migration 0086. A person's credential lives in MySummitHR now,
+            with its number and the supervisor who confirmed it. */}
         <button style={s.btnGhost} onClick={() => { setError(null); setEditingId(member.id); setEditForm({}); }}>Edit</button>
         <button aria-label={`Delete ${member.name}`} style={s.btnDelete} onClick={() => handleDelete('staff', member.id, member.name)}>✕</button>
       </div>
@@ -691,7 +684,7 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
     <>
       <div>
         <div style={s.cardName}>{client.name}</div>
-        <div style={s.cardSub}>{client.email || 'No email'} · {client.session_type}{client.address ? ` · ${client.address}` : ''} · {locations.find(l => l.id === client.location_id)?.name ?? 'No location set'}</div>
+        <div style={s.cardSub}>{client.email || 'No email'} · {bookableTypes.find(t => t.id === client.session_type_id)?.name ?? client.session_type ?? 'No service set'}{client.address ? ` · ${client.address}` : ''} · {locations.find(l => l.id === client.location_id)?.name ?? 'No location set'}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={s.badge(statusColors[client.status] || '#6B7280')}>{client.status}</span>
@@ -725,15 +718,12 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
                   autoFocus
                 />
 
-                <label style={s.label}>Role</label>
-                <select
-                  style={s.select}
-                  value={staffForm.role}
-                  onChange={e => setStaffForm(f => ({ ...f, role: e.target.value }))}
-                >
-                  {ROLES.map(r => <option key={r}>{r}</option>)}
-                </select>
-
+                {/* No credential field. A clinical credential is not something
+                    typed into a scheduling screen: migration 0086 moved it to
+                    `employee_credentials`, where it carries an issuer and a
+                    number and is confirmed by a named supervisor or admin
+                    against the issuer's register. This screen sets capacity,
+                    which is what decides whether somebody can be booked. */}
                 <label style={s.label}>Weekly Session Capacity</label>
                 <input
                   style={s.input}
@@ -812,10 +802,11 @@ async function handleSave(type: 'staff' | 'clients', id: number) {
                 <label style={s.label}>Session Type</label>
                 <select
                   style={s.select}
-                  value={clientForm.session_type}
-                  onChange={e => setClientForm(f => ({ ...f, session_type: e.target.value }))}
+                  value={clientForm.session_type_id ?? ''}
+                  onChange={e => setClientForm(f => ({ ...f, session_type_id: e.target.value ? Number(e.target.value) : null }))}
                 >
-                  {sessionTypeNames.map(t => <option key={t}>{t}</option>)}
+                  <option value="">{bookableTypes.length ? 'Select a service' : 'No session types configured yet'}</option>
+                  {bookableTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
 
                 <label style={s.label}>Status</label>
