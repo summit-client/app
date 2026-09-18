@@ -85,12 +85,26 @@ type SlotState = "open" | "clinician-only" | "client-only" | "neither" | "booked
 // existing green (open)/red (booked)/neutral-grey (neither) pair, and from
 // each other, to read apart at a glance - see the legend rendered below,
 // which already existed but couldn't rescue two identical swatches.
+/** The four states the legend explains, in traffic-light order. `booked` is
+ *  not among them: it now shares `neither`'s red, so listing it would be a
+ *  second identical swatch. */
+const LEGEND_STATES: SlotState[] = ["open", "clinician-only", "client-only", "neither"];
+
 const slotColors: Record<SlotState, { bg: string; text: string; label: string }> = {
-  open: { bg: "#5DCAA522", text: "#0F6E56", label: "Both available" },
-  "clinician-only": { bg: "#5B8DEF22", text: "#2B5BA6", label: "Clinician only" },
-  "client-only": { bg: "#D4537E22", text: "#9C3459", label: "Client only" },
-  neither: { bg: "var(--color-background-secondary)", text: "var(--color-text-tertiary)", label: "Neither marked available" },
-  booked: { bg: "#FCE8E8", text: "#A33A3A", label: "Conflict — already busy" },
+  // Four states, traffic-light ordered: green / blue / yellow / red. The old
+  // set used three near-identical 13%-alpha tints plus a separate pink for a
+  // booked conflict, which at an 8px swatch was indistinguishable. Pastel is
+  // kept - these sit behind text and next to each other all across the grid -
+  // but the hues are now far enough apart to read at a glance.
+  //
+  // `booked` deliberately shares the red of `neither`: from the point of view
+  // of someone picking a slot both mean "you cannot have this one", and the
+  // brief asked for four. Its own label still says which it is.
+  open: { bg: "#CFEBDD", text: "#0F6E56", label: "Both available" },
+  "clinician-only": { bg: "#D3E1F7", text: "#2B5BA6", label: "Clinician only" },
+  "client-only": { bg: "#F7E8C3", text: "#8A6410", label: "Client only" },
+  neither: { bg: "#F5D5D5", text: "#A33A3A", label: "Neither available" },
+  booked: { bg: "#F5D5D5", text: "#A33A3A", label: "Already busy" },
 };
 
 export function SessionSchedulesPanel({
@@ -239,6 +253,41 @@ export function SessionSchedulesPanel({
     return { rows: Math.max(1, rowEnds.length), placed };
   }
 
+  // Whole hours across the work day, for the axis and the lane gridlines.
+  // Without these the lanes were two unlabelled strips and nothing said they
+  // were a day laid out left to right, which is the whole point of them.
+  const hourTicks = React.useMemo(() => {
+    const out: number[] = [];
+    for (let h = workStartHour; h <= workEndHour; h++) out.push(h);
+    return out;
+  }, [workStartHour, workEndHour]);
+
+  function renderAxis() {
+    return (
+      <div style={{ position: "relative", height: 14, marginBottom: 2 }}>
+        {hourTicks.map((h) => {
+          const left = pct(h * 60);
+          // The first and last labels would hang off their end of the strip,
+          // so they anchor to it instead of centring on the tick.
+          const isFirst = h === workStartHour;
+          const isLast = h === workEndHour;
+          return (
+            <span
+              key={h}
+              style={{
+                position: "absolute", left: `${left}%`, top: 0, fontSize: 9,
+                color: "var(--color-text-tertiary)", whiteSpace: "nowrap",
+                transform: isFirst ? "none" : isLast ? "translateX(-100%)" : "translateX(-50%)",
+              }}
+            >
+              {((h + 11) % 12) + 1}{h >= 12 ? "p" : "a"}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderLane(label: string, blocks: ReturnType<typeof buildBusyBlocks>) {
     const { rows, placed } = layoutIntoRows(blocks);
     const laneHeight = rows * ROW_H + (rows - 1) * ROW_GAP + 6;
@@ -246,6 +295,14 @@ export function SessionSchedulesPanel({
       <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: 4 }}>{label.toUpperCase()}</div>
         <div style={{ position: "relative", height: laneHeight, borderRadius: 6, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", overflow: "hidden" }}>
+          {/* Hour gridlines, under the blocks. Same ticks as the axis above,
+              so a block's left edge can be read back to a time. */}
+          {hourTicks.map((h) => (
+            <div key={h} aria-hidden style={{
+              position: "absolute", top: 0, bottom: 0, left: `${pct(h * 60)}%`, width: 1,
+              background: "var(--color-border-tertiary)", opacity: 0.5,
+            }} />
+          ))}
           {placed.map((b) => (
             <div
               key={b.id}
@@ -260,7 +317,7 @@ export function SessionSchedulesPanel({
               }}
             >
               <span style={{ fontSize: 9.5, fontWeight: 600, color: b.isViewedSession ? "#fff" : "var(--color-text-secondary)", whiteSpace: "nowrap", padding: "0 3px" }}>
-                {b.isViewedSession ? "This session" : "Busy"}
+                {b.isViewedSession ? "This" : "Busy"}
               </span>
             </div>
           ))}
@@ -278,7 +335,7 @@ export function SessionSchedulesPanel({
       <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Both schedules" className="modal-sheet" style={{ ...modalStyle, width: "min(560px, 100%)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Both schedules</div>
         <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 12 }}>
-          {employee?.name || "Clinician"} &amp; {clientLabel || "Client"} — other sessions on either calendar show only as &quot;Busy&quot;, never who they belong to.
+          {employee?.name || "Clinician"} &amp; {clientLabel || "Client"}
         </div>
 
         {/* A day strip showing just "31, 1, 2, 3" is ambiguous the moment a
@@ -323,19 +380,20 @@ export function SessionSchedulesPanel({
           <div style={{ padding: "12px 0", fontSize: 13, color: "#A33A3A" }}>{error}</div>
         ) : (
           <>
+            {renderAxis()}
             {renderLane(employee?.name ? `${employee.name} (clinician)` : "Clinician", clinicianBlocks)}
             {renderLane(clientLabel ? `${clientLabel} (client)` : "Client", clientBlocks)}
             <div style={{ fontSize: 10.5, color: "var(--color-text-tertiary)", marginBottom: 10 }}>
-              {workStartHour}:00 – {workEndHour}:00, {WEEKDAY_ABBR[parseDateStr(selectedDate).getDay()]} {selectedDate}
+              {WEEKDAY_ABBR[parseDateStr(selectedDate).getDay()]} {selectedDate}
             </div>
 
             {canPropose && (
               <>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Pick an open slot to propose a new time:</div>
                 <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6, flexWrap: "wrap" }}>
-                  {(Object.keys(slotColors) as SlotState[]).map((k) => (
+                  {LEGEND_STATES.map((k) => (
                     <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 2, background: slotColors[k].bg, border: "0.5px solid var(--color-border-tertiary)" }} />
+                      <span style={{ width: 12, height: 12, borderRadius: 3, background: slotColors[k].bg, border: "0.5px solid var(--color-border-tertiary)" }} />
                       {slotColors[k].label}
                     </span>
                   ))}
@@ -356,7 +414,7 @@ export function SessionSchedulesPanel({
                         disabled={disabled}
                         onClick={() => setProposed({ hour: s.hour, minute: s.minute })}
                         style={{
-                          flex: "1 1 58px", minWidth: 58, padding: "6px 4px", borderRadius: 6, fontSize: 11.5,
+                          flex: "0 1 58px", minWidth: 58, padding: "6px 4px", borderRadius: 6, fontSize: 11.5,
                           cursor: disabled ? "not-allowed" : "pointer",
                           border: `1.5px solid ${isSel ? "#5DCAA5" : "transparent"}`,
                           background: c.bg, color: c.text, fontWeight: isSel ? 600 : 400,
@@ -375,7 +433,14 @@ export function SessionSchedulesPanel({
 
         {canPropose && proposed && (
           <div style={{ padding: "10px 12px", borderRadius: 8, background: "#5DCAA512", border: "0.5px solid #5DCAA544", marginBottom: 12, fontSize: 13, color: "var(--color-text-primary)" }}>
-            Proposed: {formatFullRange(selectedDate, proposed.hour, proposed.minute, duration)}
+            {/* Both times, not just the new one: "New: Sat 11:30" on its own
+                asks the reader to remember what it is replacing. */}
+            <div style={{ color: "var(--color-text-secondary)" }}>
+              Current: {formatFullRange(session.session_date, session.hour, session.minute, duration)}
+            </div>
+            <div style={{ fontWeight: 600 }}>
+              New: {formatFullRange(selectedDate, proposed.hour, proposed.minute, duration)}
+            </div>
           </div>
         )}
 

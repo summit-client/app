@@ -71,6 +71,11 @@ interface Props {
 
 type SlotState = "open" | "clinician-only" | "client-only" | "neither" | "booked";
 
+/** The four states the legend explains, in traffic-light order. `booked` is
+ *  not among them: it now shares `neither`'s red, so listing it would be a
+ *  second identical swatch. */
+const LEGEND_STATES: SlotState[] = ["open", "clinician-only", "client-only", "neither"];
+
 export function RescheduleModal({
   session, client, employees, locations, sessionTypes, liveSessions, staffAvailability, clientAvailability,
   clinicId, workStartHour, workEndHour, orgIncrementMinutes, initialSlot, onClose, onSaved, lockEmployeeId = false,
@@ -171,11 +176,15 @@ export function RescheduleModal({
   // that panel's "Continue to reschedule" button, so the two need to agree
   // visually as well as textually.
   const slotColors: Record<SlotState, { bg: string; text: string; label: string }> = {
-    open: { bg: "#5DCAA522", text: "#0F6E56", label: "Both available" },
-    "clinician-only": { bg: "#5B8DEF22", text: "#2B5BA6", label: "Clinician only" },
-    "client-only": { bg: "#D4537E22", text: "#9C3459", label: "Client only" },
-    neither: { bg: "var(--color-background-secondary)", text: "var(--color-text-tertiary)", label: "Neither marked available" },
-    booked: { bg: "#FCE8E8", text: "#A33A3A", label: "Clinician busy" },
+    // Traffic-light order, green / blue / yellow / red. Kept in step with the
+    // identical table in SessionSchedulesPanel, which this modal is reached
+    // from. `booked` shares red with `neither` on purpose: to someone picking
+    // a slot both mean "not this one". Its label still says which it is.
+    open: { bg: "#CFEBDD", text: "#0F6E56", label: "Both available" },
+    "clinician-only": { bg: "#D3E1F7", text: "#2B5BA6", label: "Clinician only" },
+    "client-only": { bg: "#F7E8C3", text: "#8A6410", label: "Client only" },
+    neither: { bg: "#F5D5D5", text: "#A33A3A", label: "Neither available" },
+    booked: { bg: "#F5D5D5", text: "#A33A3A", label: "Already busy" },
   };
 
   function findGapHit(dateStr: string, hour: number, minute: number): boolean {
@@ -452,9 +461,9 @@ export function RescheduleModal({
         </div>
 
         <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6, flexWrap: "wrap" }}>
-          {(Object.keys(slotColors) as SlotState[]).map((k) => (
+          {LEGEND_STATES.map((k) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: slotColors[k].bg, border: "0.5px solid var(--color-border-tertiary)" }} />
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: slotColors[k].bg, border: "0.5px solid var(--color-border-tertiary)" }} />
               {slotColors[k].label}
             </span>
           ))}
@@ -474,7 +483,7 @@ export function RescheduleModal({
                 key={i}
                 onClick={() => setSelectedSlot({ hour: s.hour, minute: s.minute })}
                 style={{
-                  flex: "1 1 58px", minWidth: 58, padding: "6px 4px", borderRadius: 6, fontSize: 11.5, cursor: "pointer",
+                  flex: "0 1 58px", minWidth: 58, padding: "6px 4px", borderRadius: 6, fontSize: 11.5, cursor: "pointer",
                   border: `1.5px solid ${isSel ? "#5DCAA5" : "transparent"}`,
                   background: c.bg, color: c.text, fontWeight: isSel ? 600 : 400,
                 }}
