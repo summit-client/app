@@ -24,7 +24,7 @@ import { supabase } from "../../lib/supabase";
 import { WEEKDAY_ABBR, addDays, toDateStr, parseDateStr, todayDateStr, gapsOverlap, generateWeeklyDatesFrom } from "./dateUtils";
 import { isAvailable, hasSessionConflict } from "./suggestions";
 import type { AvailabilityRow, ExistingSession } from "./suggestions";
-import { sessionDuration } from "./types";
+import { sessionDuration, findSessionType } from "./types";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../../lib/checkSlotConflict";
 import { useFocusTrap } from "../../lib/useFocusTrap";
@@ -90,7 +90,13 @@ export function RescheduleModal({
   const [locationId, setLocationId] = React.useState(session.location_id);
   const [isHome, setIsHome] = React.useState(session.is_home_visit);
   const [homeAddress, setHomeAddress] = React.useState(session.home_address || "");
-  const [typeName, setTypeName] = React.useState(session.type);
+  // The session type is held as an id, not a name (migration 0085): a name is
+  // display data, and picking one out of the catalogue by label is how a
+  // renamed type used to detach a session from its own duration and colour.
+  // findSessionType() resolves a pre-0085 row that has no pointer yet.
+  const [typeId, setTypeId] = React.useState<number | null>(
+    findSessionType(session, sessionTypes)?.id ?? null,
+  );
   const [weekStart, setWeekStart] = React.useState(() => {
     const d = parseDateStr(initialSlot?.dateStr || session.session_date);
     const day = d.getDay();
@@ -119,21 +125,21 @@ export function RescheduleModal({
   // answer to "may this screen name the client", not two.
   const clientName = visibleClient(viewer, session, client ? [client] : []).name;
 
-  const type = sessionTypes.find((t) => t.name === typeName);
+  const type = sessionTypes.find((t) => t.id === typeId);
   const duration = type?.duration_minutes ?? type?.duration ?? sessionDuration(session, sessionTypes);
 
   // Staff-only block types (Break / Lunch / Meeting -
   // session_types.is_client_optional, migration 0019) are never offered for
   // a booking that has a client, which every session reaching this modal
-  // does. Pinned to the session's ORIGINAL type, not the live `typeName`:
+  // does. Pinned to the session's ORIGINAL type, not the live `typeId`:
   // keying the escape hatch on current state would drop the original option
   // out of the list the instant the user switched away from it, leaving no
   // way back without closing the modal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const originalType = React.useMemo(() => session.type, [session.id]);
+  const originalTypeId = React.useMemo(() => findSessionType(session, sessionTypes)?.id ?? null, [session.id]);
   const selectableTypes = React.useMemo(
-    () => sessionTypes.filter((t) => !t.is_client_optional || t.name === originalType),
-    [sessionTypes, originalType],
+    () => sessionTypes.filter((t) => !t.is_client_optional || t.id === originalTypeId),
+    [sessionTypes, originalTypeId],
   );
   // The currently-selected session type's own increment override, matching
   // the main grid's drag-snap resolution (sessionGridIncrement) instead of
@@ -303,7 +309,10 @@ export function RescheduleModal({
       location_id: isHome ? null : locationId,
       is_home_visit: isHome,
       home_address: isHome ? (homeAddress || null) : null,
-      type: typeName,
+      // Not `type`: migration 0085's sessions_apply_session_type derives the
+      // name from this pointer, so sending both would be two sources for one
+      // fact and the pointer would win anyway.
+      session_type_id: typeId,
       recurrence_id: recurrenceId,
     }).eq("id", session.id);
 
@@ -358,7 +367,7 @@ export function RescheduleModal({
         hour: selectedSlot.hour,
         minute: selectedSlot.minute,
         session_date: d,
-        type: typeName,
+        session_type_id: typeId,
         calendar_id: session.calendar_id,
         status: "scheduled",
         clinic_id: clinicId,
@@ -411,8 +420,9 @@ export function RescheduleModal({
             </select>
           </Field>
           <Field label="Session type">
-            <select value={typeName} onChange={(e) => setTypeName(e.target.value)} style={selectStyle}>
-              {selectableTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+            <select value={typeId ?? ""} onChange={(e) => setTypeId(e.target.value ? Number(e.target.value) : null)} style={selectStyle}>
+              {typeId === null && <option value="">{session.type || "Not set"}</option>}
+              {selectableTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </Field>
         </div>

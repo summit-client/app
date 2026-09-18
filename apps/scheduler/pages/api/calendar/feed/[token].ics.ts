@@ -155,6 +155,7 @@ type SessionRow = {
   hour: number | null;
   minute: number | null;
   type: string | null;
+  session_type_id: number | null;
   status: string;
   client_id: number | null;
   employee_id: number | null;
@@ -197,33 +198,39 @@ async function loadLocationNames(
   return byId;
 }
 
-/** session_types durations for the clinic, keyed by name - same lookup
- *  pattern the original personal-feed implementation used, now covering
- *  every type name present across ALL rows a feed will render (own and
- *  colleague/front-desk alike - a session TYPE is not PHI and is already
- *  shown for the token owner's own sessions, so no new exposure here). */
-async function loadDurationsByType(
+/** session_types durations for the clinic, keyed by the session type's ID
+ *  (migration 0085), covering every type present across ALL rows a feed will
+ *  render - own and colleague/front-desk alike. A session TYPE is not PHI and
+ *  is already shown for the token owner's own sessions, so no new exposure.
+ *
+ *  Keyed on the id rather than the name it used to use: an admin renaming a
+ *  session type would otherwise make `.in("name", ...)` miss for every session
+ *  still carrying the old label, and every affected event in a subscribed
+ *  calendar would silently become DEFAULT_DURATION_MINUTES long. A row with no
+ *  pointer (pre-0085, name matched nothing) gets the default, which is what it
+ *  got before too. */
+async function loadDurationsByTypeId(
   supabase: SupabaseClient,
   rows: SessionRow[],
   clinicId: string
-): Promise<Map<string, number>> {
-  const typeNames = [...new Set(rows.map((s) => s.type).filter((t): t is string => Boolean(t)))];
-  const byName = new Map<string, number>();
-  if (typeNames.length === 0) return byName;
+): Promise<Map<number, number>> {
+  const typeIds = [...new Set(rows.map((s) => s.session_type_id).filter((t): t is number => t != null))];
+  const byId = new Map<number, number>();
+  if (typeIds.length === 0) return byId;
 
   const { data: types, error } = await supabase
     .from("session_types")
-    .select("name, duration")
-    .in("name", typeNames)
+    .select("id, duration")
+    .in("id", typeIds)
     .eq("clinic_id", clinicId);
   if (error) {
     console.error("calendar feed: session_types lookup failed:", error.message);
-    return byName;
+    return byId;
   }
   for (const t of types ?? []) {
-    if (typeof t.duration === "number") byName.set(t.name, t.duration);
+    if (typeof t.duration === "number") byId.set(t.id as number, t.duration);
   }
-  return byName;
+  return byId;
 }
 
 /**
@@ -294,7 +301,7 @@ async function servePersonalFeed(
   // make this personal-only; that split now happens in memory below instead.
   const { data: sessions, error: sessionsError } = await supabase
     .from("sessions")
-    .select("id, session_date, hour, minute, type, status, client_id, employee_id, location_id, is_home_visit")
+    .select("id, session_date, hour, minute, type, session_type_id, status, client_id, employee_id, location_id, is_home_visit")
     .eq("clinic_id", staffClinicId)
     .gte("session_date", clinicTodayDateStr())
     .neq("status", "cancelled")
@@ -335,9 +342,9 @@ async function servePersonalFeed(
     }
   }
 
-  const [locationNameById, durationByType] = await Promise.all([
+  const [locationNameById, durationByTypeId] = await Promise.all([
     loadLocationNames(supabase, colleagueRows, staffClinicId),
-    loadDurationsByType(supabase, rows, staffClinicId),
+    loadDurationsByTypeId(supabase, rows, staffClinicId),
   ]);
 
   const icsSessions: IcsStaffSession[] = [
@@ -347,6 +354,7 @@ async function servePersonalFeed(
       hour: s.hour,
       minute: s.minute,
       type: s.type,
+      sessionTypeId: s.session_type_id,
       status: s.status,
       scope: "own" as const,
       clientName: s.client_id != null ? clientNameById.get(s.client_id) ?? null : null,
@@ -357,6 +365,7 @@ async function servePersonalFeed(
       hour: s.hour,
       minute: s.minute,
       type: s.type,
+      sessionTypeId: s.session_type_id,
       status: s.status,
       scope: "colleague" as const,
       isHomeVisit: s.is_home_visit,
@@ -367,7 +376,7 @@ async function servePersonalFeed(
   const ics = buildStaffScheduleIcs(
     icsSessions,
     `${staffRow.name ?? "Staff"} - Summit Schedule`,
-    (session) => (session.type && durationByType.get(session.type)) || DEFAULT_DURATION_MINUTES
+    (session) => (session.sessionTypeId != null && durationByTypeId.get(session.sessionTypeId as number)) || DEFAULT_DURATION_MINUTES
   );
 
   res.setHeader("Content-Type", "text/calendar; charset=utf-8");
@@ -385,7 +394,7 @@ async function servePersonalFeed(
 async function serveFrontDeskFeed(supabase: SupabaseClient, clinicId: string, res: NextApiResponse) {
   const { data: sessions, error: sessionsError } = await supabase
     .from("sessions")
-    .select("id, session_date, hour, minute, type, status, client_id, employee_id, location_id, is_home_visit")
+    .select("id, session_date, hour, minute, type, session_type_id, status, client_id, employee_id, location_id, is_home_visit")
     .eq("clinic_id", clinicId)
     .gte("session_date", clinicTodayDateStr())
     .neq("status", "cancelled")
@@ -404,9 +413,9 @@ async function serveFrontDeskFeed(supabase: SupabaseClient, clinicId: string, re
   // No client lookup at all in this branch - deliberately not even
   // attempted (contrast with servePersonalFeed's ownRows-only lookup) since
   // every row here renders scrubbed; see header point 5.
-  const [locationNameById, durationByType, clinicRow] = await Promise.all([
+  const [locationNameById, durationByTypeId, clinicRow] = await Promise.all([
     loadLocationNames(supabase, rows, clinicId),
-    loadDurationsByType(supabase, rows, clinicId),
+    loadDurationsByTypeId(supabase, rows, clinicId),
     supabase.from("clinics").select("name").eq("id", clinicId).maybeSingle(),
   ]);
 
@@ -421,6 +430,7 @@ async function serveFrontDeskFeed(supabase: SupabaseClient, clinicId: string, re
     hour: s.hour,
     minute: s.minute,
     type: s.type,
+    sessionTypeId: s.session_type_id,
     status: s.status,
     scope: "colleague" as const,
     isHomeVisit: s.is_home_visit,
@@ -431,7 +441,7 @@ async function serveFrontDeskFeed(supabase: SupabaseClient, clinicId: string, re
   const ics = buildStaffScheduleIcs(
     icsSessions,
     `${clinicName} Front Desk - Summit Schedule`,
-    (session) => (session.type && durationByType.get(session.type)) || DEFAULT_DURATION_MINUTES
+    (session) => (session.sessionTypeId != null && durationByTypeId.get(session.sessionTypeId as number)) || DEFAULT_DURATION_MINUTES
   );
 
   res.setHeader("Content-Type", "text/calendar; charset=utf-8");

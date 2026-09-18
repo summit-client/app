@@ -50,7 +50,7 @@ const suggestions = await import(await bundleOf("components/calendar/suggestions
 const {
   toDateStr, parseDateStr, addDays, startOfWeek, computeViewRange, shiftView, gapsOverlap, generateWeeklyDatesFrom, formatFullRange, formatWeekMonthLabel,
 } = dateUtils;
-const { sessionDuration, sessionGridIncrement } = types;
+const { sessionDuration, sessionGridIncrement, findSessionType } = types;
 const { isAvailable, hasSessionConflict, hasClientSessionConflict, buildBusyBlocks, suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } = suggestions;
 
 console.log("dateUtils");
@@ -162,6 +162,36 @@ t("sessionDuration falls back to 60 for an unknown type", sessionDuration({ type
 t("sessionGridIncrement uses the type override when set", sessionGridIncrement({ type: "Assessment" }, sessionTypes, 15) === 1);
 t("sessionGridIncrement falls back to the org default when unset", sessionGridIncrement({ type: "Direct Therapy" }, sessionTypes, 15) === 15);
 t("sessionGridIncrement falls back to the org default with no session", sessionGridIncrement(undefined, sessionTypes, 15) === 15);
+
+// --- resolving a session to its type by id (migration 0085) ---------------
+// A session type's NAME is display data. Before 0085 a session carried only
+// the name, so renaming a type in the admin modal detached every session
+// booked under the old one: the duration fell back to 60 (which is what made
+// the double-booking check stop catching real clashes), the grid increment
+// fell back to the org default, and the colour fell to grey. The pointer is
+// the identity now; the name lookup remains for rows that have no pointer.
+const renamed = [
+  { id: 1, name: "Direct Therapy (1:1)", duration: 60, grid_increment_minutes: null },
+  { id: 2, name: "Initial Assessment", duration: 63, grid_increment_minutes: 1 },
+];
+t("findSessionType resolves by id",
+  findSessionType({ session_type_id: 2, type: "Assessment" }, sessionTypes)?.id === 2);
+t("findSessionType prefers the id over a name that points elsewhere",
+  findSessionType({ session_type_id: 1, type: "Assessment" }, sessionTypes)?.id === 1);
+t("findSessionType falls back to the name when there is no pointer",
+  findSessionType({ session_type_id: null, type: "Assessment" }, sessionTypes)?.id === 2);
+t("findSessionType falls back to the name when the pointer resolves to nothing",
+  findSessionType({ session_type_id: 999, type: "Assessment" }, sessionTypes)?.id === 2);
+t("findSessionType returns undefined when neither resolves",
+  findSessionType({ session_type_id: 999, type: "Nonexistent" }, sessionTypes) === undefined);
+t("a renamed type keeps its duration when the session points at it",
+  sessionDuration({ session_type_id: 2, type: "Assessment" }, renamed) === 63);
+t("a renamed type loses its duration when matched by name - the bug 0085 fixes",
+  sessionDuration({ session_type_id: null, type: "Assessment" }, renamed) === 60);
+t("a renamed type keeps its grid increment when the session points at it",
+  sessionGridIncrement({ session_type_id: 2, type: "Assessment" }, renamed, 15) === 1);
+t("a renamed type loses its grid increment when matched by name",
+  sessionGridIncrement({ session_type_id: null, type: "Assessment" }, renamed, 15) === 15);
 
 console.log("suggestions.ts");
 

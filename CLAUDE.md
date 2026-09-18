@@ -149,11 +149,31 @@ These are never violated regardless of what a task seems to ask for:
   repeats (two staff called the same thing), and matching on it silently
   attaches a record to the wrong row rather than failing. This applies to
   code and to schema: a column that identifies another row holds that row's
-  id, not its label. `sessions.type` is the standing counter-example — it
-  stores a session type's NAME as text, which is why roughly a dozen places
-  in `apps/scheduler` do `sessionTypes.find(t => t.name === session.type)`.
-  Fixing that needs a migration, not a refactor; until it lands, do not add
-  new name-matching anywhere.
+  id, not its label. Do not add new name-matching anywhere.
+
+  `sessions.type` was the standing counter-example and is **half fixed**.
+  Migration `0085` adds `sessions.session_type_id`, backfills it, and keeps
+  `type` in agreement in both directions — a trigger derives it from the
+  pointer on every session write, and a second one carries a `session_types`
+  rename out to the sessions holding the old label. `apps/scheduler` resolves
+  through `findSessionType()` (id first, name only as a fallback for a row
+  with no pointer), and the calendar feed, the type filter and every booking
+  write use the id.
+
+  What is **not** done, deliberately: `sessions.type` still exists, and
+  `0029`'s `time_entry_economics` view and `0031`'s `session_delivery`
+  function still join `session_types` on the name. They are correct only
+  because the rename trigger keeps that name true — do not remove that
+  trigger without moving them onto the key first. `clients.session_type`
+  (the waitlist's "what service") is untouched and is the same shape of bug.
+  `staff.specialties` looks like it and is not: those are descriptive tags
+  from a fixed list, matched against nothing since PR #175.
+
+  Three places still match a session type's name against the literal
+  `"Assessment"` — the waitlist prefill, the multi-client waitlist filter and
+  the post-booking auto-promotion. That is not fixable by an id: no column
+  records that a type IS the intake visit. An `is_intake` flag on
+  `session_types` is the one fix for all three.
 
 ## One role vocabulary
 

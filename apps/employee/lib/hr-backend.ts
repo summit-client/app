@@ -571,8 +571,12 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
   const clinic = session.clinicId;
   const scoped = <T extends object>(row: T) => ({ ...row, clinic_id: clinic });
 
+  /** user id -> display name, for rendering a supervisor or approver by the
+   *  id a row actually stores. The reverse map (name -> id) used to sit beside
+   *  this one; it was built on every load and read nowhere, which is the only
+   *  reason it was harmless - resolving a person by name collides the moment
+   *  two of them share one. Removed rather than left as a trap. */
   let nameById = new Map<string, string>();
-  let idByName = new Map<string, string>();
   /** Scoreboard site name -> hub_scoreboard_sites.id. The snapshot holds site
    *  NAMES, because that is what the screen matches against
    *  hub_employee_profiles.location; the id it needs to write a score lives
@@ -664,7 +668,6 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
         supervisorId: (r.supervisor_id as string | null) ?? null,
       }));
       nameById = new Map(directory.map((p) => [p.id, p.name]));
-      idByName = new Map(directory.map((p) => [p.name, p.id]));
 
       const current = (cycles.data ?? []).find((c) => c.cycle === thisCycle());
       cycleId = (current?.id as string | undefined) ?? null;
