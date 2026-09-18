@@ -243,7 +243,15 @@ export function RescheduleModal({
       // here is one 0077 still returns to them directly. Reading them through
       // the privacy function would hand back masked copies of rows they are
       // then going to update anyway.
-      const { data: rows } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
+      // Destructured with its error: discarding it turned a failed read into
+      // "this series has no other occurrences", so a scope of "following" or
+      // "all" moved one session and still reported the whole series moved.
+      const { data: rows, error: seriesErr } = await supabase.from("sessions").select("*").eq("recurrence_id", session.recurrence_id);
+      if (seriesErr) {
+        setSaving(false);
+        setError("Could not read the rest of this series, so nothing was moved. Try again.");
+        return;
+      }
       const oldDate = parseDateStr(session.session_date);
       const newDate = parseDateStr(selectedDate);
       const dayDelta = Math.round((newDate.getTime() - oldDate.getTime()) / 86400000);
@@ -376,7 +384,6 @@ export function RescheduleModal({
   }
 
   return (
-    <>
     <div style={overlayStyle} onClick={onClose}>
       <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Reschedule session" className="modal-sheet" style={{ ...modalStyle, width: "min(480px, 100%)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Reschedule</div>
@@ -514,14 +521,24 @@ export function RescheduleModal({
           );
         })()}
       </div>
+
+      {/* Inside the overlay, not a sibling of it. As a sibling this picker
+          carried its own zIndex 100 against this overlay's 110, so for a
+          RECURRING session - the only kind that reaches it, see handleSave -
+          it painted underneath a blurred scrim: invisible, unclickable, and
+          any click landed on the overlay's onClose. That is the whole of
+          "Save changes does nothing". Nested, it shares this overlay's
+          stacking context and paints above the scrim, and its own backdrop
+          already stops propagation for exactly this reason (see its JSX).
+          Same placement SessionDetail has always used for the cancel-scope
+          picker, which is why that one worked. */}
+      {showScopePicker && (
+        <RecurrenceScopeModal
+          onPick={(scope) => { setShowScopePicker(false); void executeSave(scope); }}
+          onCancel={() => setShowScopePicker(false)}
+        />
+      )}
     </div>
-    {showScopePicker && (
-      <RecurrenceScopeModal
-        onPick={(scope) => { setShowScopePicker(false); void executeSave(scope); }}
-        onCancel={() => setShowScopePicker(false)}
-      />
-    )}
-    </>
   );
 }
 
