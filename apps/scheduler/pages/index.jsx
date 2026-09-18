@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useContext, Fragment } from "reac
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabase";
 import { UserContext } from "../lib/UserContext";
-import Sidebar from "../components/Sidebar";
+import Sidebar, { roleAdmitsView } from "../components/Sidebar";
 import SessionTypeEditModal from "../components/SessionTypeEditModal";
 import { CalendarView } from "../components/calendar/CalendarView";
 import { SessionDetail } from "../components/calendar/SessionDetail";
@@ -3577,13 +3577,16 @@ export default function Scheduler() {
   // effect above (validViews) happily accepts regardless of role. Before
   // this change that never mattered: every other role was already excluded
   // from the whole portal by _app.tsx's ACCESS.scheduler gate. Now that
-  // clinician is admitted, this is the actual enforcement point - same
-  // reasoning as the new gate on pages/admin.tsx - for the management
-  // screens this task's scope explicitly keeps admin/scheduler-only:
-  // Clients, Staff, Session Types, Settings. Falls back to Dashboard rather
-  // than rendering a components a clinician has no business seeing.
-  const CLINICIAN_EXCLUDED_VIEWS = new Set(["clients", "waitlist", "employees", "sessiontypes", "locations", "settings"]);
-  const effectiveView = (appUser?.role === "clinician" && CLINICIAN_EXCLUDED_VIEWS.has(view)) ? "dashboard" : view;
+  // This is the actual enforcement point. `validViews` above accepts any id
+  // off `?view=` for every role, so Sidebar's NAV `roles` only ever hid the
+  // link - a scheduler typing ?view=settings still got SettingsView and its
+  // Admin tab, whose own comment claims the tab is admin-only on the
+  // strength of that hidden link. roleAdmitsView reads the same NAV table
+  // the sidebar renders from, so the two can no longer disagree; it
+  // replaces the clinician-only set that used to live here, which was the
+  // exact complement of NAV's clinician entries. Falls back to Dashboard
+  // rather than rendering a screen the role has no business seeing.
+  const effectiveView = roleAdmitsView(view, appUser?.role) ? view : "dashboard";
   const ViewComp = views[effectiveView];
 
   return (
