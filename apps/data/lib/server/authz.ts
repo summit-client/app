@@ -77,3 +77,39 @@ export async function requireStaff(sb: SupabaseClient): Promise<StaffAuthResult>
   }
   return { ok: true, userId: user.id, clinicId: profile.clinic_id, role: profile.role };
 }
+
+/**
+ * Confirms a caller-supplied `clientId` belongs to the caller's own clinic.
+ *
+ * requireStaff() derives `clinicId` from the session, but nothing derived
+ * the client: a route that takes `clientId` from the request body and writes
+ * a row stamped with the caller's own `clinic_id` satisfies its RLS `with
+ * check (clinic_id = auth_clinic_id())` no matter whose client id was sent,
+ * because the clinic on the row is the caller's either way. The check has to
+ * happen on the id, before the write.
+ *
+ * Reads `clients` under the caller's own RLS (0080 gives staff a clinic-wide
+ * select there), so a row from another clinic comes back empty and is
+ * reported as not found rather than as a permission error — there is no
+ * reason to confirm to a caller that someone else's client id exists.
+ */
+export async function requireClientInClinic(
+  sb: SupabaseClient,
+  clientId: number,
+  clinicId: string,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const { data, error } = await sb
+    .from("clients")
+    .select("id")
+    .eq("id", clientId)
+    .eq("clinic_id", clinicId)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, status: 500, error: "Could not confirm that client record. Please try again." };
+  }
+  if (!data) {
+    return { ok: false, status: 404, error: "That client is not on your clinic's caseload." };
+  }
+  return { ok: true };
+}

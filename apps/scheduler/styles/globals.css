@@ -154,6 +154,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
 
+/* The cross-portal bar (@summit/nav's AppNav) scrolls horizontally rather
+   than wrapping when its pills don't fit a phone width, and hides that
+   scrollbar with `.app-nav-scroll`. That class is defined only in
+   @summit/design's components.css, which this app deliberately does not
+   import - it keeps its own copy of the tokens and component styles. So the
+   class was inert here while the rule above painted a 5px thumb inside the
+   bar's fixed 51px height, in the one portal of four where it shows. Kept in
+   step with @summit/design/components.css. */
+.app-nav-scroll { scrollbar-width: none; }
+.app-nav-scroll::-webkit-scrollbar { display: none; }
+
 /* ── Base elements ───────────────────────────────────────── */
 select, input, textarea, button {
   font-family: var(--font-body);
@@ -381,8 +392,15 @@ a:hover { color: var(--brand-700); }
     position: fixed !important;
     z-index: 45;
     top: var(--portalnav-h, 51px); bottom: 0; left: 0;
+    /* Kept in step with @summit/design's components.css: visibility, not
+       transform alone. Off-canvas by transform only leaves every link in the
+       drawer tabbable, so a phone keyboard user walked a whole invisible nav
+       after the hamburger - the same class of bug as the phantom first tab
+       stop the .nav-toggle-input comment above documents. */
     transform: translateX(-100%);
-    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+    visibility: hidden;
+    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+                visibility 0s linear 300ms;
     overflow-y: auto;
     box-shadow: 0 12px 32px rgba(0, 0, 0, .16);
   }
@@ -394,7 +412,13 @@ a:hover { color: var(--brand-700); }
   .nav-toggle-input:checked ~ .nav-toggle-backdrop { display: block; }
   /* .scheduler-sidebar is a child of .scheduler-shell (the flex row), not a
      direct sibling of the checkbox - the descendant selector reaches it. */
-  .nav-toggle-input:checked ~ .scheduler-shell .scheduler-sidebar { transform: translateX(0); }
+  .nav-toggle-input:checked ~ .scheduler-shell .scheduler-sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    /* No delay on the way in: the drawer has to be reachable as it opens. */
+    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+                visibility 0s linear 0s;
+  }
 }
 
 /* ── Toolbar dropdown menus ────────────────────────────────
@@ -505,4 +529,9 @@ a:hover { color: var(--brand-700); }
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+  /* transition-duration does not touch transition-delay, so without this the
+     closed drawer above would stay visible - and tabbable - for the full
+     300ms after closing, for exactly the people least likely to want it.
+     Kept in step with @summit/design's components.css. */
+  .scheduler-sidebar { transition-delay: 0s; }
 }

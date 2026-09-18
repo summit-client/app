@@ -93,6 +93,69 @@ export function SettingRow({ settingKey }: { settingKey: string }) {
   );
 }
 
+/**
+ * Colour, as a swatch and a hex box.
+ *
+ * The hex box keeps a local draft. It used to write straight through on every
+ * keystroke, so typing "#1b5a6e" sent "#", "#1", "#1b"... - each one a write,
+ * and now each one a value setSetting() rejects as not a colour. The draft
+ * is what the box shows while it is being edited; only a complete #rrggbb is
+ * committed, and leaving the box with something incomplete puts the stored
+ * value back rather than leaving a half-typed colour on screen.
+ */
+function ColorControl({ r, disabled, onChange }: {
+  r: ResolvedSetting; disabled?: boolean; onChange: (v: SettingValue) => void;
+}) {
+  const stored = String(r.effective);
+  const [draft, setDraft] = React.useState(stored);
+  const [editing, setEditing] = React.useState(false);
+  const shown = editing ? draft : stored;
+
+  return (
+    <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+      <input type="color" aria-label={r.def.label} value={stored} disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ width: 42, height: 32, border: "1px solid var(--line)", borderRadius: 6, background: "none", padding: 2 }} />
+      <input className="input" style={{ width: 100 }} aria-label={`${r.def.label} hex`}
+        value={shown} disabled={disabled}
+        onFocus={() => { setDraft(stored); setEditing(true); }}
+        onBlur={() => setEditing(false)}
+        onChange={(e) => {
+          const next = e.target.value;
+          setDraft(next);
+          if (/^#[0-9a-f]{6}$/i.test(next)) onChange(next);
+        }} />
+    </span>
+  );
+}
+
+/**
+ * A number, with the same draft treatment and for the same reason: the field
+ * used to send Number(e.target.value) on every keystroke, which is NaN while
+ * the box is empty or holds "-" or "1e".
+ */
+function NumberControl({ r, disabled, onChange }: {
+  r: ResolvedSetting; disabled?: boolean; onChange: (v: SettingValue) => void;
+}) {
+  const stored = String(Number(r.effective));
+  const [draft, setDraft] = React.useState(stored);
+  const [editing, setEditing] = React.useState(false);
+
+  return (
+    <input type="number" className="input" aria-label={r.def.label} disabled={disabled}
+      value={editing ? draft : stored}
+      onFocus={() => { setDraft(stored); setEditing(true); }}
+      onBlur={() => setEditing(false)}
+      onChange={(e) => {
+        const next = e.target.value;
+        setDraft(next);
+        const n = Number(next);
+        if (next.trim() !== "" && Number.isFinite(n)) onChange(n);
+      }}
+      style={{ width: 110 }} />
+  );
+}
+
 function SettingControl({ r, disabled, onChange }: {
   r: ResolvedSetting; disabled?: boolean; onChange: (v: SettingValue) => void;
 }) {
@@ -117,20 +180,12 @@ function SettingControl({ r, disabled, onChange }: {
         </select>
       );
     case "color":
-      return (
-        <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-          <input type="color" aria-label={r.def.label} value={String(r.effective)} disabled={disabled}
-            onChange={(e) => onChange(e.target.value)} style={{ width: 42, height: 32, border: "1px solid var(--line)", borderRadius: 6, background: "none", padding: 2 }} />
-          <input className="input" style={{ width: 100 }} aria-label={`${r.def.label} hex`} value={String(r.effective)}
-            onChange={(e) => onChange(e.target.value)} />
-        </span>
-      );
+      return <ColorControl r={r} disabled={disabled} onChange={onChange} />;
     case "time":
       return <input type="time" className="input" aria-label={r.def.label} value={String(r.effective)} disabled={disabled}
         onChange={(e) => onChange(e.target.value)} style={{ width: 130 }} />;
     case "number":
-      return <input type="number" className="input" aria-label={r.def.label} value={Number(r.effective)} disabled={disabled}
-        onChange={(e) => onChange(Number(e.target.value))} style={{ width: 110 }} />;
+      return <NumberControl r={r} disabled={disabled} onChange={onChange} />;
     default:
       return <input className="input" aria-label={r.def.label} value={String(r.effective)} disabled={disabled}
         placeholder={r.def.label} onChange={(e) => onChange(e.target.value)} style={{ minWidth: 220 }} />;

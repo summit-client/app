@@ -643,9 +643,26 @@ export function supabaseBackend(session: Session): HubBackend {
       // status = AWAITING_SIGNOFF guard: without it a stale queue (already
       // decided, or withdrawn) turns a duplicate click into an update that
       // matches on id alone and overwrites a decision that already happened.
-      ok("time-off decision", await sb().from("hub_time_off_requests")
+      //
+      // .select() so the row count is checked, not just the error. An update
+      // that matches nothing is not an error in PostgREST, and it matches
+      // nothing whenever RLS refuses the row: migration 0006 grants an
+      // employee SELECT and INSERT on their own requests but no UPDATE, so
+      // an employee clicking Cancel on their own request changed nothing
+      // while the UI reported success and optimistically showed "cancelled"
+      // until the next reload put it back. 0041's manage-scoped SELECT lets
+      // an admin read their own decision back, so the admin path is
+      // unaffected.
+      const res = await sb().from("hub_time_off_requests")
         .update({ status: decision, decided_by: uid, decided_at: new Date().toISOString() })
-        .eq("id", id).eq("status", "REQUESTED"));
+        .eq("id", id).eq("status", "REQUESTED").select("id");
+      ok("time-off decision", res);
+      if (!res.data?.length) {
+        throw new HubWriteError(
+          "time-off decision",
+          "that request is no longer awaiting a decision, or your account may not change it",
+        );
+      }
     },
 
     async audit(action, detail, subjectId) {

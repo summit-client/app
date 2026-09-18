@@ -3,7 +3,7 @@ import {
   buildEvidencePacket, ClinicalAIUnavailableError, MockProvider, PROMPT_TEMPLATE_VERSION,
   resolveProvider, type ClinicalAIProvider, type EvidenceRetriever, type TreatmentPlanSuggestions,
 } from "@summit/clinical-ai";
-import { requireStaff, routeServerClient } from "@/lib/server/authz";
+import { requireStaff, requireClientInClinic, routeServerClient } from "@/lib/server/authz";
 
 /**
  * POST /api/planning — Treatment Planning Copilot data.
@@ -33,17 +33,36 @@ export async function POST(request: NextRequest) {
     const auth = await requireStaff(sb);
     if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
     userId = auth.userId; clinicId = auth.clinicId;
+
+    // The session supplies the clinic; the request body supplied the client,
+    // and nothing checked the two agreed. A clinical_decisions row is stamped
+    // with the CALLER's clinic_id, so its `with check (clinic_id =
+    // auth_clinic_id())` passes for any client id at all - including one from
+    // another clinic - and the foreign id then flowed on into the evidence
+    // packet and the ai_requests write. Confirm ownership before any of that.
+    const owns = await requireClientInClinic(sb, body.clientId, clinicId);
+    if (!owns.ok) return NextResponse.json({ ok: false, error: owns.error }, { status: owns.status });
   }
 
   // Commit path: the clinician's decision is recorded, audited, and owned by them.
   if (body.commit) {
     if (sb) {
-      await sb.from("clinical_decisions").insert({
+      // Same shape as app/api/decision-tree: the insert's result used to be
+      // discarded and this route answered `committed: true` regardless, so
+      // an RLS refusal reported a plan as recorded with no row behind it.
+      const { error } = await sb.from("clinical_decisions").insert({
         clinic_id: clinicId, client_id: body.clientId,
         pattern: body.commit.pattern, decision: `Plan: ${body.commit.goalName} (${body.commit.source})`,
         options_considered: [{ option: body.commit.goalName, rationale: body.commit.rationale }],
         decided_by: userId,
       });
+      if (error) {
+        console.error("[data/planning] clinical_decisions insert failed:", error.message);
+        return NextResponse.json(
+          { ok: false, error: "That plan was not recorded. Please try again." },
+          { status: 500 },
+        );
+      }
     }
     return NextResponse.json({ ok: true, committed: true });
   }

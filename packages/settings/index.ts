@@ -26,6 +26,7 @@
  */
 
 import { IS_PREVIEW, getIdentity, type AppRole } from "@summit/session";
+import { settingValueProblem } from "./value-types";
 import { toast, toastError } from "@summit/toast";
 import { createBrowserClient } from "@supabase/ssr";
 
@@ -629,6 +630,10 @@ export async function setSetting(
   const def = DEFS.get(key);
   if (!def) throw new Error(`Unknown setting ${key}`);
   if (def.locked && level !== "org") throw new Error(`${def.label} is organization controlled.`);
+  // The declared `type` was never enforced: this function persisted whatever
+  // it was handed, so the widget was the only thing keeping a colour a colour.
+  const problem = settingValueProblem(def, value);
+  if (problem) throw new Error(problem);
 
   if (IS_PREVIEW) {
     const layer = readLocal(level);

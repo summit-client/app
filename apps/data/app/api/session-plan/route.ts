@@ -3,7 +3,7 @@ import {
   ClinicalAIUnavailableError, MockProvider, PROMPT_TEMPLATE_VERSION, resolveProvider, stableHash,
   type ClinicalAIProvider, type SessionPlanEvidence, type SuggestedSessionPlan,
 } from "@summit/clinical-ai";
-import { requireStaff, routeServerClient } from "@/lib/server/authz";
+import { requireStaff, requireClientInClinic, routeServerClient } from "@/lib/server/authz";
 
 /**
  * POST /api/session-plan — Suggest Session Plan for ONE client's session.
@@ -44,6 +44,14 @@ export async function POST(request: NextRequest) {
     const auth = await requireStaff(sb);
     if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
     userId = auth.userId; clinicId = auth.clinicId;
+
+    // The session supplies the clinic, the body supplied the client, and
+    // nothing checked the two agreed. Every write below stamps the CALLER's
+    // clinic_id, so `with check (clinic_id = auth_clinic_id())` passes for
+    // any client id at all, including another clinic's. Same check
+    // app/api/planning already makes.
+    const owns = await requireClientInClinic(sb, body.clientId, clinicId);
+    if (!owns.ok) return NextResponse.json({ ok: false, error: owns.error }, { status: owns.status });
   }
 
   // Evidence is scoped to this one client; nothing outside their record enters.

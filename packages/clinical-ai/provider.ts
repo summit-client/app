@@ -57,7 +57,19 @@ export function resolveProvider(
   if (!cfg.enabled) throw new ClinicalAIUnavailableError();
 
   // Synthetic/dev preview always routes to the deterministic mock.
-  if (env.NEXT_PUBLIC_DEV_PREVIEW === "1" || cfg.provider === "mock") return new MockProvider();
+  //
+  // Double-gated, like every other consumer of this flag. NEXT_PUBLIC_* bakes
+  // into the client bundle regardless of build mode, so a stray
+  // NEXT_PUBLIC_DEV_PREVIEW=1 left in a production env file used to replace
+  // every clinical model call with fixtures - a clinician reading fabricated
+  // clinical output with nothing on screen to say so. @summit/session's
+  // IS_PREVIEW gained this same NODE_ENV test for this same reason; this was
+  // the last ungated use of the flag outside build config.
+  //
+  // `cfg.provider === "mock"` is separate and stays: that is a deliberate
+  // server-side configuration choice, not a browser-readable flag.
+  const isPreview = env.NEXT_PUBLIC_DEV_PREVIEW === "1" && env.NODE_ENV !== "production";
+  if (isPreview || cfg.provider === "mock") return new MockProvider();
 
   if (req.containsPhi) {
     if (!cfg.allowPhi) throw new ClinicalAIUnavailableError("Clinical AI is not enabled for identifiable data in this environment.");

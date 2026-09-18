@@ -3,7 +3,7 @@ import {
   buildEvidencePacket, MockProvider, PROMPT_TEMPLATE_VERSION, resolveProvider,
   type ClinicalAIProvider, type EvidenceRetriever,
 } from "@summit/clinical-ai";
-import { requireStaff, routeServerClient } from "@/lib/server/authz";
+import { requireStaff, requireClientInClinic, routeServerClient } from "@/lib/server/authz";
 
 /**
  * POST /api/decision-tree — AI-assisted clinical decision support for one
@@ -35,6 +35,14 @@ export async function POST(request: NextRequest) {
     const auth = await requireStaff(sb);
     if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
     userId = auth.userId; clinicId = auth.clinicId;
+
+    // The session supplies the clinic, the body supplied the client, and
+    // nothing checked the two agreed. Every write below stamps the CALLER's
+    // clinic_id, so `with check (clinic_id = auth_clinic_id())` passes for
+    // any client id at all, including another clinic's. Same check
+    // app/api/planning already makes.
+    const owns = await requireClientInClinic(sb, body.clientId, clinicId);
+    if (!owns.ok) return NextResponse.json({ ok: false, error: owns.error }, { status: owns.status });
   }
 
   const startDate = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
@@ -57,7 +65,10 @@ export async function POST(request: NextRequest) {
   // Commit path: record the clinician's decision with the reviewed evidence.
   if (body.commit) {
     if (sb) {
-      await sb.from("clinical_decisions").insert({
+      // The insert's result used to be discarded and this route answered
+      // `committed: true` regardless, so an RLS refusal told the clinician
+      // their decision was recorded when no row existed.
+      const { error } = await sb.from("clinical_decisions").insert({
         clinic_id: clinicId, client_id: body.clientId, program_id: body.goalId,
         pattern: body.pattern ?? "clinical review",
         evidence: goal.masteryEvidence,
@@ -65,6 +76,13 @@ export async function POST(request: NextRequest) {
         remeasure_at: body.commit.remeasureAt ?? null,
         decided_by: userId,
       });
+      if (error) {
+        console.error("[data/decision-tree] clinical_decisions insert failed:", error.message);
+        return NextResponse.json(
+          { ok: false, error: "That decision was not recorded. Please try again." },
+          { status: 500 },
+        );
+      }
     }
     return NextResponse.json({ ok: true, committed: true });
   }

@@ -30,6 +30,17 @@ export interface Person {
   name: string;
   jobTitle: string | null;
   accessLevel: "EMPLOYEE" | "SUPERVISOR" | "ADMIN";
+  /**
+   * The raw `profiles.role`, alongside the three-value display ladder above.
+   *
+   * `accessLevel` is lossy on purpose - the directory shows three tiers - but
+   * ACCESS maps only admin/supervisor/clinician, so a scheduler, hr_admin or
+   * payroll_admin all collapse to "EMPLOYEE". Anything that has to know what
+   * a person's role actually IS, rather than how it is displayed, must read
+   * this: deriving it back from accessLevel silently turns any of those three
+   * into a clinician. Null when the row carries no role.
+   */
+  appRole: string | null;
   supervisorId: string | null;
 }
 
@@ -408,7 +419,9 @@ export function emptySnapshot(session: Session, seedPolicies: PolicyDoc[]): HrSn
     cycle: thisCycle(),
     directory: [{
       id: session.userId, name: session.fullName ?? "Sherpa Doe",
-      jobTitle: "Behaviour Clinician", accessLevel: session.role, supervisorId: null,
+      jobTitle: "Behaviour Clinician", accessLevel: session.role,
+      appRole: session.role.toLowerCase() === "employee" ? "clinician" : session.role.toLowerCase(),
+      supervisorId: null,
     }],
     responses: [], history: [], recognition: [], goals: [],
     credentials: [], education: [], activities: [], allocations: [],
@@ -613,6 +626,7 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
         name: (r.full_name as string | null) ?? "Team member",
         jobTitle: null,
         accessLevel: ACCESS[(r.role as string) ?? ""] ?? "EMPLOYEE",
+        appRole: (r.role as string | null) ?? null,
         supervisorId: (r.supervisor_id as string | null) ?? null,
       }));
       nameById = new Map(directory.map((p) => [p.id, p.name]));

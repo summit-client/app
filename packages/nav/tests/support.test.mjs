@@ -91,5 +91,41 @@ t("a quote or accent does not break the subject", (() => {
   return decodeURIComponent(new URL(url).searchParams.get("subject")) === "[Château d'Or & Co] Troubleshoot";
 })());
 
+// The address is the only unencoded part of the URL, and the only part that
+// comes from the database (the org-scoped support.devEmail setting, a free
+// text value an admin types).
+t("a plain configured address is used as given", (() => {
+  const url = S.supportMailto({ ...base, to: "help@clinic.test" });
+  return url.startsWith("mailto:help@clinic.test?");
+})());
+t("a bcc header smuggled into the address is refused", (() => {
+  const url = S.supportMailto({ ...base, to: "help@clinic.test?bcc=someone@elsewhere.test&" });
+  return url.startsWith(`mailto:${S.DEFAULT_SUPPORT_EMAIL}?`) && !url.includes("bcc=");
+})());
+t("a second recipient smuggled in with a comma is refused", (() => {
+  const url = S.supportMailto({ ...base, to: "help@clinic.test,someone@elsewhere.test" });
+  return url.startsWith(`mailto:${S.DEFAULT_SUPPORT_EMAIL}?`) && !url.includes("elsewhere");
+})());
+t("an ampersand in the address cannot start a new field", (() => {
+  const url = S.supportMailto({ ...base, to: "a@b.test&cc=c@d.test" });
+  return url.startsWith(`mailto:${S.DEFAULT_SUPPORT_EMAIL}?`);
+})());
+t("a percent-escape in the address is refused rather than decoded by the client", (() => {
+  const url = S.supportMailto({ ...base, to: "a@b.test%3Fbcc=c@d.test" });
+  return url.startsWith(`mailto:${S.DEFAULT_SUPPORT_EMAIL}?`);
+})());
+t("an empty or blank setting falls back to the real inbox",
+  S.safeSupportAddress("") === S.DEFAULT_SUPPORT_EMAIL
+  && S.safeSupportAddress("   ") === S.DEFAULT_SUPPORT_EMAIL
+  && S.safeSupportAddress(null) === S.DEFAULT_SUPPORT_EMAIL);
+t("a value that is not an address at all falls back",
+  S.safeSupportAddress("not an address") === S.DEFAULT_SUPPORT_EMAIL);
+t("surrounding whitespace is trimmed, not rejected",
+  S.safeSupportAddress("  ops@clinic.test  ") === "ops@clinic.test");
+t("the subject and body are still encoded after the address check", (() => {
+  const url = S.supportMailto({ ...base, to: "help@clinic.test", detail: "a&b" });
+  return decodeURIComponent(new URL(url).searchParams.get("body")).startsWith("a&b");
+})());
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

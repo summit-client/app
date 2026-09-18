@@ -8,6 +8,7 @@ import {
   type CaseReview, type ClinicalDecisionTree, type ClinicalEvidencePacket, type ReviewCategory, type SupervisionBrief,
 } from "@summit/clinical-ai";
 import { getSetting } from "@summit/settings";
+import { toast } from "@summit/toast";
 import { getClients } from "@/lib/data";
 
 const CAT_PILL: Record<ReviewCategory, string> = {
@@ -256,10 +257,17 @@ function DecisionTreePanel({ clientId, goalId, pattern }: { clientId: number; go
   };
 
   const commit = async (option: string, plan: string) => {
-    await fetch("/api/decision-tree", {
+    // The response used to be ignored entirely, so a refused write still
+    // showed the clinician a "Committed" badge with no row behind it.
+    const res = await fetch("/api/decision-tree", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clientId, goalId, pattern, commit: { decision: `${option}: ${plan}` } }),
     });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.ok) {
+      toast(data?.error ?? "That decision was not recorded. Please try again.");
+      return;
+    }
     setCommittedAs(option);
   };
 

@@ -15,7 +15,7 @@ import {
   type HubRole, type Session,
 } from "@/lib/session";
 import {
-  clearSettings, initSettings, onSettingsChange, refreshSettings, resolve,
+  clearSettings, getSetting, initSettings, onSettingsChange, refreshSettings, resolve,
 } from "@summit/settings";
 import { applyLogoColors, type LogoTone } from "@summit/design";
 
@@ -76,10 +76,11 @@ function overrideOnly(key: string): string | null {
 }
 
 /**
- * Applies this clinic's per-tenant logo colour overrides (if any) to
- * <html>, mirroring apps/data's `SettingsEffects` — this app has no other
- * settings-driven document effect yet, so it gets its own small component
- * rather than folding into SessionProvider's identity-loading effect.
+ * Applies the settings that belong on <html> — density, text size and the
+ * accessibility preferences, plus this clinic's per-tenant logo colour
+ * overrides — mirroring apps/data's `SettingsEffects`. Its own small
+ * component rather than part of SessionProvider's identity-loading effect,
+ * because it re-runs on every settings change, not on every identity one.
  * grove.tsx (Volcano, SummitPeaks, ScoreRing, TheClimb) is this app's only
  * current consumer of --logo-1/2/3 (--logo-2 only, in practice); see
  * @summit/design's applyLogoColors() for the contrast note before adding
@@ -88,6 +89,21 @@ function overrideOnly(key: string): string | null {
 export function BrandingEffects() {
   React.useEffect(() => {
     const apply = () => {
+      // This app's own app.css implements data-density, data-textsize,
+      // data-line-spacing, data-large-controls, data-focus-rings and
+      // data-reduce-motion, but nothing here ever set them, so density and
+      // every accessibility preference - the ones the settings screen
+      // describes as "yours alone; follows you across devices" - silently
+      // did nothing in this portal while working in apps/data. Same six
+      // attributes apps/data's SettingsEffects sets, minus its run.tapSize
+      // clause, which is a data-portal setting.
+      const el = document.documentElement;
+      el.setAttribute("data-density", String(getSetting("appearance.density")).toLowerCase());
+      el.setAttribute("data-textsize", String(getSetting("a11y.textSize")).toLowerCase());
+      el.toggleAttribute("data-reduce-motion", getSetting("a11y.reduceMotion") === true);
+      el.toggleAttribute("data-line-spacing", getSetting("a11y.lineSpacing") === true);
+      el.toggleAttribute("data-large-controls", getSetting("a11y.largerControls") === true);
+      el.toggleAttribute("data-focus-rings", getSetting("a11y.focusIndicators") === true);
       applyLogoColors({
         logo1: overrideOnly("appearance.logo1"),
         logo2: overrideOnly("appearance.logo2"),

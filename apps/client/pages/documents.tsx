@@ -49,7 +49,7 @@ import { AdminViewBanner } from "../components/admin-view-banner";
 import { AccountProblemNotice } from "../components/account-problem-notice";
 import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
-import { homeUrlFor } from "@summit/portals";
+import { homeUrlFor, loginUrl } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
 
 // 10 minutes: long enough to read the list and click every download once,
@@ -398,7 +398,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
   if (userError || !user) {
     return {
       redirect: {
-        destination: process.env.NEXT_PUBLIC_LOGIN_URL || "https://summitclient.io/login",
+        destination: process.env.NEXT_PUBLIC_LOGIN_URL || loginUrl(),
         permanent: false,
       },
     };

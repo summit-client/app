@@ -74,7 +74,30 @@ export function supportMailto(opts: {
     + `When: ${opts.when}\n`
     + `Module: ${opts.moduleName}`,
   );
-  return `mailto:${opts.to}?subject=${subject}&body=${body}`;
+  return `mailto:${safeSupportAddress(opts.to)}?subject=${subject}&body=${body}`;
+}
+
+/**
+ * The only part of the mailto: URL that is not percent-encoded is the address
+ * itself, and it is the one part that comes from the database: every caller
+ * passes the org-scoped `support.devEmail` setting, which is a free `text`
+ * value an admin types. A stored value of
+ * `help@clinic.test?bcc=someone@elsewhere.test&` therefore injected extra
+ * mailto headers into a message that already carries the current page path
+ * and whatever the person typed — and a bcc does not show in most compose
+ * windows.
+ *
+ * So the address is checked rather than trusted: anything that is not a plain
+ * single address falls back to DEFAULT_SUPPORT_EMAIL, which is a real inbox.
+ * The character class is deliberately narrow — no `?`, `&`, `#`, comma,
+ * semicolon, quote, angle bracket or whitespace, each of which is either a
+ * mailto separator or a header delimiter.
+ */
+const SAFE_ADDRESS = /^[^\s@,;:<>"'`?&#/\\%]+@[^\s@,;:<>"'`?&#/\\%]+\.[^\s@,;:<>"'`?&#/\\%]+$/;
+
+export function safeSupportAddress(to: string | null | undefined): string {
+  const trimmed = (to ?? "").trim();
+  return SAFE_ADDRESS.test(trimmed) ? trimmed : DEFAULT_SUPPORT_EMAIL;
 }
 
 export function SupportButton({

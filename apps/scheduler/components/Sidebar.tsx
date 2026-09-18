@@ -17,7 +17,7 @@ import { CalendarFeedPanel } from "./CalendarFeedPanel";
 // admin/scheduler-only deliberately - those are roster/config *management*
 // screens, not booking, and 0046's RLS gives clinician no write there at
 // all. "clients" and "settings" are unchanged for the same reason.
-const NAV = [
+export const NAV = [
   { id: "dashboard", label: "Dashboard", icon: "▦", roles: ["admin", "scheduler", "clinician"] },
   { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler", "clinician"] },
   { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler", "clinician"] },
@@ -33,17 +33,43 @@ const NAV = [
   { id: "settings",  label: "Settings",  icon: "⚙", roles: ["admin"] },
 ];
 
+/**
+ * The one place that decides which role may reach which view.
+ *
+ * NAV already filters the *links* (line 149), but the link was never the
+ * gate: pages/index.jsx accepts any id in `validViews` straight off
+ * `?view=`, so hiding an entry here only hid the entry. Exported so that
+ * file can drop an unadmitted view instead of rendering it.
+ *
+ * An unresolved role returns true deliberately - identity arrives a tick
+ * after the first render, and the previous gate (a clinician-only check on
+ * `appUser?.role`) behaved the same way. An id NAV does not list also
+ * returns true; NAV covers every id in `validViews` today, and a new view
+ * should not silently become unreachable by being forgotten here.
+ */
+export function roleAdmitsView(view: string, role: string | null | undefined): boolean {
+  if (!role) return true;
+  const entry = NAV.find((n) => n.id === view);
+  return entry ? entry.roles.includes(role) : true;
+}
+
 interface SidebarProps {
   view: string;
   onNavigate: (id: string) => void;
   appUser: { role: string } | null;
-  bookings: unknown[];
+  bookings: { status?: string | null }[];
   calendars: { status: string; name: string }[];
 }
 
 export default function Sidebar({ view, onNavigate, appUser, bookings, calendars }: SidebarProps) {
   const router = useRouter();
   const isAdminPage = router.pathname === "/admin";
+  // Cancelled sessions are not booked ones. Every other count in this
+  // portal filters them out first (index.jsx's activeBookings,
+  // sessionsCountFor and liveSessions); this footer did not, so a clinic
+  // that cancels anything reads an inflated total under the calendar's
+  // name.
+  const bookedCount = bookings.filter((b) => b?.status !== "cancelled").length;
   const activeId = isAdminPage ? "admin" : view;
 
 /**
@@ -235,7 +261,7 @@ function handleNav(id: string) {
                 color: "var(--color-text-tertiary)",
                 marginTop: 1,
               }}>
-                {bookings.length} session{bookings.length !== 1 ? "s" : ""} booked
+                {bookedCount} session{bookedCount !== 1 ? "s" : ""} booked
               </div>
             </div>
           </div>
