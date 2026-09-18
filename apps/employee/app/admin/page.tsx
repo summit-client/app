@@ -7,9 +7,10 @@ import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/sett
 import { HUB_TASKS } from "@/lib/content";
 import { directory, hr } from "@/lib/hr-store";
 import {
-  decideTimeOff, getAudit, issueOnboardingCertificate, listPendingCertificatesToIssue,
-  listPendingPdVerifications, listPendingSignoffs, listPendingTimeOffRequests, listTeamDirectory,
-  signOffTask, verifyPd,
+  decideTimeOff, issueOnboardingCertificate, listPendingCertificatesToIssue,
+  listPendingPdVerifications, listPendingSignoffs, listPendingTimeOffRequests, listRecentActivity,
+  listTeamDirectory, signOffTask, verifyPd,
+  type ManagedAuditEvent,
   type PendingCertificate, type PendingPd, type PendingSignoff, type PendingTimeOff, type TeamMember,
 } from "@/lib/hub";
 import { deactivateTeammate, editTeammate, inviteTeammate, listUnlinkedClients, ProvisioningError } from "@/lib/hr-backend";
@@ -94,6 +95,7 @@ function AdminConsole() {
   const [timeOff, reloadTimeOff] = useManagedQueue<PendingTimeOff>(listPendingTimeOffRequests);
   const [pd, reloadPd] = useManagedQueue<PendingPd>(listPendingPdVerifications);
   const [team, reloadTeam] = useManagedQueue<TeamMember>(listTeamDirectory);
+  const [activity, reloadActivity] = useManagedQueue<ManagedAuditEvent>(listRecentActivity);
 
   React.useEffect(() => setReady(true), []);
   if (!ready) return <p className="sub">Loading admin…</p>;
@@ -187,7 +189,7 @@ function AdminConsole() {
                   onClick={() => {
                     const title = p.task?.title ?? p.taskKey;
                     if (!confirm(`Sign off "${title}" for ${nameOf(p.userId)}? This can't be undone.`)) return;
-                    void saved(signOffTask(p.taskKey, p.userId)).then(reloadSignoffs);
+                    void saved(signOffTask(p.taskKey, p.userId)).then(() => { reloadSignoffs(); reloadActivity(); });
                   }}
                 >
                   Sign off as completed
@@ -243,8 +245,8 @@ function AdminConsole() {
                   <b>{nameOf(r.userId)}</b> · {r.type === "VACATION" ? "Vacation" : "Sick"} · {r.startDate} → {r.endDate} ({r.days}d){r.note ? ` · ${r.note}` : ""}
                 </span>
                 <span style={{ display: "flex", gap: 8 }}>
-                  <button className="btn" onClick={() => void saved(decideTimeOff(r.id, "APPROVED")).then(reloadTimeOff)}>Approve</button>
-                  <button className="btn secondary" onClick={() => void saved(decideTimeOff(r.id, "DENIED")).then(reloadTimeOff)}>Deny</button>
+                  <button className="btn" onClick={() => void saved(decideTimeOff(r.id, "APPROVED", { userId: r.userId, type: r.type, startDate: r.startDate })).then(() => { reloadTimeOff(); reloadActivity(); })}>Approve</button>
+                  <button className="btn secondary" onClick={() => void saved(decideTimeOff(r.id, "DENIED", { userId: r.userId, type: r.type, startDate: r.startDate })).then(() => { reloadTimeOff(); reloadActivity(); })}>Deny</button>
                 </span>
               </div>
             ))}
@@ -267,7 +269,7 @@ function AdminConsole() {
             {pd.rows.map((r) => (
               <div key={r.id} className="card card-pad" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "var(--text-sm)" }}><b>{nameOf(r.userId)}</b> · {r.title} · {r.provider || "—"} · {r.hours}h · {r.date}</span>
-                <button className="btn secondary" onClick={() => void saved(verifyPd(r.id)).then(reloadPd)}>Verify</button>
+                <button className="btn secondary" onClick={() => void saved(verifyPd(r.id, { userId: r.userId, title: r.title })).then(() => { reloadPd(); reloadActivity(); })}>Verify</button>
               </div>
             ))}
             {!pd.rows.length ? <div className="card card-pad"><p className="sub">All PD entries are verified.</p></div> : null}
@@ -277,20 +279,28 @@ function AdminConsole() {
 
       <h2 className="section-title">Recent activity</h2>
       <div className="card table-wrap">
-        <table className="data">
-          <thead><tr><th>Action</th><th>Detail</th><th>Who</th><th>When</th></tr></thead>
-          <tbody>
-            {getAudit().slice(0, 15).map((a) => (
-              <tr key={a.id}>
-                <td><span className="pill neutral">{a.action}</span></td>
-                <td>{a.detail}</td>
-                <td>{a.who}</td>
-                <td className="trend">{a.at.slice(0, 16).replace("T", " ")}</td>
-              </tr>
-            ))}
-            {!getAudit().length ? <tr><td colSpan={4} style={{ color: "var(--muted)" }}>No activity yet.</td></tr> : null}
-          </tbody>
-        </table>
+        {activity.error ? (
+          <p className="sub" style={{ color: "var(--danger)" }}>Could not load activity: {activity.error}</p>
+        ) : activity.rows === null ? (
+          <p className="sub">Loading activity…</p>
+        ) : (
+          <table className="data">
+            <thead><tr><th>Action</th><th>Detail</th><th>Who</th><th>When</th></tr></thead>
+            <tbody>
+              {activity.rows.slice(0, 15).map((a) => (
+                <tr key={a.id}>
+                  <td><span className="pill neutral">{a.action}</span></td>
+                  <td>{a.detail}</td>
+                  {/* who is only filled in for the caller's own rows; every
+                      other actor resolves through the HR directory here. */}
+                  <td>{a.who || nameOf(a.actorId)}</td>
+                  <td className="trend">{a.at.slice(0, 16).replace("T", " ")}</td>
+                </tr>
+              ))}
+              {!activity.rows.length ? <tr><td colSpan={4} style={{ color: "var(--muted)" }}>No activity yet.</td></tr> : null}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

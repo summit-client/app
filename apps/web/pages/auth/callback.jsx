@@ -87,7 +87,14 @@ export default function AuthCallback() {
     if (destination) {
       window.location.href = destination
     } else {
-      router.replace('/login')
+      // No profile row, no role on it, or a role with nowhere to land. The
+      // user is genuinely signed in, so a bare /login is just an empty form
+      // they will retry into the same dead end - say why, using the same
+      // wording the password sign-in path uses for this exact state.
+      router.replace(
+        '/login?error=' +
+          encodeURIComponent('Your account is pending activation. Contact your administrator.')
+      )
     }
   }
 

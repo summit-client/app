@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import * as React from "react";
-import Link from "next/link";
 import "@summit/design/tokens.css";
 import "@summit/design/components.css";
 import "@summit/design/motion.css";
@@ -9,6 +8,7 @@ import { themeInitScript } from "@summit/design";
 import { ToastHost } from "@summit/toast";
 import { PortalBar } from "@/components/portal-bar";
 import { SupportButton } from "@/components/support";
+import { SidebarNav, type SidebarNavItem } from "@/components/sidebar-nav";
 import { BrandingEffects, SessionProvider } from "@/components/session-provider";
 
 /**
@@ -54,7 +54,7 @@ export const metadata: Metadata = {
   description: "Performance, professional development, credentials, documents and team collaboration.",
 };
 
-const NAV: { href: string; label: string; group?: string; icon?: string }[] = [
+const NAV: SidebarNavItem[] = [
   { href: "/", label: "Dashboard", icon: "▦" },
   { href: "/scoreboard", label: "Scoreboard", icon: "◈", group: "Growth" },
   { href: "/team", label: "My Team", icon: "◎", group: "Growth" },
@@ -121,17 +121,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <div className="brand-sub">Employee</div>
               </div>
             </div>
-            <nav aria-label="My HR and My Documents">
-              {NAV.map((n, i) => (
-                <React.Fragment key={n.href}>
-                  {n.group && n.group !== NAV[i - 1]?.group ? <span className="nav-group">{n.group}</span> : null}
-                  <Link href={n.href} className="nav-item">
-                    <span className="nav-icon" aria-hidden>{n.icon}</span>
-                    <span>{n.label}</span>
-                  </Link>
-                </React.Fragment>
-              ))}
-            </nav>
+            <SidebarNav items={NAV} />
             <div className="sidebar-foot">
               <SupportButton />
               {IS_PREVIEW ? <span className="pill warn" style={{ marginTop: 8, display: "inline-block" }}>Preview data</span> : null}

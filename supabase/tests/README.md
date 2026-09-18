@@ -32,6 +32,17 @@ Two things PGlite cannot do, so neither script tests them:
   it (`employment_positions`, `pay_periods`, `pay_rates` overlap guards) are
   stripped for the run and reported as unverified. They are fine on Supabase.
 
+## Edge Function authorization — no install needed
+
+    node supabase/tests/edit_teammate_authz.mjs
+
+Edge Functions are deployed separately from the apps and are covered by neither
+`pnpm turbo build` nor any typecheck script, so nothing else in this repo
+checks them. `edit_teammate_authz.mjs` drives `edit-teammate`'s two role
+matrices as a decision table, reading them out of the function's own source so
+a change to either matrix surfaces here rather than passing against a stale
+copy. It needs no database: the matrices are the whole authorization decision.
+
 ## RLS behaviour tests — needs a real Postgres
 
 These are not run by CI. They are here so a policy change can be checked against

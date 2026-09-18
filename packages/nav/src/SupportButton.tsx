@@ -88,6 +88,8 @@ export function SupportButton({
   const [kind, setKind] = React.useState<Kind>("Troubleshoot");
   const [detail, setDetail] = React.useState("");
   const panelRef = React.useRef<HTMLDivElement>(null);
+  const detailRef = React.useRef<HTMLTextAreaElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
 
   // Escape closes it. A panel that only closes via its own Cancel button traps
   // a keyboard user who opened it by accident.
@@ -96,6 +98,21 @@ export function SupportButton({
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  // Opening the panel unmounts the trigger, so focus would otherwise fall to
+  // <body> and a keyboard user would have to tab in from the top of the page
+  // to reach the field they just asked for; closing it puts them back where
+  // they were. The ref is null on the first render of each state, which is
+  // why this runs as an effect rather than inline.
+  const openedOnce = React.useRef(false);
+  React.useEffect(() => {
+    if (open) {
+      openedOnce.current = true;
+      detailRef.current?.focus();
+    } else if (openedOnce.current) {
+      triggerRef.current?.focus();
+    }
   }, [open]);
 
   function send() {
@@ -165,6 +182,7 @@ export function SupportButton({
           </label>
           <textarea
             id="support-detail"
+            ref={detailRef}
             rows={3}
             value={detail}
             onChange={(e) => setDetail(e.target.value)}
@@ -196,6 +214,7 @@ export function SupportButton({
       ) : (
         <button
           type="button"
+          ref={triggerRef}
           onClick={() => setOpen(true)}
           style={floating ? { ...ghostStyle, ...floatingTriggerStyle } : { ...ghostStyle, fontSize: 12 }}
         >

@@ -8,7 +8,7 @@ import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { LoadErrorNotice } from "../components/load-error-notice";
 import { createClient } from "../lib/supabase-server";
-import { clinicTodayDateStr } from "../lib/clinic-date";
+import { clinicTodayDateStr, formatClinicDate } from "../lib/clinic-date";
 import { can, childById, displayName, familyFromRows, type Family } from "../lib/family";
 import {
   answerProblems, consentsFromRows, formStatus, formsFromRows, signatureProblem,
@@ -210,7 +210,7 @@ export default function Forms(
             open.completedAt ? (
               <div className={styles.emptyBox}>
                 <p style={{ margin: "0 0 6px", color: "var(--ink)", fontWeight: 600 }}>
-                  You sent this on {new Date(open.completedAt).toLocaleDateString()}.
+                  You sent this on {formatClinicDate(open.completedAt)}.
                 </p>
                 {open.signedName ? (
                   <p style={{ margin: 0, color: "var(--muted)" }}>Signed as {open.signedName}.</p>
@@ -358,10 +358,10 @@ export default function Forms(
                           record: "withdrawn" without "granted on" cannot answer
                           what the clinic was entitled to do in between. */}
                       <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--muted)" }}>
-                        Given {new Date(c.grantedAt).toLocaleDateString()}
+                        Given {formatClinicDate(c.grantedAt)}
                         {c.signedName ? ` by ${c.signedName}` : ""}
                         {c.withdrawnAt
-                          ? ` · withdrawn ${new Date(c.withdrawnAt).toLocaleDateString()}`
+                          ? ` · withdrawn ${formatClinicDate(c.withdrawnAt)}`
                           : ""}
                         {c.withdrawalReason ? ` · ${c.withdrawalReason}` : ""}
                       </p>

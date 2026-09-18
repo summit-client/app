@@ -20,7 +20,7 @@ export async function getCaseloadFacts(): Promise<ProgramFacts[]> {
   );
   // Live mode: one round trip per table, joined in memory.
   const [programs, records, phases, integrity, banks] = await Promise.all([
-    sb.from("programs").select("id, client_id, name, domain, target_direction, mastery_pct, mastery_consecutive, status, goal_bank_id, clients:client_id(name)").neq("status", "archived"),
+    sb.from("programs").select("id, client_id, name, domain, target_direction, mastery_pct, mastery_consecutive, status, goal_bank_id, updated_at, clients:client_id(name)").neq("status", "archived"),
     sb.from("session_records").select("program_id, started_at, summary_pct, summary_count").not("ended_at", "is", null).order("started_at"),
     sb.from("phases").select("program_id, started_at, label"),
     sb.from("integrity_checks").select("program_id, steps_correct, steps_total, observed_at"),
@@ -56,7 +56,14 @@ export async function getCaseloadFacts(): Promise<ProgramFacts[]> {
         .map((x) => ({ stepsCorrect: x.steps_correct as number, stepsTotal: x.steps_total as number, date: String(x.observed_at).slice(0, 10) })),
       noteThemes: [], // note-theme extraction is the LLM's later job; empty = no clinician_observation evidence
       caregiverGoalsOpenDays: null,
-      masteredAt: p.status === "mastered" ? null : null,
+      // programs has no mastered_at column, so updated_at is the closest
+      // stand-in for when a program reached mastery - approximate for the
+      // "days since mastery" evidence line, but a real date instead of the
+      // null both branches of this used to return.
+      masteredAt: p.status === "mastered" ? String(p.updated_at) : null,
+      // Still hardcoded, so detectMasteredWithoutNext() stays dormant in
+      // live mode: nothing in the schema records "a next goal was
+      // programmed", and picking a definition for it is a product call.
       hasNextGoalProgrammed: true,
       goalBankNextOptions: p.goal_bank_id ? nextByBank.get(p.goal_bank_id as string) ?? [] : [],
     };

@@ -1,5 +1,6 @@
 import Head from "next/head";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import Sidebar from "./Sidebar";
 import { MobileNavChrome } from "./mobile-nav-chrome";
 import { ProgramStatusBadge } from "./program-status-badge";
@@ -241,10 +242,23 @@ export default function DesignB({
     setView(recallView(memoryKey, family));
   }, [memoryKey, family]);
 
+  const router = useRouter();
   const onSwitch = React.useCallback((next: FamilyView) => {
     setView(next);
     rememberView(memoryKey, next);
-  }, [memoryKey]);
+    // Sessions, Skills, Goals, Funding and Recent Updates all come from
+    // getServerSideProps' single-child queries, which resolve the child from
+    // the cookie rememberView() just wrote - so without a server re-render
+    // only the heading and the task list followed the switcher while every
+    // number on the page still described the previous child. rememberView
+    // writes the cookie synchronously, so the refetch sees the new value.
+    // Only for a specific child: "Everyone" clears the cookie and the server
+    // falls back to the first child, so re-fetching there would swap one
+    // wrong child for another - the aggregate family view is still to do.
+    if (next.kind === "child") {
+      void router.replace(router.asPath, undefined, { scroll: false });
+    }
+  }, [memoryKey, router]);
 
   const selected = view.kind === "child" ? childById(family, view.clientId) : null;
 

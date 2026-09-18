@@ -63,7 +63,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <PortalNav />
               <div className="sidebar-foot">
                 <ClinicianSupportButton />
-                {process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" ? <span className="pill warn">Preview data</span> : null}
+                {process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production" ? (
+                  <span className="pill warn">Preview data</span>
+                ) : null}
               </div>
             </aside>
             <div className="main">

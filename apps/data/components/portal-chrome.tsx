@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { getSetting, onSettingsChange, resolve, term, terms } from "@summit/settings";
 import { applyLogoColors, type LogoTone } from "@summit/design";
 import { useSession } from "@/components/session-provider";
@@ -61,6 +62,13 @@ export function PortalNav() {
   const GROUPS = ["Workspace", "Clinic", "Library"] as const;
   const visible = NAV.filter((n) => !hidden.includes(n.id));
 
+  // Which screen you are on. "/" would prefix-match every route, so it is
+  // the one link that has to match exactly; every other link also lights up
+  // for its own sub-routes (/settings/branding keeps Settings marked).
+  const pathname = usePathname();
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+
   return (
     <nav aria-label="Portal">
       {GROUPS.map((group) => {
@@ -72,7 +80,12 @@ export function PortalNav() {
           <React.Fragment key={group}>
             <span className="nav-group">{group}</span>
             {items.map((n) => (
-              <Link key={n.href} href={n.href} className="nav-item">
+              <Link
+                key={n.href}
+                href={n.href}
+                className={`nav-item${isActive(n.href) ? " active" : ""}`}
+                aria-current={isActive(n.href) ? "page" : undefined}
+              >
                 <span className="nav-icon" aria-hidden>{n.icon}</span>
                 <span>{n.label}</span>
               </Link>

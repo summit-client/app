@@ -11,10 +11,12 @@
 
 import * as React from "react";
 import {
-  explainProblem, getSession, refreshSession,
+  clearIdentity, explainProblem, getSession, refreshSession, subscribeToAuthChanges,
   type HubRole, type Session,
 } from "@/lib/session";
-import { initSettings, onSettingsChange, refreshSettings, resolve } from "@summit/settings";
+import {
+  clearSettings, initSettings, onSettingsChange, refreshSettings, resolve,
+} from "@summit/settings";
 import { applyLogoColors, type LogoTone } from "@summit/design";
 
 interface Ctx { session: Session | null; loading: boolean; reload: () => void }
@@ -34,6 +36,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => { load(); }, [load]);
+
+  // Identity and settings are both module-level caches latched on first read,
+  // so a tab left open while the user signed out (or signed in as someone
+  // else) elsewhere kept serving the previous person's session and their
+  // org/role/user settings - which in this portal means another employee's HR
+  // records. Signing out clears without re-resolving: refreshSession() would
+  // fire getUser() for someone who has just left.
+  React.useEffect(() => subscribeToAuthChanges((event) => {
+    if (event === "SIGNED_OUT") {
+      clearIdentity();
+      clearSettings();
+      setSession(null);
+      return;
+    }
+    load(true);
+  }), [load]);
 
   const value = React.useMemo(
     () => ({ session, loading, reload: () => load(true) }),

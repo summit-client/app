@@ -16,9 +16,12 @@ import * as React from "react";
 import { AppNav } from "@summit/nav";
 import { parseVisiblePortals, profileUrl, signOutUrl } from "@summit/portals";
 import {
-  explainProblem, gate, getIdentity, refreshIdentity, type Identity,
+  clearIdentity, explainProblem, gate, getIdentity, refreshIdentity,
+  subscribeToAuthChanges, type Identity,
 } from "@summit/session";
-import { getSetting, initSettings, onSettingsChange, refreshSettings } from "@summit/settings";
+import {
+  clearSettings, getSetting, initSettings, onSettingsChange, refreshSettings,
+} from "@summit/settings";
 
 interface Ctx { identity: Identity | null; loading: boolean; reload: () => void }
 
@@ -37,6 +40,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => { load(); }, [load]);
+
+  // Both caches this provider fills are module-level and latched on first
+  // read, so a tab left open while the user signed out (or signed in as
+  // someone else) elsewhere kept serving the previous person's identity and
+  // org/role/user settings. `reload` existed for exactly this and nothing
+  // ever called it. Signing out clears without re-resolving - refreshIdentity
+  // would fire getUser() for someone who has just left.
+  React.useEffect(() => subscribeToAuthChanges((event) => {
+    if (event === "SIGNED_OUT") {
+      clearIdentity();
+      clearSettings();
+      setIdentity(null);
+      return;
+    }
+    load(true);
+  }), [load]);
 
   const value = React.useMemo(
     () => ({ identity, loading, reload: () => load(true) }),

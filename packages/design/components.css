@@ -239,10 +239,20 @@ table.data tbody tr:hover { background: var(--accent-tint); }
    before the @media block: both are the same specificity, so if they came
    after, they'd win over the media query's rules even on a narrow viewport
    and the toggle/drawer would never show. */
-.nav-toggle-input { position: absolute; opacity: 0; pointer-events: none; }
+/* display:none, not just opacity:0 - an invisible, inert checkbox is still in
+   the tab order, so on desktop (where the whole drawer is hidden) it gave
+   every page a phantom first tab stop that focused nothing visible. It comes
+   back below, where it is actually the control. */
+.nav-toggle-input { display: none; }
 .nav-toggle-btn, .nav-toggle-backdrop, .mobile-topbar { display: none; }
 
 @media (max-width: 820px) {
+  /* Focusable again, and still visually absent: the <label> is what people
+     see, the checkbox is what holds state and focus. :checked ~ combinators
+     and <label for> activation both work on a display:none checkbox, which
+     is why the desktop rule above can hide it outright. */
+  .nav-toggle-input { display: block; position: absolute; opacity: 0; pointer-events: none; }
+
   .nav-toggle-btn {
     display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
     width: 34px; height: 34px; flex: none; padding: 0;
@@ -250,6 +260,12 @@ table.data tbody tr:hover { background: var(--accent-tint); }
     background: var(--surface); cursor: pointer;
   }
   .nav-toggle-btn span { display: block; height: 2px; margin: 0 7px; background: var(--ink); border-radius: 1px; }
+  /* The checkbox holds focus but is invisible, and a <label> can never take
+     focus itself, so tokens.css's global :focus-visible ring lands on
+     nothing. Forward it to the hamburger the keyboard user can actually see. */
+  .nav-toggle-input:focus-visible ~ .mobile-topbar .nav-toggle-btn {
+    outline: 2px solid var(--focus-ring); outline-offset: 2px;
+  }
 
   .mobile-topbar {
     display: flex; align-items: center; gap: var(--space-3);

@@ -21,6 +21,38 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { WaitlistView } from "../components/WaitlistView";
 import { FrontDeskFeedPanel } from "../components/FrontDeskFeedPanel";
 
+// PostgREST answers a select with at most `db-max-rows` rows - 1000 on hosted
+// Supabase - and says nothing about having stopped: a truncated read looks
+// exactly like a small table. Every list on this page is unwindowed (the
+// Sessions tab, the dashboard counts, the "Needs attention" leaderboard, the
+// Create wizard's conflict pre-check all scan the whole set), so once a clinic
+// passes that mark they were quietly under-reporting - fewer sessions, a
+// flattering no-show rate, and clients dropping off "Needs attention" because
+// their only recent session sat past row 1000.
+//
+// Takes a factory rather than a query because a PostgREST builder is
+// single-use: each page needs a fresh one. Works on .rpc() the same as on
+// .from().select(). On a failed page it reports the error and no rows, which
+// is what the callers already expect from a failed query - a partial list
+// silently presented as complete is the bug this exists to fix.
+const PAGE_SIZE = 1000;
+const MAX_PAGES = 100;
+async function fetchAllRows(makeQuery) {
+  const rows = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE_SIZE;
+    const res = await makeQuery().range(from, from + PAGE_SIZE - 1);
+    if (res.error) return { data: null, error: res.error };
+    const batch = res.data ?? [];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) return { data: rows, error: null };
+  }
+  // Only reachable past MAX_PAGES * PAGE_SIZE rows. Loud, because the list is
+  // short again and this time we know it.
+  console.error(`[scheduler] fetchAllRows: stopped at ${MAX_PAGES * PAGE_SIZE} rows; the list is truncated`);
+  return { data: rows, error: null };
+}
+
 const COLORS = {
   bg: "var(--color-background-primary)",
   bgS: "var(--color-background-secondary)",
@@ -1451,9 +1483,13 @@ function SettingsView({ employees, clients, locations, typeColors, workDays, set
               <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.text }}>Flag active clients as stale after</div>
               <div style={{ fontSize: 13, color: COLORS.textS }}>{staleAfterDays} day{staleAfterDays !== 1 ? "s" : ""}</div>
             </div>
+            {/* No local toast on change: setSetting announces both outcomes
+                itself, and firing a success toast synchronously told a
+                non-admin the threshold had saved while the org write was
+                being refused and rolled back under them. */}
             <input
               type="range" min={3} max={60} value={staleAfterDays}
-              onChange={e => { void setSetting("clients.staleAfterDays", Number(e.target.value), "org"); showToast("Stale-client threshold updated"); }}
+              onChange={e => { void setSetting("clients.staleAfterDays", Number(e.target.value), "org").catch(() => {}); }}
               style={{ width: "100%", accentColor: "#5DCAA5" }}
             />
             <div style={{ fontSize: 12, color: COLORS.textT, marginTop: 8 }}>
@@ -2206,9 +2242,18 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         (staffChoice === "any" || e.id === selectedStaff?.id)
       );
       const endCond = recurring === "yes" ? (endType === "date" ? `until ${endDate}` : `${endCount} sessions total`) : "one-time";
+      // No client identity in this prompt, deliberately. It used to carry
+      // `CLIENT: ${selectedClient.name}`, which sent a real client's name to
+      // a third-party model on every match - and the name was doing no work:
+      // the JSON shape requested below only ever names STAFF back, so nothing
+      // downstream reads a client field. What the match actually turns on is
+      // the session type, the sessions/week, and the eligible-staff list,
+      // which is already filtered to this client's location by `eligible`
+      // above. /api/match refuses a prompt that carries an identity field, so
+      // re-adding one here fails the request rather than leaking quietly.
       prompt = `You are an ABA scheduling assistant. Find the best staff match for a client.
 CALENDAR: ${selectedCalendar.name} (${selectedCalendar.date_start} to ${selectedCalendar.date_end})
-CLIENT: ${selectedClient.name} | SESSION: ${selectedSessionType.name} (${selectedSessionType.duration}min)
+SESSION: ${selectedSessionType.name} (${selectedSessionType.duration}min)
 SESSIONS/WEEK: ${sessionsPerWeek} | SCHEDULE: ${recurring === "yes" ? `Recurring — ${endCond}` : "One-time"}
 ELIGIBLE STAFF: ${eligible.map(e => `${e.name} (${e.booked}/${e.capacity})`).join(", ") || "none"}
 Respond ONLY with valid JSON — no extra text:
@@ -2994,7 +3039,13 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   }
 
   async function cancelSelected() {
-    const ids = [...selected];
+    // Intersect with what is actually on screen, the way exportICS below
+    // already does. Nothing clears `selected` when a filter changes, so
+    // ticking rows, narrowing the filter and pressing Cancel used to cancel
+    // sessions the user could no longer see - and cancelling the wrong
+    // session is not an error anyone gets to undo.
+    const ids = filtered.filter(b => selected.has(b.id)).map(b => b.id);
+    if (ids.length === 0) return;
     const now = new Date();
     const lateCount = ids.filter(id => {
       const b = bookings.find(s => s.id === id);
@@ -3400,30 +3451,34 @@ export default function Scheduler() {
   const workEnd = parseInt(String(getSetting("calendar.workEnd")).split(":")[0], 10);
   function setWorkDays(updater) {
     const next = typeof updater === "function" ? updater(workDays) : updater;
-    void setSetting("calendar.workDays", next.join(","), "org");
+    // .catch here and below for the same reason as the stale-client slider:
+    // org writes are admin-only, so a refused write must not surface as an
+    // unhandled rejection. setSetting has already toasted the failure.
+    void setSetting("calendar.workDays", next.join(","), "org").catch(() => {});
   }
-  function setWorkStart(hour) { void setSetting("calendar.workStart", `${String(hour).padStart(2, "0")}:00`, "org"); }
-  function setWorkEnd(hour) { void setSetting("calendar.workEnd", `${String(hour).padStart(2, "0")}:00`, "org"); }
+  function setWorkStart(hour) { void setSetting("calendar.workStart", `${String(hour).padStart(2, "0")}:00`, "org").catch(() => {}); }
+  function setWorkEnd(hour) { void setSetting("calendar.workEnd", `${String(hour).padStart(2, "0")}:00`, "org").catch(() => {}); }
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     const [c, e, st, b, l, cal, sa, ca] = await Promise.all([
-      supabase.from("clients").select("*"),
-      supabase.from("staff").select("*"),
-      supabase.from("session_types").select("*"),
+      fetchAllRows(() => supabase.from("clients").select("*")),
+      fetchAllRows(() => supabase.from("staff").select("*")),
+      fetchAllRows(() => supabase.from("session_types").select("*")),
       // `sessions_visible()`, not the `sessions` table - migration 0077.
-      // Unbounded on purpose (both date args default null): this list backs
+      // Unwindowed on purpose (both date args default null): this list backs
       // the Sessions tab, the dashboard counts and the Create wizard's
       // conflict pre-check, none of which are windowed. For admin/scheduler
       // the rows are identical to the table's; for a clinician, colleague
       // rows arrive with client_id and home_address NULL and client_masked
-      // set, which is what lib/sessionPrivacy.ts renders from.
-      supabase.rpc("sessions_visible"),
-      supabase.from("locations").select("*"),
-      supabase.from("calendars").select("*"),
-      supabase.from("staff_availability").select("*"),
-      supabase.from("client_availability").select("*"),
+      // set, which is what lib/sessionPrivacy.ts renders from. Unwindowed is
+      // not the same as unbounded - see fetchAllRows.
+      fetchAllRows(() => supabase.rpc("sessions_visible")),
+      fetchAllRows(() => supabase.from("locations").select("*")),
+      fetchAllRows(() => supabase.from("calendars").select("*")),
+      fetchAllRows(() => supabase.from("staff_availability").select("*")),
+      fetchAllRows(() => supabase.from("client_availability").select("*")),
     ]);
     // Every one of these used to be `if (x.data) setX(x.data)`, which reads
     // the success half and throws the failure half away. supabase-js RESOLVES
@@ -3456,7 +3511,7 @@ export default function Scheduler() {
   // CalendarView's refreshSignal below, kick the calendar into a refetch off
   // the emptied array. Keep the stale-but-correct rows; report the failure.
   async function refreshBookings() {
-    const { data, error: err } = await supabase.rpc("sessions_visible");
+    const { data, error: err } = await fetchAllRows(() => supabase.rpc("sessions_visible"));
     if (err) {
       console.error("[scheduler] refreshBookings: sessions query failed", err);
       showToast("Couldn't refresh the session list — it may be out of date.");
