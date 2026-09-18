@@ -30,10 +30,11 @@ export type IconName =
   | "client" | "family" | "staff" | "team" | "profile"
   // clinical work
   | "tasks" | "attention" | "review" | "notes" | "goal" | "lesson" | "message"
+  | "progress" | "activity" | "consent"
   // HR
   | "scoreboard" | "recognition" | "career" | "development" | "credential"
   | "training" | "certificate" | "documents" | "onboarding" | "policies"
-  | "payroll" | "timeOff"
+  | "payroll" | "timeOff" | "funding"
   // state
   | "clock" | "recurring" | "visible" | "hidden";
 
@@ -63,6 +64,34 @@ const PATHS: Record<IconName, React.ReactNode> = {
   lesson: <><path d="M4 5.2A2.2 2.2 0 0 1 6.2 3H19v14.4H6.2A2.2 2.2 0 0 0 4 19.6Z" /><path d="M4 19.6A2.2 2.2 0 0 0 6.2 21.8H19" /><path d="M8.4 7.6h6.3" /></>,
   message: <><path d="M20.4 12.4a7.6 7.6 0 0 1-8.2 7.56 8.3 8.3 0 0 1-2.66-.5L4 21l1.6-4.5a7.4 7.4 0 0 1-1-3.76A7.6 7.6 0 0 1 12.2 4.9h.6a7.6 7.6 0 0 1 7.6 7.5Z" /></>,
 
+  // The family portal's own vocabulary. Drawn here rather than in apps/client
+  // so the same glyph cannot come to mean two things in two portals, which is
+  // the whole reason this file exists.
+  //
+  // `progress` is a plotted line, not `goal`'s target or `career`'s bare
+  // trend arrow: a parent reading "Progress" is asking how their child is
+  // doing over time, and the axis is what says "over time".
+  progress: <><path d="M3.8 3.8v16.4h16.4" /><path d="m7.4 15.4 3.2-3.7 3 2 4.2-5.7" /><circle cx="17.8" cy="8" r="1.15" /></>,
+  // `activity` is the home programme - the practice a family runs between
+  // sessions. A checklist, because that is what it is.
+  //
+  // Drawn as a house with a check first, and rejected on sight: at the 15px
+  // the sidebars render, it was another house, and it would have sat four
+  // rows below `home` in the SAME nav. One glyph meaning two things in one
+  // sidebar is the exact collision this file exists to end.
+  //
+  // Deliberately not a puzzle piece: it is widely read as stigmatising by
+  // autistic people, and this glyph sits in a parent's sidebar.
+  activity: <><path d="m4.2 7.1 1.7 1.7 3-3" /><path d="m4.2 15.5 1.7 1.7 3-3" /><path d="M12 7.3h7.8M12 15.7h7.8" /></>,
+  // `consent` reuses `notes`' page outline on purpose - a consent form IS a
+  // document - and differs by the one mark on it: a signature.
+  //
+  // It carried a line of body copy above the signature at first, which made
+  // it near-indistinguishable from `notes` at 15px - and the family sidebar
+  // shows both (Care Updates reuses `notes`). The body line is gone so the
+  // signature is the only interior mark and the two read apart at a glance.
+  consent: <><path d="M6.5 2.8h7.3L19 8v13.2H6.5A1.5 1.5 0 0 1 5 19.7V4.3a1.5 1.5 0 0 1 1.5-1.5Z" /><path d="M13.6 3v5.1h5.2" /><path d="M8.3 15.6c1.1-1.7 2.3-1.7 3.4 0s2.3 1.7 3.4 0" /></>,
+
   scoreboard: <><path d="M4 20.5V13m5 7.5V5.5m5 15V10m5 10.5V7.5" /></>,
   recognition: <><path d="m12 3.4 2.6 5.4 5.9.84-4.3 4.15 1.03 5.86L12 16.9l-5.23 2.75L7.8 13.8 3.5 9.64l5.9-.84Z" /></>,
   career: <><path d="M4 17.6 9.4 12l3.6 3.6 6.6-6.9" /><path d="M14.6 8.7h5v5" /></>,
@@ -75,6 +104,10 @@ const PATHS: Record<IconName, React.ReactNode> = {
   policies: <><path d="M12 2.9 4.8 5.9v5.6c0 4.4 3 8.4 7.2 9.6 4.2-1.2 7.2-5.2 7.2-9.6V5.9Z" /><path d="M9.2 11.9l1.9 1.9 3.7-3.7" /></>,
   payroll: <><rect x="2.6" y="6" width="18.8" height="12" rx="2.2" /><circle cx="12" cy="12" r="2.6" /><path d="M6.2 12h.01M17.8 12h.01" /></>,
   timeOff: <><circle cx="12" cy="12" r="4.2" /><path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4" /></>,
+  // `funding` is a family's budget, not `payroll`'s payment card: a wallet
+  // with a pocket. No currency symbol - a stroked glyph of one is unreadable
+  // at 14px, and the set should not assume a currency.
+  funding: <><path d="M3.4 8.2V6.9a2 2 0 0 1 2-2h11.3a1.9 1.9 0 0 1 1.9 1.9v1.4" /><rect x="3.4" y="8.2" width="17.2" height="11.1" rx="2.2" /><path d="M15.6 12.6h5v3.1h-5a1.55 1.55 0 0 1 0-3.1Z" /></>,
 
   clock: <><circle cx="12" cy="12" r="8.6" /><path d="M12 7.2V12l3.2 1.9" /></>,
   recurring: <><path d="M3.6 10.2a8.4 8.4 0 0 1 14.2-4.1l2.6 2.5" /><path d="M20.4 3.8v4.8h-4.8" /><path d="M20.4 13.8a8.4 8.4 0 0 1-14.2 4.1l-2.6-2.5" /><path d="M3.6 20.2v-4.8h4.8" /></>,
