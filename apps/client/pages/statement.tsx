@@ -22,7 +22,7 @@ import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { createClient } from "../lib/supabase-server";
 import { resolveViewedClient } from "../lib/admin-view-as";
-import { canForAny, familyFromRows } from "../lib/family";
+import { can, childById, familyFromRows } from "../lib/family";
 import { AdminViewBanner } from "../components/admin-view-banner";
 import { AccountProblemNotice } from "../components/account-problem-notice";
 import { LoadErrorNotice } from "../components/load-error-notice";
@@ -521,7 +521,17 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
   // A legacy single-child account with no my_family rows still reaches its own
   // budget through RLS, so it gets the page rather than the notice - the same
   // carve-out pages/forms.tsx makes.
-  if (family.children.length > 0 && !canForAny(family, "view_billing")) {
+  //
+  // The check is on the CHILD being viewed, not the family. It used to be
+  // canForAny(), while the query below is .eq("client_id", viewed.clientId):
+  // a guardian with view_billing on one child and the cookie pointed at a
+  // sibling passed the gate, and what stopped them was RLS alone - which
+  // returns an empty set, so the page rendered "no budget on file" for a
+  // child who has one. Matching the gate to the query says the real thing.
+  // viewed.clientId is the cookie's string form; the family rows key on the
+  // numeric client id.
+  const viewedChild = childById(family, Number(viewed.clientId));
+  if (family.children.length > 0 && !can(viewedChild, "view_billing")) {
     return { props: { mode: "no-access" } };
   }
 
