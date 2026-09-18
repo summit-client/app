@@ -128,5 +128,44 @@ console.log("every shipped ?error= producer sends a known code");
     !/\/login\?error=['"]\s*\+/.test(concatenated));
 }
 
+console.log("signOutRequestAllowed");
+{
+  const { signOutRequestAllowed } = guards;
+  // Stands in for isKnownOrigin() + the same-origin check the route injects.
+  // Compares parsed origins, as the real one does - a prefix match would call
+  // summitclient.io.evil.example ours.
+  const OURS = ["https://scheduler.summitclient.io", "https://summitclient.io"];
+  const ours = (url) => {
+    try { return OURS.includes(new URL(url).origin); } catch { return false; }
+  };
+  t("no Origin and no Referer is allowed - our own top-level <a href> sign-out",
+    signOutRequestAllowed({}, ours) === true);
+  t("null headers are treated as absent, not as a foreign origin",
+    signOutRequestAllowed({ origin: null, referer: null }, ours) === true);
+  t("one of our portals is allowed", signOutRequestAllowed({ origin: "https://scheduler.summitclient.io" }, ours) === true);
+  t("a Referer from our own page is allowed",
+    signOutRequestAllowed({ referer: "https://summitclient.io/dashboard" }, ours) === true);
+  t("a foreign Origin is rejected", signOutRequestAllowed({ origin: "https://evil.example" }, ours) === false);
+  t("a foreign Referer is rejected - the naive <img src> case",
+    signOutRequestAllowed({ referer: "https://evil.example/page" }, ours) === false);
+  t("Origin wins over Referer when both are present",
+    signOutRequestAllowed({ origin: "https://evil.example", referer: "https://summitclient.io/" }, ours) === false);
+  t("a lookalike host is not ours",
+    signOutRequestAllowed({ origin: "https://summitclient.io.evil.example" }, ours) === false);
+}
+
+// Read out of the shipped route: the guard has to actually run before the
+// session is ended, not merely exist.
+console.log("the sign-out route wires the guard in before signOut()");
+{
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync("pages/api/auth/signout.js", "utf8");
+  t("the route calls the guard", src.includes("signOutRequestAllowed("));
+  t("the guard runs before signOut()",
+    src.indexOf("signOutRequestAllowed(") < src.indexOf("await supabase.auth.signOut()"));
+  t("a rejected request returns without ending the session",
+    /signOutRequestAllowed\([\s\S]{0,200}?\{[\s\S]{0,200}?return\n?\s*\}/.test(src));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
