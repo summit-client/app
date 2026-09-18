@@ -15,8 +15,8 @@ import {
   type PendingCertificate, type PendingPd, type PendingSignoff, type PendingTimeOff, type TeamMember,
 } from "@/lib/hub";
 import {
-  deactivateTeammate, editTeammate, inviteTeammate, listClientFamilies, listUnlinkedClients,
-  ProvisioningError, setGuardianPermission,
+  countSupervisees, deactivateTeammate, editTeammate, inviteTeammate, listClientFamilies,
+  listUnlinkedClients, ProvisioningError, reactivateTeammate, setGuardianPermission,
   type FamiliesSnapshot, type GuardianLink, type GuardianPermissionKind,
 } from "@/lib/hr-backend";
 import { SessionGate, useIdentity } from "@/components/session-provider";
@@ -877,15 +877,68 @@ function TeammateActions({
     }
   }
 
+  /**
+   * Deactivating asks who takes this person's team BEFORE it bans them.
+   *
+   * It used to ban first and then report a count of people left pointing at
+   * a now-unusable supervisor, reassigning none of them. Everything keyed on
+   * supervisor_id - hub_can_manage()'s team branch, HR record reads,
+   * timesheet approval, this console's own queue scoping - then matched
+   * nobody, silently. The moment you deactivate someone is the moment you
+   * know who needs a new supervisor, so that is when it is asked.
+   */
   async function deactivate() {
-    if (!confirm(`Deactivate ${person.name}? They will no longer be able to sign in.`)) return;
     onBusy(true);
     try {
-      const res = await deactivateTeammate(person.id);
-      onDone(res.warning ? `${person.name} deactivated. ${res.warning}.` : `${person.name} deactivated.`);
+      const reports = await countSupervisees(person.id);
+      if (reports > 0) {
+        const candidates = people.filter((p) => p.id !== person.id && (p.accessLevel === "SUPERVISOR" || p.accessLevel === "ADMIN"));
+        const list = candidates.map((p, i) => `${i + 1}. ${p.name}`).join("\n");
+        const answer = prompt(
+          `${person.name} supervises ${reports} ${reports === 1 ? "person" : "people"}.\n\n`
+          + `Who takes them on? Enter a number, or 0 to leave them without a supervisor.\n\n${list}`,
+          "0",
+        );
+        if (answer === null) { onBusy(false); return; }
+        const choice = Number(answer.trim());
+        if (!Number.isInteger(choice) || choice < 0 || choice > candidates.length) {
+          onError("That is not one of the options - nobody was deactivated.");
+          onBusy(false);
+          return;
+        }
+        const newSupervisor = choice === 0 ? null : candidates[choice - 1].id;
+        const who = choice === 0 ? "no supervisor" : candidates[choice - 1].name;
+        if (!confirm(`Deactivate ${person.name}, and move their ${reports} ${reports === 1 ? "report" : "reports"} to ${who}?`)) {
+          onBusy(false);
+          return;
+        }
+        const res = await deactivateTeammate(person.id, newSupervisor);
+        onDone(res.warning ? `${person.name} deactivated. ${res.warning}` : `${person.name} deactivated.`);
+        onDeactivated();
+        return;
+      }
+      if (!confirm(`Deactivate ${person.name}? They will no longer be able to sign in.`)) { onBusy(false); return; }
+      const res = await deactivateTeammate(person.id, null);
+      onDone(res.warning ? `${person.name} deactivated. ${res.warning}` : `${person.name} deactivated.`);
       onDeactivated();
     } catch (e) {
       onError(e instanceof ProvisioningError ? e.message : "Could not deactivate.");
+    } finally {
+      onBusy(false);
+    }
+  }
+
+  /** The inverse, which had no endpoint at all until now: undoing a mistaken
+   *  deactivation meant the Supabase dashboard. */
+  async function reactivate() {
+    if (!confirm(`Re-activate ${person.name}? They will be able to sign in again.`)) return;
+    onBusy(true);
+    try {
+      await reactivateTeammate(person.id);
+      onDone(`${person.name} can sign in again.`);
+      onDeactivated();
+    } catch (e) {
+      onError(e instanceof ProvisioningError ? e.message : "Could not re-activate.");
     } finally {
       onBusy(false);
     }
@@ -902,6 +955,13 @@ function TeammateActions({
           aria-label={`Edit ${person.name}`}>Edit</button>
         <button onClick={deactivate} disabled={busy} className="btn secondary"
           aria-label={`Deactivate ${person.name}`}>Deactivate</button>
+        {/* Shown for everyone rather than only the deactivated, because the
+            directory reads `profiles` and a ban lives on auth.users - this
+            console cannot yet tell who is deactivated. Harmless on an active
+            account (lifting a ban nobody has is a no-op) and it beats the
+            Supabase dashboard, which was the only way to undo one. */}
+        <button onClick={reactivate} disabled={busy} className="btn secondary"
+          aria-label={`Re-activate ${person.name}`}>Re-activate</button>
       </div>
     );
   }

@@ -278,8 +278,39 @@ export async function editTeammate(input: EditTeammateInput): Promise<void> {
   });
 }
 
-export async function deactivateTeammate(targetUserId: string): Promise<{ warning?: string }> {
-  return invoke("edit-teammate", { target_user_id: targetUserId, deactivate: true }) as Promise<{ warning?: string }>;
+/**
+ * Deactivate, with the target's team moved first.
+ *
+ * `reassignSuperviseesTo` is a three-state answer and the distinction is the
+ * point: a user id moves them, `null` clears the link deliberately, and
+ * `undefined` means the question has not been asked - the function refuses
+ * with 409 in that case rather than orphaning anyone. The ban only happens
+ * once the move has succeeded, so a failed reassignment leaves the person
+ * active rather than banned with their team in limbo.
+ */
+export async function deactivateTeammate(
+  targetUserId: string,
+  reassignSuperviseesTo?: string | null,
+): Promise<{ warning?: string; reassigned?: number }> {
+  return invoke("edit-teammate", {
+    target_user_id: targetUserId,
+    deactivate: true,
+    ...(reassignSuperviseesTo !== undefined ? { reassign_supervisees_to: reassignSuperviseesTo } : {}),
+  }) as Promise<{ warning?: string; reassigned?: number }>;
+}
+
+/** Lift a deactivation. Supervisees are not restored: they were moved to a
+ *  real person on the way out, and taking them back would undo that choice. */
+export async function reactivateTeammate(targetUserId: string): Promise<void> {
+  await invoke("edit-teammate", { target_user_id: targetUserId, reactivate: true });
+}
+
+/** How many people list this person as their supervisor. Read before
+ *  deactivating so the dialog can name the cost instead of discovering it. */
+export async function countSupervisees(targetUserId: string): Promise<number> {
+  const res = await sb().from("profiles").select("id", { count: "exact", head: true }).eq("supervisor_id", targetUserId);
+  if (res.error) throw new ProvisioningError("count-supervisees", describe(res.error));
+  return res.count ?? 0;
 }
 
 /**

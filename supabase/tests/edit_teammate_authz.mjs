@@ -126,5 +126,42 @@ console.log("The invite matrix agrees with the edit matrix and with the UI");
     `invite-only: ${INVITE.admin.filter((r) => !INTO.admin.includes(r))}`);
 }
 
+// Deactivation reassigns the target's team before it bans them. Read out of
+// the function's source: the ORDER is the whole fix, so an assertion that
+// only checked both things happen would pass on the broken version.
+console.log("Deactivation moves the team before it bans anyone");
+{
+  const branch = src.slice(src.indexOf("if (body.deactivate) {"), src.indexOf("if (body.reactivate)") > src.indexOf("if (body.deactivate) {")
+    ? src.indexOf("if (body.reactivate)") : src.length);
+  const deact = src.slice(src.indexOf("if (body.deactivate) {"));
+  is("it reads the supervisees before the ban",
+    deact.indexOf('.eq("supervisor_id", body.target_user_id)') < deact.indexOf("ban_duration"));
+  is("it moves them before the ban",
+    deact.indexOf('.update({ supervisor_id: newSupervisor })') < deact.indexOf("ban_duration"));
+  is("a failed move returns before the ban rather than after it",
+    deact.includes("if (moveErr) return json(500")
+    && deact.indexOf("if (moveErr) return json(500") < deact.indexOf("ban_duration"));
+  is("an unanswered question is refused, not silently orphaned",
+    /body\.reassign_supervisees_to === undefined[\s\S]{0,300}?return json\(409/.test(deact));
+  is("clearing the link deliberately is allowed",
+    deact.includes("newSupervisor !== null"));
+  is("the replacement must be in the caller's clinic",
+    /replacement\.clinic_id !== caller\.clinic_id[\s\S]{0,120}?return json\(403/.test(deact));
+  is("the target cannot inherit their own team", deact.includes("newSupervisor === body.target_user_id"));
+  void branch;
+}
+
+console.log("Re-activation exists and is gated like every other edit");
+{
+  is("there is a reactivate branch", src.includes("if (body.reactivate) {"));
+  is("it lifts the ban", src.includes('ban_duration: "none"'));
+  const react = src.slice(src.indexOf("if (body.reactivate) {"), src.indexOf("if (body.deactivate) {"));
+  is("it is audited", react.includes('action: "reactivate"'));
+  // The matrix checks run before either branch; if reactivate were placed
+  // above them it would be an unguarded un-ban.
+  is("it sits after the target-role check, not before it",
+    src.indexOf("cannot change a ${targetRole} account") < src.indexOf("if (body.reactivate) {"));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
