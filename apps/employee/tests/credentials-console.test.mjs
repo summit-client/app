@@ -89,6 +89,18 @@ t("admin, supervisor and hr_admin are offered it",
 t("a scheduler is NOT - 0086 denies them the action, so the button would refuse them",
   !/scheduler/.test(expr), expr);
 
+// --- the directory shows the role a person actually holds ----------------
+// `accessLevel` is a three-value display ladder, and hr-backend's ACCESS map
+// knows three roles. A scheduler, an hr_admin and a payroll_admin all fall
+// through its default to "EMPLOYEE" - which is not a profiles.role at all.
+// The console where an admin checks who holds what has to show the real one.
+t("the clinic directory renders appRole, not accessLevel",
+  /<span className="pill">\{\(m\.appRole/.test(admin));
+t("no directory cell falls back to accessLevel's lowercased label",
+  !/\{m\.accessLevel\.toLowerCase\(\)\}/.test(admin));
+t("accessLevel is still used for the supervisor pickers, which is what it is for",
+  /p\.accessLevel === "SUPERVISOR"/.test(admin));
+
 // --- the employee's own screen --------------------------------------------
 // Not brace-matched: this signature destructures, so the first brace belongs
 // to the parameter list. Sliced between this function and the next instead.
