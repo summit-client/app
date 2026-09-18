@@ -1,13 +1,13 @@
 {
   "meta": {
-    "updated": "2026-09-17",
-    "commit": "eb8d92f",
+    "updated": "2026-09-18",
+    "commit": "e9d4dbd",
     "lastPRs": [
+      "PR #180",
       "PR #179",
-      "PR #178",
-      "PR #177"
+      "PR #178"
     ],
-    "note": "First board.json. No prior file existed in the repo or in any branch's history, so every module's history below is reconstructed from CLAUDE.md's changelog, docs/context/ and git log rather than carried forward from an earlier run."
+    "note": "PR #180 is this run. Carried forward from the 2026-09-17 board: every module's history is kept, this run's fixes appended to good, items it resolved moved out of pending/blocked, next replaced entirely."
   },
   "modules": [
     {
@@ -60,6 +60,49 @@
             "refs": [
               "PR #52"
             ]
+          },
+          {
+            "t": "Views are gated on the sidebar's role table, not just its links",
+            "d": "validViews accepted any ?view= id for every role, so a scheduler reached SettingsView and its Admin tab. Sidebar now exports NAV and roleAdmitsView(); index.jsx drops an unadmitted view to Dashboard.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The sidebar no longer counts cancelled sessions as booked",
+            "d": "The footer printed bookings.length while every other count in the portal filters status !== 'cancelled' first, so the figure disagreed with the rest of the screen.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The admin page's sessions read is paged",
+            "d": "The last unwindowed sessions read in the portal; PostgREST stops at 1000 rows without saying so. fetchAllRows() moved to lib/fetch-all-rows.ts and both pages share it.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The portal bar's scrollbar is hidden here too",
+            "d": "This app does not import @summit/design, so .app-nav-scroll was inert while its own rule painted a 5px thumb inside the 51px bar. The two rules are now kept in step in styles/globals.css.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The mobile drawer leaves the tab order when closed",
+            "d": "Mirrors the @summit/design fix: visibility with a delay equal to the slide, plus a reduced-motion query, since transition-duration does not touch transition-delay.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The AI matcher no longer sends a client name to Anthropic",
+            "d": "Confirmed fixed on main and re-verified this run: the prompt carries no client name, and match.ts requires a staff role, pins model and max_tokens, and 422s a prompt containing an identity label, email or long digit run.",
+            "refs": [
+              "PR #179",
+              "PR #180"
+            ]
           }
         ],
         "pending": [
@@ -71,29 +114,28 @@
             ]
           },
           {
-            "t": "admin.tsx reads sessions outside sessions_visible()",
-            "d": "The one sessions read in this portal that bypasses the privacy RPC, and it has no clinic scope. Its fetchAll() also runs before the role gate.",
+            "t": "P2: the admin role gate fails open when identity is null",
+            "d": "pages/admin.tsx:558 renders the staff and client management forms when appUser is null; data is empty via RLS, and fetchAll() at :126 still runs before the gate.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "?view=settings is reachable by a scheduler",
-            "d": "CLINICIAN_EXCLUDED_VIEWS filters clinicians only; the Sidebar entry's roles:['admin'] hides the link without gating the view.",
+            "t": "P2: availability save is delete-then-insert with no result check",
+            "d": "index.jsx:896 and :986 wipe a client's or staff member's availability when the re-insert is refused. Same shape as the family-portal finding backed by migration 0082.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
-          }
-        ],
-        "blocked": [
+          },
           {
-            "t": "AI matcher sends client names to Anthropic",
-            "d": "pages/api/match.ts POSTs straight to api.anthropic.com with ANTHROPIC_API_KEY, bypassing @summit/clinical-ai's containsPhi gate and Azure routing, and the prompt embeds the client's name. P0; blocked on routing it through the approved provider.",
+            "t": "P2: client names resolved without the privacy helper",
+            "d": "CalendarView's conflict message, the reschedule header and the create-wizard preview grid use a raw clients.find(); protection is sessions_visible() nulling client_id, not the app.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
+        "blocked": [],
         "deferred": [
           {
             "t": "No-show-rate denominator",
@@ -105,24 +147,24 @@
         ],
         "next": [
           {
-            "t": "Apply canManageSession() to bulk cancel and hide checkboxes on masked rows",
-            "d": "Closes the P1 authorization gap above.",
+            "t": "Make the admin role gate fail closed and move fetchAll() behind it",
+            "d": "An excluded role's browser should not issue the query at all.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Route the AI matcher through @summit/clinical-ai",
-            "d": "So no client name reaches an unapproved processor.",
+            "t": "Check the availability delete-then-insert result",
+            "d": "A refused re-insert currently leaves the grid wiped and says nothing.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Make admin.tsx use sessions_visible() and gate fetchAll() on role",
-            "d": "Removes the last unmasked sessions read and the pre-gate PHI fetch.",
+            "t": "Route the remaining client-name lookups through visibleClient()",
+            "d": "Puts the app-side mask where the DB-side one already is.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -183,6 +225,34 @@
             "refs": [
               "PR #88"
             ]
+          },
+          {
+            "t": "Set-Cookie is appended rather than replaced",
+            "d": "setAll used res.setHeader, and @supabase/auth-js writes cookies more than once per request, so a refresh batch followed by sign-out's removals lost the first -- with a chunked token that could leave the shared session valid after sign-out.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The login page no longer echoes the raw ?error= value",
+            "d": "Every producer now sends a code and redirectErrorMessage() owns the copy; attacker-chosen text can no longer render as an official Summit message. The two app-authored sentences keep their wording.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "Sign-out rejects a present-and-foreign origin",
+            "d": "A partial mitigation, stated as such: a request with neither Origin nor Referer is still allowed because our own sign-out is a top-level <a href>. The complete fix is a POST with a token.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The password change endpoint checks the origin, the password and the error",
+            "d": "Requires JSON, requires a known origin, enforces the 8-character floor that lived only in the page, and logs rather than renders Supabase's message. Defence-in-depth: the CSRF claim was downgraded to P3 because the session cookie is SameSite=Lax.",
+            "refs": [
+              "PR #180"
+            ]
           }
         ],
         "pending": [
@@ -201,24 +271,31 @@
             ]
           },
           {
-            "t": "Set-Cookie is replaced rather than appended",
-            "d": "A second setAll in one request drops the earlier batch, which can leave a chunked auth cookie uncleared at sign-out.",
+            "t": "P1: the browser client is a second writer of the shared session cookie",
+            "d": "lib/supabase.ts writes the Domain=.summitclient.io cookie via document.cookie, so it cannot be httpOnly, and login.tsx's prefill reads it back. The Secure/httpOnly fix needs that prefill replaced first.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Raw ?error= is rendered verbatim on the login page",
-            "d": "Attacker-chosen text shown as an official message; a phishing lure.",
+            "t": "P1: lead PII is written with the service-role key into an untracked table",
+            "d": "pages/api/leads/create.js inserts full name, clinic and email with SUPABASE_SERVICE_ROLE_KEY, and no migration defines `leads`, so whether RLS is on it cannot be answered from the repo.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Sign-out is a GET with no CSRF or method check",
-            "d": "Any third-party page can force-log-out every portal at once.",
+            "t": "P2: no CSP, X-Frame-Options or frame-ancestors anywhere",
+            "d": "next.config.ts has no headers() block, and a repo-wide grep finds no CSP at all, so /login is framable by any site.",
             "refs": [
-              "PR #179"
+              "PR #180"
+            ]
+          },
+          {
+            "t": "P2: verifyOtp's `type` comes straight from the query string",
+            "d": "pages/api/auth/confirm.js:25,32 passes it with no allowlist, and any successful type lands on /update-password.",
+            "refs": [
+              "PR #180"
             ]
           }
         ],
@@ -226,24 +303,24 @@
         "deferred": [],
         "next": [
           {
-            "t": "Reject backslash-authority destinations in safeRedirect",
-            "d": "Closes the open-redirect-after-cookie P1.",
+            "t": "Reject backslash-authority destinations in confirm.js's safeRedirect",
+            "d": "It blocks //host but not /\\host, which browsers normalize, after the cookie is set.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Set Secure explicitly and append rather than replace Set-Cookie",
-            "d": "Two independent cookie defects in the same writer.",
+            "t": "Allowlist the verifyOtp `type` parameter",
+            "d": "A fixed set instead of whatever the query string carries.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Stop rendering the raw ?error= value verbatim",
-            "d": "Map to known messages instead of echoing the query string.",
+            "t": "Add a headers() block with a CSP and frame-ancestors",
+            "d": "Nothing in the repo defines one today; note the bar's inline styles need handling first.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -297,16 +374,37 @@
             "t": "Every API route calls requireStaff()",
             "d": "getUser() plus profiles.role/clinic_id, reading the correct role column.",
             "refs": []
+          },
+          {
+            "t": "Every clinical route confirms the client belongs to the caller's clinic",
+            "d": "planning, decision-tree, supervision, session-plan and reports/generate all took clientId from the body while stamping the caller's clinic_id, so the RLS with-check passed for any client id. requireClientInClinic() now runs straight after requireStaff in all five.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "Raw database errors no longer reach the sharing screen",
+            "d": "visibility.ts rethrew every PostgREST message and the page printed it, which also made the role-explaining fallback unreachable. Failures now log and raise a VisibilityError written for the reader.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "A failed clinical-decision write is no longer reported as committed",
+            "d": "Both commit routes discarded the insert result and both callers ignored the response, so an RLS refusal still showed a 'Committed' badge.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The clinical query no longer declares itself PHI-free",
+            "d": "containsPhi is caller-asserted and nothing validates it, so `false` on a free-text box decided that the text could leave for a non-Azure provider. Now true; without CLINICAL_AI_ALLOW_PHI it falls to the offline responder rather than a model.",
+            "refs": [
+              "PR #180"
+            ]
           }
         ],
         "pending": [
-          {
-            "t": "clinical-query hardcodes containsPhi:false",
-            "d": "A free-text question that is only trimmed takes the non-Azure provider path, so a name-bearing question can reach an unapproved model. P1.",
-            "refs": [
-              "PR #179"
-            ]
-          },
           {
             "t": "PHI persisted to sessionStorage",
             "d": "Full SOAP bodies, ABC incidents, document drafts and assessment answers sit in the browser on shared clinic workstations; supervision notes are written there and never to supervision_notes at all.",
@@ -315,17 +413,24 @@
             ]
           },
           {
-            "t": "planning route trusts a request-supplied clientId",
-            "d": "Inserts clinical_decisions before any ownership check; only clinic_id is derived.",
+            "t": "P2: WorkforceSection has no role gate",
+            "d": "Every sibling settings section checks for admin; this one renders the clinic roster and the derivation action for any clinician. Migration 0081 turns that action into a database error rather than a cross-tenant write, so the button should be gated too.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Raw RLS error messages rendered in the sharing UI",
-            "d": "Leaks policy and constraint internals to the operator.",
+            "t": "P2: browser-side inserts take client_id from the URL",
+            "d": "goal-bank.ts:248,:313 and data.ts:832,:1068,:1087 stamp clinic_id from the caller's own profile while the insert policy checks only clinic and staff.",
             "refs": [
-              "PR #179"
+              "PR #180"
+            ]
+          },
+          {
+            "t": "P2: a budget update can be re-pointed at another client",
+            "d": "funding.ts:252 sends a caller-built row including client_id with only .eq('id', ...).",
+            "refs": [
+              "PR #180"
             ]
           }
         ],
@@ -341,24 +446,24 @@
         ],
         "next": [
           {
-            "t": "Derive containsPhi from the actual question in clinical-query",
-            "d": "Closes the P1 above.",
+            "t": "Give WorkforceSection the admin gate its siblings have",
+            "d": "Also stops a clinician hitting migration 0081's new refusal.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Stop persisting PHI to sessionStorage, and write supervision notes to their table",
-            "d": "Two findings in one change.",
+            "t": "Add the missing client_id filters in retriever.ts and funding.ts",
+            "d": "treatment_modifications and integrity_checks are filtered in memory; the budget update trusts a caller-supplied client_id.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Decide hasNextGoalProgrammed so the mastery detector can fire",
-            "d": "Needs an owner decision first.",
+            "t": "Stop persisting SOAP bodies, drafts and supervision notes to sessionStorage",
+            "d": "PHI at rest in the browser on shared clinic workstations, and supervision notes never reach their table.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -410,19 +515,33 @@
             "t": "admin view-as cannot be forged",
             "d": "The viewed-child cookie is only ever matched against my_family, and the admin branch re-checks clinic and role.",
             "refs": []
+          },
+          {
+            "t": "Every server redirect uses the portal registry's loginUrl()",
+            "d": "Ten getServerSideProps redirects hardcoded the production URL while proxy.ts on the same app used loginUrl(), so under next dev the two disagreed about where a signed-out visitor goes.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The statement page gates on the viewed child",
+            "d": "It checked canForAny while querying the cookie-chosen child, so the wrong-permission-on-the-right-child case was stopped only by RLS -- which returns an empty set and renders as 'no budget on file'.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "Pending change requests show for every child on the appointments page",
+            "d": "The read was pinned to the viewed child while the sessions are family-wide, so a request filed against a sibling's session showed no pending pill and invited a duplicate.",
+            "refs": [
+              "PR #180"
+            ]
           }
         ],
         "pending": [
           {
             "t": "API routes trust request-supplied ids",
             "d": "observation.ts and withdraw-consent.ts act on a body-supplied clientId/consentId with no server-side family re-derivation, unlike messages/start.ts. RLS holds today.",
-            "refs": [
-              "PR #179"
-            ]
-          },
-          {
-            "t": "Page gates are family-wide while queries are per-child",
-            "d": "statement.tsx and forms.tsx gate on canForAny(...) but query the cookie-chosen child, so per-child enforcement rests entirely on RLS.",
             "refs": [
               "PR #179"
             ]
@@ -435,10 +554,17 @@
             ]
           },
           {
-            "t": "Login URL hardcoded in eight pages",
-            "d": "Should be @summit/portals' loginUrl().",
+            "t": "P2: lib/supabase-server.ts still replaces Set-Cookie",
+            "d": "The same defect fixed in apps/web this run; mergeSetCookie() there is the shape to copy.",
             "refs": [
-              "PR #179"
+              "PR #180"
+            ]
+          },
+          {
+            "t": "P2: the feed-token GET has no user_id filter",
+            "d": "pages/api/calendar/feed-token.ts:59 reads the active bearer token relying on RLS alone, while POST and DELETE both filter by user_id.",
+            "refs": [
+              "PR #180"
             ]
           }
         ],
@@ -449,6 +575,14 @@
             "refs": [
               "PR #179",
               "migration 0036"
+            ]
+          },
+          {
+            "t": "P1: guardians can write client_availability but not read it",
+            "d": "0076 granted insert, update and delete and no SELECT, so family.tsx's grid loads empty and its delete-then-insert save wipes the scheduler's entries. Migration 0082 is written and awaiting a run.",
+            "refs": [
+              "PR #180",
+              "migration 0082"
             ]
           }
         ],
@@ -470,24 +604,24 @@
         ],
         "next": [
           {
-            "t": "Re-derive family membership in the observation and withdraw-consent routes",
-            "d": "Stop relying on RLS alone for a request-supplied id.",
+            "t": "Re-derive family membership in observation.ts and withdraw-consent.ts",
+            "d": "Both act on a request-supplied id with only RLS behind them.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Gate statement and updates on the viewed child, not family-wide",
-            "d": "Matches the query to the check.",
+            "t": "Gate forms.tsx and documents.tsx on the viewed child",
+            "d": "Same family-wide-gate-over-per-child-query shape statement.tsx just lost.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Decide when an announcement is read, then add the write path",
-            "d": "Blocked on that decision only.",
+            "t": "Append rather than replace Set-Cookie in lib/supabase-server.ts",
+            "d": "Port this run's apps/web fix.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -550,16 +684,38 @@
               "PR #94",
               "migration 0022"
             ]
+          },
+          {
+            "t": "An issued certificate is filed against the employee",
+            "d": "issueOnboardingCertificate omitted the subject from its audit() call, unlike its three siblings, so a certificate issued from the clinic-wide queue landed in the admin's own history.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "A time-off decision that changes no rows now fails loudly",
+            "d": "A PostgREST update matching nothing is not an error, and RLS grants an employee no own-row UPDATE, so cancelling one's own request gave a success toast and reverted on reload.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The Admin console's role dropdown is seeded from the real role",
+            "d": "It was seeded from the three-value display ladder, which claimed a clinician was an admin and -- once mapped back -- would have silently demoted a scheduler, hr_admin or payroll_admin. Person now carries profiles.role, and a role this control cannot express is shown as text with role omitted from the request.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "edit-teammate checks the target's current role, and invite-teammate rejects an existing profile",
+            "d": "Both confirmed fixed on main and re-verified this run. invite-teammate's guard filters on profiles.email, a column no tracked migration creates -- see pending.",
+            "refs": [
+              "PR #179",
+              "PR #180"
+            ]
           }
         ],
         "pending": [
-          {
-            "t": "edit-teammate does not check the target's current role",
-            "d": "EDIT_INTO_MATRIX gates only the role being set, so a scheduler can demote their clinic's admin to clinician; the deactivate branch has no target-role check at all and can ban that admin. P1, and editTeammate() ships in the client bundle.",
-            "refs": [
-              "PR #179"
-            ]
-          },
           {
             "t": "Audit-insert policies do not pin the actor",
             "d": "hub_audit_write and hr_audit_log check only clinic_id, so any clinic member can forge events under someone else's actor/subject. Migration 0012 fixed exactly this for settings_audit.",
@@ -583,6 +739,27 @@
             "refs": [
               "PR #179"
             ]
+          },
+          {
+            "t": "P1: invite-teammate's duplicate guard filters on profiles.email",
+            "d": "No tracked migration creates that column, so the guard may match nothing. profiles is a create-table-if-not-exists baseline table; confirm against the live schema before changing either side.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "P2: provision-clinic carries a second copy of the rate-limit fail-open",
+            "d": "A hand-rolled isRateLimited that never reads the count query's error, on clinic and first-admin creation. Edge Function: deploys separately from the app.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "P2: the Vulnerable Sector Check upload stores only a filename",
+            "d": "app/documents/page.tsx:16-26 writes the name to localStorage and transmits no file, while the copy says it is verified by the office.",
+            "refs": [
+              "PR #180"
+            ]
           }
         ],
         "blocked": [],
@@ -595,24 +772,24 @@
         ],
         "next": [
           {
-            "t": "Check the target's current role in edit-teammate, including deactivate",
-            "d": "Closes the privilege-escalation P1.",
+            "t": "Fail isRateLimited() closed in _shared/auth.ts and drop provision-clinic's copy",
+            "d": "Both are Edge Functions: merging a PR does not deploy them.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Add actor = auth.uid() to hub_audit_write and hr_audit_log",
-            "d": "Audit integrity, a PHIPA concern.",
+            "t": "Pin actor = auth.uid() on hub_audit_write and hr_audit_log",
+            "d": "Audit integrity, a PHIPA concern; 0012 fixed exactly this for settings_audit.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
             "t": "Exclude subject = auth.uid() from hub_can_manage()",
-            "d": "Restores segregation of duties.",
+            "d": "Restores segregation of duties for time off, PD and sign-offs.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -661,28 +838,57 @@
               "PR #57",
               "migration 0005"
             ]
+          },
+          {
+            "t": "A value is validated against its declared type before it is written",
+            "d": "setSetting persisted whatever it was handed, so a colour that reaches a CSS custom property or an off-menu select value could be stored by any caller. settingValueProblem() lives in the dependency-free value-types.ts.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "Density and the accessibility preferences work in MySummitHR",
+            "d": "That app's own app.css implements all six document attributes and nothing ever set them, so the preferences the settings screen promises 'follow you across devices' did nothing there.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The hex field honours the admin-only lock",
+            "d": "It was the only control in the switch missing `disabled`, so a non-admin could type into it and watch the value snap back with no explanation.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The settings and identity caches clear on an auth change",
+            "d": "Confirmed fixed on main and re-verified: all four portals now call clearIdentity()/clearSettings() on SIGNED_IN, SIGNED_OUT and USER_UPDATED, and the preview localStorage keys go with them.",
+            "refs": [
+              "PR #179",
+              "PR #180"
+            ]
           }
         ],
         "pending": [
           {
-            "t": "The cache survives a user switch in the same tab",
-            "d": "live/liveLoad are module-level and initSettings() is latched, and neither apps/scheduler nor apps/client calls refreshSettings/refreshIdentity on any auth change, so one user's org, role and user settings stay readable by the next. P1.",
+            "t": "P2: 200 clinic-wide audit rows are pulled into every staff browser",
+            "d": "loadLive() reads settings_audit with actor UUIDs and previous/next values for any staff member; the UI blanks `who`, but the raw id reaches the client.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "setSetting does not validate against the declared type",
-            "d": "A color setting is constrained only by the input widget, so an API call can store any string.",
+            "t": "P2: clearSettings() does not clear @summit/design's theme keys",
+            "d": "The prior user's theme and accent survive a same-tab user switch. No PHI, but the same class of bleed.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Preview localStorage is never cleared on sign-out",
-            "d": "Browser-scoped settings and audit trail persist for the next person on that machine; preview builds only.",
+            "t": "P2: BRIGHTHR_TENANT_DEFAULT ships in the browser bundle",
+            "d": "It is exported from this package, which client components import, so the tenant id PR #54 moved server-side is readable anyway.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -690,24 +896,24 @@
         "deferred": [],
         "next": [
           {
-            "t": "Clear the cache on sign-in and sign-out from an auth listener",
-            "d": "Closes the cross-user bleed P1 in every app.",
+            "t": "Stop reading clinic-wide settings_audit rows into the browser",
+            "d": "Scope the read, or drop the actor id before it leaves the server.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Clear the preview localStorage keys on sign-out",
-            "d": "Same class of bleed, preview only.",
+            "t": "Clear @summit/design's theme keys in clearSettings()",
+            "d": "Finishes the sign-out cleanup the rest of the layer now does.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Validate a value against def.type before writing",
-            "d": "Also the cheapest guard on the tenant colour values applyLogoColors consumes.",
+            "t": "Stop re-exporting BRIGHTHR_TENANT_DEFAULT from a client-imported package",
+            "d": "Undoes the leak that made PR #54's server-side move moot.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -761,6 +967,27 @@
             "refs": [
               "issue #160"
             ]
+          },
+          {
+            "t": "The Admin console's roles come from the portal registry",
+            "d": "@summit/portals exports ADMIN_CONSOLE_ROLES and admitsAdminConsole(); the bar that offers the link and the gate that enforces it no longer keep hand-synced copies.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "A whitespace-only name falls back to the person glyph",
+            "d": "initials was '' rather than null and the render used ??, so the avatar drew an empty circle -- no initials and no glyph -- while the two style branches above already treated '' as absent.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "A support address cannot smuggle mailto headers",
+            "d": "The address is the only unencoded part of the URL and the only part that comes from the database, so a stored value ending in ?bcc=... injected headers into a message carrying the page path and the user's text. safeSupportAddress() accepts one plain address or falls back.",
+            "refs": [
+              "PR #180"
+            ]
           }
         ],
         "pending": [
@@ -772,10 +999,17 @@
             ]
           },
           {
-            "t": "Admin-link roles hardcoded in apps/employee's portal-bar",
-            "d": "Must be kept in sync with AdminAccessGate by hand instead of read from the registry.",
+            "t": "P2: the report body embeds the real pathname",
+            "d": "apps/data and apps/employee pass usePathname(), so a client id in the URL is prefilled into an outbound email to a tenant-configured address. apps/client deliberately passes the route template instead.",
             "refs": [
-              "PR #179"
+              "PR #180"
+            ]
+          },
+          {
+            "t": "P2: the bar is entirely inline styles",
+            "d": "A CSP would need style-src 'unsafe-inline' as well as the script-src the theme script already forces.",
+            "refs": [
+              "PR #180"
             ]
           }
         ],
@@ -783,24 +1017,24 @@
         "deferred": [],
         "next": [
           {
-            "t": "Read the employee admin-link roles from @summit/portals",
-            "d": "Removes the hand-synced duplicate.",
+            "t": "Pass the route template, not the real pathname, from apps/data and apps/employee",
+            "d": "Stops a client id reaching an outbound email; apps/client already does this.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Stop rendering an activeKey pill for an unadmitted role",
-            "d": "Aligns the bar with ACCESS.",
+            "t": "Move the bar's inline styles into components.css",
+            "d": "So a CSP need not allow style-src 'unsafe-inline'.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
-            "t": "Replace the eight hardcoded login URLs in apps/client with loginUrl()",
-            "d": "Same registry-is-the-source-of-truth rule.",
+            "t": "Validate support.devEmail on the way in",
+            "d": "Now that it is guarded at the point of use, catch it at the point of entry too.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -854,6 +1088,27 @@
             "refs": [
               "PR #179"
             ]
+          },
+          {
+            "t": "The sidebar no longer slides under the cross-portal bar",
+            "d": "It was sticky at top: 0 with no z-index while AppNav is sticky at top: 0 with z-index 50 and an opaque background, so the brand block and first nav rows hid behind it on any scroll. top now offsets by --portalnav-h, as that token's own comment requires.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The mobile drawer ends at the bottom of the screen",
+            "d": "An over-constrained fixed box drops `bottom`, so the drawer ran under the phone's URL bar and .sidebar-foot was unreachable. height: auto inside the media query.",
+            "refs": [
+              "PR #180"
+            ]
+          },
+          {
+            "t": "The closed mobile drawer leaves the tab order",
+            "d": "Off-canvas by transform alone left every link tabbable, so a phone keyboard user walked a full invisible nav. visibility with a matching delay, plus a reduced-motion query, since transition-duration does not touch transition-delay.",
+            "refs": [
+              "PR #180"
+            ]
           }
         ],
         "pending": [
@@ -872,10 +1127,10 @@
             ]
           },
           {
-            "t": ":focus { outline: none } with recovery only via :focus-visible",
-            "d": "Programmatic focus moves can land with no visible ring.",
+            "t": "P2: .nav-icon composites below 3:1",
+            "d": "opacity 0.65 gives 2.87:1 light and 3.56:1 dark. Not a WCAG failure (aria-hidden, duplicated by its label) but the one composite under 3:1 in the palette.",
             "refs": [
-              "PR #179"
+              "PR #180"
             ]
           }
         ],
@@ -892,23 +1147,23 @@
         "next": [
           {
             "t": "Self-host the two Google fonts",
-            "d": "Closes the third-party fetch on every PHI page.",
+            "d": "Closes the third-party CSS fetch on every authenticated PHI page in all five apps.",
             "refs": [
-              "PR #179"
-            ]
-          },
-          {
-            "t": "Constrain tenant colour values before applyLogoColors writes them",
-            "d": "Pairs with type validation in @summit/settings.",
-            "refs": [
-              "PR #179"
+              "PR #180"
             ]
           },
           {
             "t": "Expose a nonce for the inline theme script",
-            "d": "So a CSP can drop 'unsafe-inline'.",
+            "d": "So a CSP can drop script-src 'unsafe-inline'.",
             "refs": [
-              "PR #179"
+              "PR #180"
+            ]
+          },
+          {
+            "t": "Raise .nav-icon's composited contrast above 3:1",
+            "d": "The only pair in the palette under that line.",
+            "refs": [
+              "PR #180"
             ]
           }
         ],
@@ -918,6 +1173,13 @@
             "d": "It does not import this package, so shared drawer fixes need mirroring in its styles/globals.css - done for both fixes this run.",
             "refs": [
               "PR #179"
+            ]
+          },
+          {
+            "t": "Narrowing `:focus { outline: none }` would change nothing",
+            "d": "Checked this run: tokens.css:327 and :328 have equal specificity and :focus-visible comes last, so an element that matches it already gets the ring. The proposed `:focus:not(:focus-visible)` is a no-op in any browser supporting :focus-visible.",
+            "refs": [
+              "PR #180"
             ]
           }
         ]
