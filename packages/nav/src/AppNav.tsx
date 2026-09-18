@@ -110,9 +110,15 @@ export function AppNav({ activeKey, adminHref, settingsHref, profileHref, profil
   // in that window lands on a portal ACCESS does not admit them to, so the
   // avatar waits for a real role - the same loose-null test the pills use.
   const showProfile = Boolean(profileHref) && role != null;
-  const initials = profileName
+  // `|| null` because the split can yield nothing: a profileName that is
+  // truthy but only whitespace produced "", which the render below tested
+  // with `??` and therefore did NOT treat as missing - the avatar came out
+  // as an empty circle, no initials and no person glyph. The two style
+  // branches above it test the same value for truthiness, so all three
+  // checks now agree from one source.
+  const initials = (profileName
     ? profileName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("")
-    : null;
+    : null) || null;
   return (
     <nav
       aria-label="Summit portals"
