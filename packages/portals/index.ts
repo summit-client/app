@@ -45,10 +45,18 @@ export type PortalKey = "scheduler" | "clinician" | "employee" | "client";
  * Supervisor) written by the scheduler's admin page. Two different columns with
  * the same name; never conflate them.
  */
-export type AppRole = "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+export type AppRole =
+  | "admin" | "supervisor" | "clinician" | "scheduler" | "client"
+  // Added to this union 2026-09-18. Both have existed in the database since
+  // migration 0030 (which made them assignable) with a full action matrix
+  // from 0024, and neither appeared anywhere in application code - a role
+  // with real permissions that nobody could be given. They are in the invite
+  // and edit matrices now, so the type has to know about them.
+  | "hr_admin" | "payroll_admin";
 
 export const APP_ROLES: readonly AppRole[] = [
   "admin", "supervisor", "clinician", "scheduler", "client",
+  "hr_admin", "payroll_admin",
 ] as const;
 
 export function isAppRole(v: unknown): v is AppRole {
@@ -184,12 +192,27 @@ const ACCESS: Record<PortalKey, readonly AppRole[]> = {
   // to the clinician's own linked staff row only (via employment_records) -
   // see that migration's header. Not the renders-then-empty trap this file's
   // own comment above warns about: every read this portal needs is covered.
-  // `supervisor` is deliberately NOT added here - a separate, not-yet-made
-  // product decision (0039's own "PORTAL ACCESS NOTE" already anticipated
-  // this).
-  scheduler: ["admin", "scheduler", "clinician"],
+  // `supervisor` added 2026-09-18, which settles the product decision 0039's
+  // "PORTAL ACCESS NOTE" and this comment both used to defer: every staff
+  // role needs the calendar, because everyone needs to know their own
+  // session information. What each role may EDIT there is a separate
+  // question, answered by RLS and by the per-view gate in
+  // components/Sidebar.tsx - not by whether the portal opens at all.
+  //
+  // `client` is deliberately still excluded. This portal is a clinic-wide
+  // staff tool: every client's sessions, the roster and the waitlist.
+  // Families read their own appointments in their own portal.
+  //
+  // hr_admin and payroll_admin are not listed because AppRole does not
+  // include them (see the type above); when they join it they belong here
+  // for the same reason supervisor does.
+  scheduler: ["admin", "supervisor", "scheduler", "clinician"],
   clinician: ["admin", "supervisor", "clinician"],
-  employee: ["admin", "supervisor", "clinician", "scheduler"],
+  // hr_admin and payroll_admin live here and nowhere else: MySummitHR is
+  // their tool. Neither delivers sessions, so neither is admitted to the
+  // scheduler - "everyone needs the calendar" is about session information,
+  // and they have none.
+  employee: ["admin", "supervisor", "clinician", "scheduler", "hr_admin", "payroll_admin"],
   // "admin" added 2026-08-28 so admins can reach the family portal from the
   // nav bar for QA. Note this only makes the link visible - apps/client's
   // own data fetch (pages/index.tsx) looks up `clients` by `user_id =
@@ -219,7 +242,13 @@ const ACCESS: Record<PortalKey, readonly AppRole[]> = {
  * Nothing else in this file answers the question — ACCESS.employee is a
  * different set.
  */
-export const ADMIN_CONSOLE_ROLES: readonly AppRole[] = ["admin", "supervisor", "scheduler"];
+// `hr_admin` added 2026-09-18 to match what the database already grants it:
+// hub_can_manage() admits it clinic-wide through auth_can('hr.record.read')
+// (migration 0024), so the console's queues return data for one. The same
+// check does NOT admit payroll_admin, which is why only one of the two is
+// here - payroll_admin gets the portal and its payroll screens, not the
+// console.
+export const ADMIN_CONSOLE_ROLES: readonly AppRole[] = ["admin", "supervisor", "scheduler", "hr_admin"];
 
 /** Whether an app role reaches the Admin console. The gate in apps/employee
  *  is what enforces it; the nav link only offers it. */
@@ -340,6 +369,8 @@ const HOME: Record<AppRole, PortalKey> = {
   supervisor: "clinician",
   clinician: "clinician",
   client: "client",
+  hr_admin: "employee",
+  payroll_admin: "employee",
 };
 
 export function homePortal(role: AppRole | null | undefined): PortalKey {

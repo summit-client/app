@@ -16,6 +16,9 @@
  */
 
 import { createBrowserClient } from "@supabase/ssr";
+// The role vocabulary is @summit/portals', not a copy: these two inputs used
+// to spell it out and fell behind when hr_admin and payroll_admin joined it.
+import type { AppRole } from "@summit/portals";
 import type { Session } from "./session";
 import type { CreditAllocation, EmployeeCredential, PdActivity } from "./credentials";
 import type { EducationLevel, EmployeeEducation } from "./education";
@@ -184,7 +187,7 @@ export function thisCycle(): string {
  */
 export interface InviteTeammateInput {
   email: string;
-  role: "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+  role: AppRole;
   fullName?: string;
   supervisorId?: string;
   /** role === "client" only: link to this EXISTING, unlinked clients row. */
@@ -204,7 +207,7 @@ export interface InviteTeammateInput {
 }
 export interface EditTeammateInput {
   targetUserId: string;
-  role?: "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+  role?: AppRole;
   supervisorId?: string | null;
   fullName?: string;
 }

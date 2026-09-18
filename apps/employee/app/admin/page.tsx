@@ -3,7 +3,7 @@
 import { HrGate } from "@/components/hr-provider";
 
 import * as React from "react";
-import { admitsAdminConsole } from "@summit/portals";
+import { admitsAdminConsole, type AppRole } from "@summit/portals";
 import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/settings";
 import { HUB_TASKS } from "@/lib/content";
 import { directory, hr } from "@/lib/hr-store";
@@ -441,7 +441,7 @@ function StaffTab({ isAdmin, isScheduler, isPreview }: { isAdmin: boolean; isSch
  * key here on purpose, same as there - supervisor gets zero invite rights.
  */
 const INVITE_MATRIX = {
-  admin: ["admin", "supervisor", "clinician", "scheduler", "client"],
+  admin: ["admin", "supervisor", "clinician", "scheduler", "client", "hr_admin", "payroll_admin"],
   scheduler: ["client", "clinician"],
 } as const;
 
@@ -619,7 +619,14 @@ function InviteForm({
 // account's role can be CHANGED to via edit-teammate, not who may be
 // invited. Kept as its own constant rather than reusing INVITE_MATRIX,
 // which is invite-teammate's list and answers a different question.
-const EDIT_ROLES = ["admin", "supervisor", "clinician"] as const;
+//
+// Widened 2026-09-18 to the six staff-shaped roles. It listed three, so a
+// scheduler, hr_admin or payroll_admin could be invited but never edited -
+// their row fell to the read-only pill below. `client` is deliberately still
+// absent: edit-teammate permits an admin to make that change, but turning a
+// staff member into a family account is not something that should sit one
+// click away in a staff directory.
+const EDIT_ROLES = ["admin", "supervisor", "clinician", "scheduler", "hr_admin", "payroll_admin"] as const;
 
 // The select is seeded from the person's REAL profiles.role, not from
 // `accessLevel`. accessLevel is the three-value display ladder the directory
@@ -735,7 +742,8 @@ function TeammateActions({
   );
 }
 
-type EditTeammateRole = "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+// The registry's vocabulary, not a fourth copy of it.
+type EditTeammateRole = AppRole;
 
 /**
  * Backend settings: the Ecosystem Tracker configuration, edited on the same

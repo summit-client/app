@@ -16,7 +16,9 @@ import {
  * be the same privilege escalation by a different door.
  */
 const EDIT_INTO_MATRIX: Partial<Record<AppRole, readonly AppRole[]>> = {
-  admin: ["admin", "supervisor", "clinician", "scheduler", "client"],
+  // hr_admin and payroll_admin added 2026-09-18, matching INVITE_MATRIX:
+  // a role you can issue but never change is half a role.
+  admin: ["admin", "supervisor", "clinician", "scheduler", "client", "hr_admin", "payroll_admin"],
   scheduler: ["client", "clinician"],
 };
 
@@ -28,11 +30,13 @@ const EDIT_INTO_MATRIX: Partial<Record<AppRole, readonly AppRole[]>> = {
  * clinic's admin and set role "clinician", demoting them. The deactivate
  * branch asked neither question and would ban that admin outright.
  *
- * "any" rather than a list for admin on purpose: profiles.role also carries
- * hr_admin and payroll_admin (migration 0024) which this function's AppRole
- * union predates, and a literal list would silently stop admins from
- * managing those accounts at all. A scheduler stays pinned to the same two
- * roles it may invite and set.
+ * "any" rather than a list for admin on purpose. It was written that way
+ * because profiles.role carried hr_admin and payroll_admin while this
+ * function's AppRole union did not, and a literal list would have silently
+ * stopped admins managing those accounts. The union knows them now, but
+ * "any" stays: it is the honest expression of "an admin may act on anyone in
+ * their clinic", and it cannot go stale the next time a role is added.
+ * A scheduler stays pinned to the same two roles it may invite and set.
  */
 const EDIT_TARGETS_MATRIX: Partial<Record<AppRole, readonly AppRole[] | "any">> = {
   admin: "any",
