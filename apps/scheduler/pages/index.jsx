@@ -20,38 +20,8 @@ import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflic
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { WaitlistView } from "../components/WaitlistView";
 import { FrontDeskFeedPanel } from "../components/FrontDeskFeedPanel";
-
-// PostgREST answers a select with at most `db-max-rows` rows - 1000 on hosted
-// Supabase - and says nothing about having stopped: a truncated read looks
-// exactly like a small table. Every list on this page is unwindowed (the
-// Sessions tab, the dashboard counts, the "Needs attention" leaderboard, the
-// Create wizard's conflict pre-check all scan the whole set), so once a clinic
-// passes that mark they were quietly under-reporting - fewer sessions, a
-// flattering no-show rate, and clients dropping off "Needs attention" because
-// their only recent session sat past row 1000.
-//
-// Takes a factory rather than a query because a PostgREST builder is
-// single-use: each page needs a fresh one. Works on .rpc() the same as on
-// .from().select(). On a failed page it reports the error and no rows, which
-// is what the callers already expect from a failed query - a partial list
-// silently presented as complete is the bug this exists to fix.
-const PAGE_SIZE = 1000;
-const MAX_PAGES = 100;
-async function fetchAllRows(makeQuery) {
-  const rows = [];
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const from = page * PAGE_SIZE;
-    const res = await makeQuery().range(from, from + PAGE_SIZE - 1);
-    if (res.error) return { data: null, error: res.error };
-    const batch = res.data ?? [];
-    rows.push(...batch);
-    if (batch.length < PAGE_SIZE) return { data: rows, error: null };
-  }
-  // Only reachable past MAX_PAGES * PAGE_SIZE rows. Loud, because the list is
-  // short again and this time we know it.
-  console.error(`[scheduler] fetchAllRows: stopped at ${MAX_PAGES * PAGE_SIZE} rows; the list is truncated`);
-  return { data: rows, error: null };
-}
+// Moved to lib/ so pages/admin.tsx can page its sessions read too.
+import { fetchAllRows } from "../lib/fetch-all-rows";
 
 const COLORS = {
   bg: "var(--color-background-primary)",

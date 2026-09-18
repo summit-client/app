@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@summit/db';
+import { fetchAllRows } from '../lib/fetch-all-rows';
 import { useContext } from 'react';
 import { toast } from '@summit/toast';
 import { UserContext } from '../lib/UserContext';
@@ -144,7 +145,11 @@ async function fetchAll() {
   const [staff, clients, bk, cal, types, locs] = await Promise.all([
     supabase.from('staff').select('*').order('name'),
     supabase.from('clients').select('*').order('name'),
-    supabase.from('sessions').select('*'),
+    // Paged: this was the one unwindowed sessions read left in the portal,
+    // so past PostgREST's 1000-row cap the sidebar's booked count silently
+    // undercounted with nothing to say it had stopped. index.jsx wraps the
+    // same read this way.
+    fetchAllRows(() => supabase.from('sessions').select('*')),
     supabase.from('calendars').select('*'),
     supabase.from('session_types').select('name, is_client_optional').order('name'),
     supabase.from('locations').select('id, name').order('name'),
