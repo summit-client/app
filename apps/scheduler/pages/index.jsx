@@ -10,6 +10,7 @@ import { RescheduleModal } from "../components/calendar/RescheduleModal";
 import { SearchSelectMenu } from "../components/calendar/FilterPanel";
 import { gapsOverlap, parseTimeSetting, toDateStr, todayDateStr } from "../components/calendar/dateUtils";
 import { suggestSameClinicianOtherTime, suggestDifferentClinicianSameSlot } from "../components/calendar/suggestions";
+import { findSessionType } from "../components/calendar/types";
 import { getSetting, setSetting, onSettingsChange } from "@summit/settings";
 import { AvailabilityGrid, generateTimeSlots } from "@summit/availability";
 import { toast } from "@summit/toast";
@@ -1654,7 +1655,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   const [endDate, setEndDate] = useState("");
   const [endCount, setEndCount] = useState("");
 
-  const [activeTab, setActiveTab] = useState("");
+  // The session type tab is held as an id. It used to be the type's NAME, and
+  // every selection keyed off it (`mc.session_type === stName`) had to match
+  // that label back against the catalogue - see CLAUDE.md on joining by id.
+  const [activeTab, setActiveTab] = useState(null);
   const [multiClients, setMultiClients] = useState([]);
 
   const [loading, setLoading] = useState(false);
@@ -1731,6 +1735,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     const covering = calendars.find(c => c.status === "active") ?? calendars.find(c => c.status !== "archived") ?? null;
     const location = locations.find(l => l.id === waitlistPrefill.location_id) ?? null;
     const client = clients.find(c => c.id === waitlistPrefill.id) ?? null;
+    // Name-matched, and it has to be: "the assessment is the intake visit" is
+    // a fact about what the service MEANS and session_types records nothing to
+    // key it on. Same gap as the waitlist filter and the auto-promotion below;
+    // an is_intake flag on session_types is the one fix for all three.
     const sessionType = bookableTypes.find(st => st.name === "Assessment") ?? bookableTypes[0] ?? null;
     setSelectedCalendar(covering);
     setMatchCount("one");
@@ -1829,11 +1837,23 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     }
   }
 
+  /**
+   * Turn a match result into the review screen's items.
+   *
+   * Both branches carry `clientId`, `sessionTypeId` and a `staffId` per match.
+   * The multi-client branch used to re-find the client with
+   * `clients.find(cl => cl.name === cm.clientName)` having been handed that
+   * client's own row moments earlier - two children with the same first and
+   * last name (siblings are not the case; same-name unrelated clients are)
+   * would book the wrong child, silently, because `.find()` returns the first.
+   * `sessionType` stays alongside as the LABEL the cards render.
+   */
   function buildReviewItems(res, type, client, sessionType) {
     if (type === "single" || type === "one") {
       return [{
         clientId: client?.id,
         clientName: client?.name,
+        sessionTypeId: sessionType?.id ?? null,
         sessionType: sessionType?.name,
         locationId: client?.location_id,
         matches: (res?.matches || []).map((m, i) => ({ ...m, key: `single-${i}` })),
@@ -1841,17 +1861,15 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         recommendation: res?.recommendation,
       }];
     }
-    return (res?.clientMatches || []).map((cm, ci) => {
-      const c = clients.find(cl => cl.name === cm.clientName);
-      return {
-        clientId: c?.id,
-        clientName: cm.clientName,
-        sessionType: cm.sessionType,
-        locationId: c?.location_id,
-        matches: (cm.matches || []).map((m, mi) => ({ ...m, key: `multi-${ci}-${mi}` })),
-        notes: cm.notes,
-      };
-    });
+    return (res?.clientMatches || []).map((cm, ci) => ({
+      clientId: cm.clientId,
+      clientName: cm.clientName,
+      sessionTypeId: cm.sessionTypeId ?? null,
+      sessionType: cm.sessionTypeName,
+      locationId: cm.locationId ?? null,
+      matches: (cm.matches || []).map((m, mi) => ({ ...m, key: `multi-${ci}-${mi}` })),
+      notes: cm.notes,
+    }));
   }
 
   function handleAccept(key, match, item) {
@@ -1860,12 +1878,20 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       setAccepted(a => ({ ...a, [key]: undefined }));
       setProposedSessions(prev => prev.filter(p => p.key !== key));
     } else {
-      const staff = employees.find(e => e.name === match.staffName);
+      // `match.staffId` is set by both producers below - the local matcher
+      // knows the row it picked, and the AI branch resolves the name the model
+      // returns against the exact candidate list it was sent. The name lookup
+      // is the last resort for a match shape that predates either, and it is
+      // scoped to `employees` only because there is nothing better left: two
+      // staff with the same name would resolve to whichever comes first.
+      const staff = match.staffId != null
+        ? employees.find(e => e.id === match.staffId)
+        : employees.find(e => e.name === match.staffName);
       const { day, hour, minute } = parseSlot(match.overlappingSlots?.[0]);
       setAccepted(a => ({ ...a, [key]: true }));
       setProposedSessions(prev => {
         const f = prev.filter(p => p.key !== key);
-        return [...f, { key, clientId: item.clientId, clientName: item.clientName, staffId: staff?.id, staffName: match.staffName, sessionType: item.sessionType, locationId: item.locationId, day, hour, minute, color: typeColors[item.sessionType] || "#888888" }];
+        return [...f, { key, clientId: item.clientId, clientName: item.clientName, staffId: staff?.id, staffName: staff?.name ?? match.staffName, sessionTypeId: item.sessionTypeId ?? null, sessionType: item.sessionType, locationId: item.locationId, day, hour, minute, color: typeColors[item.sessionType] || "#888888" }];
       });
     }
   }
@@ -1907,7 +1933,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
               hour: ps.hour,
               minute: ps.minute,
               session_date: date,
-              type: ps.sessionType,
+              // `type` is derived from this by migration 0085's
+              // sessions_apply_session_type trigger. A pre-0085 proposal with
+              // no id falls back to the label it carries.
+              ...(ps.sessionTypeId != null ? { session_type_id: ps.sessionTypeId } : { type: ps.sessionType }),
               calendar_id: selectedCalendar.id,
               status: "scheduled",
               clinic_id: appUser.clinic_id,
@@ -1951,6 +1980,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
 
       // Auto-promote waitlist clients booked for Assessment
       const assessmentClientIds = [...new Set(
+        // Name-keyed for the same reason as the multiClient step's waitlist
+        // filter: "an assessment promotes a waitlisted child" is a fact about
+        // what the service MEANS, and session_types records nothing to key it
+        // on. An is_intake flag is the real fix.
         proposedSessions.filter(ps => ps.sessionType === "Assessment").map(ps => ps.clientId)
       )];
       let promoted = 0;
@@ -2015,7 +2048,10 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         employee_id: staff.id,
         hour, minute,
         session_date: dateStr,
-        type: quickType.name,
+        // The pointer, not the label: migration 0085's trigger writes `type`
+        // from it, so a later rename of this session type cannot detach this
+        // row from its own duration, colour and billing rate.
+        session_type_id: quickType.id,
         calendar_id: selectedCalendar.id,
         status: "scheduled",
         clinic_id: appUser.clinic_id,
@@ -2074,7 +2110,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
           } else {
             inserts.push({
               recurrence_id: recurrenceId, client_id: quickClientId, employee_id: quickStaff.id,
-              hour: prefill.hour, minute: prefill.minute, session_date: date, type: quickType.name,
+              hour: prefill.hour, minute: prefill.minute, session_date: date, session_type_id: quickType.id,
               calendar_id: selectedCalendar.id, status: "scheduled", clinic_id: appUser.clinic_id,
               location_id: quickIsHome ? null : (quickStaff.location_id ?? null),
               is_home_visit: quickIsHome,
@@ -2102,7 +2138,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
           const hit = bookings.find(b => {
             if (!insertDates.has(b.session_date) || b.status === "cancelled") return false;
             if (b.employee_id !== quickStaff.id && (quickClientId == null || b.client_id !== quickClientId)) return false;
-            const bType = sessionTypes.find(t => t.name === b.type);
+            const bType = findSessionType(b, sessionTypes);
             return gapsOverlap(
               { sessionDate: b.session_date, employeeId: quickStaff.id, clientId: quickClientId, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: candDuration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
               { sessionDate: b.session_date, employeeId: b.employee_id, clientId: b.client_id, startMinutes: b.hour * 60 + b.minute, durationMinutes: bType?.duration_minutes ?? bType?.duration ?? 60, gapBeforeMinutes: bType?.gap_before_minutes ?? 0, gapAfterMinutes: bType?.gap_after_minutes ?? 0 },
@@ -2166,7 +2202,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
     const gapHit = !exactConflict && (gapBefore || gapAfter) ? bookings.find(b => {
       if (b.status === "cancelled" || b.session_date !== prefill.dateStr) return false;
       if (b.employee_id !== quickStaff.id && (quickClientId == null || b.client_id !== quickClientId)) return false;
-      const bType = sessionTypes.find(t => t.name === b.type);
+      const bType = findSessionType(b, sessionTypes);
       return gapsOverlap(
         { sessionDate: prefill.dateStr, employeeId: quickStaff.id, clientId: quickClientId, startMinutes: prefill.hour * 60 + prefill.minute, durationMinutes: duration, gapBeforeMinutes: gapBefore, gapAfterMinutes: gapAfter },
         { sessionDate: b.session_date, employeeId: b.employee_id, clientId: b.client_id, startMinutes: b.hour * 60 + b.minute, durationMinutes: bType?.duration_minutes ?? bType?.duration ?? 60, gapBeforeMinutes: bType?.gap_before_minutes ?? 0, gapAfterMinutes: bType?.gap_after_minutes ?? 0 },
@@ -2190,7 +2226,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
       ? `${quickStaff.name} already has a session with ${otherLabel || "another client"} at that time.`
       : `This lands inside the buffer time around ${otherLabel || "another session"}'s ${other.type}.`;
     const existing = bookings.filter(b => b.status !== "cancelled").map(b => {
-      const t = sessionTypes.find(st => st.name === b.type);
+      const t = findSessionType(b, sessionTypes);
       return { id: b.id, employee_id: b.employee_id, session_date: b.session_date, hour: b.hour, minute: b.minute, durationMinutes: t?.duration_minutes ?? t?.duration ?? 60, status: b.status };
     });
     const incrementMinutes = quickType.grid_increment_minutes ?? (Number(getSetting("calendar.gridIncrementMinutes")) || 15);
@@ -2217,6 +2253,14 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
   async function runMatch(type) {
     setLoading(true); setError(null);
     let prompt, maxTokens;
+    // The exact candidate rows the model is shown. The model answers with a
+    // staff NAME - that is the response shape, and there is no id in it - so
+    // the answer is resolved against THIS list rather than against the whole
+    // roster: it is the set the question was asked about, and anyone outside
+    // it was already filtered out for capacity or location. Two colleagues
+    // sharing a name inside one candidate list is the residual, and it is
+    // reported rather than guessed at.
+    let candidates = [];
 
     if (type === "single" || type === "one") {
       // assignableEmployees, not employees: the AI's candidate pool can
@@ -2228,6 +2272,7 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         e.location_id === selectedClient.location_id &&
         (staffChoice === "any" || e.id === selectedStaff?.id)
       );
+      candidates = eligible;
       const endCond = recurring === "yes" ? (endType === "date" ? `until ${endDate}` : `${endCount} sessions total`) : "one-time";
       // No client identity in this prompt, deliberately. It used to carry
       // `CLIENT: ${selectedClient.name}`, which sent a real client's name to
@@ -2253,7 +2298,7 @@ Respond ONLY with valid JSON — no extra text:
       // same gap as PreviewGrid and AvailabilityGrid, fixed the same way.
       const matchDays = AVAIL_DAYS.filter(d => workDays.includes(d));
       const matchTimeSlots = generateTimeSlots(workStart, workEnd, Number(getSetting("calendar.gridIncrementMinutes")) || 30);
-      const clientMatches = multiClients.map(({ client, session_type }) => {
+      const clientMatches = multiClients.map(({ client, sessionTypeId, sessionTypeName }) => {
         // assignableEmployees, not employees - same reason as the
         // single-client branch above. For a clinician this correctly
         // narrows every client's candidate list to just themselves (or
@@ -2284,10 +2329,21 @@ Respond ONLY with valid JSON — no extra text:
               }
             }
           }
-          return { staffName: emp.name, overlappingSlots };
+          return { staffId: emp.id, staffName: emp.name, overlappingSlots };
         });
 
-        return { clientName: client.name, sessionType: session_type, matches };
+        // Nothing here goes near a model or a network - this branch builds the
+        // matches locally from rows it already holds. It used to emit names
+        // only and have buildReviewItems find the same rows again by those
+        // names, throwing away ids it had in hand.
+        return {
+          clientId: client.id,
+          clientName: client.name,
+          locationId: client.location_id,
+          sessionTypeId,
+          sessionTypeName,
+          matches,
+        };
       });
 
       const items = buildReviewItems({ clientMatches }, "multi", null, null);
@@ -2316,6 +2372,16 @@ Respond ONLY with valid JSON — no extra text:
       const raw = data.content?.map(b => b.text || "").join("");
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       const result = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+      // Attach the staff row the model named, before anything downstream has
+      // to guess. An unresolvable or ambiguous name keeps its text and simply
+      // carries no id: handleAccept's `!ps.staffId` guard then skips it rather
+      // than booking somebody arbitrary.
+      if (Array.isArray(result?.matches)) {
+        result.matches = result.matches.map((m) => {
+          const hits = candidates.filter((e) => e.name === m.staffName);
+          return hits.length === 1 ? { ...m, staffId: hits[0].id } : m;
+        });
+      }
       const items = buildReviewItems(result, type, selectedClient, selectedSessionType);
       setReviewItems(items);
       setAccepted({});
@@ -2750,43 +2816,51 @@ finally { setLoading(false); }
   }
 
   if (step === "multiClient") {
-    const currentTab = activeTab || bookableTypes[0]?.name || "";
-    const activeClients = currentTab === "Assessment"
+    const currentType = bookableTypes.find(t => t.id === activeTab) ?? bookableTypes[0] ?? null;
+    // Waitlisted children are offered for assessments and not for therapy.
+    // Still keyed on the name, deliberately: this is a judgement about what
+    // "Assessment" MEANS as a service, which no column on session_types
+    // records, so there is no id to key it on. Flagged rather than hidden -
+    // an is_intake flag on session_types is the real fix.
+    const activeClients = currentType?.name === "Assessment"
       ? clients.filter(c => c.status === "active" || c.status === "waitlist")
       : clients.filter(c => c.status === "active");
 
-    const isSelected = (clientId, stName) => multiClients.some(mc => mc.client.id === clientId && mc.session_type === stName);
+    const isSelected = (clientId, stId) => multiClients.some(mc => mc.client.id === clientId && mc.sessionTypeId === stId);
 
-    function toggleClient(c, stName) {
-      if (isSelected(c.id, stName)) {
-        setMultiClients(prev => prev.filter(mc => !(mc.client.id === c.id && mc.session_type === stName)));
+    function toggleClient(c, st) {
+      if (!st) return;
+      if (isSelected(c.id, st.id)) {
+        setMultiClients(prev => prev.filter(mc => !(mc.client.id === c.id && mc.sessionTypeId === st.id)));
       } else {
-        setMultiClients(prev => [...prev, { client: c, session_type: stName, key: `${c.id}-${stName}-${Date.now()}` }]);
+        setMultiClients(prev => [...prev, { client: c, sessionTypeId: st.id, sessionTypeName: st.name, key: `${c.id}-${st.id}-${Date.now()}` }]);
       }
     }
 
-    function selectAll(stName) {
+    function selectAll(st) {
+      if (!st) return;
       const toAdd = activeClients
-        .filter(c => !isSelected(c.id, stName))
-        .map(c => ({ client: c, session_type: stName, key: `${c.id}-${stName}-${Date.now()}` }));
+        .filter(c => !isSelected(c.id, st.id))
+        .map(c => ({ client: c, sessionTypeId: st.id, sessionTypeName: st.name, key: `${c.id}-${st.id}-${Date.now()}` }));
       setMultiClients(prev => [...prev, ...toAdd]);
     }
 
-    function clearAll(stName) {
-      setMultiClients(prev => prev.filter(mc => mc.session_type !== stName));
+    function clearAll(st) {
+      if (!st) return;
+      setMultiClients(prev => prev.filter(mc => mc.sessionTypeId !== st.id));
     }
 
-    const tabCount = (stName) => multiClients.filter(mc => mc.session_type === stName).length;
+    const tabCount = (stId) => multiClients.filter(mc => mc.sessionTypeId === stId).length;
 
     return (
       <div>{PH}<Trail steps={trail} onBack={goBack} />
         <StepCard question="Which clients do you want to match?">
           <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
             {bookableTypes.map(st => {
-              const count = tabCount(st.name);
-              const active = (activeTab || bookableTypes[0]?.name) === st.name;
+              const count = tabCount(st.id);
+              const active = currentType?.id === st.id;
               return (
-                <button key={st.id} onClick={() => setActiveTab(st.name)}
+                <button key={st.id} onClick={() => setActiveTab(st.id)}
                   style={{ padding: "6px 16px", borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: "pointer", border: `1.5px solid ${active ? st.color : COLORS.border}`, background: active ? st.color + "22" : COLORS.bg, color: active ? st.color : COLORS.textS, transition: "all 0.15s" }}>
                   {st.name}{count > 0 ? ` · ${count}` : ""}
                 </button>
@@ -2794,11 +2868,11 @@ finally { setLoading(false); }
             })}
           </div>
           <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
-            <button onClick={() => selectAll(currentTab)}
+            <button onClick={() => selectAll(currentType)}
               style={{ padding: "4px 14px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
               Select all
             </button>
-            <button onClick={() => clearAll(currentTab)}
+            <button onClick={() => clearAll(currentType)}
               style={{ padding: "4px 14px", borderRadius: 7, fontSize: 12, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textS, cursor: "pointer" }}>
               Clear
             </button>
@@ -2806,9 +2880,9 @@ finally { setLoading(false); }
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxHeight: 300, overflowY: "auto" }}>
             {activeClients.map(c => {
-              const sel = isSelected(c.id, currentTab);
+              const sel = isSelected(c.id, currentType?.id);
               return (
-                <button key={c.id} onClick={() => toggleClient(c, currentTab)}
+                <button key={c.id} onClick={() => toggleClient(c, currentType)}
                   style={{ padding: "7px 14px", borderRadius: 8, fontSize: 13, border: `1px solid ${sel ? "#5DCAA5" : COLORS.border}`, background: sel ? "#5DCAA518" : COLORS.bg, color: sel ? "#0F6E56" : COLORS.text, cursor: "pointer", fontWeight: sel ? 500 : 400 }}>
                   {c.name}
                 </button>
@@ -2827,13 +2901,18 @@ finally { setLoading(false); }
   }
 
   if (step === "review") {
-    const groupTypes = sessionTypes.filter(st => st.max_clients > 1).map(st => st.name);
+    const groupTypeIds = sessionTypes.filter(st => st.max_clients > 1).map(st => st.id);
+    const groupTypeNames = sessionTypes.filter(st => st.max_clients > 1).map(st => st.name);
+    const isGroupType = (item) => item.sessionTypeId != null
+      ? groupTypeIds.includes(item.sessionTypeId)
+      : groupTypeNames.includes(item.sessionType);
     const groupBuckets = {};
     const individualItems = [];
     reviewItems.forEach(item => {
-      if (groupTypes.includes(item.sessionType)) {
-        if (!groupBuckets[item.sessionType]) groupBuckets[item.sessionType] = [];
-        groupBuckets[item.sessionType].push(item);
+      if (isGroupType(item)) {
+        const bucket = item.sessionTypeId ?? item.sessionType;
+        if (!groupBuckets[bucket]) groupBuckets[bucket] = [];
+        groupBuckets[bucket].push(item);
       } else {
         individualItems.push(item);
       }
@@ -2869,10 +2948,12 @@ finally { setLoading(false); }
             {individualItems.map((item, i) => (
               <ClientMatchCard key={i} item={item} accepted={accepted} onAccept={handleAccept} onReject={handleReject} typeColors={typeColors} />
             ))}
-            {Object.entries(groupBuckets).map(([stName, groupItems]) => {
-              const st = sessionTypes.find(s => s.name === stName);
+            {Object.entries(groupBuckets).map(([bucket, groupItems]) => {
+              // `bucket` is the session type's id (Object keys are strings),
+              // falling back to its name for an item that has no id.
+              const st = sessionTypes.find(t => String(t.id) === bucket) ?? sessionTypes.find(t => t.name === bucket);
               return (
-                <GroupSessionCard key={stName} items={groupItems} sessionTypeName={stName} maxClients={st?.max_clients ?? 3}
+                <GroupSessionCard key={bucket} items={groupItems} sessionTypeName={st?.name ?? groupItems[0]?.sessionType ?? bucket} maxClients={st?.max_clients ?? 3}
                   accepted={accepted} onAccept={handleAccept} onReject={handleReject} typeColors={typeColors} />
               );
             })}
@@ -3102,7 +3183,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
     toExport.forEach(b => {
       const { client, masked } = visibleClient(appUser, b, clients);
       const emp = employees.find(e => e.id === b.employee_id);
-      const st = sessionTypes.find(s => s.name === b.type);
+      const st = findSessionType(b, sessionTypes);
       const dur = st?.duration || 60;
       const [y, mo, d] = (b.session_date || "").split("-").map(Number);
       if (!y || !mo || !d) return;

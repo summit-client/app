@@ -34,7 +34,7 @@ import { RecurrenceScopeModal } from "./RecurrenceScopeModal";
 import { RescheduleModal } from "./RescheduleModal";
 import { SessionDetail } from "./SessionDetail";
 import type { CalSession, CalClient, CalEmployee, CalLocation, CalSessionType } from "./types";
-import { sessionGridIncrement, sessionDuration } from "./types";
+import { sessionGridIncrement, sessionDuration, findSessionType } from "./types";
 import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflictError } from "../../lib/checkSlotConflict";
 import { useFocusTrap } from "../../lib/useFocusTrap";
 
@@ -193,7 +193,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
       .eq("clinic_id", clinicId)
       .neq("status", "cancelled");
     if (filters.locationIds.size) q = q.in("location_id", [...filters.locationIds]);
-    if (filters.typeNames.size) q = q.in("type", [...filters.typeNames]);
+    if (filters.typeIds.size) q = q.in("session_type_id", [...filters.typeIds]);
     if (filters.employeeIds.size) q = q.in("employee_id", [...filters.employeeIds]);
     if (filters.clientIds.size) q = q.in("client_id", [...filters.clientIds]);
     const { data } = await q;
@@ -432,7 +432,7 @@ export function CalendarView({ clients, employees, locations, sessionTypes, type
   }
 
   function toGapWindow(session: CalSession, dateStr: string, hour: number, minute: number): GapWindow {
-    const st = sessionTypes.find((t) => t.name === session.type);
+    const st = findSessionType(session, sessionTypes);
     return {
       sessionDate: dateStr,
       employeeId: session.employee_id,

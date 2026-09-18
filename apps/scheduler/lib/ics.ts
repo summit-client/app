@@ -40,7 +40,12 @@ export type IcsStaffSession = {
   session_date: string;
   hour: number | null;
   minute: number | null;
+  /** The session type's label, for the event SUMMARY. Display only - the
+   *  duration lookup is keyed on `sessionTypeId` (migration 0085), because a
+   *  renamed type made a name-keyed lookup miss and every affected event in a
+   *  subscribed calendar quietly collapsed to the default length. */
   type: string | null;
+  sessionTypeId?: number | null;
   status: string;
   scope?: "own" | "colleague";
   /** Resolved client name for the SUMMARY line - may be null if the client
@@ -217,14 +222,17 @@ function buildEvent(
  * parameter now that it is not always a staff member's name; every call
  * site was updated in the same change.
  *
- * `durationMinutesFor` resolves a session's duration from its `type`
- * (session_types.name -> session_types.duration) rather than one flat
- * org-wide default - unlike apps/client, this app already loads
- * session_types for the same clinic these sessions belong to, so a more
- * accurate per-type duration is available and this uses it, matching
- * pages/index.jsx's existing exportICS()'s own duration lookup
- * (`sessionTypes.find(s => s.name === b.type)`, `st?.duration || 60`) rather
- * than inventing a different fallback story for the same data.
+ * `durationMinutesFor` resolves a session's duration from its session TYPE
+ * rather than one flat org-wide default - unlike apps/client, this app
+ * already loads session_types for the same clinic these sessions belong to,
+ * so a more accurate per-type duration is available and this uses it.
+ *
+ * The caller resolves by `sessionTypeId` (migration 0085), not by the type's
+ * name as both this feed and pages/index.jsx's exportICS() used to: renaming a
+ * session type made the name lookup miss for every session still carrying the
+ * old label, and each of those events silently collapsed to the caller's
+ * default length in a subscribed calendar. `type` is still on the row because
+ * it is what the event SUMMARY renders.
  */
 export function buildStaffScheduleIcs(
   sessions: IcsStaffSession[],

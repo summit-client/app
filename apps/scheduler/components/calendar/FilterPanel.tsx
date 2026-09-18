@@ -18,17 +18,17 @@ import type { CalClient, CalEmployee, CalLocation, CalSessionType } from "./type
 
 export interface CalendarFilters {
   locationIds: Set<number>;
-  typeNames: Set<string>;
+  typeIds: Set<number>;
   employeeIds: Set<number>;
   clientIds: Set<number>;
 }
 
 export function emptyFilters(): CalendarFilters {
-  return { locationIds: new Set(), typeNames: new Set(), employeeIds: new Set(), clientIds: new Set() };
+  return { locationIds: new Set(), typeIds: new Set(), employeeIds: new Set(), clientIds: new Set() };
 }
 
 export function activeFilterCount(f: CalendarFilters): number {
-  return f.locationIds.size + f.typeNames.size + f.employeeIds.size + f.clientIds.size;
+  return f.locationIds.size + f.typeIds.size + f.employeeIds.size + f.clientIds.size;
 }
 
 /** Last word of the display name, standing in for "last name" - there is no
@@ -441,7 +441,7 @@ export function FilterPanel({
   function toggle<K extends keyof CalendarFilters>(key: K, id: CalendarFilters[K] extends Set<infer T> ? T : never) {
     const next: CalendarFilters = {
       locationIds: new Set(filters.locationIds),
-      typeNames: new Set(filters.typeNames),
+      typeIds: new Set(filters.typeIds),
       employeeIds: new Set(filters.employeeIds),
       clientIds: new Set(filters.clientIds),
     };
@@ -473,9 +473,9 @@ export function FilterPanel({
       />
       <PillFilterMenu
         label="Session types"
-        items={sessionTypes.map((t) => ({ id: t.name, label: t.name, color: t.color }))}
-        selected={filters.typeNames}
-        onToggle={(id) => toggle("typeNames", id)}
+        items={sessionTypes.map((t) => ({ id: t.id, label: t.name, color: t.color }))}
+        selected={filters.typeIds}
+        onToggle={(id) => toggle("typeIds", id)}
         onClearAll={clearAll}
         menuKey="sessionTypes" openKey={openKey} setOpenKey={setOpenKey}
       />
@@ -508,11 +508,15 @@ export function FilterPanel({
 }
 
 export function matchesFilters(
-  s: { location_id: number | null; type: string; employee_id: number; client_id: number },
+  s: { location_id: number | null; session_type_id?: number | null; employee_id: number; client_id: number },
   f: CalendarFilters,
 ): boolean {
   if (f.locationIds.size && (s.location_id == null || !f.locationIds.has(s.location_id))) return false;
-  if (f.typeNames.size && !f.typeNames.has(s.type)) return false;
+  // By id, and equivalently: the filter's own options come from this clinic's
+  // `session_types`, so a session whose pointer is null is one whose name
+  // matched no catalogue row - it could never have matched a filter option
+  // under the old name comparison either.
+  if (f.typeIds.size && (s.session_type_id == null || !f.typeIds.has(s.session_type_id))) return false;
   if (f.employeeIds.size && !f.employeeIds.has(s.employee_id)) return false;
   if (f.clientIds.size && !f.clientIds.has(s.client_id)) return false;
   return true;
