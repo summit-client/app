@@ -285,6 +285,14 @@ table.data tbody tr:hover { background: var(--accent-tint); }
   .sidebar {
     position: fixed; z-index: 45;
     top: var(--portalnav-h, 51px); bottom: 0; left: 0;
+    /* Resets the desktop rule's calc(100vh - var(--portalnav-h)). A fixed box
+       with top, bottom AND height all set is over-constrained, so CSS drops
+       `bottom` and the drawer ends at 100vh measured against the LARGE
+       viewport - i.e. underneath the phone's URL bar, putting .sidebar-foot
+       (the support button and preview pill) off-screen and making the
+       env(safe-area-inset-bottom) padding below do nothing. With height
+       auto, the `bottom: 0` written here takes effect. */
+    height: auto;
     width: min(280px, 82vw);
     transform: translateX(-100%);
     transition: transform var(--dur-entrance) var(--ease-editorial);
