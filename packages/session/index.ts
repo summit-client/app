@@ -181,7 +181,18 @@ async function resolve(): Promise<Identity> {
  * and resolving per call means two round trips per user action.
  */
 export function getIdentity(): Promise<Identity> {
-  if (!cached) cached = resolve();
+  if (!cached) {
+    // A rejected promise stays in `cached` forever if it is just stored:
+    // resolve() can reject on a network failure, and every later caller would
+    // then await that same rejection for the rest of the page's life with no
+    // way back. Drop it on failure so the next call genuinely retries, and
+    // re-throw so this call still fails rather than resolving to nothing.
+    const attempt = resolve();
+    cached = attempt.catch((err: unknown) => {
+      if (cached === attempt) cached = null;
+      throw err;
+    });
+  }
   return cached;
 }
 
@@ -189,6 +200,59 @@ export function getIdentity(): Promise<Identity> {
 export function refreshIdentity(): Promise<Identity> {
   cached = null;
   return getIdentity();
+}
+
+/**
+ * Subscribe to the auth changes that invalidate this cache, returning an
+ * unsubscribe.
+ *
+ * Deliberately not a module-scope subscription inside this package, even
+ * though that would be one place nobody can forget: it would create a
+ * long-lived browser client on import, and @supabase/ssr leaves
+ * autoRefreshToken on, which is a fifth independently-deployed process that
+ * can redeem the shared `.summitclient.io` refresh token - the exact race
+ * CLAUDE.md documents and @summit/proxy-auth exists to prevent. So the client
+ * here turns that timer OFF: this one only ever listens. Callers own the
+ * lifetime by unsubscribing, and the events they care about are SIGNED_IN,
+ * SIGNED_OUT and USER_UPDATED. TOKEN_REFRESHED is not one of them - it is the
+ * same user, and treating it as a change thrashes every cache keyed on
+ * identity on every refresh.
+ *
+ * Scope, honestly: in the spoke portals a sign-in or sign-out is a full
+ * navigation to apps/web, which tears these module caches down anyway. What
+ * this actually covers is the tab that was left open while that happened
+ * elsewhere, and which would otherwise keep serving the previous user's
+ * identity and settings from a warm cache.
+ */
+export function subscribeToAuthChanges(onChange: (event: string) => void): () => void {
+  if (IS_PREVIEW) return () => {};
+  const client = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    { auth: { autoRefreshToken: false } },
+  );
+  const { data } = client.auth.onAuthStateChange((event) => {
+    if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+    // Never call supabase.auth.* synchronously from this callback: it runs
+    // while gotrue holds the auth lock, so a nested auth call waits on a lock
+    // its own caller owns. apps/scheduler hung on exactly that. Handlers get
+    // their own turn instead.
+    setTimeout(() => onChange(event), 0);
+  });
+  return () => data.subscription.unsubscribe();
+}
+
+/**
+ * Drop the cache without resolving a new identity.
+ *
+ * The sign-out counterpart to refreshIdentity(): that one clears AND
+ * re-resolves, which on a sign-out means firing getUser() for someone who has
+ * just left - a pointless round trip, and one more call against a cookie that
+ * is being torn down. Callers wiring an onAuthStateChange listener want this
+ * for SIGNED_OUT and refreshIdentity() for SIGNED_IN.
+ */
+export function clearIdentity(): void {
+  cached = null;
 }
 
 /**

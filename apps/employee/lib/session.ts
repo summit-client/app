@@ -94,6 +94,12 @@ export function refreshSession(): Promise<Session> {
   return refreshIdentity().then((i) => toSession(gate(i, "employee")));
 }
 
+/** Drop the cache without resolving a new one - the sign-out counterpart to
+ *  refreshSession(). Re-exported through this seam rather than imported from
+ *  @summit/session directly, the same as everything else in this file, so the
+ *  portal keeps one place that knows about identity. */
+export { clearIdentity, subscribeToAuthChanges } from "@summit/session";
+
 export function previewRole(): HubRole {
   return HUB_ROLE[sharedPreviewRole("admin")] ?? "ADMIN";
 }

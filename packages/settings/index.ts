@@ -500,6 +500,31 @@ export function refreshSettings(): Promise<void> {
   return initSettings();
 }
 
+/**
+ * Drop every cached setting without reloading - the sign-out counterpart to
+ * refreshSettings(), mirroring @summit/session's clearIdentity().
+ *
+ * It also removes the preview layers, which refreshSettings() cannot: under
+ * IS_PREVIEW initSettings() returns early, so nulling `live` there does
+ * nothing and the real values live in localStorage. Those keys are scoped to
+ * the BROWSER rather than the signed-in user, so left in place they are read
+ * by whoever signs in next on a shared clinic machine - the same shape of
+ * bleed that put one clinician's onboarding progress under another person's
+ * account. Wrapped because localStorage throws in a private window and with
+ * site data blocked, and a sign-out must not fail on that.
+ */
+export function clearSettings(): void {
+  live = null;
+  liveLoad = null;
+  try {
+    for (const key of Object.values(KEYS)) localStorage.removeItem(key);
+    localStorage.removeItem(AUDIT_KEY);
+  } catch {
+    /* no localStorage here; the in-memory cache above is cleared regardless */
+  }
+  notify();
+}
+
 function read(scope: SettingScope): Layer {
   if (IS_PREVIEW) return readLocal(scope);
   return live?.[scope] ?? {};

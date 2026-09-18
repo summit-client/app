@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { admits, signOutUrl } from "@summit/portals";
+import { clearIdentity } from "@summit/session";
+import { clearSettings } from "@summit/settings";
 import { supabase } from "./supabase";
 
 /**
@@ -183,14 +185,32 @@ export function useUser() {
       }
     })();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       // Never call supabase.auth.* synchronously in here. This callback is
       // invoked while gotrue holds the auth lock, so a nested getSession()
       // waits on a lock its own caller owns -- a self-deadlock. That was the
       // cause of the permanent "Loading..." hang. Use the session we are
       // handed, and defer any further supabase work off the callback stack.
       setTimeout(() => {
-        if (!cancelled) applySession(session);
+        if (cancelled) return;
+        // @summit/session's identity and @summit/settings' layers are both
+        // module-level caches latched on first read, and both belong to the
+        // user who was signed in when they filled. This listener already
+        // swapped that user underneath them and cleared neither, so in a tab
+        // where one person signed out and another signed in, the second read
+        // the first's identity and org/role/user settings. Clear rather than
+        // reload: the _app effect keyed on `user` calls initSettings() again
+        // once applySession lands, and getIdentity() re-resolves lazily on
+        // its next caller - neither needs an eager round trip here, and on
+        // SIGNED_OUT an eager one would be a getUser() for someone who has
+        // just left. TOKEN_REFRESHED is deliberately not in this set: it is
+        // the same user, and clearing on it would thrash both caches on
+        // every refresh.
+        if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+          clearIdentity();
+          clearSettings();
+        }
+        applySession(session);
       }, 0);
     });
 
