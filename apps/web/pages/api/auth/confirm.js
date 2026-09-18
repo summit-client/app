@@ -32,7 +32,11 @@ export default async function handler(req, res) {
   const { error } = await supabase.auth.verifyOtp({ token_hash, type })
 
   if (error) {
-    return res.redirect('/login?error=' + encodeURIComponent(error.message))
+    // A code, not the message: the login page renders whatever it is
+    // handed, so a raw string there is attacker-controllable copy. The real
+    // reason goes to the server log, where it is useful and not a lure.
+    console.error('[web/auth/confirm] verifyOtp failed:', error.message)
+    return res.redirect('/login?error=link_invalid')
   }
 
   // session cookie is now set on the response; redirect into the app

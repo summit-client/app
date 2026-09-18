@@ -13,19 +13,25 @@ import { withTimeout } from '../lib/withTimeout'
 import { describeAuthError } from '../lib/authErrors'
 import AuthCard from '../components/auth/AuthCard'
 import FormField from '../components/auth/FormField'
+import { redirectErrorMessage } from '../lib/auth-guards'
 import SubmitButton from '../components/auth/SubmitButton'
 
 // Both /api/auth/confirm and /auth/callback redirect a failed
-// verification/reset link here as `?error=<message>` - this page used to
-// never read that param, so a broken confirmation link (expired, already
-// used, tampered) silently dropped the user on a plain, blank login form
-// with no explanation of what just happened.
+// verification/reset link here as `?error=<code>` - this page used to never
+// read that param, so a broken confirmation link (expired, already used,
+// tampered) silently dropped the user on a plain, blank login form with no
+// explanation of what just happened.
+//
+// The value is a code, and the copy comes from redirectErrorMessage(). It
+// used to be the message itself, rendered verbatim in the alert below:
+// /login?error=<any+sentence> therefore displayed attacker-chosen text as
+// an official Summit message on the real login page, which is a ready-made
+// phishing lure. An unrecognised code - including an old link still
+// carrying a full sentence - now gets the generic line.
 function readRedirectError(query: Record<string, string | string[] | undefined>): string {
   const raw = query.error
   const value = Array.isArray(raw) ? raw[0] : raw
-  if (!value) return ''
-  if (value === 'missing_token') return 'That link is missing required information. Please request a new one.'
-  return value
+  return redirectErrorMessage(value)
 }
 
 const AUTH_TIMEOUT_MS = 15000

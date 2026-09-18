@@ -89,5 +89,44 @@ console.log("mergeSetCookie");
     same(mergeSetCookie(["keep=1"], []), ["keep=1"]));
 }
 
+console.log("redirectErrorMessage");
+{
+  const { redirectErrorMessage, GENERIC_REDIRECT_ERROR } = guards;
+  t("no value: no alert at all", redirectErrorMessage(undefined) === "" && redirectErrorMessage("") === "");
+  t("missing_token keeps its existing copy",
+    redirectErrorMessage("missing_token") === "That link is missing required information. Please request a new one.");
+  t("link_invalid keeps the copy the callback used to send as a sentence",
+    redirectErrorMessage("link_invalid") === "That link is no longer valid. Please request a new one.");
+  t("pending_activation keeps the copy the callback used to send as a sentence",
+    redirectErrorMessage("pending_activation") === "Your account is pending activation. Contact your administrator.");
+  t("an attacker-chosen sentence is never echoed back",
+    redirectErrorMessage("Your account was locked. Call 555-0100 to restore it.") === GENERIC_REDIRECT_ERROR);
+  t("a raw Supabase message is not echoed back either",
+    redirectErrorMessage("Token has expired or is invalid") === GENERIC_REDIRECT_ERROR);
+  t("an unknown code is generic, not blank",
+    redirectErrorMessage("some_future_code") === GENERIC_REDIRECT_ERROR && GENERIC_REDIRECT_ERROR.length > 0);
+}
+
+// Every code this app can redirect with must be one the page has copy for -
+// read out of the shipped pages, so adding a producer without adding copy
+// fails here rather than showing the generic line in production.
+console.log("every shipped ?error= producer sends a known code");
+{
+  const { redirectErrorMessage, GENERIC_REDIRECT_ERROR } = guards;
+  const { readFileSync } = await import("node:fs");
+  const sources = ["pages/api/auth/confirm.js", "pages/auth/callback.jsx"];
+  const codes = new Set();
+  for (const f of sources) {
+    for (const m of readFileSync(f, "utf8").matchAll(/['"]\/login\?error=([a-z_]+)['"]/g)) codes.add(m[1]);
+  }
+  t("found the producers at all", codes.size >= 2, [...codes].join(","));
+  for (const code of codes) {
+    t(`${code} has copy`, redirectErrorMessage(code) !== GENERIC_REDIRECT_ERROR);
+  }
+  const concatenated = sources.map((f) => readFileSync(f, "utf8")).join("\n");
+  t("no producer still interpolates a message into ?error=",
+    !/\/login\?error=['"]\s*\+/.test(concatenated));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

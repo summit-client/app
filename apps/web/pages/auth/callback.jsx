@@ -23,7 +23,12 @@ export default function AuthCallback() {
       supabase.auth.verifyOtp({ token_hash: tokenHash, type })
         .then(async ({ data, error }) => {
           if (error) {
-            router.replace('/login?error=' + encodeURIComponent(error.message))
+            // A code, not the message - see lib/auth-guards.ts's
+            // redirectErrorMessage(): the login page used to render this
+            // value verbatim, which made any /login?error=<sentence> link
+            // display attacker-chosen text as official copy.
+            console.error('[web/auth/callback] verifyOtp failed:', error.message)
+            router.replace('/login?error=link_invalid')
             return
           }
           if (type === 'recovery') {
@@ -46,7 +51,8 @@ export default function AuthCallback() {
     // surface that instead of silently dropping to a blank login page.
     const hashError = hashParams.get('error_description') || hashParams.get('error')
     if (hashError) {
-      router.replace('/login?error=' + encodeURIComponent(hashError))
+      console.error('[web/auth/callback] provider returned an error:', hashError)
+      router.replace('/login?error=link_invalid')
       return
     }
 
@@ -66,7 +72,7 @@ export default function AuthCallback() {
       const timeout = setTimeout(() => {
         if (settled) return
         subscription.unsubscribe()
-        router.replace('/login?error=' + encodeURIComponent('That link is no longer valid. Please request a new one.'))
+        router.replace('/login?error=link_invalid')
       }, CALLBACK_TIMEOUT_MS)
       return () => { clearTimeout(timeout); subscription.unsubscribe() }
     }
@@ -91,10 +97,7 @@ export default function AuthCallback() {
       // user is genuinely signed in, so a bare /login is just an empty form
       // they will retry into the same dead end - say why, using the same
       // wording the password sign-in path uses for this exact state.
-      router.replace(
-        '/login?error=' +
-          encodeURIComponent('Your account is pending activation. Contact your administrator.')
-      )
+      router.replace('/login?error=pending_activation')
     }
   }
 
