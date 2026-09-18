@@ -2242,9 +2242,18 @@ function CreateView({ clients, employees, sessionTypes, locations, calendars, se
         (staffChoice === "any" || e.id === selectedStaff?.id)
       );
       const endCond = recurring === "yes" ? (endType === "date" ? `until ${endDate}` : `${endCount} sessions total`) : "one-time";
+      // No client identity in this prompt, deliberately. It used to carry
+      // `CLIENT: ${selectedClient.name}`, which sent a real client's name to
+      // a third-party model on every match - and the name was doing no work:
+      // the JSON shape requested below only ever names STAFF back, so nothing
+      // downstream reads a client field. What the match actually turns on is
+      // the session type, the sessions/week, and the eligible-staff list,
+      // which is already filtered to this client's location by `eligible`
+      // above. /api/match refuses a prompt that carries an identity field, so
+      // re-adding one here fails the request rather than leaking quietly.
       prompt = `You are an ABA scheduling assistant. Find the best staff match for a client.
 CALENDAR: ${selectedCalendar.name} (${selectedCalendar.date_start} to ${selectedCalendar.date_end})
-CLIENT: ${selectedClient.name} | SESSION: ${selectedSessionType.name} (${selectedSessionType.duration}min)
+SESSION: ${selectedSessionType.name} (${selectedSessionType.duration}min)
 SESSIONS/WEEK: ${sessionsPerWeek} | SCHEDULE: ${recurring === "yes" ? `Recurring — ${endCond}` : "One-time"}
 ELIGIBLE STAFF: ${eligible.map(e => `${e.name} (${e.booked}/${e.capacity})`).join(", ") || "none"}
 Respond ONLY with valid JSON — no extra text:
