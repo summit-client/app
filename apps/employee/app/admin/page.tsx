@@ -14,7 +14,11 @@ import {
   type ManagedAuditEvent,
   type PendingCertificate, type PendingPd, type PendingSignoff, type PendingTimeOff, type TeamMember,
 } from "@/lib/hub";
-import { deactivateTeammate, editTeammate, inviteTeammate, listUnlinkedClients, ProvisioningError } from "@/lib/hr-backend";
+import {
+  deactivateTeammate, editTeammate, inviteTeammate, listClientFamilies, listUnlinkedClients,
+  ProvisioningError, setGuardianPermission,
+  type FamiliesSnapshot, type GuardianLink, type GuardianPermissionKind,
+} from "@/lib/hr-backend";
 import { SessionGate, useIdentity } from "@/components/session-provider";
 import { saved } from "@summit/toast";
 
@@ -94,7 +98,7 @@ function useManagedQueue<T>(load: () => Promise<T[]>): [QueueState<T>, () => voi
 function AdminConsole() {
   const identity = useIdentity();
   const [ready, setReady] = React.useState(false);
-  const [tab, setTab] = React.useState<"queues" | "staff" | "settings">("queues");
+  const [tab, setTab] = React.useState<"queues" | "staff" | "families" | "settings">("queues");
 
   const [signoffs, reloadSignoffs] = useManagedQueue<PendingSignoff>(listPendingSignoffs);
   const [certs, reloadCerts] = useManagedQueue<PendingCertificate>(listPendingCertificatesToIssue);
@@ -113,9 +117,11 @@ function AdminConsole() {
   if (tab !== "queues") {
     return (
       <div>
-        <AdminTabs tab={tab} setTab={setTab} role={role} />
+        <AdminTabs tab={tab} setTab={setTab} role={role} appRole={identity.appRole} />
         {tab === "staff" ? (
           <StaffTab isAdmin={role === "ADMIN"} isScheduler={identity.appRole === "scheduler"} isPreview={identity.isPreview} />
+        ) : tab === "families" ? (
+          <FamiliesTab isAdmin={role === "ADMIN"} isPreview={identity.isPreview} actorId={identity.userId} />
         ) : <BackendSettingsTab />}
       </div>
     );
@@ -129,7 +135,7 @@ function AdminConsole() {
 
   return (
     <div>
-      <AdminTabs tab={tab} setTab={setTab} role={role} />
+      <AdminTabs tab={tab} setTab={setTab} role={role} appRole={identity.appRole} />
       <p className="sub">
         {/* Scheduler's hub_can_manage() grant (migration 0022) is
             unconditional, same as admin's - clinic-wide, not team-linked -
@@ -313,16 +319,203 @@ function AdminConsole() {
 }
 
 
-function AdminTabs({ tab, setTab, role }: { tab: string; setTab: (t: "queues" | "staff" | "settings") => void; role: string }) {
+/**
+ * Clients & Families - the staff side of the guardian permission model.
+ *
+ * A guardian's access to a child is 16 named switches on their relationship
+ * record (migration 0047), and until this screen nothing in any app could
+ * change one: RLS reserves the write to `auth_can('admin.staff.manage')`, so
+ * it was a Supabase-dashboard operation. That is a poor place for a control
+ * that decides what a parent sees about their child.
+ *
+ * Two different limits apply here and they are NOT the same limit:
+ *  - reading the guardian rows needs `clinical.client.read`, which admin and
+ *    supervisor hold and scheduler does not;
+ *  - changing one needs `admin.staff.manage`, which only admin holds.
+ * A scheduler therefore gets the client list (theirs to read, and where the
+ * client invite lives) and an explanation instead of an empty guardian
+ * section, because an empty list would read as "this family has no
+ * guardians" when it means "you cannot see them".
+ */
+function FamiliesTab({ isAdmin, isPreview, actorId }: { isAdmin: boolean; isPreview: boolean; actorId: string }) {
+  const [snap, setSnap] = React.useState<FamiliesSnapshot | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [openClient, setOpenClient] = React.useState<number | null>(null);
+
+  const load = React.useCallback(async () => {
+    if (isPreview) { setSnap(null); setError(null); return; }
+    try {
+      setSnap(await listClientFamilies(isAdmin));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load families.");
+    }
+  }, [isPreview, isAdmin]);
+  React.useEffect(() => { void load(); }, [load]);
+
+  async function toggle(rel: GuardianLink, kind: GuardianPermissionKind, next: boolean) {
+    setBusy(`${rel.relationshipId}:${kind.permission}`);
+    setNotice(null);
+    try {
+      await setGuardianPermission(rel.relationshipId, kind.permission, next, actorId);
+      // Re-read rather than patch in place: the flip is audited by a database
+      // trigger, and a screen that shows its own optimistic guess of a
+      // permission is the wrong screen to be optimistic on.
+      await load();
+      setNotice(`${kind.label} ${next ? "granted to" : "removed from"} ${rel.name}.`);
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "That did not save.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (isPreview) {
+    return (
+      <div className="card card-pad" style={{ marginTop: 16 }}>
+        <h2 className="section-title" style={{ marginTop: 0 }}>Clients &amp; Families</h2>
+        <p className="sub">Preview mode has no families to show - this screen reads the live guardian records.</p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="card card-pad" style={{ marginTop: 16 }}>
+        <h2 className="section-title" style={{ marginTop: 0 }}>Clients &amp; Families</h2>
+        <p className="sub">{error}</p>
+        <button className="btn secondary" onClick={() => void load()}>Try again</button>
+      </div>
+    );
+  }
+  if (!snap) return <p className="sub" style={{ marginTop: 16 }}>Loading families…</p>;
+
+  return (
+    <div>
+      <h2 className="section-title">Clients &amp; Families</h2>
+      <p className="sub">
+        What each guardian may see about each child. {isAdmin
+          ? "Changes take effect immediately and are recorded in the family access audit."
+          : "Viewing only - an administrator changes these."}
+      </p>
+
+      {!snap.canSeeGuardians ? (
+        <div className="card card-pad" style={{ marginTop: 12 }}>
+          <b>Guardian permissions are not visible to your role.</b>
+          <p className="sub" style={{ marginBottom: 0 }}>
+            Reading a family&apos;s permissions needs clinical client access, which a
+            scheduler account does not have. The clients below are yours to see and
+            invite; an administrator manages who in each family sees what.
+          </p>
+        </div>
+      ) : null}
+
+      {notice ? <p className="sub" role="status" style={{ marginTop: 12 }}>{notice}</p> : null}
+
+      {snap.families.length === 0 ? (
+        <div className="card card-pad" style={{ marginTop: 12 }}>
+          <p className="sub" style={{ margin: 0 }}>No clients in this clinic yet.</p>
+        </div>
+      ) : null}
+
+      {snap.families.map((fam) => {
+        const open = openClient === fam.clientId;
+        return (
+          <div className="card" key={fam.clientId} style={{ marginTop: 12 }}>
+            <button
+              className="mode-tab"
+              aria-expanded={open}
+              style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 16px", background: "none", border: "none", textAlign: "left" }}
+              onClick={() => setOpenClient(open ? null : fam.clientId)}
+            >
+              <b>{fam.clientName}</b>
+              <span className="sub" style={{ margin: 0 }}>
+                {!snap.canSeeGuardians
+                  ? "—"
+                  : fam.guardians.length === 0
+                    ? "No guardians linked"
+                    : `${fam.guardians.length} guardian${fam.guardians.length === 1 ? "" : "s"}`}
+              </span>
+            </button>
+
+            {open && snap.canSeeGuardians ? (
+              <div style={{ padding: "0 16px 16px" }}>
+                {fam.guardians.length === 0 ? (
+                  <p className="sub">
+                    Nobody is linked to this client yet. Guardians are attached when a
+                    family account is invited.
+                  </p>
+                ) : fam.guardians.map((g) => (
+                  <div key={g.relationshipId} style={{ marginTop: 14 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                      <b>{g.name}</b>
+                      {g.relationship ? <span className="pill">{g.relationship.replace(/_/g, " ")}</span> : null}
+                      {g.status !== "ACTIVE" ? <span className="pill">{g.status.toLowerCase()}</span> : null}
+                    </div>
+                    <div className="table-wrap" style={{ marginTop: 8 }}>
+                      <table className="data">
+                        <thead>
+                          <tr><th>Permission</th><th>What it allows</th><th style={{ textAlign: "right" }}>Granted</th></tr>
+                        </thead>
+                        <tbody>
+                          {snap.kinds.map((k) => {
+                            const on = g.permissions[k.permission] === true;
+                            const key = `${g.relationshipId}:${k.permission}`;
+                            return (
+                              <tr key={k.permission}>
+                                <td>
+                                  {k.label}
+                                  {k.exposesClinical ? <span className="pill" style={{ marginLeft: 6 }}>clinical</span> : null}
+                                  {k.exposesFinancial ? <span className="pill" style={{ marginLeft: 6 }}>financial</span> : null}
+                                </td>
+                                <td className="sub" style={{ margin: 0 }}>{k.description}</td>
+                                <td style={{ textAlign: "right" }}>
+                                  <button
+                                    role="switch"
+                                    aria-checked={on}
+                                    aria-label={`${k.label} for ${g.name}`}
+                                    className={`switch ${on ? "on" : ""}`}
+                                    disabled={!isAdmin || busy === key}
+                                    title={isAdmin ? undefined : "Only an administrator can change this"}
+                                    onClick={() => void toggle(g, k, !on)}
+                                  >
+                                    <span className="knob" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AdminTabs({ tab, setTab, role, appRole }: { tab: string; setTab: (t: "queues" | "staff" | "families" | "settings") => void; role: string; appRole: string | null }) {
   return (
     <>
       <h1 className="h-page">Admin</h1>
       <div className="mode-tabs" style={{ marginTop: 10 }} role="tablist" aria-label="Admin sections">
-        {([["queues", "Queues"], ["staff", "Staff & Teams"], ["settings", "Backend Settings"]] as const).map(([k, label]) => (
-          (k !== "settings" || role === "ADMIN") ? (
+        {([["queues", "Queues"], ["staff", "Staff & Teams"], ["families", "Clients & Families"], ["settings", "Backend Settings"]] as const).map(([k, label]) => {
+          if (k === "settings" && role !== "ADMIN") return null;
+          // Admin and scheduler, per the brief. A scheduler sees the client
+          // list and can invite; the guardian half stays empty for them
+          // because RLS will not serve it (see FamiliesTab), and the tab says
+          // so rather than showing nothing.
+          if (k === "families" && !(role === "ADMIN" || appRole === "scheduler")) return null;
+          return (
             <button key={k} role="tab" aria-selected={tab === k} className={`mode-tab ${tab === k ? "active" : ""}`} onClick={() => setTab(k)}>{label}</button>
-          ) : null
-        ))}
+          );
+        })}
       </div>
     </>
   );

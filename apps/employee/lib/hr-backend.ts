@@ -954,3 +954,166 @@ export function supabaseBackend(session: Session, seedPolicies: PolicyDoc[]): Hr
     },
   };
 }
+
+/* ---- Clients & Families ------------------------------------------------------
+ *
+ * The staff side of the guardian permission model (migration 0047). A
+ * guardian's access to a child is decided by 16 named switches on their
+ * relationship record, and until now nothing in any app could change one:
+ * RLS reserves the write to `auth_can('admin.staff.manage')`, so it was a
+ * Supabase-dashboard operation.
+ *
+ * Read scope is narrower than this console's own gate, and that matters.
+ * `guardian_relationships_staff_read` and `relationship_permissions_staff_read`
+ * (0047:409, :434) both require `auth_can('clinical.client.read')`, which
+ * per 0024's seed the `scheduler` role does NOT hold. A scheduler therefore
+ * reads an empty set from both tables with no error - the RLS-returns-empty
+ * trap CLAUDE.md documents. So the caller's reach is reported explicitly
+ * rather than inferred from a row count, and the screen says so.
+ */
+
+export interface GuardianPermissionKind {
+  permission: string;
+  label: string;
+  description: string;
+  isDefault: boolean;
+  exposesClinical: boolean;
+  exposesFinancial: boolean;
+}
+
+export interface GuardianLink {
+  relationshipId: string;
+  userId: string;
+  /** The guardian's name from household_members, or a neutral fallback. */
+  name: string;
+  relationship: string | null;
+  status: string;
+  /** permission -> granted, all 16 present (0047's defaults trigger seeds them). */
+  permissions: Record<string, boolean>;
+}
+
+export interface ClientFamily {
+  clientId: number;
+  clientName: string;
+  guardians: GuardianLink[];
+}
+
+export interface FamiliesSnapshot {
+  kinds: GuardianPermissionKind[];
+  families: ClientFamily[];
+  /** False when the caller cannot read guardian rows at all - see the note
+   *  above. The screen explains rather than showing an empty list. */
+  canSeeGuardians: boolean;
+}
+
+/**
+ * Every client in the clinic with the guardians attached to each.
+ *
+ * Three reads rather than one embed. `household_members` has no foreign key
+ * to `guardian_relationships` - both only reach auth.users and clients
+ * separately - so the `household_members(full_name)` embed apps/data's
+ * sharing screen uses cannot resolve as a PostgREST relationship. Names are
+ * matched here on (household_id, user_id) instead.
+ */
+export async function listClientFamilies(canReadClinicalClients: boolean): Promise<FamiliesSnapshot> {
+  const kindsRes = await sb()
+    .from("guardian_permission_kinds")
+    .select("permission, label, description, is_default, exposes_clinical, exposes_financial")
+    .order("permission");
+  if (kindsRes.error) throw new HrReadError("the permission list", kindsRes.error);
+  const kinds: GuardianPermissionKind[] = (kindsRes.data ?? []).map((k: Record<string, unknown>) => ({
+    permission: String(k.permission),
+    label: String(k.label),
+    description: String(k.description),
+    isDefault: k.is_default === true,
+    exposesClinical: k.exposes_clinical === true,
+    exposesFinancial: k.exposes_financial === true,
+  }));
+
+  const clientsRes = await sb().from("clients").select("id, name").order("name");
+  if (clientsRes.error) throw new HrReadError("the client list", clientsRes.error);
+  const clients = (clientsRes.data ?? []) as { id: number; name: string | null }[];
+
+  // Asked, not inferred: zero guardian rows is a legitimate answer for a
+  // clinic that has linked none, and it is also what a scheduler always
+  // gets. Those two must not look the same on screen.
+  if (!canReadClinicalClients) {
+    return {
+      kinds,
+      canSeeGuardians: false,
+      families: clients.map((c) => ({ clientId: c.id, clientName: c.name ?? "Unnamed client", guardians: [] })),
+    };
+  }
+
+  const relRes = await sb()
+    .from("guardian_relationships")
+    .select("id, user_id, client_id, household_id, relationship, status, relationship_permissions(permission, granted)")
+    .neq("status", "REVOKED")
+    .order("created_at");
+  if (relRes.error) throw new HrReadError("the guardian list", relRes.error);
+  const rels = (relRes.data ?? []) as Record<string, unknown>[];
+
+  const memberRes = await sb().from("household_members").select("household_id, user_id, full_name");
+  if (memberRes.error) throw new HrReadError("the household members", memberRes.error);
+  const nameByKey = new Map<string, string>();
+  for (const m of (memberRes.data ?? []) as Record<string, unknown>[]) {
+    if (m.user_id) nameByKey.set(`${m.household_id}:${m.user_id}`, String(m.full_name ?? ""));
+  }
+
+  const byClient = new Map<number, GuardianLink[]>();
+  for (const r of rels) {
+    const perms: Record<string, boolean> = {};
+    for (const p of (r.relationship_permissions ?? []) as { permission: string; granted: boolean }[]) {
+      perms[p.permission] = p.granted === true;
+    }
+    const link: GuardianLink = {
+      relationshipId: String(r.id),
+      userId: String(r.user_id),
+      name: nameByKey.get(`${r.household_id}:${r.user_id}`) || "Guardian",
+      relationship: (r.relationship as string | null) ?? null,
+      status: String(r.status),
+      permissions: perms,
+    };
+    const list = byClient.get(Number(r.client_id)) ?? [];
+    list.push(link);
+    byClient.set(Number(r.client_id), list);
+  }
+
+  return {
+    kinds,
+    canSeeGuardians: true,
+    families: clients.map((c) => ({
+      clientId: c.id,
+      clientName: c.name ?? "Unnamed client",
+      guardians: byClient.get(c.id) ?? [],
+    })),
+  };
+}
+
+/**
+ * Flip one permission on one relationship.
+ *
+ * An UPDATE, never an insert: 0047's defaults trigger seeds all 16 rows when
+ * the relationship is created, so every switch already exists. `.select()`
+ * so a refusal is not read as success - relationship_permissions_staff_update
+ * requires `admin.staff.manage`, and an update RLS refuses matches zero rows
+ * without raising.
+ *
+ * No audit row is written here on purpose: 0068's
+ * relationship_permissions_audit trigger records the flip into
+ * clinical_audit_events, and it deliberately ignores a no-op write.
+ */
+export async function setGuardianPermission(
+  relationshipId: string, permission: string, granted: boolean, actorId: string,
+): Promise<void> {
+  const res = await sb()
+    .from("relationship_permissions")
+    .update({ granted, updated_at: new Date().toISOString(), updated_by: actorId })
+    .eq("relationship_id", relationshipId)
+    .eq("permission", permission)
+    .select("permission");
+  ok("guardian permission", res);
+  if (!res.data?.length) {
+    throw new HrWriteError("guardian permission", "your account may not change a family's permissions");
+  }
+}
