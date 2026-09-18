@@ -71,6 +71,41 @@ export function redirectErrorMessage(value: string | null | undefined): string {
  * `isOurs` is injected so this stays free of imports and testable; callers
  * pass the @summit/portals allowlist.
  */
+/**
+ * Whether a state-changing request may proceed, by its claimed origin.
+ *
+ * Stricter than signOutRequestAllowed() below: this one requires a header.
+ * It guards a fetch() our own page makes, and a browser always sends `Origin`
+ * on a POST, so "neither header present" is not a shape we produce — only one
+ * a non-browser caller does.
+ *
+ * `isOurs` is injected so this stays free of imports and testable; callers
+ * pass the @summit/portals allowlist.
+ */
+export function sameSiteRequestAllowed(
+  headers: { origin?: string | null; referer?: string | null },
+  isOurs: (url: string) => boolean
+): boolean {
+  const claimed = headers.origin || headers.referer;
+  if (!claimed) return false;
+  return isOurs(claimed);
+}
+
+/**
+ * The minimum this app will accept as a password, checked server-side.
+ *
+ * pages/update-password.jsx has had this rule since it was written, but only
+ * there: the endpoint checked `!password` alone, so a direct call could set a
+ * one-character password on a real account. Same floor, same wording.
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+
+export function passwordProblem(password: unknown): string | null {
+  if (typeof password !== "string" || password.length === 0) return "Password required";
+  if (password.length < MIN_PASSWORD_LENGTH) return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+  return null;
+}
+
 export function signOutRequestAllowed(
   headers: { origin?: string | null; referer?: string | null },
   isOurs: (url: string) => boolean

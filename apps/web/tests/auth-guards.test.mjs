@@ -13,7 +13,7 @@
  * Run: node tests/auth-guards.test.mjs
  */
 
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -113,7 +113,6 @@ console.log("redirectErrorMessage");
 console.log("every shipped ?error= producer sends a known code");
 {
   const { redirectErrorMessage, GENERIC_REDIRECT_ERROR } = guards;
-  const { readFileSync } = await import("node:fs");
   const sources = ["pages/api/auth/confirm.js", "pages/auth/callback.jsx"];
   const codes = new Set();
   for (const f of sources) {
@@ -165,6 +164,47 @@ console.log("the sign-out route wires the guard in before signOut()");
     src.indexOf("signOutRequestAllowed(") < src.indexOf("await supabase.auth.signOut()"));
   t("a rejected request returns without ending the session",
     /signOutRequestAllowed\([\s\S]{0,200}?\{[\s\S]{0,200}?return\n?\s*\}/.test(src));
+}
+
+console.log("sameSiteRequestAllowed");
+{
+  const { sameSiteRequestAllowed } = guards;
+  const OURS = ["https://summitclient.io", "https://scheduler.summitclient.io"];
+  const ours = (url) => { try { return OURS.includes(new URL(url).origin); } catch { return false; } };
+  t("our own origin is allowed", sameSiteRequestAllowed({ origin: "https://summitclient.io" }, ours) === true);
+  t("a foreign origin is rejected", sameSiteRequestAllowed({ origin: "https://evil.example" }, ours) === false);
+  t("unlike the sign-out guard, a request with NO headers is rejected - a browser always sends Origin on a POST",
+    sameSiteRequestAllowed({}, ours) === false);
+  t("a Referer alone is accepted when it is ours",
+    sameSiteRequestAllowed({ referer: "https://summitclient.io/update-password" }, ours) === true);
+  t("Origin wins over Referer",
+    sameSiteRequestAllowed({ origin: "https://evil.example", referer: "https://summitclient.io/" }, ours) === false);
+}
+
+console.log("passwordProblem");
+{
+  const { passwordProblem, MIN_PASSWORD_LENGTH } = guards;
+  t("a long enough password is accepted", passwordProblem("correct horse battery") === null);
+  t("exactly the minimum is accepted", passwordProblem("a".repeat(MIN_PASSWORD_LENGTH)) === null);
+  t("one under the minimum is refused", passwordProblem("a".repeat(MIN_PASSWORD_LENGTH - 1)) !== null);
+  t("a one-character password is refused - what a direct call could set", passwordProblem("x") !== null);
+  t("an empty password is refused", passwordProblem("") !== null);
+  t("a non-string is refused", passwordProblem(12345678) !== null && passwordProblem(undefined) !== null);
+  t("the minimum matches the page's own rule", MIN_PASSWORD_LENGTH === 8);
+}
+
+console.log("the password route enforces all three checks before writing");
+{
+  const src = readFileSync("pages/api/auth/update-password.js", "utf8");
+  const write = src.indexOf("auth.updateUser(");
+  t("it requires JSON", src.includes("application/json") && src.indexOf("application/json") < write);
+  t("it checks the claimed origin", src.includes("sameSiteRequestAllowed(") && src.indexOf("sameSiteRequestAllowed(") < write);
+  t("it checks the password server-side", src.includes("passwordProblem(") && src.indexOf("passwordProblem(") < write);
+  t("the raw Supabase message is no longer returned to the browser",
+    !/error: error\.message/.test(src) && src.includes("console.error("));
+  // The page's own rule and the server's must not drift apart.
+  const page = readFileSync("pages/update-password.jsx", "utf8");
+  t("the page still states the same minimum", /MIN_PASSWORD_LENGTH = 8/.test(page));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
