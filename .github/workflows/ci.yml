@@ -53,6 +53,16 @@ jobs:
       - name: Typecheck
         run: pnpm -r --if-present run typecheck
 
+      # Edge Functions are deployed separately and are covered by neither
+      # `pnpm turbo build` nor any typecheck script, so their authorization
+      # rules had no automated cover at all. Both suites read the rules out of
+      # the functions' own source, so they cannot pass against a stale copy.
+      # No credentials, no install - plain Node reading files.
+      - name: Edge Function authorization
+        run: |
+          node supabase/tests/edit_teammate_authz.mjs
+          node supabase/tests/invite_teammate_guard.mjs
+
       # ---------------------------------------------------------------------
       # Tenancy doctrine. Two runs, because they answer different questions.
       #

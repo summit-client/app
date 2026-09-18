@@ -123,13 +123,32 @@ failures.
 ## Edge Function authorization — no install needed
 
     node supabase/tests/edit_teammate_authz.mjs
+    node supabase/tests/invite_teammate_guard.mjs
 
 Edge Functions are deployed separately from the apps and are covered by neither
 `pnpm turbo build` nor any typecheck script, so nothing else in this repo
-checks them. `edit_teammate_authz.mjs` drives `edit-teammate`'s two role
-matrices as a decision table, reading them out of the function's own source so
-a change to either matrix surfaces here rather than passing against a stale
-copy. It needs no database: the matrices are the whole authorization decision.
+checks them. Both suites read their rules out of the functions' own source, so
+neither can pass against a stale copy, and neither needs a database. CI runs
+both.
+
+`edit_teammate_authz.mjs` drives `edit-teammate`'s two role matrices as a
+decision table. The matrices are the whole authorization decision.
+
+`invite_teammate_guard.mjs` covers the check that stops an invite overwriting
+an existing account. That guard's correctness is mostly its *position* in the
+file: a trigger creates a default `profiles` row the instant any `auth.users`
+row appears, including the one `inviteUserByEmail` creates, so the same query
+that catches a pre-existing account before the invite would reject every
+legitimate invite after it. The suite asserts on source offsets for that
+reason.
+
+**Both suites were mutation-tested rather than just run.** Breaking each rule
+in a scratch copy of the function must turn a PASS into a FAIL — that is the
+only thing separating a test from a paragraph that returns zero. One assertion
+here was found worthless that way: it matched an unrelated supervisor check
+elsewhere in the same window and reported the rule intact after the rule had
+been deleted. If you add an assertion, break the thing it covers and watch it
+fail before you trust it.
 
 ## RLS behaviour tests — needs a real Postgres
 

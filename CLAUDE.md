@@ -630,19 +630,27 @@ scratch cluster and reading a cross-clinic row. A write-side trigger is not a
 tenant boundary. And `hub_pd_records`/`hub_time_off_requests` still have no
 `..._manage_select` policy (see the Admin console bullet below).
 
-- **`invite-teammate` does not check whether the invited email already has a
-  `profiles` row before upserting one.** Supabase's `inviteUserByEmail`
-  resolves an already-registered email to that *same existing user id*
-  rather than erroring or minting a new one, and the function then
-  `upsert`s `profiles` for that id — silently overwriting whoever already
-  owns that account with the new role/clinic/supervisor. Confirmed live
-  2026-08-30: inviting an existing admin's own email as "clinician" flipped
-  that admin's own `profiles.role` in place, and their prior
-  `hub_task_progress`/`hub_employee_training` rows (from testing under the
-  old role) then legitimately showed up under the "new" invite, because it
-  was the same account the whole time. Not yet fixed — add a check for an
-  existing `profiles` row (or an existing `auth.users` row for that email)
-  before inviting, and return a clear error instead of upserting over it.
+- **`invite-teammate` overwriting an existing account is FIXED** (commit
+  `479bbf8`); the reason it happened is worth keeping. Supabase's
+  `inviteUserByEmail` resolves an already-registered email to that *same
+  existing user id* rather than erroring or minting a new one, and the
+  function then `upsert`s `profiles` for that id — silently overwriting
+  whoever already owns that account with the new role/clinic/supervisor.
+  Confirmed live 2026-08-30: inviting an existing admin's own email as
+  "clinician" flipped that admin's own `profiles.role` in place, and their
+  prior `hub_task_progress`/`hub_employee_training` rows (from testing under
+  the old role) then legitimately showed up under the "new" invite, because
+  it was the same account the whole time.
+
+  The guard queries `profiles` by email and returns 409, naming whether the
+  account is in this clinic or another — the second case is where the
+  one-login-per-clinic decision is enforced. **It must stay ahead of
+  `inviteUserByEmail` in the file.** A trigger creates a default `profiles`
+  row (role `client`, `clinic_id` null) the instant any `auth.users` row
+  appears, including the one the invite itself creates, so the same query
+  moved after the call would reject every legitimate invite.
+  `supabase/tests/invite_teammate_guard.mjs` asserts that ordering, and CI
+  runs it. Edge Functions deploy separately — a merge does not ship them.
 - **The Admin console's "Queues" tab (`apps/employee/app/admin/page.tsx`) was scoped to the
   wrong user.** Every queue there read `getProgress()`/`getPd()`/`getTimeOff()` — the
   CALLER's own loaded hub snapshot (`hub.ts`'s `requireSnap()` is always the signed-in
