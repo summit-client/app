@@ -20,6 +20,25 @@ const EDIT_INTO_MATRIX: Partial<Record<AppRole, readonly AppRole[]>> = {
   scheduler: ["client", "clinician"],
 };
 
+/**
+ * Which roles a caller may act ON, by the target's CURRENT role. This is a
+ * separate question from EDIT_INTO_MATRIX above, and leaving it unasked was
+ * a privilege-escalation hole: the matrix gated only the role being SET, so
+ * a scheduler - who may set client/clinician - could point this at their own
+ * clinic's admin and set role "clinician", demoting them. The deactivate
+ * branch asked neither question and would ban that admin outright.
+ *
+ * "any" rather than a list for admin on purpose: profiles.role also carries
+ * hr_admin and payroll_admin (migration 0024) which this function's AppRole
+ * union predates, and a literal list would silently stop admins from
+ * managing those accounts at all. A scheduler stays pinned to the same two
+ * roles it may invite and set.
+ */
+const EDIT_TARGETS_MATRIX: Partial<Record<AppRole, readonly AppRole[] | "any">> = {
+  admin: "any",
+  scheduler: ["client", "clinician"],
+};
+
 const MAX_EDITS_PER_HOUR = 30;
 
 interface EditRequest {
@@ -43,7 +62,8 @@ Deno.serve(async (req) => {
   if (!caller || !caller.clinic_id) return json(403, { error: "No clinic on your account" });
 
   const allowedRoles = EDIT_INTO_MATRIX[caller.role];
-  if (!allowedRoles) return json(403, { error: "Your role cannot edit teammates" });
+  const editableTargets = EDIT_TARGETS_MATRIX[caller.role];
+  if (!allowedRoles || !editableTargets) return json(403, { error: "Your role cannot edit teammates" });
 
   let body: EditRequest;
   try {
@@ -60,6 +80,14 @@ Deno.serve(async (req) => {
   const target = await getCallerProfile(admin, body.target_user_id);
   if (!target || target.clinic_id !== caller.clinic_id) {
     return json(404, { error: "No teammate with that id in your clinic" });
+  }
+
+  // Before anything else this request might do - set a role, rename, reassign
+  // a supervisor, or ban outright - can the caller touch THIS person at all?
+  // Same clinic is not enough on its own; that check only stops cross-tenant
+  // edits, never a lower-privileged role reaching up within its own clinic.
+  if (editableTargets !== "any" && !editableTargets.includes(target.role)) {
+    return json(403, { error: `Your role cannot change a ${target.role} account` });
   }
 
   if (body.role && !allowedRoles.includes(body.role as AppRole)) {
