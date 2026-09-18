@@ -233,6 +233,7 @@ export function SessionDetail({
 
       {showCancelScopePicker && (
         <RecurrenceScopeModal
+          nested
           title="Cancel recurring session"
           prompt="This session repeats. What should cancelling apply to?"
           onPick={(scope) => { setShowCancelScopePicker(false); void executeCancel(scope); }}

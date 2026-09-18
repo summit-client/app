@@ -466,9 +466,15 @@ const overlayStyle: React.CSSProperties = {
   // modal taller than the viewport overflows equally in BOTH directions,
   // and the half above the top edge cannot be scrolled to. iOS Safari hits
   // that routinely, since vh there resolves against the large viewport.
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 110, display: "flex", alignItems: "flex-start", justifyContent: "center",
+  // No background and no blur of its own. This panel has exactly one caller
+  // (SessionDetail), which already renders it INSIDE its own scrimmed
+  // overlay - so a second 35% black plus a second 2.8px blur composited on
+  // top of the first, and the page visibly darkened on "View both
+  // schedules" and lightened again on the way back out. That step-down,
+  // step-up was the whole "pyramid" effect; one scrim, owned by the
+  // outermost dialog, keeps every level at the same weight.
+  position: "fixed", inset: 0, background: "transparent", zIndex: 110, display: "flex", alignItems: "flex-start", justifyContent: "center",
   padding: 16, overflowY: "auto",
-  backdropFilter: "blur(2.8px)", WebkitBackdropFilter: "blur(2.8px)",
 };
 // The height cap is .modal-sheet in styles/globals.css (max-height: 94vh
 // then 94dvh, two declarations an inline style object can't express).

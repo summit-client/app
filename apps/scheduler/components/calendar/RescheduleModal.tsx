@@ -543,6 +543,7 @@ export function RescheduleModal({
           picker, which is why that one worked. */}
       {showScopePicker && (
         <RecurrenceScopeModal
+          nested
           onPick={(scope) => { setShowScopePicker(false); void executeSave(scope); }}
           onCancel={() => setShowScopePicker(false)}
         />
