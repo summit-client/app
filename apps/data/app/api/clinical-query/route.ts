@@ -36,8 +36,25 @@ export async function POST(request: NextRequest) {
 
   let provider: ClinicalAIProvider;
   try {
-    provider = resolveProvider({ task: "clinical_query", containsPhi: false });
-  } catch {
+    // containsPhi is declared by the caller - resolveProvider never inspects
+    // the payload - and this route declared `false` for a 500-character free
+    // text box that is only trimmed and length-checked. A supervisor asking
+    // "is Maya still on the 3-step prompt?" is identifiable clinical data, so
+    // the declaration was simply untrue, and it is the declaration alone that
+    // decides whether the question may leave for a non-Azure provider.
+    //
+    // Declared true. The practical effect in an environment without
+    // CLINICAL_AI_ALLOW_PHI is that this falls to the offline keyword
+    // responder below rather than reaching a model - a worse answer, not a
+    // silent one, and the safe direction under PHIPA. Nothing here redacts
+    // the question, so nothing here can honestly declare it PHI-free.
+    provider = resolveProvider({ task: "clinical_query", containsPhi: true });
+  } catch (e) {
+    // Logged, because "the model is not available for identifiable questions
+    // in this environment" and "the key is missing" produce the same offline
+    // answer on screen.
+    console.warn("[data/clinical-query] falling back to the offline responder:",
+      e instanceof Error ? e.message : e);
     provider = new MockProvider(); // keyword mapping still works offline
   }
 
