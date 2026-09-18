@@ -57,7 +57,10 @@ export async function POST(request: NextRequest) {
   // Commit path: record the clinician's decision with the reviewed evidence.
   if (body.commit) {
     if (sb) {
-      await sb.from("clinical_decisions").insert({
+      // The insert's result used to be discarded and this route answered
+      // `committed: true` regardless, so an RLS refusal told the clinician
+      // their decision was recorded when no row existed.
+      const { error } = await sb.from("clinical_decisions").insert({
         clinic_id: clinicId, client_id: body.clientId, program_id: body.goalId,
         pattern: body.pattern ?? "clinical review",
         evidence: goal.masteryEvidence,
@@ -65,6 +68,13 @@ export async function POST(request: NextRequest) {
         remeasure_at: body.commit.remeasureAt ?? null,
         decided_by: userId,
       });
+      if (error) {
+        console.error("[data/decision-tree] clinical_decisions insert failed:", error.message);
+        return NextResponse.json(
+          { ok: false, error: "That decision was not recorded. Please try again." },
+          { status: 500 },
+        );
+      }
     }
     return NextResponse.json({ ok: true, committed: true });
   }

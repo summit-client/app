@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { ClinicalEvidencePacket, TreatmentPlanSuggestions } from "@summit/clinical-ai";
 import { getSetting } from "@summit/settings";
+import { toast } from "@summit/toast";
 
 type Suggestion = TreatmentPlanSuggestions["suggestions"][number];
 
@@ -42,10 +43,17 @@ export default function PlanningPage() {
   React.useEffect(() => { void load(); }, [load]);
 
   const commit = async (s: Suggestion) => {
-    await fetch("/api/planning", {
+    // The response used to be ignored entirely, so a refused write still
+    // marked the goal as planned with no row behind it.
+    const res = await fetch("/api/planning", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clientId, commit: { goalName: s.goalName, source: s.source, rationale: s.rationale, pattern: "treatment_planning" } }),
     });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.ok) {
+      toast(data?.error ?? "That plan was not recorded. Please try again.");
+      return;
+    }
     setCommitted((c) => [...c, s.goalName]);
   };
 

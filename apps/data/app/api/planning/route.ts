@@ -47,12 +47,22 @@ export async function POST(request: NextRequest) {
   // Commit path: the clinician's decision is recorded, audited, and owned by them.
   if (body.commit) {
     if (sb) {
-      await sb.from("clinical_decisions").insert({
+      // Same shape as app/api/decision-tree: the insert's result used to be
+      // discarded and this route answered `committed: true` regardless, so
+      // an RLS refusal reported a plan as recorded with no row behind it.
+      const { error } = await sb.from("clinical_decisions").insert({
         clinic_id: clinicId, client_id: body.clientId,
         pattern: body.commit.pattern, decision: `Plan: ${body.commit.goalName} (${body.commit.source})`,
         options_considered: [{ option: body.commit.goalName, rationale: body.commit.rationale }],
         decided_by: userId,
       });
+      if (error) {
+        console.error("[data/planning] clinical_decisions insert failed:", error.message);
+        return NextResponse.json(
+          { ok: false, error: "That plan was not recorded. Please try again." },
+          { status: 500 },
+        );
+      }
     }
     return NextResponse.json({ ok: true, committed: true });
   }

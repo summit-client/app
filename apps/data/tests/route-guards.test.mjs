@@ -118,5 +118,39 @@ console.log("the planning route wires the guard in before it writes");
     /requireClientInClinic\([\s\S]{0,160}?if \(!owns\.ok\) return/.test(src));
 }
 
+// A commit route that discards its insert result answers `committed: true`
+// whatever the database did. Read out of the shipped routes so the rule
+// cannot pass against a stale copy of it.
+console.log("commit routes report what the write actually did");
+for (const route of ["app/api/planning/route.ts", "app/api/decision-tree/route.ts"]) {
+  const src = readFileSync(route, "utf8");
+  t(`${route}: the insert result is captured, not discarded`,
+    /const \{ error \} = await sb\.from\("clinical_decisions"\)\.insert\(/.test(src));
+  {
+    // Every insert in the file, not just the first: a second commit path
+    // added later must capture its result too.
+    const all = [...src.matchAll(/await sb\.from\("clinical_decisions"\)\.insert\(/g)].length;
+    const captured = [...src.matchAll(/const \{ error \} = await sb\.from\("clinical_decisions"\)\.insert\(/g)].length;
+    t(`${route}: no bare awaited insert is left`, all > 0 && all === captured, `${captured}/${all} captured`);
+  }
+  t(`${route}: a failed insert answers ok:false, not committed:true`,
+    /if \(error\) \{[\s\S]{0,400}?ok: false[\s\S]{0,200}?status: 500/.test(src));
+  t(`${route}: the failure is logged for the operator`,
+    /if \(error\) \{[\s\S]{0,200}?console\.error\(/.test(src));
+}
+
+// The two callers have to read the answer, or the route's honesty is wasted.
+console.log("commit callers check the response before showing success");
+for (const [page, marker] of [
+  ["app/clients/[id]/planning/page.tsx", "setCommitted("],
+  ["app/clients/[id]/supervision/page.tsx", "setCommittedAs("],
+]) {
+  const src = readFileSync(page, "utf8");
+  t(`${page}: the fetch response is read`, /const res = await fetch\("\/api\//.test(src));
+  t(`${page}: it bails before marking success`,
+    /if \(!res\.ok \|\| !data\?\.ok\) \{[\s\S]{0,240}?return;\n\s*\}[\s\S]{0,120}?/.test(src)
+      && src.indexOf("if (!res.ok || !data?.ok)") < src.indexOf(marker));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
