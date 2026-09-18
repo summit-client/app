@@ -19,7 +19,7 @@ import { SelectClient } from "../components/select-client";
 import { AccountProblemNotice } from "../components/account-problem-notice";
 import { LoadErrorNotice } from "../components/load-error-notice";
 import type { AccountProblem } from "../lib/explain-account-problem";
-import { homeUrlFor } from "@summit/portals";
+import { homeUrlFor, loginUrl } from "@summit/portals";
 import { notificationsFromRows, sortNotifications, type Notification } from "../lib/notifications";
 import { familyFromRows, type Family } from "../lib/family";
 
@@ -120,9 +120,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
   if (userError || !user) {
     return {
       redirect: {
-        destination:
-          process.env.NEXT_PUBLIC_LOGIN_URL ||
-          "https://summitclient.io/login",
+        destination: process.env.NEXT_PUBLIC_LOGIN_URL || loginUrl(),
         permanent: false,
       },
     };

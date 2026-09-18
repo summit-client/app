@@ -10,7 +10,7 @@ import { LoadErrorNotice } from "../components/load-error-notice";
 import { createClient } from "../lib/supabase-server";
 import { browserClient } from "../lib/supabase-browser";
 import { ageOf, can, canForAny, displayName, familyFromRows, type Family } from "../lib/family";
-import { homeUrlFor } from "@summit/portals";
+import { homeUrlFor, loginUrl } from "@summit/portals";
 import { AvailabilityGrid, type AvailabilityRow } from "@summit/availability";
 import { getSetting } from "@summit/settings";
 import { saved } from "@summit/toast";
@@ -746,7 +746,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
   if (userError || !user) {
     return {
       redirect: {
-        destination: process.env.NEXT_PUBLIC_LOGIN_URL || "https://summitclient.io/login",
+        destination: process.env.NEXT_PUBLIC_LOGIN_URL || loginUrl(),
         permanent: false,
       },
     };

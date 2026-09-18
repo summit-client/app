@@ -15,7 +15,7 @@ import {
   messageProblem, statusLabel, subjectProblem, threadsFromRows, whenLabel,
   type Message, type Thread,
 } from "../lib/messages";
-import { homeUrlFor } from "@summit/portals";
+import { homeUrlFor, loginUrl } from "@summit/portals";
 import styles from "../styles/design-b.module.css";
 
 type PageProps =
@@ -492,7 +492,7 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
   if (userError || !user) {
     return {
       redirect: {
-        destination: process.env.NEXT_PUBLIC_LOGIN_URL || "https://summitclient.io/login",
+        destination: process.env.NEXT_PUBLIC_LOGIN_URL || loginUrl(),
         permanent: false,
       },
     };
