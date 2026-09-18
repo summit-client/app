@@ -294,8 +294,17 @@ table.data tbody tr:hover { background: var(--accent-tint); }
        auto, the `bottom: 0` written here takes effect. */
     height: auto;
     width: min(280px, 82vw);
+    /* visibility, not transform alone. Off-canvas by transform only leaves
+       every link in the drawer tabbable and in the accessibility tree, so a
+       phone keyboard or screen-reader user walked a whole invisible nav
+       after the hamburger before reaching the page. Same class of bug as the
+       phantom first tab stop the .nav-toggle-input rule above documents.
+       The 0s delay equal to the slide keeps the drawer visible while it
+       animates out, then hides it. */
     transform: translateX(-100%);
-    transition: transform var(--dur-entrance) var(--ease-editorial);
+    visibility: hidden;
+    transition: transform var(--dur-entrance) var(--ease-editorial),
+                visibility 0s linear var(--dur-entrance);
     overflow-y: auto;
     box-shadow: var(--shadow-xl);
     padding-bottom: env(safe-area-inset-bottom);
@@ -307,7 +316,21 @@ table.data tbody tr:hover { background: var(--accent-tint); }
     background: var(--scrim);
   }
   .nav-toggle-input:checked ~ .nav-toggle-backdrop { display: block; }
-  .nav-toggle-input:checked ~ .shell .sidebar { transform: translateX(0); }
+  .nav-toggle-input:checked ~ .shell .sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    /* No delay on the way in: the drawer has to be reachable as it opens. */
+    transition: transform var(--dur-entrance) var(--ease-editorial),
+                visibility 0s linear 0s;
+  }
 
   .content { padding: var(--space-5) var(--space-4); }
+}
+
+/* tokens.css's reduced-motion rule forces transition-duration to 0.01ms but
+   says nothing about transition-delay, so without this the closed drawer
+   above would stay visible - and tabbable - for the full --dur-entrance
+   after closing, for exactly the people least likely to want it. */
+@media (max-width: 820px) and (prefers-reduced-motion: reduce) {
+  .sidebar { transition-delay: 0s; }
 }
