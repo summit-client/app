@@ -20,6 +20,7 @@ import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflic
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { WaitlistView } from "../components/WaitlistView";
 import { FrontDeskFeedPanel } from "../components/FrontDeskFeedPanel";
+import { Icon } from "@summit/design/icons";
 // Moved to lib/ so pages/admin.tsx can page its sessions read too.
 import { fetchAllRows } from "../lib/fetch-all-rows";
 
@@ -37,6 +38,13 @@ const COLORS = {
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const AVAIL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const CELL_H = 22;
+
+// Shared by the Sessions pager's prev/next. Small enough to inline, defined
+// once so the two buttons cannot drift apart.
+const navBtnSmallInline = {
+  width: 28, height: 28, borderRadius: 7, border: `0.5px solid ${COLORS.border}`,
+  background: COLORS.bg, color: COLORS.text, fontSize: 14, lineHeight: 1, padding: 0,
+};
 
 // ─── Time helpers ─────────────────────────────────────────────────────────────
 
@@ -1104,8 +1112,17 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
                   </span>
                 )}
                 {st.is_client_optional && (
-                  <span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: COLORS.bgT, color: COLORS.textS, border: `1px solid ${COLORS.border}` }}>
-                    No client
+                  // Iconography over typography: a struck-through eye beside
+                  // the client glyph, rather than the words "No client". The
+                  // title carries the wording for anyone who needs it, and
+                  // aria-label keeps it announced rather than silent.
+                  <span
+                    title="No client attached to this session type"
+                    aria-label="No client attached to this session type"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 20, background: COLORS.bgT, color: COLORS.textS, border: `1px solid ${COLORS.border}` }}
+                  >
+                    <Icon name="hidden" size={13} />
+                    <Icon name="client" size={13} />
                   </span>
                 )}
                 <button onClick={() => setEditingType(st)}
@@ -2962,6 +2979,14 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
 
   const [sortKey, setSortKey] = useState("session_date");
   const [sortDir, setSortDir] = useState("asc");
+  // This list renders every matching row at once, and `bookings` is the
+  // whole clinic's history now that it pages past PostgREST's 1000-row cap -
+  // so a real clinic opened Sessions and got thousands of rows, each one an
+  // avatar, a checkbox, three buttons and ~20 nodes. "all" stays available
+  // because exporting or bulk-cancelling a whole filter is a real thing to
+  // want; it is just no longer what you get by default.
+  const [perPage, setPerPage] = useState(50);
+  const [page, setPage] = useState(1);
 
   function toggleSort(key) {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -3001,11 +3026,29 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
     return sortDir === "asc" ? cmp : -cmp;
   });
 
+  // Any change to what is being listed, or how it is ordered, invalidates
+  // the page number - page 7 of a 3-page result is a blank table.
+  useEffect(() => { setPage(1); }, [calFilter, statusFilter, typeFilter, staffFilter, search, sortKey, sortDir, perPage]);
+
+  const pageCount = perPage === "all" ? 1 : Math.max(1, Math.ceil(filtered.length / perPage));
+  // Clamped rather than trusted: rows can disappear underneath a set page
+  // (a refresh after someone else cancels) between the effect above firing.
+  const safePage = Math.min(page, pageCount);
+  const visible = perPage === "all" ? filtered : filtered.slice((safePage - 1) * perPage, safePage * perPage);
+
   function toggleSelect(id) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
   function toggleAll() {
-    setSelected(selected.size === filtered.length ? new Set() : new Set(filtered.map(b => b.id)));
+    // The page, not the whole filter: the header checkbox sits above these
+    // rows and "select all" meaning rows you cannot see is how the bulk
+    // cancel below became dangerous in the first place.
+    const allOnPageSelected = visible.length > 0 && visible.every(b => selected.has(b.id));
+    setSelected(prev => {
+      const n = new Set(prev);
+      for (const b of visible) { if (allOnPageSelected) n.delete(b.id); else n.add(b.id); }
+      return n;
+    });
   }
 
   async function cancelSelected() {
@@ -3014,7 +3057,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
     // ticking rows, narrowing the filter and pressing Cancel used to cancel
     // sessions the user could no longer see - and cancelling the wrong
     // session is not an error anyone gets to undo.
-    const ids = filtered.filter(b => selected.has(b.id)).map(b => b.id);
+    const ids = visible.filter(b => selected.has(b.id)).map(b => b.id);
     if (ids.length === 0) return;
     const now = new Date();
     const lateCount = ids.filter(id => {
@@ -3038,7 +3081,10 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
   }
 
   function exportICS() {
-    const toExport = selected.size > 0 ? filtered.filter(b => selected.has(b.id)) : filtered;
+    // What is on screen, not the whole filter: with the list paginated, an
+    // export of rows the user never saw is the same surprise the bulk cancel
+    // had. Set the page size to "All" to feed the whole filter to it.
+    const toExport = selected.size > 0 ? visible.filter(b => selected.has(b.id)) : visible;
     const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Summit Scheduler//EN"];
     // DTSTART/DTEND previously emitted the local wall-clock time with no `Z`
     // suffix and no TZID - "floating" time per RFC 5545, which an importing
@@ -3180,7 +3226,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 140px 100px 80px 80px", gap: 0, padding: "6px 12px", borderRadius: "8px 8px 0 0", background: COLORS.bgS, border: `0.5px solid ${COLORS.border}`, borderBottom: "none" }}>
-        <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll} style={{ cursor: "pointer" }} />
+        <input type="checkbox" checked={visible.length > 0 && visible.every(b => selected.has(b.id))} onChange={toggleAll} style={{ cursor: "pointer" }} />
         {[["Client", "client"], ["Staff", "staff"], ["Location", "location"], ["Type", "type"], ["Date & Time", "session_date"], ["Status", "status"]].map(([label, key]) => (
           <div key={key} onClick={() => toggleSort(key)}
             style={{ fontSize: 12, fontWeight: 600, color: sortKey === key ? COLORS.text : COLORS.textT, letterSpacing: "0.04em", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 4 }}>
@@ -3201,7 +3247,7 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
     No sessions match your filters
   </div>
 ) : null}
-        {filtered.map((b, i) => {
+        {visible.map((b, i) => {
           // A clinician sees a colleague's session as its type and time, not
           // who it is with (../lib/sessionPrivacy). Admin and scheduler are
           // unchanged. The initials in the avatar re-identify at this
@@ -3300,6 +3346,43 @@ function SessionsView({ clients, employees, sessionTypes, bookings, calendars, l
           );
         })}
       </div>
+
+      {/* Pager. Rendered whenever there is anything to list, even on a single
+          page, so the page-size control stays in the same place rather than
+          appearing only once a clinic grows past it. */}
+      {filtered.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 12, fontSize: 13, color: COLORS.textS }}>
+          <div>
+            {perPage === "all"
+              ? `Showing all ${filtered.length} session${filtered.length === 1 ? "" : "s"}`
+              : `Showing ${(safePage - 1) * perPage + 1}\u2013${Math.min(safePage * perPage, filtered.length)} of ${filtered.length}`}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: COLORS.textT }}>Per page</span>
+              <select
+                value={String(perPage)}
+                onChange={e => setPerPage(e.target.value === "all" ? "all" : Number(e.target.value))}
+                style={{ padding: "5px 8px", borderRadius: 7, border: `0.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.text, fontSize: 13, cursor: "pointer" }}
+              >
+                {[25, 50, 100, 250].map(n => <option key={n} value={n}>{n}</option>)}
+                <option value="all">All</option>
+              </select>
+            </label>
+            {perPage !== "all" && pageCount > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
+                  style={{ ...navBtnSmallInline, opacity: safePage <= 1 ? 0.4 : 1, cursor: safePage <= 1 ? "not-allowed" : "pointer" }}
+                  aria-label="Previous page">‹</button>
+                <span style={{ minWidth: 82, textAlign: "center" }}>Page {safePage} of {pageCount}</span>
+                <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={safePage >= pageCount}
+                  style={{ ...navBtnSmallInline, opacity: safePage >= pageCount ? 0.4 : 1, cursor: safePage >= pageCount ? "not-allowed" : "pointer" }}
+                  aria-label="Next page">›</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Reschedule modal */}
       {rescheduleTarget && (() => {

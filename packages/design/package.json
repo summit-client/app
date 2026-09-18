@@ -8,7 +8,8 @@
     "./tokens.css": "./tokens.css",
     "./components.css": "./components.css",
     "./motion.css": "./motion.css",
-    "./motion": "./motion.tsx"
+    "./motion": "./motion.tsx",
+    "./icons": "./icons.tsx"
   },
   "peerDependencies": {
     "react": "^19.0.0"

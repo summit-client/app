@@ -33,6 +33,12 @@ interface Props {
   options?: { key: RecurrenceScope; label: string }[];
   onPick: (scope: RecurrenceScope) => void;
   onCancel: () => void;
+  /** True when this renders inside another dialog's already-scrimmed overlay
+   *  (SessionDetail, RescheduleModal). Its own backdrop is then dropped, so
+   *  the page does not darken a second time just because a second dialog
+   *  opened. CalendarView renders it at top level from a drag and leaves
+   *  this off, where the scrim is the only one there is. */
+  nested?: boolean;
 }
 
 export function RecurrenceScopeModal({
@@ -41,6 +47,7 @@ export function RecurrenceScopeModal({
   options,
   onPick,
   onCancel,
+  nested = false,
 }: Props) {
   useEscapeToClose(onCancel);
   const trapRef = useFocusTrap<HTMLDivElement>();
@@ -53,7 +60,10 @@ export function RecurrenceScopeModal({
     // stopPropagation because SessionDetail renders this INSIDE its own
     // overlay, whose onClick closes that dialog - a backdrop tap meant for
     // this picker used to close both.
-    <div style={overlayStyle} onClick={(e) => { e.stopPropagation(); onCancel(); }}>
+    <div
+      style={nested ? { ...overlayStyle, background: "transparent", backdropFilter: "none", WebkitBackdropFilter: "none" } : overlayStyle}
+      onClick={(e) => { e.stopPropagation(); onCancel(); }}
+    >
       <div ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, marginBottom: 4, color: "var(--color-text-primary)" }}>
           <RecurringIcon size={16} /> {title}

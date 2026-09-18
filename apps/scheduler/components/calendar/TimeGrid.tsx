@@ -140,7 +140,10 @@ function locationLabel(
   return { icon: session.is_home_visit ? <HomeIcon size={11} /> : <LocationPinIcon size={11} />, text, title };
 }
 
-function Tooltip({
+/** Exported so MonthGrid can show the same hover card. Week and day view had
+ *  one and month view had nothing but a bare no-show title, so the same
+ *  session told you everything in one view and nothing in another. */
+export function Tooltip({
   session, clients, employees, locations, sessionTypes, typeColors, colorOverride,
 }: {
   session: CalSession; clients: CalClient[]; employees: CalEmployee[]; locations: CalLocation[];

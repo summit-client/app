@@ -1,15 +1,24 @@
 /**
- * Small inline SVG icons for the calendar rebuild - location pin, home,
- * clinician, client, session-type dot, recurring. No new dependency:
- * apps/scheduler already keeps its own token/style copy rather than
- * depending on @summit/design (see root CLAUDE.md), so a shared icon
- * library doesn't fit this app's existing pattern either.
+ * Calendar icon shims.
  *
- * Deliberately icons over words per the original ask, EXCEPT the actual
- * date/time range ("Thu 2026-08-20 4:00 PM - 5:00 PM") - see
- * dateUtils.formatFullRange - which stays text since no icon can carry it.
+ * The art now lives in @summit/design/icons - the one set shared by every
+ * portal. This file's five named components stayed put as thin wrappers so
+ * the ~40 call sites across TimeGrid, MonthGrid, SessionDetail and the
+ * reschedule dialogs did not all have to change in the same commit, and so
+ * their `title` behaviour (an accessible name on an otherwise decorative
+ * glyph) keeps working.
+ *
+ * The header here used to argue that a shared icon library "doesn't fit this
+ * app's existing pattern", because apps/scheduler keeps its own tokens
+ * rather than importing @summit/design. That reasoning applied to the CSS,
+ * not to components: these carry no styling beyond currentColor, so the app
+ * takes the icons without taking the stylesheet. Its tokens are untouched.
+ *
+ * SessionTypeDot has no equivalent in the shared set and stays local - it is
+ * a filled swatch of a per-type colour, not a line icon.
  */
 import * as React from "react";
+import { Icon, type IconName } from "@summit/design/icons";
 
 interface IconProps {
   size?: number;
@@ -17,72 +26,28 @@ interface IconProps {
   title?: string;
 }
 
-const base = (size: number) => ({
-  width: size,
-  height: size,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.8,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-});
-
-export function LocationPinIcon({ size = 14, color, title }: IconProps) {
-  return (
-    <svg {...base(size)} style={{ color }} aria-label={title} role={title ? "img" : undefined}>
-      {title ? <title>{title}</title> : null}
-      <path d="M12 22s7-7.58 7-12.5A7 7 0 0 0 5 9.5C5 14.42 12 22 12 22Z" />
-      <circle cx="12" cy="9.5" r="2.5" />
-    </svg>
-  );
+/** Wraps a shared icon with this file's colour/title contract. */
+function shim(name: IconName, defaultSize: number) {
+  return function Shim({ size = defaultSize, color, title }: IconProps) {
+    return (
+      <Icon
+        name={name}
+        size={size}
+        style={color ? { color } : undefined}
+        aria-hidden={title ? undefined : true}
+        aria-label={title}
+        role={title ? "img" : undefined}
+      />
+    );
+  };
 }
 
-export function HomeIcon({ size = 14, color, title }: IconProps) {
-  return (
-    <svg {...base(size)} style={{ color }} aria-label={title} role={title ? "img" : undefined}>
-      {title ? <title>{title}</title> : null}
-      <path d="M3 11.5 12 4l9 7.5" />
-      <path d="M5.5 10v9a1 1 0 0 0 1 1H17.5a1 1 0 0 0 1-1v-9" />
-    </svg>
-  );
-}
+export const LocationPinIcon = shim("location", 14);
+export const HomeIcon = shim("home", 14);
+export const ClinicianIcon = shim("staff", 14);
+export const ClientIcon = shim("client", 14);
+export const RecurringIcon = shim("recurring", 14);
 
-export function ClinicianIcon({ size = 14, color, title }: IconProps) {
-  return (
-    <svg {...base(size)} style={{ color }} aria-label={title} role={title ? "img" : undefined}>
-      {title ? <title>{title}</title> : null}
-      <circle cx="12" cy="8" r="3.2" />
-      <path d="M5 20c0-3.6 3.13-6 7-6s7 2.4 7 6" />
-      <path d="M9.5 5.3 12 2.5l2.5 2.8" />
-    </svg>
-  );
-}
-
-export function ClientIcon({ size = 14, color, title }: IconProps) {
-  return (
-    <svg {...base(size)} style={{ color }} aria-label={title} role={title ? "img" : undefined}>
-      {title ? <title>{title}</title> : null}
-      <circle cx="12" cy="8" r="3.2" />
-      <path d="M5 20c0-3.6 3.13-6 7-6s7 2.4 7 6" />
-    </svg>
-  );
-}
-
-export function RecurringIcon({ size = 14, color, title }: IconProps) {
-  return (
-    <svg {...base(size)} style={{ color }} aria-label={title} role={title ? "img" : undefined}>
-      {title ? <title>{title}</title> : null}
-      <path d="M17 2 21 6 17 10" />
-      <path d="M3 12v-1a5 5 0 0 1 5-5h13" />
-      <path d="M7 22 3 18 7 14" />
-      <path d="M21 12v1a5 5 0 0 1-5 5H3" />
-    </svg>
-  );
-}
-
-/** A single-session color dot, matching session_types.color - same visual
- *  language the type-color left-border/tooltip already use elsewhere. */
 export function SessionTypeDot({ size = 8, color }: { size?: number; color: string }) {
   return <span style={{ width: size, height: size, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }} />;
 }
