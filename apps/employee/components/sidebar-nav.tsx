@@ -3,8 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Icon, type IconName } from "@summit/design/icons";
 
-export type SidebarNavItem = { href: string; label: string; group?: string; icon?: string };
+export type SidebarNavItem = { href: string; label: string; group?: string; icon?: IconName };
 
 /**
  * The sidebar's own nav. It lives here rather than in app/layout.tsx purely
@@ -32,7 +33,7 @@ export function SidebarNav({ items }: { items: SidebarNavItem[] }) {
               className={`nav-item${active ? " active" : ""}`}
               aria-current={active ? "page" : undefined}
             >
-              <span className="nav-icon" aria-hidden>{n.icon}</span>
+              <span className="nav-icon">{n.icon ? <Icon name={n.icon} size={15} /> : null}</span>
               <span>{n.label}</span>
             </Link>
           </React.Fragment>

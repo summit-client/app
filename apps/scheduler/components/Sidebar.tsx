@@ -1,5 +1,6 @@
 import { useRouter } from "next/router";
 import { CalendarFeedPanel } from "./CalendarFeedPanel";
+import { Icon, type IconName } from "@summit/design/icons";
 
 // Roles are `profiles.role` values — see UserRole in lib/useUser.ts. This
 // list used to also admit "staff" (never a real role), then later
@@ -18,19 +19,19 @@ import { CalendarFeedPanel } from "./CalendarFeedPanel";
 // screens, not booking, and 0046's RLS gives clinician no write there at
 // all. "clients" and "settings" are unchanged for the same reason.
 export const NAV = [
-  { id: "dashboard", label: "Dashboard", icon: "▦", roles: ["admin", "scheduler", "clinician"] },
-  { id: "calendar",  label: "Calendar",  icon: "⊞", roles: ["admin", "scheduler", "clinician"] },
-  { id: "sessions",  label: "Sessions",  icon: "◈", roles: ["admin", "scheduler", "clinician"] },
-  { id: "waitlist",  label: "Waitlist",  icon: "⏱", roles: ["admin", "scheduler"] },
-  { id: "create",    label: "Create",    icon: "✦", roles: ["admin", "scheduler", "clinician"] },
-  { id: "clients",   label: "Clients",   icon: "⊙", roles: ["admin", "scheduler"] },
-  { id: "employees", label: "Staff",     icon: "◎", roles: ["admin", "scheduler"] },
-  { id: "sessiontypes", label: "Session Types", icon: "◈", roles: ["admin", "scheduler"] },
+  { id: "dashboard", label: "Dashboard", icon: "dashboard", roles: ["admin", "scheduler", "clinician"] },
+  { id: "calendar",  label: "Calendar",  icon: "calendar", roles: ["admin", "scheduler", "clinician"] },
+  { id: "sessions",  label: "Sessions",  icon: "session", roles: ["admin", "scheduler", "clinician"] },
+  { id: "waitlist",  label: "Waitlist",  icon: "waitlist", roles: ["admin", "scheduler"] },
+  { id: "create",    label: "Create",    icon: "recognition", roles: ["admin", "scheduler", "clinician"] },
+  { id: "clients",   label: "Clients",   icon: "client", roles: ["admin", "scheduler"] },
+  { id: "employees", label: "Staff",     icon: "staff", roles: ["admin", "scheduler"] },
+  { id: "sessiontypes", label: "Session Types", icon: "sessionType", roles: ["admin", "scheduler"] },
   // Scheduler sees it read-only (RLS grants insert/update/delete to admin
   // alone), which is still worth having: "which location is this client at"
   // is a scheduling question.
-  { id: "locations", label: "Locations", icon: "⌂", roles: ["admin", "scheduler"] },
-  { id: "settings",  label: "Settings",  icon: "⚙", roles: ["admin"] },
+  { id: "locations", label: "Locations", icon: "location", roles: ["admin", "scheduler"] },
+  { id: "settings",  label: "Settings",  icon: "settings", roles: ["admin"] },
 ];
 
 /**
@@ -198,13 +199,14 @@ function handleNav(id: string) {
                 style={{ position: "relative" }}
               >
                 <span style={{
-                  fontSize: 14,
+                  display: "inline-flex",
+                  alignItems: "center",
                   opacity: active ? 1 : 0.65,
                   color: active ? "var(--brand-600)" : "inherit",
                   transition: "opacity 110ms",
                   lineHeight: 1,
                 }}>
-                  {n.icon}
+                  <Icon name={n.icon as IconName} size={15} />
                 </span>
                 <span style={{ flex: 1 }}>{n.label}</span>
                 {isCreate && (

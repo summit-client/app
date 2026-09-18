@@ -20,6 +20,7 @@ import { fetchFreshConflict, fetchFreshConflictKeys, slotKeyOf, isBookingConflic
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { WaitlistView } from "../components/WaitlistView";
 import { FrontDeskFeedPanel } from "../components/FrontDeskFeedPanel";
+import { Icon } from "@summit/design/icons";
 // Moved to lib/ so pages/admin.tsx can page its sessions read too.
 import { fetchAllRows } from "../lib/fetch-all-rows";
 
@@ -1111,8 +1112,17 @@ function SessionTypesView({ sessionTypes, setSessionTypes, showToast }) {
                   </span>
                 )}
                 {st.is_client_optional && (
-                  <span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: COLORS.bgT, color: COLORS.textS, border: `1px solid ${COLORS.border}` }}>
-                    No client
+                  // Iconography over typography: a struck-through eye beside
+                  // the client glyph, rather than the words "No client". The
+                  // title carries the wording for anyone who needs it, and
+                  // aria-label keeps it announced rather than silent.
+                  <span
+                    title="No client attached to this session type"
+                    aria-label="No client attached to this session type"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 20, background: COLORS.bgT, color: COLORS.textS, border: `1px solid ${COLORS.border}` }}
+                  >
+                    <Icon name="hidden" size={13} />
+                    <Icon name="client" size={13} />
                   </span>
                 )}
                 <button onClick={() => setEditingType(st)}

@@ -55,22 +55,22 @@ export const metadata: Metadata = {
 };
 
 const NAV: SidebarNavItem[] = [
-  { href: "/", label: "Dashboard", icon: "▦" },
-  { href: "/scoreboard", label: "Scoreboard", icon: "◈", group: "Growth" },
-  { href: "/team", label: "My Team", icon: "◎", group: "Growth" },
-  { href: "/recognition", label: "Recognition", icon: "✦", group: "Growth" },
-  { href: "/career", label: "Career Progress", icon: "▲", group: "Growth" },
-  { href: "/pd", label: "Professional Development", icon: "⊞", group: "Professional" },
-  { href: "/credentials", label: "My Credentials", icon: "⊙", group: "Professional" },
-  { href: "/training", label: "Training", icon: "◇", group: "Professional" },
-  { href: "/certificates", label: "Certificates", icon: "❖", group: "Professional" },
-  { href: "/documents", label: "My Documents", icon: "▤", group: "Records" },
-  { href: "/onboarding", label: "My Onboarding", icon: "◉", group: "Records" },
-  { href: "/policies", label: "Policies & Handbook", icon: "▣", group: "Records" },
-  { href: "/payroll", label: "Payroll", icon: "◐", group: "Records" },
-  { href: "/time-off", label: "Time Off", icon: "◷", group: "Records" },
-  { href: "/profile", label: "My Profile", icon: "⊕", group: "Records" },
-  { href: "/help", label: "Help", icon: "?", group: "Records" },
+  { href: "/", label: "Dashboard", icon: "dashboard" },
+  { href: "/scoreboard", label: "Scoreboard", icon: "scoreboard", group: "Growth" },
+  { href: "/team", label: "My Team", icon: "team", group: "Growth" },
+  { href: "/recognition", label: "Recognition", icon: "recognition", group: "Growth" },
+  { href: "/career", label: "Career Progress", icon: "career", group: "Growth" },
+  { href: "/pd", label: "Professional Development", icon: "development", group: "Professional" },
+  { href: "/credentials", label: "My Credentials", icon: "credential", group: "Professional" },
+  { href: "/training", label: "Training", icon: "training", group: "Professional" },
+  { href: "/certificates", label: "Certificates", icon: "certificate", group: "Professional" },
+  { href: "/documents", label: "My Documents", icon: "documents", group: "Records" },
+  { href: "/onboarding", label: "My Onboarding", icon: "onboarding", group: "Records" },
+  { href: "/policies", label: "Policies & Handbook", icon: "policies", group: "Records" },
+  { href: "/payroll", label: "Payroll", icon: "payroll", group: "Records" },
+  { href: "/time-off", label: "Time Off", icon: "timeOff", group: "Records" },
+  { href: "/profile", label: "My Profile", icon: "profile", group: "Records" },
+  { href: "/help", label: "Help", icon: "help", group: "Records" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

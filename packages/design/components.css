@@ -65,7 +65,16 @@
   transition: background var(--dur-feedback) var(--ease-editorial),
               color var(--dur-feedback) var(--ease-editorial);
 }
-.nav-icon { font-size: 14px; line-height: 1; opacity: 0.65; flex: none; width: 15px; text-align: center; }
+/* Sized as a box that centres an <svg>, not as a text cell. It held a unicode
+   glyph until the shared icon set landed, so font-size/text-align stay for any
+   call site still passing one; inline-flex is what actually positions the SVG,
+   and 0.65 opacity is now a deliberate de-emphasis rather than a way to make
+   a mismatched font glyph look intentional. */
+.nav-icon {
+  font-size: 14px; line-height: 1; opacity: 0.65; flex: none; width: 15px; height: 15px;
+  text-align: center; display: inline-flex; align-items: center; justify-content: center;
+}
+.nav-icon > svg { display: block; }
 .nav-item:hover { background: var(--accent-tint); color: var(--ink); }
 .nav-item:hover .nav-icon { opacity: 0.85; }
 .nav-item[aria-current="page"] .nav-icon, .nav-item.active .nav-icon { opacity: 1; color: var(--accent); }

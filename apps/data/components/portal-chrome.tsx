@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getSetting, onSettingsChange, resolve, term, terms } from "@summit/settings";
 import { applyLogoColors, type LogoTone } from "@summit/design";
+import { Icon, type IconName } from "@summit/design/icons";
 import { useSession } from "@/components/session-provider";
 
 /**
@@ -34,21 +35,21 @@ export function PortalNav() {
   // enforcement (the page-level check is), same distinction as the rest of
   // this app's role gating.
   const NAV = [
-    { href: "/", label: "Today", id: "Today", icon: "▦", group: "Workspace" },
-    { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "⊙", group: "Workspace" },
-    { href: "/attention", label: "Attention", id: "Attention", icon: "◈", group: "Workspace" },
-    { href: "/tasks", label: "My Tasks", id: "My Tasks", icon: "☑", group: "Workspace" },
+    { href: "/", label: "Today", id: "Today", icon: "dashboard", group: "Workspace" },
+    { href: "/caseload", label: term("client") === "Client" ? "My Caseload" : `My ${terms("client")}`, id: "My Caseload", icon: "client", group: "Workspace" },
+    { href: "/attention", label: "Attention", id: "Attention", icon: "attention", group: "Workspace" },
+    { href: "/tasks", label: "My Tasks", id: "My Tasks", icon: "tasks", group: "Workspace" },
     ...(identity?.appRole === "clinician"
       ? []
-      : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "◎", group: "Workspace" }]),
+      : [{ href: "/review", label: "Review Queue", id: "Review Queue", icon: "review", group: "Workspace" }]),
 
     // Families could send messages before there was anywhere to read them.
-    { href: "/messages", label: "Family Messages", id: "Family Messages", icon: "✉", group: "Clinic" },
-    { href: "/supervision", label: "Supervision Notes", id: "Supervision Notes", icon: "◉", group: "Clinic" },
-    { href: "/sharing", label: "What Families See", id: "What Families See", icon: "◐", group: "Clinic" },
+    { href: "/messages", label: "Family Messages", id: "Family Messages", icon: "message", group: "Clinic" },
+    { href: "/supervision", label: "Supervision Notes", id: "Supervision Notes", icon: "notes", group: "Clinic" },
+    { href: "/sharing", label: "What Families See", id: "What Families See", icon: "visible", group: "Clinic" },
 
-    { href: "/goals", label: "Goal Bank", id: "Goal Bank", icon: "◇", group: "Library" },
-    { href: "/lessons", label: "Lesson Plan Bank", id: "Lesson Plan Bank", icon: "▤", group: "Library" },
+    { href: "/goals", label: "Goal Bank", id: "Goal Bank", icon: "goal", group: "Library" },
+    { href: "/lessons", label: "Lesson Plan Bank", id: "Lesson Plan Bank", icon: "lesson", group: "Library" },
   ];
 
   // Four new destinations arrived at once and went under the single
@@ -86,7 +87,7 @@ export function PortalNav() {
                 className={`nav-item${isActive(n.href) ? " active" : ""}`}
                 aria-current={isActive(n.href) ? "page" : undefined}
               >
-                <span className="nav-icon" aria-hidden>{n.icon}</span>
+                <span className="nav-icon"><Icon name={n.icon as IconName} size={15} /></span>
                 <span>{n.label}</span>
               </Link>
             ))}
