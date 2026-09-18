@@ -170,6 +170,13 @@ html { scroll-behavior: smooth; }
    focusable/tabbable element and a separate CSS-only "checked" affordance.
    Hidden above 780px by default so it's absent from desktop entirely — not
    just visually hidden, no tab stop either since it's not display:flex there. */
+/* The checkbox IS the menu's state. It is focusable and operable with the
+   keyboard, but takes no pointer events - the label over it is what a thumb
+   hits. Same construction as packages/design/components.css's in-app sidebar
+   drawer, and for the same reason: no JavaScript, so it cannot be dead before
+   hydration or broken by a hydration failure. */
+.pubnav-toggle-input { display: none; }
+
 .mobile-nav-toggle {
   display: none;
   align-items: center;
@@ -183,8 +190,29 @@ html { scroll-behavior: smooth; }
   cursor: pointer;
 }
 .mobile-nav-toggle:hover { background: var(--brand-gray-100); }
+/* Both icons ship; which one shows is the checkbox's business. */
+.mobile-nav-icon-close { display: none; }
+.pubnav-toggle-input:checked ~ .pubnav-inner .mobile-nav-icon-open { display: none; }
+.pubnav-toggle-input:checked ~ .pubnav-inner .mobile-nav-icon-close { display: block; }
 
 @media (max-width: 780px) {
+  .pubnav-toggle-input {
+    display: block;
+    position: absolute;
+    top: 12px;
+    right: 24px;
+    width: 40px;
+    height: 40px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* The focus ring lands on the label, since the control itself is invisible.
+     Without this the menu is reachable by keyboard and gives no sign of it. */
+  .pubnav-toggle-input:focus-visible ~ .pubnav-inner .mobile-nav-toggle {
+    outline: 2px solid var(--brand-navy);
+    outline-offset: 2px;
+  }
   .mobile-nav-toggle { display: inline-flex; }
   /* Keeping just "Get started" plus the toggle on one row is what stops
      recrimping at narrow phone widths (measured next to the 780px cutover
@@ -208,13 +236,45 @@ html { scroll-behavior: smooth; }
   top: 64px;
   left: 0;
   right: 0;
-  display: flex;
+  /* Closed by default, in every viewport. `display: none` rather than a
+     visual hide, so the links are out of the tab order and the accessibility
+     tree exactly as they were when the panel was conditionally mounted. */
+  display: none;
   flex-direction: column;
   padding: 8px 16px 20px;
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
   box-shadow: 0 12px 24px rgba(26,63,92,.1);
-  animation: navPanelIn .18s ease-out both;
+}
+
+/* Tap-outside-to-close. Sits under the panel and over the page; only exists
+   while the menu is open. */
+.mobile-nav-backdrop { display: none; }
+
+@media (max-width: 780px) {
+  .pubnav-toggle-input:checked ~ .mobile-nav-panel {
+    display: flex;
+    animation: navPanelIn .18s ease-out both;
+  }
+  .pubnav-toggle-input:checked ~ .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    top: 64px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    /* Below the panel, above the page. The panel is a later sibling in the
+       same stacking context, so it paints on top without needing a z-index
+       of its own. */
+  }
+}
+
+/* Above 780px the desktop links are back, so the panel stays shut whatever
+   the checkbox says - a tablet rotated back to landscape cannot strand it
+   open underneath them. That case used to need a resize listener. */
+@media (min-width: 781px) {
+  .pubnav-toggle-input:checked ~ .mobile-nav-panel { display: none; }
 }
 @keyframes navPanelIn {
   from { opacity: 0; transform: translateY(-6px); }
