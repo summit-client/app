@@ -621,18 +621,26 @@ function InviteForm({
 // which is invite-teammate's list and answers a different question.
 const EDIT_ROLES = ["admin", "supervisor", "clinician"] as const;
 
-// `accessLevel` is the three-value display ladder the directory renders
-// (hr-backend's ACCESS maps clinician -> "EMPLOYEE"), not a profiles.role
-// value. Seeding the select with `accessLevel.toLowerCase()` therefore fed
-// it "employee" for every clinician -- which matches no <option>, so the
-// browser showed the first one and the dropdown claimed the person was an
-// admin while the Access pill beside it read "employee". Saving then sent
-// role: "employee", which edit-teammate rejects, so changing a clinician's
-// supervisor was impossible and the only feedback was "Could not save the
-// change."
-const EDIT_ROLE_FOR_ACCESS: Record<"EMPLOYEE" | "SUPERVISOR" | "ADMIN", (typeof EDIT_ROLES)[number]> = {
-  EMPLOYEE: "clinician", SUPERVISOR: "supervisor", ADMIN: "admin",
-};
+// The select is seeded from the person's REAL profiles.role, not from
+// `accessLevel`. accessLevel is the three-value display ladder the directory
+// renders, and hr-backend's ACCESS maps clinician -> "EMPLOYEE": seeding
+// from it fed the select "employee" for every clinician, which matches no
+// <option>, so the browser showed the first one and the dropdown claimed the
+// person was an admin while the Access pill beside it read "employee".
+// Deriving the role back from accessLevel is no better -- it maps EMPLOYEE
+// to "clinician", and a scheduler, hr_admin or payroll_admin all display as
+// EMPLOYEE too, so an admin who opened the row to change a supervisor would
+// have silently demoted them (saveEdit always sends `role`, and
+// edit-teammate accepts clinician from an admin).
+//
+// A role this control cannot express is shown as text instead, and `role` is
+// left out of the request entirely, so editing the supervisor of a scheduler
+// changes the supervisor and nothing else. Widening EDIT_ROLES to cover
+// scheduler/hr_admin/payroll_admin is a separate question: edit-teammate's
+// own matrix does not admit them either.
+function isEditableRole(role: string | null): role is (typeof EDIT_ROLES)[number] {
+  return role != null && (EDIT_ROLES as readonly string[]).includes(role);
+}
 
 function TeammateActions({
   person, people, busy, onBusy, onDone, onError, onDeactivated,
@@ -646,7 +654,8 @@ function TeammateActions({
   onDeactivated: () => void;
 }) {
   const [editing, setEditing] = React.useState(false);
-  const [role, setRole] = React.useState<string>(EDIT_ROLE_FOR_ACCESS[person.accessLevel]);
+  const editableRole = isEditableRole(person.appRole) ? person.appRole : null;
+  const [role, setRole] = React.useState<string>(editableRole ?? "");
   const [supervisorId, setSupervisorId] = React.useState(person.supervisorId ?? "");
 
   async function saveEdit() {
@@ -654,7 +663,9 @@ function TeammateActions({
     try {
       await editTeammate({
         targetUserId: person.id,
-        role: role as EditTeammateRole,
+        // Omitted when this control cannot express the person's role, so the
+        // save cannot change it to something the dropdown merely defaulted to.
+        ...(editableRole ? { role: role as EditTeammateRole } : {}),
         supervisorId: supervisorId || null,
       });
       onDone(`Updated ${person.name}.`);
@@ -697,11 +708,15 @@ function TeammateActions({
 
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      <select className="input" style={{ width: "auto" }} value={role}
-        aria-label={`Role for ${person.name}`}
-        onChange={(e) => setRole(e.target.value)}>
-        {EDIT_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-      </select>
+      {editableRole ? (
+        <select className="input" style={{ width: "auto" }} value={role}
+          aria-label={`Role for ${person.name}`}
+          onChange={(e) => setRole(e.target.value)}>
+          {EDIT_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+      ) : (
+        <span className="pill" title="This role is not editable here">{person.appRole ?? "no role"}</span>
+      )}
       {role === "clinician" ? (
         <select className="input" style={{ width: "auto" }} value={supervisorId}
           aria-label={`Supervisor for ${person.name}`}
