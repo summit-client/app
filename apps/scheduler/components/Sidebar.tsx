@@ -19,9 +19,9 @@ import { Icon, type IconName } from "@summit/design/icons";
 // screens, not booking, and 0046's RLS gives clinician no write there at
 // all. "clients" and "settings" are unchanged for the same reason.
 export const NAV = [
-  { id: "dashboard", label: "Dashboard", icon: "dashboard", roles: ["admin", "scheduler", "clinician"] },
-  { id: "calendar",  label: "Calendar",  icon: "calendar", roles: ["admin", "scheduler", "clinician"] },
-  { id: "sessions",  label: "Sessions",  icon: "session", roles: ["admin", "scheduler", "clinician"] },
+  { id: "dashboard", label: "Dashboard", icon: "dashboard", roles: ["admin", "supervisor", "scheduler", "clinician"] },
+  { id: "calendar",  label: "Calendar",  icon: "calendar", roles: ["admin", "supervisor", "scheduler", "clinician"] },
+  { id: "sessions",  label: "Sessions",  icon: "session", roles: ["admin", "supervisor", "scheduler", "clinician"] },
   { id: "waitlist",  label: "Waitlist",  icon: "waitlist", roles: ["admin", "scheduler"] },
   { id: "create",    label: "Create",    icon: "recognition", roles: ["admin", "scheduler", "clinician"] },
   { id: "clients",   label: "Clients",   icon: "client", roles: ["admin", "scheduler"] },

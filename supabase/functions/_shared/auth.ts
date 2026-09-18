@@ -16,7 +16,14 @@
 // WHICH user is calling, not just that some token was presented.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-export type AppRole = "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+// Mirrors @summit/portals' AppRole. hr_admin and payroll_admin joined it
+// 2026-09-18: both have been assignable in the database since migration 0030
+// and carry a full action matrix from 0024, but no code path could give them
+// to anyone. This union is what the two matrices below are keyed on, so it
+// had to learn them first.
+export type AppRole =
+  | "admin" | "supervisor" | "clinician" | "scheduler" | "client"
+  | "hr_admin" | "payroll_admin";
 
 export interface CallerProfile {
   id: string;

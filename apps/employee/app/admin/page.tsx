@@ -3,7 +3,7 @@
 import { HrGate } from "@/components/hr-provider";
 
 import * as React from "react";
-import { admitsAdminConsole } from "@summit/portals";
+import { admitsAdminConsole, type AppRole } from "@summit/portals";
 import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/settings";
 import { HUB_TASKS } from "@/lib/content";
 import { directory, hr } from "@/lib/hr-store";
@@ -14,7 +14,11 @@ import {
   type ManagedAuditEvent,
   type PendingCertificate, type PendingPd, type PendingSignoff, type PendingTimeOff, type TeamMember,
 } from "@/lib/hub";
-import { deactivateTeammate, editTeammate, inviteTeammate, listUnlinkedClients, ProvisioningError } from "@/lib/hr-backend";
+import {
+  countSupervisees, deactivateTeammate, editTeammate, inviteTeammate, listClientFamilies,
+  listUnlinkedClients, ProvisioningError, reactivateTeammate, setGuardianPermission,
+  type FamiliesSnapshot, type GuardianLink, type GuardianPermissionKind,
+} from "@/lib/hr-backend";
 import { SessionGate, useIdentity } from "@/components/session-provider";
 import { saved } from "@summit/toast";
 
@@ -94,7 +98,7 @@ function useManagedQueue<T>(load: () => Promise<T[]>): [QueueState<T>, () => voi
 function AdminConsole() {
   const identity = useIdentity();
   const [ready, setReady] = React.useState(false);
-  const [tab, setTab] = React.useState<"queues" | "staff" | "settings">("queues");
+  const [tab, setTab] = React.useState<"queues" | "staff" | "families" | "settings">("queues");
 
   const [signoffs, reloadSignoffs] = useManagedQueue<PendingSignoff>(listPendingSignoffs);
   const [certs, reloadCerts] = useManagedQueue<PendingCertificate>(listPendingCertificatesToIssue);
@@ -113,9 +117,11 @@ function AdminConsole() {
   if (tab !== "queues") {
     return (
       <div>
-        <AdminTabs tab={tab} setTab={setTab} role={role} />
+        <AdminTabs tab={tab} setTab={setTab} role={role} appRole={identity.appRole} />
         {tab === "staff" ? (
           <StaffTab isAdmin={role === "ADMIN"} isScheduler={identity.appRole === "scheduler"} isPreview={identity.isPreview} />
+        ) : tab === "families" ? (
+          <FamiliesTab isAdmin={role === "ADMIN"} canReadGuardians={role === "ADMIN" || identity.appRole === "scheduler"} isPreview={identity.isPreview} actorId={identity.userId} />
         ) : <BackendSettingsTab />}
       </div>
     );
@@ -129,7 +135,7 @@ function AdminConsole() {
 
   return (
     <div>
-      <AdminTabs tab={tab} setTab={setTab} role={role} />
+      <AdminTabs tab={tab} setTab={setTab} role={role} appRole={identity.appRole} />
       <p className="sub">
         {/* Scheduler's hub_can_manage() grant (migration 0022) is
             unconditional, same as admin's - clinic-wide, not team-linked -
@@ -313,16 +319,208 @@ function AdminConsole() {
 }
 
 
-function AdminTabs({ tab, setTab, role }: { tab: string; setTab: (t: "queues" | "staff" | "settings") => void; role: string }) {
+/**
+ * Clients & Families - the staff side of the guardian permission model.
+ *
+ * A guardian's access to a child is 16 named switches on their relationship
+ * record (migration 0047), and until this screen nothing in any app could
+ * change one: RLS reserves the write to `auth_can('admin.staff.manage')`, so
+ * it was a Supabase-dashboard operation. That is a poor place for a control
+ * that decides what a parent sees about their child.
+ *
+ * Two different limits apply here and they are NOT the same limit:
+ *  - reading the guardian rows: admin and supervisor through
+ *    `clinical.client.read`, and scheduler through migration 0084, which
+ *    grants those three tables narrowly rather than handing a scheduler a
+ *    PHI-flagged clinical action;
+ *  - changing one needs `admin.staff.manage`, which only admin holds.
+ *
+ * Supervisor is not offered this tab even though they can read the data: a
+ * supervisor is a clinician, not an app administrator, and managing who in a
+ * family sees what is administration.
+ *
+ * The unreadable branch below is kept rather than deleted. Until 0084 is
+ * applied a scheduler still reads nothing, and an empty list would read as
+ * "this family has no guardians" when it means "you cannot see them".
+ */
+function FamiliesTab({ isAdmin, canReadGuardians, isPreview, actorId }: { isAdmin: boolean; canReadGuardians: boolean; isPreview: boolean; actorId: string }) {
+  const [snap, setSnap] = React.useState<FamiliesSnapshot | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [openClient, setOpenClient] = React.useState<number | null>(null);
+
+  const load = React.useCallback(async () => {
+    if (isPreview) { setSnap(null); setError(null); return; }
+    try {
+      setSnap(await listClientFamilies(canReadGuardians));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load families.");
+    }
+  }, [isPreview, canReadGuardians]);
+  React.useEffect(() => { void load(); }, [load]);
+
+  async function toggle(rel: GuardianLink, kind: GuardianPermissionKind, next: boolean) {
+    setBusy(`${rel.relationshipId}:${kind.permission}`);
+    setNotice(null);
+    try {
+      await setGuardianPermission(rel.relationshipId, kind.permission, next, actorId);
+      // Re-read rather than patch in place: the flip is audited by a database
+      // trigger, and a screen that shows its own optimistic guess of a
+      // permission is the wrong screen to be optimistic on.
+      await load();
+      setNotice(`${kind.label} ${next ? "granted to" : "removed from"} ${rel.name}.`);
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "That did not save.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (isPreview) {
+    return (
+      <div className="card card-pad" style={{ marginTop: 16 }}>
+        <h2 className="section-title" style={{ marginTop: 0 }}>Clients &amp; Families</h2>
+        <p className="sub">Preview mode has no families to show - this screen reads the live guardian records.</p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="card card-pad" style={{ marginTop: 16 }}>
+        <h2 className="section-title" style={{ marginTop: 0 }}>Clients &amp; Families</h2>
+        <p className="sub">{error}</p>
+        <button className="btn secondary" onClick={() => void load()}>Try again</button>
+      </div>
+    );
+  }
+  if (!snap) return <p className="sub" style={{ marginTop: 16 }}>Loading families…</p>;
+
+  return (
+    <div>
+      <h2 className="section-title">Clients &amp; Families</h2>
+      <p className="sub">
+        What each guardian may see about each child. {isAdmin
+          ? "Changes take effect immediately and are recorded in the family access audit."
+          : "Viewing only - an administrator changes these."}
+      </p>
+
+      {!snap.canSeeGuardians ? (
+        <div className="card card-pad" style={{ marginTop: 12 }}>
+          <b>Guardian permissions are not visible to your role.</b>
+          <p className="sub" style={{ marginBottom: 0 }}>
+            The clients below are yours to see and invite; an administrator manages
+            who in each family sees what.
+          </p>
+        </div>
+      ) : null}
+
+      {notice ? <p className="sub" role="status" style={{ marginTop: 12 }}>{notice}</p> : null}
+
+      {snap.families.length === 0 ? (
+        <div className="card card-pad" style={{ marginTop: 12 }}>
+          <p className="sub" style={{ margin: 0 }}>No clients in this clinic yet.</p>
+        </div>
+      ) : null}
+
+      {snap.families.map((fam) => {
+        const open = openClient === fam.clientId;
+        return (
+          <div className="card" key={fam.clientId} style={{ marginTop: 12 }}>
+            <button
+              className="mode-tab"
+              aria-expanded={open}
+              style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 16px", background: "none", border: "none", textAlign: "left" }}
+              onClick={() => setOpenClient(open ? null : fam.clientId)}
+            >
+              <b>{fam.clientName}</b>
+              <span className="sub" style={{ margin: 0 }}>
+                {!snap.canSeeGuardians
+                  ? "—"
+                  : fam.guardians.length === 0
+                    ? "No guardians linked"
+                    : `${fam.guardians.length} guardian${fam.guardians.length === 1 ? "" : "s"}`}
+              </span>
+            </button>
+
+            {open && snap.canSeeGuardians ? (
+              <div style={{ padding: "0 16px 16px" }}>
+                {fam.guardians.length === 0 ? (
+                  <p className="sub">
+                    Nobody is linked to this client yet. Guardians are attached when a
+                    family account is invited.
+                  </p>
+                ) : fam.guardians.map((g) => (
+                  <div key={g.relationshipId} style={{ marginTop: 14 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                      <b>{g.name}</b>
+                      {g.relationship ? <span className="pill">{g.relationship.replace(/_/g, " ")}</span> : null}
+                      {g.status !== "ACTIVE" ? <span className="pill">{g.status.toLowerCase()}</span> : null}
+                    </div>
+                    <div className="table-wrap" style={{ marginTop: 8 }}>
+                      <table className="data">
+                        <thead>
+                          <tr><th>Permission</th><th>What it allows</th><th style={{ textAlign: "right" }}>Granted</th></tr>
+                        </thead>
+                        <tbody>
+                          {snap.kinds.map((k) => {
+                            const on = g.permissions[k.permission] === true;
+                            const key = `${g.relationshipId}:${k.permission}`;
+                            return (
+                              <tr key={k.permission}>
+                                <td>
+                                  {k.label}
+                                  {k.exposesClinical ? <span className="pill" style={{ marginLeft: 6 }}>clinical</span> : null}
+                                  {k.exposesFinancial ? <span className="pill" style={{ marginLeft: 6 }}>financial</span> : null}
+                                </td>
+                                <td className="sub" style={{ margin: 0 }}>{k.description}</td>
+                                <td style={{ textAlign: "right" }}>
+                                  <button
+                                    role="switch"
+                                    aria-checked={on}
+                                    aria-label={`${k.label} for ${g.name}`}
+                                    className={`switch ${on ? "on" : ""}`}
+                                    disabled={!isAdmin || busy === key}
+                                    title={isAdmin ? undefined : "Only an administrator can change this"}
+                                    onClick={() => void toggle(g, k, !on)}
+                                  >
+                                    <span className="knob" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AdminTabs({ tab, setTab, role, appRole }: { tab: string; setTab: (t: "queues" | "staff" | "families" | "settings") => void; role: string; appRole: string | null }) {
   return (
     <>
       <h1 className="h-page">Admin</h1>
       <div className="mode-tabs" style={{ marginTop: 10 }} role="tablist" aria-label="Admin sections">
-        {([["queues", "Queues"], ["staff", "Staff & Teams"], ["settings", "Backend Settings"]] as const).map(([k, label]) => (
-          (k !== "settings" || role === "ADMIN") ? (
+        {([["queues", "Queues"], ["staff", "Staff & Teams"], ["families", "Clients & Families"], ["settings", "Backend Settings"]] as const).map(([k, label]) => {
+          if (k === "settings" && role !== "ADMIN") return null;
+          // Admin and scheduler, per the brief. A scheduler sees the client
+          // list and can invite; the guardian half stays empty for them
+          // because RLS will not serve it (see FamiliesTab), and the tab says
+          // so rather than showing nothing.
+          if (k === "families" && !(role === "ADMIN" || appRole === "scheduler")) return null;
+          return (
             <button key={k} role="tab" aria-selected={tab === k} className={`mode-tab ${tab === k ? "active" : ""}`} onClick={() => setTab(k)}>{label}</button>
-          ) : null
-        ))}
+          );
+        })}
       </div>
     </>
   );
@@ -441,7 +639,7 @@ function StaffTab({ isAdmin, isScheduler, isPreview }: { isAdmin: boolean; isSch
  * key here on purpose, same as there - supervisor gets zero invite rights.
  */
 const INVITE_MATRIX = {
-  admin: ["admin", "supervisor", "clinician", "scheduler", "client"],
+  admin: ["admin", "supervisor", "clinician", "scheduler", "client", "hr_admin", "payroll_admin"],
   scheduler: ["client", "clinician"],
 } as const;
 
@@ -619,7 +817,14 @@ function InviteForm({
 // account's role can be CHANGED to via edit-teammate, not who may be
 // invited. Kept as its own constant rather than reusing INVITE_MATRIX,
 // which is invite-teammate's list and answers a different question.
-const EDIT_ROLES = ["admin", "supervisor", "clinician"] as const;
+//
+// Widened 2026-09-18 to the six staff-shaped roles. It listed three, so a
+// scheduler, hr_admin or payroll_admin could be invited but never edited -
+// their row fell to the read-only pill below. `client` is deliberately still
+// absent: edit-teammate permits an admin to make that change, but turning a
+// staff member into a family account is not something that should sit one
+// click away in a staff directory.
+const EDIT_ROLES = ["admin", "supervisor", "clinician", "scheduler", "hr_admin", "payroll_admin"] as const;
 
 // The select is seeded from the person's REAL profiles.role, not from
 // `accessLevel`. accessLevel is the three-value display ladder the directory
@@ -677,15 +882,68 @@ function TeammateActions({
     }
   }
 
+  /**
+   * Deactivating asks who takes this person's team BEFORE it bans them.
+   *
+   * It used to ban first and then report a count of people left pointing at
+   * a now-unusable supervisor, reassigning none of them. Everything keyed on
+   * supervisor_id - hub_can_manage()'s team branch, HR record reads,
+   * timesheet approval, this console's own queue scoping - then matched
+   * nobody, silently. The moment you deactivate someone is the moment you
+   * know who needs a new supervisor, so that is when it is asked.
+   */
   async function deactivate() {
-    if (!confirm(`Deactivate ${person.name}? They will no longer be able to sign in.`)) return;
     onBusy(true);
     try {
-      const res = await deactivateTeammate(person.id);
-      onDone(res.warning ? `${person.name} deactivated. ${res.warning}.` : `${person.name} deactivated.`);
+      const reports = await countSupervisees(person.id);
+      if (reports > 0) {
+        const candidates = people.filter((p) => p.id !== person.id && (p.accessLevel === "SUPERVISOR" || p.accessLevel === "ADMIN"));
+        const list = candidates.map((p, i) => `${i + 1}. ${p.name}`).join("\n");
+        const answer = prompt(
+          `${person.name} supervises ${reports} ${reports === 1 ? "person" : "people"}.\n\n`
+          + `Who takes them on? Enter a number, or 0 to leave them without a supervisor.\n\n${list}`,
+          "0",
+        );
+        if (answer === null) { onBusy(false); return; }
+        const choice = Number(answer.trim());
+        if (!Number.isInteger(choice) || choice < 0 || choice > candidates.length) {
+          onError("That is not one of the options - nobody was deactivated.");
+          onBusy(false);
+          return;
+        }
+        const newSupervisor = choice === 0 ? null : candidates[choice - 1].id;
+        const who = choice === 0 ? "no supervisor" : candidates[choice - 1].name;
+        if (!confirm(`Deactivate ${person.name}, and move their ${reports} ${reports === 1 ? "report" : "reports"} to ${who}?`)) {
+          onBusy(false);
+          return;
+        }
+        const res = await deactivateTeammate(person.id, newSupervisor);
+        onDone(res.warning ? `${person.name} deactivated. ${res.warning}` : `${person.name} deactivated.`);
+        onDeactivated();
+        return;
+      }
+      if (!confirm(`Deactivate ${person.name}? They will no longer be able to sign in.`)) { onBusy(false); return; }
+      const res = await deactivateTeammate(person.id, null);
+      onDone(res.warning ? `${person.name} deactivated. ${res.warning}` : `${person.name} deactivated.`);
       onDeactivated();
     } catch (e) {
       onError(e instanceof ProvisioningError ? e.message : "Could not deactivate.");
+    } finally {
+      onBusy(false);
+    }
+  }
+
+  /** The inverse, which had no endpoint at all until now: undoing a mistaken
+   *  deactivation meant the Supabase dashboard. */
+  async function reactivate() {
+    if (!confirm(`Re-activate ${person.name}? They will be able to sign in again.`)) return;
+    onBusy(true);
+    try {
+      await reactivateTeammate(person.id);
+      onDone(`${person.name} can sign in again.`);
+      onDeactivated();
+    } catch (e) {
+      onError(e instanceof ProvisioningError ? e.message : "Could not re-activate.");
     } finally {
       onBusy(false);
     }
@@ -702,6 +960,13 @@ function TeammateActions({
           aria-label={`Edit ${person.name}`}>Edit</button>
         <button onClick={deactivate} disabled={busy} className="btn secondary"
           aria-label={`Deactivate ${person.name}`}>Deactivate</button>
+        {/* Shown for everyone rather than only the deactivated, because the
+            directory reads `profiles` and a ban lives on auth.users - this
+            console cannot yet tell who is deactivated. Harmless on an active
+            account (lifting a ban nobody has is a no-op) and it beats the
+            Supabase dashboard, which was the only way to undo one. */}
+        <button onClick={reactivate} disabled={busy} className="btn secondary"
+          aria-label={`Re-activate ${person.name}`}>Re-activate</button>
       </div>
     );
   }
@@ -735,7 +1000,8 @@ function TeammateActions({
   );
 }
 
-type EditTeammateRole = "admin" | "supervisor" | "clinician" | "scheduler" | "client";
+// The registry's vocabulary, not a fourth copy of it.
+type EditTeammateRole = AppRole;
 
 /**
  * Backend settings: the Ecosystem Tracker configuration, edited on the same

@@ -20,7 +20,12 @@ import {
  * clinician tracks); supervisor gets zero invite rights in v1.
  */
 const INVITE_MATRIX: Partial<Record<AppRole, readonly AppRole[]>> = {
-  admin: ["admin", "supervisor", "clinician", "scheduler", "client"],
+  // hr_admin and payroll_admin added 2026-09-18. An admin could not create
+  // one of these accounts from anywhere in the product, so the permissions
+  // migration 0024 seeded them were unreachable. Only admin may issue them:
+  // both roles read HR or payroll records clinic-wide, which is not a
+  // scheduler's to hand out.
+  admin: ["admin", "supervisor", "clinician", "scheduler", "client", "hr_admin", "payroll_admin"],
   scheduler: ["client", "clinician"],
 };
 
