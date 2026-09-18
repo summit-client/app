@@ -106,16 +106,41 @@ console.log("requireClientInClinic");
   }
 }
 
-console.log("the planning route wires the guard in before it writes");
+// Every Clinical Intelligence route that takes a clientId from the request
+// body and writes a row stamped with the caller's clinic. Listed by reading
+// the directory, so a route added later without the guard fails here.
+console.log("every clinical route that takes a body clientId checks ownership");
 {
-  const src = readFileSync("app/api/planning/route.ts", "utf8");
-  t("the route calls the guard", src.includes("requireClientInClinic("));
-  t("the guard runs before the clinical_decisions insert",
-    src.indexOf("requireClientInClinic(") < src.indexOf('from("clinical_decisions")'));
-  t("the guard runs before the evidence packet is built",
-    src.indexOf("requireClientInClinic(") < src.indexOf("buildEvidencePacket("));
-  t("a refused client returns instead of falling through",
-    /requireClientInClinic\([\s\S]{0,160}?if \(!owns\.ok\) return/.test(src));
+  const { readdirSync } = await import("node:fs");
+  const apiRoot = "app/api";
+  const routes = readdirSync(apiRoot, { withFileTypes: true })
+    .flatMap((d) => (d.isDirectory() ? [d.name] : []))
+    .flatMap((name) => {
+      const direct = `${apiRoot}/${name}/route.ts`;
+      if (existsSync(direct)) return [direct];
+      // one level deeper, e.g. reports/generate
+      return readdirSync(`${apiRoot}/${name}`, { withFileTypes: true })
+        .flatMap((s2) => (s2.isDirectory() && existsSync(`${apiRoot}/${name}/${s2.name}/route.ts`)
+          ? [`${apiRoot}/${name}/${s2.name}/route.ts`] : []));
+    });
+  t("found the routes at all", routes.length >= 5, routes.join(" "));
+
+  for (const route of routes) {
+    const src = readFileSync(route, "utf8");
+    // Only routes that both accept a body clientId and call requireStaff.
+    if (!/clientId\?: number/.test(src) || !src.includes("requireStaff(")) continue;
+    t(`${route}: checks the client belongs to the caller's clinic`,
+      src.includes("requireClientInClinic("));
+    t(`${route}: the check runs immediately after requireStaff`,
+      src.indexOf("requireStaff(") < src.indexOf("requireClientInClinic("));
+    t(`${route}: a refused client returns instead of falling through`,
+      /requireClientInClinic\([\s\S]{0,200}?if \(!owns\.ok\) return/.test(src));
+    for (const write of ['from("clinical_decisions")', 'from("ai_requests")', 'from("evidence_packets")', "buildEvidencePacket("]) {
+      const at = src.indexOf(write);
+      if (at === -1) continue;
+      t(`${route}: the check runs before ${write}`, src.indexOf("requireClientInClinic(") < at);
+    }
+  }
 }
 
 // A commit route that discards its insert result answers `committed: true`
