@@ -57,13 +57,19 @@ interface SidebarProps {
   view: string;
   onNavigate: (id: string) => void;
   appUser: { role: string } | null;
-  bookings: unknown[];
+  bookings: { status?: string | null }[];
   calendars: { status: string; name: string }[];
 }
 
 export default function Sidebar({ view, onNavigate, appUser, bookings, calendars }: SidebarProps) {
   const router = useRouter();
   const isAdminPage = router.pathname === "/admin";
+  // Cancelled sessions are not booked ones. Every other count in this
+  // portal filters them out first (index.jsx's activeBookings,
+  // sessionsCountFor and liveSessions); this footer did not, so a clinic
+  // that cancels anything reads an inflated total under the calendar's
+  // name.
+  const bookedCount = bookings.filter((b) => b?.status !== "cancelled").length;
   const activeId = isAdminPage ? "admin" : view;
 
 /**
@@ -255,7 +261,7 @@ function handleNav(id: string) {
                 color: "var(--color-text-tertiary)",
                 marginTop: 1,
               }}>
-                {bookings.length} session{bookings.length !== 1 ? "s" : ""} booked
+                {bookedCount} session{bookedCount !== 1 ? "s" : ""} booked
               </div>
             </div>
           </div>
