@@ -10,7 +10,7 @@
 
 import * as React from "react";
 import { AppNav } from "@summit/nav";
-import { parseVisiblePortals, profileUrl, signOutUrl } from "@summit/portals";
+import { admitsAdminConsole, parseVisiblePortals, profileUrl, signOutUrl } from "@summit/portals";
 import { getIdentity, type AppRole } from "@summit/session";
 import { getSetting, onSettingsChange } from "@summit/settings";
 import { computeStaffPriorityStatus, type PriorityStatus } from "@/lib/hr-backend";
@@ -47,12 +47,12 @@ export function PortalBar(props: { activeKey: string; settingsHref?: string }) {
     return () => { cancelled = true; };
   }, [userId, role]);
 
-  // Mirrors AdminAccessGate's check in app/admin/page.tsx exactly - admin,
-  // supervisor, or scheduler (scheduler's Admin console access is a scoped
-  // exception, not a portal-wide role promotion; see that gate's own
-  // comment). Keep the two in sync if either changes: this only controls
-  // whether the link is offered, that gate is what actually enforces it.
-  const showAdminLink = role === "admin" || role === "supervisor" || role === "scheduler";
+  // From the registry, not a copy of AdminAccessGate's list. The two used to
+  // be hardcoded separately with a comment asking whoever changed one to
+  // remember the other; @summit/portals now owns the answer. This only
+  // controls whether the link is offered - app/admin/page.tsx's gate is what
+  // enforces it.
+  const showAdminLink = admitsAdminConsole(role ?? null);
 
   // `nav.visiblePortals` (@summit/settings, "Navigation" section). PortalBar
   // sits outside <SessionProvider> (see file header), but the settings

@@ -202,6 +202,31 @@ const ACCESS: Record<PortalKey, readonly AppRole[]> = {
   client: ["client", "admin"],
 };
 
+/**
+ * Who may reach apps/employee's Admin console.
+ *
+ * Narrower than ACCESS.employee, which admits `clinician` too: the console
+ * manages other people's records, and a clinician gets the portal for their
+ * own self-service screens only. `scheduler` is here because its console
+ * access is a deliberate scoped exception, not a portal-wide role promotion
+ * — see migration 0022, which widened hub_can_manage() so the console's
+ * queues actually return data for one.
+ *
+ * Lives here rather than in the app because it was hardcoded in two places
+ * that had to be hand-synced: the gate that enforces it
+ * (apps/employee/app/admin/page.tsx) and the bar that offers the link
+ * (apps/employee/components/portal-bar.tsx), whose own comment said as much.
+ * Nothing else in this file answers the question — ACCESS.employee is a
+ * different set.
+ */
+export const ADMIN_CONSOLE_ROLES: readonly AppRole[] = ["admin", "supervisor", "scheduler"];
+
+/** Whether an app role reaches the Admin console. The gate in apps/employee
+ *  is what enforces it; the nav link only offers it. */
+export function admitsAdminConsole(role: AppRole | null | undefined): boolean {
+  return role != null && ADMIN_CONSOLE_ROLES.includes(role);
+}
+
 export interface Portal {
   key: PortalKey;
   label: string;

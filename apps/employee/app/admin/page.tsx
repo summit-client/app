@@ -3,6 +3,7 @@
 import { HrGate } from "@/components/hr-provider";
 
 import * as React from "react";
+import { admitsAdminConsole } from "@summit/portals";
 import { getSetting, onSettingsChange, setSetting, SETTINGS } from "@summit/settings";
 import { HUB_TASKS } from "@/lib/content";
 import { directory, hr } from "@/lib/hr-store";
@@ -45,7 +46,12 @@ function AdminAccessGate({ children }: { children: React.ReactNode }) {
   // holds. The previous check read a role out of localStorage that My Profile
   // let anyone set, so any signed-in employee could open this console.
   const identity = useIdentity();
-  const allowed = identity.role === "ADMIN" || identity.role === "SUPERVISOR" || identity.appRole === "scheduler";
+  // The uppercase HubRole half stays as it is - it is this app's own display
+  // ladder. The appRole half reads @summit/portals' ADMIN_CONSOLE_ROLES, the
+  // same source components/portal-bar.tsx now uses to decide whether to offer
+  // the link, so the two can no longer drift apart.
+  const allowed = identity.role === "ADMIN" || identity.role === "SUPERVISOR"
+    || admitsAdminConsole(identity.appRole ?? null);
   if (!allowed) {
     return (
       <div className="card card-pad" style={{ marginTop: 16, maxWidth: 640 }}>
