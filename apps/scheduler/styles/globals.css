@@ -154,6 +154,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
 
+/* The cross-portal bar (@summit/nav's AppNav) scrolls horizontally rather
+   than wrapping when its pills don't fit a phone width, and hides that
+   scrollbar with `.app-nav-scroll`. That class is defined only in
+   @summit/design's components.css, which this app deliberately does not
+   import - it keeps its own copy of the tokens and component styles. So the
+   class was inert here while the rule above painted a 5px thumb inside the
+   bar's fixed 51px height, in the one portal of four where it shows. Kept in
+   step with @summit/design/components.css. */
+.app-nav-scroll { scrollbar-width: none; }
+.app-nav-scroll::-webkit-scrollbar { display: none; }
+
 /* ── Base elements ───────────────────────────────────────── */
 select, input, textarea, button {
   font-family: var(--font-body);
