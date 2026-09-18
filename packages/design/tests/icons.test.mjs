@@ -66,6 +66,30 @@ for (const [file, re] of consumers) {
   t(`${file} uses only real icon names`, unknown.length === 0, `unknown: ${unknown.join(", ")}`);
 }
 
+// apps/client still draws its own sidebar glyphs; it converts to this set in
+// the family-calendar pass. These are the names its nav will ask for, listed
+// here so the set cannot lose one before that lands - and so the reuse
+// decisions are written down rather than rediscovered.
+console.log("The family portal's nav vocabulary is covered");
+{
+  const familyNav = {
+    Dashboard: "home",
+    Appointments: "calendar",
+    Progress: "progress",
+    "Home Program": "activity",
+    Funding: "funding",
+    Messages: "message",
+    "Care Updates": "notes",      // reused: a care update IS a note
+    Documents: "documents",
+    "Forms & consents": "consent",
+    "Your family": "family",
+    Settings: "settings",
+  };
+  for (const [label, name] of Object.entries(familyNav)) {
+    t(`"${label}" has an icon (${name})`, declared.includes(name));
+  }
+}
+
 console.log("The glyphs they replaced are gone");
 // The specific collisions this set exists to resolve: one glyph meaning three
 // different things across three apps.
