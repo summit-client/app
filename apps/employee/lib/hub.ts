@@ -520,7 +520,14 @@ export async function issueOnboardingCertificate(title: string, competency: stri
   const subject = userId ?? s.profile.id;
   const cert = await be().issueOnboardingCertificate(subject, title, competency);
   if (subject === s.profile.id && cert && !s.certificates.some((c) => c.id === cert.id)) s.certificates.unshift(cert);
-  await audit("certificate.issued", title);
+  // `subject`, not the caller: the three siblings that act on other people
+  // (signOffTask, verifyPd, decideTimeOff) all pass it, and this one did
+  // not, so a certificate the admin console issued from the clinic-wide
+  // queue was filed against the admin who clicked it. That put it in the
+  // wrong person's history and out of reach of the subject's own supervisor,
+  // since hub_audit_read keys on `hub_can_manage(subject)`. Self-issuance is
+  // unaffected - subject is the caller's own id there.
+  await audit("certificate.issued", title, subject);
   changed();
 }
 
