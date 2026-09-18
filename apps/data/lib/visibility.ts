@@ -147,6 +147,35 @@ const PREVIEW_GUARDIANS: GuardianOption[] = [
   { userId: "u-gran", name: "S. Levin", relationship: "grandparent", canReachSurface: false },
 ];
 
+/**
+ * An error whose message is written for the person on screen.
+ *
+ * A raw PostgREST/RLS failure names policies, tables, columns and
+ * constraints, and this module used to rethrow `error.message` verbatim -
+ * app/sharing/page.tsx renders it, so the schema's internals were shown to
+ * whoever clicked. Worse, every one of those rethrows was an Error, so the
+ * page's `e instanceof Error` branch always won and the role-explaining
+ * sentence it falls back to was unreachable for real database errors.
+ *
+ * Only a message built here is meant for display. The page shows a
+ * VisibilityError's message and its own fixed copy for anything else.
+ */
+export class VisibilityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VisibilityError";
+  }
+}
+
+/**
+ * Logs the real reason for the operator's console and raises the sentence
+ * the person on screen should read instead.
+ */
+function dbFailure(error: { message: string }, where: string, forDisplay: string): never {
+  console.error(`[data/visibility] ${where}:`, error.message);
+  throw new VisibilityError(forDisplay);
+}
+
 export async function getShareableRecords(): Promise<ShareableRecord[]> {
   if (IS_PREVIEW) return mem.records;
   const { data, error } = await sb()
@@ -154,7 +183,7 @@ export async function getShareableRecords(): Promise<ShareableRecord[]> {
     .select("record_type, record_id, clinic_id, client_id, label, visibility, visibility_set_by, visibility_set_at, named_guardians, clients(name), profiles!visibility_set_by(full_name)")
     .order("visibility_set_at", { ascending: false, nullsFirst: false })
     .limit(500);
-  if (error) throw new Error(error.message);
+  if (error) dbFailure(error, "record_visibility_summary read", "Couldn't load the records you can share.");
   return (data ?? []).map((r: Record<string, unknown>) => ({
     recordType: r.record_type as RecordType,
     recordId: String(r.record_id),
@@ -196,7 +225,7 @@ export async function getGuardiansFor(
     .select("user_id, relationship, status, household_members(full_name), relationship_permissions(permission, granted)")
     .eq("client_id", clientId)
     .eq("status", "ACTIVE");
-  if (error) throw new Error(error.message);
+  if (error) dbFailure(error, "guardian_relationships read", "Couldn't load this client's guardians.");
   return (data ?? []).map((g: Record<string, unknown>) => {
     const perms = (g.relationship_permissions ?? []) as { permission: string; granted: boolean }[];
     return {
@@ -228,7 +257,7 @@ export async function setVisibility(
     return;
   }
   const { error } = await sb().from(TABLE[t]).update({ visibility }).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) dbFailure(error, `${TABLE[t]} visibility update`, "Only an admin or supervisor can change what a family sees.");
 }
 
 export async function getGrants(t: RecordType, id: string): Promise<string[]> {
@@ -238,7 +267,7 @@ export async function getGrants(t: RecordType, id: string): Promise<string[]> {
     .select("guardian_user_id")
     .eq("record_type", t)
     .eq("record_id", id);
-  if (error) throw new Error(error.message);
+  if (error) dbFailure(error, "record_visibility_grants read", "Couldn't load who can see this record right now.");
   return (data ?? []).map((g: { guardian_user_id: string }) => g.guardian_user_id);
 }
 
@@ -256,7 +285,7 @@ export async function setGrant(
   if (!clinicId) {
     // Sending "" here produces an RLS refusal whose message says nothing about
     // the real cause. Failing here names it.
-    throw new Error("This record has no clinic on it, so it cannot be shared.");
+    throw new VisibilityError("This record has no clinic on it, so it cannot be shared.");
   }
   const client = sb();
   if (granted) {
@@ -265,10 +294,10 @@ export async function setGrant(
       clinic_id: clinicId, record_type: t, record_id: id,
       guardian_user_id: guardianUserId, granted_by: me.user?.id,
     });
-    if (error) throw new Error(error.message);
+    if (error) dbFailure(error, "record_visibility_grants insert", "Only an admin or supervisor can change who sees this record.");
   } else {
     const { error } = await client.from("record_visibility_grants").delete()
       .eq("record_type", t).eq("record_id", id).eq("guardian_user_id", guardianUserId);
-    if (error) throw new Error(error.message);
+    if (error) dbFailure(error, "record_visibility_grants delete", "Only an admin or supervisor can change who sees this record.");
   }
 }

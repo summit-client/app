@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import {
-  RECORD_TYPE_LABEL, VISIBILITY_OPTIONS, getGrants, getGuardiansFor,
+  RECORD_TYPE_LABEL, VISIBILITY_OPTIONS, VisibilityError, getGrants, getGuardiansFor,
   getShareableRecords, needsAttention, permissionFor, setGrant, setVisibility,
   visibilitySummary,
   type GuardianOption, type ShareableRecord, type Visibility,
@@ -27,6 +27,21 @@ import { toast } from "@summit/toast";
  * reports what the database said, rather than hiding it and guessing - a
  * hidden control teaches nobody why they cannot use it.
  */
+/**
+ * What to put on screen for a thrown error.
+ *
+ * Only lib/visibility.ts's VisibilityError carries a message written for a
+ * person; every other throw here is a PostgREST/RLS failure whose text names
+ * policies, tables and constraints. Those used to be rendered verbatim -
+ * and because they were Errors too, the fixed sentence each catch falls back
+ * to was unreachable for exactly the case it was written for.
+ */
+function display(e: unknown, fallback: string): string {
+  if (e instanceof VisibilityError) return e.message;
+  console.error("[data/sharing]", e);
+  return fallback;
+}
+
 export default function SharingPage() {
   const [records, setRecords] = React.useState<ShareableRecord[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -40,7 +55,7 @@ export default function SharingPage() {
   const load = React.useCallback(async () => {
     setLoading(true);
     try { setRecords(await getShareableRecords()); setError(null); }
-    catch (e) { setError(e instanceof Error ? e.message : "Couldn't load records."); }
+    catch (e) { setError(display(e, "Couldn't load records.")); }
     finally { setLoading(false); }
   }, []);
   React.useEffect(() => { void load(); }, [load]);
@@ -59,7 +74,7 @@ export default function SharingPage() {
       setGuardians(g);
       setGranted(new Set(current));
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : "Couldn't load the family record.");
+      setNotice(display(e, "Couldn't load the family record."));
     }
   }, []);
 
@@ -74,9 +89,7 @@ export default function SharingPage() {
       // The database refuses this for anyone without clinical.record.share.
       // Saying which role can do it is more useful than "permission denied",
       // because the next step is asking one of them.
-      setNotice(e instanceof Error
-        ? `That didn't save. ${e.message}`
-        : "Only an admin or supervisor can change what a family sees.");
+      setNotice(display(e, "Only an admin or supervisor can change what a family sees."));
     } finally { setBusy(false); }
   }
 
@@ -90,7 +103,7 @@ export default function SharingPage() {
       setGranted(next);
       await load();
     } catch (e) {
-      setNotice(e instanceof Error ? `That didn't save. ${e.message}` : "That didn't save.");
+      setNotice(display(e, "That didn't save."));
     } finally { setBusy(false); }
   }
 
