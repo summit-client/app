@@ -63,6 +63,18 @@ jobs:
           node supabase/tests/edit_teammate_authz.mjs
           node supabase/tests/invite_teammate_guard.mjs
 
+      # The control register, the data inventory and the application-layer
+      # controls, all executed rather than written down. A hand-maintained
+      # control matrix states what was true the day somebody wrote it; this
+      # repo has already produced several stale claims of exactly that kind.
+      # No credentials and no database - controls.mjs and data-inventory.mjs
+      # read the migration files, app-controls.mjs reads source.
+      - name: Security controls, and the data inventory
+        run: |
+          node supabase/tests/controls.mjs supabase/migrations
+          node supabase/tests/data-inventory.mjs supabase/migrations
+          node supabase/tests/app-controls.mjs
+
       # The database suites. PGlite - a real Postgres compiled to WASM - so
       # these need no server, no Docker and no credentials. It is already
       # installed by the step below, which npm installs in the same directory;

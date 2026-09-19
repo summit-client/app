@@ -507,3 +507,31 @@ download round trip with a test file - this round could not.
   §17, which do not exist yet, and per that brief no PHI may appear in a
   notification preview - which is a design decision to make with the
   clinic, not to assume.
+
+- **This portal still cannot be rendered without a real Supabase
+  project.** `proxy.ts` now honours `NEXT_PUBLIC_DEV_PREVIEW=1` the way
+  `apps/data` and `apps/employee` do, so the auth gate no longer bounces
+  every route to login. That is only half of it: all ten pages load
+  through `lib/supabase-server.ts`'s `createClient()` inside
+  `getServerSideProps`, and there is no fixture path behind it the way
+  `apps/data` has `lib/preview-data.ts`. Preview mode gets you past the
+  gate and straight into a data error.
+
+  Not built here because a fixture layer means inventing a plausible
+  shape for every query on every page - households, guardians,
+  permissions, sessions, goals, milestones, budgets, forms, consents,
+  messages, announcements - and a fixture that disagrees with what the
+  query actually returns is worse than none: it makes a broken page look
+  fine. `apps/data`'s equivalent is ~600 lines and was written alongside
+  its screens.
+
+  What was done instead: `createClient()` now names the missing variable
+  and the file it belongs in, and says explicitly that the preview flag
+  does not cover data loading. Previously every page died on
+  supabase-js's generic "Your project's URL and Key are required",
+  thrown from inside whichever `getServerSideProps` ran first, naming no
+  variable and no app.
+
+  So: the accessibility and responsive pass in the brief's §13 has been
+  done for `apps/data`'s screens and NOT for this portal's. Nobody has
+  looked at these ten pages in a browser.

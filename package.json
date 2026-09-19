@@ -9,7 +9,8 @@
     "typecheck": "turbo typecheck"
   },
   "devDependencies": {
-    "turbo": "latest",
-    "next": "16.2.6"
+    "esbuild": "^0.27.7",
+    "next": "16.2.6",
+    "turbo": "latest"
   }
 }

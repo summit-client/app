@@ -497,24 +497,35 @@ assuming the class name or selector is wrong.
 - `apps/scheduler/tests/calendar-utils.test.mjs` for anything in
   `apps/scheduler/components/calendar/` (date math, gap/conflict detection,
   conflict-resolution suggestions)
+- `node supabase/tests/app-controls.mjs` for anything touching an API route, an
+  Edge Function, a `next.config`, or a `console.error` near a Supabase error.
+  It is static checks over source, so it can be satisfied by code that does the
+  wrong thing in a way the pattern misses — but a **new** name in its output is
+  a real finding. Its two allowlists (`PUBLIC_ROUTES`, `SERVICE_ROLE_ALLOWED`)
+  are how an exception becomes a reviewed decision instead of an oversight;
+  adding to one is a deliberate act, not a way to make a check quiet.
 
-**Both esbuild-bundled suites (`onboarding-certificates.test.mjs` and
-`calendar-utils.test.mjs`) self-skip.** If a suite can't find esbuild in the
-workspace store it prints `SKIP` and exits **0**, which looks like a pass —
-confirmed live in the remote sandbox this repo is sometimes worked in: no
-esbuild anywhere on disk there at all (this Next.js version's Turbopack build
-doesn't vendor it the way the comment in the certificate suite assumes), so
-both suites always print SKIP in that environment specifically, regardless of
-`pnpm install`. **A skip is not a pass.** Run `pnpm install` at the repo root
-first; if it still skips, that's the sandbox, not a real failure — verify the
-logic instead by compiling the subject files with plain `tsc` (`--module
-commonjs`, no bundler needed since these files' relative imports resolve fine
-under CommonJS) into a scratch directory and running the same assertions
-against the compiled output with a bare `node` script. Either way, don't
-report a suite as passing without an actual `N passed, 0 failed` line — from
-the real harness when esbuild is available, from the tsc-compiled substitute
-when it isn't. `qa.mjs` and the certificate suite test re-implemented copies
-of `apps/employee`'s functions and cannot catch drift from the shipped code.
+**esbuild is a declared dependency now, and the two suites that used to
+self-skip actually run (2026-09-19).** `onboarding-certificates.test.mjs` and
+`calendar-utils.test.mjs` print `SKIP` and exit **0** when they cannot find
+esbuild — which reads as a pass. They had been skipping everywhere.
+
+**The explanation that used to be here was wrong**, and it is worth knowing
+why, because it sent people the wrong way for weeks. It said no esbuild
+existed on disk in the remote sandbox, that this was environment-specific, and
+that if `pnpm install` did not fix it "that's the sandbox, not a real
+failure." The real cause was that **esbuild was never declared in any
+`package.json`** — it only ever arrived transitively, so `pnpm install` had no
+reason to fetch it and the advice to re-run it could not have worked. Adding
+it to the root `devDependencies` made both suites run immediately: **62 and 7
+tests that nobody had been seeing.**
+
+A skip is still not a pass. If either prints `SKIP` again, esbuild has been
+dropped from the root `package.json` — fix that rather than reaching for an
+explanation about the environment.
+
+`qa.mjs` and the certificate suite test re-implemented copies of
+`apps/employee`'s functions and cannot catch drift from the shipped code.
 
 For UI work, render it. Several defects here were only visible in a browser: a
 10px overflow from a token that disagreed with the element it sized, a portal
