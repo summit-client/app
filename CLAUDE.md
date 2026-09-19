@@ -487,24 +487,28 @@ while it is present.
 
 ## Design system
 
-`packages/design/tokens.css` is the single palette. Two text tones — `--ink` and
-`--muted`; `--faint` resolves to `--muted` because a third step could not clear
-WCAG AA at the 11px it carried. Colours are OKLCH and every pair has been
-measured: **the whole palette clears AA, and it should stay that way.** If you
-add a colour, check it against the surface it lands on, and remember element
-`opacity` composites — reading `computedStyle.color` alone will tell you it
-passes when it does not.
+**`packages/design/tokens.css` is generated — edit `src/tokens.ts` instead**
+and run `pnpm --filter @summit/design build:tokens`. The palette is TypeScript
+because React Native parses no CSS and no `oklch()`, and a hand-copied second
+palette drifts on the first tenant who picks a different brand colour. The CSS
+keeps its live `var(--hue)` dial; `src/oklch.ts` resolves the same formula to
+hex for anything without a CSS engine. `tests/tokens-generated.test.mjs` fails
+on a hand-edit to the generated file rather than letting the next generator run
+silently discard it.
 
-**`apps/mobile` cannot use any of this, and currently invents its own blue.**
-React Native parses no CSS and no `oklch()`, so the palette cannot simply be
-imported. It also should not be retyped: this palette is a formula, not a list
-— one `--hue` dial driving an OKLCH ramp, with four accents on the same
-spacing and type — and a second hand-copied version of it would drift on the
-first tenant who picks a different accent. The long-term shape is that the
-formula becomes TypeScript, the CSS is generated from it, and React Native
-reads the same source. Until somebody does that, mobile has one placeholder
-blue and no design system — **#206**, which carries the two decisions that
-sizing it depends on.
+Two text tones — `--ink` and `--muted`; `--faint` resolves to `--muted` because
+a third step could not clear WCAG AA at the 11px it carried. Colours are OKLCH
+and **the whole palette clears AA, which is now measured rather than asserted**:
+`tests/contrast.test.mjs` resolves every pair across all four accents and both
+themes on every PR. If you add a colour, add it to that pair list too, and
+remember element `opacity` composites — reading `computedStyle.color` alone will
+tell you it passes when it does not.
+
+**`apps/mobile` still invents its own blue.** The source it needs now exists —
+`@summit/design/tokens` and `@summit/design/oklch` are pure TypeScript, which
+is exactly what the sharing rule permits mobile to consume — but nothing on the
+phone reads them yet, and a tenant's hue is still wired to nothing on either
+side. **#206** and **#209** carry the rest.
 
 Apps must not redefine what `components.css` already defines. Each app imports
 its own `app.css` *after* the shared file, so a duplicate silently wins and the
@@ -554,6 +558,10 @@ assuming the class name or selector is wrong.
   blocks with a 403; run them on a machine that can reach it rather than
   assuming a pin is right. Nothing in this repo can test the app on a device —
   that is a person with a phone.
+- `pnpm --filter @summit/design test` for anything in `packages/design/src/` —
+  it checks that `tokens.css` still matches its source and that every colour
+  pair still clears AA. Run `build:tokens` first if you changed the palette, or
+  the first check fails by design.
 - `node supabase/tests/app-controls.mjs` for anything touching an API route, an
   Edge Function, a `next.config`, or a `console.error` near a Supabase error.
   It is static checks over source, so it can be satisfied by code that does the
