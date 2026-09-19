@@ -569,16 +569,21 @@ refuses to compile.
 the DOM, CSS or `next/*` stays web-only until it is split into a
 renderer-agnostic core with per-platform adapters. `@summit/portals` already
 qualifies and is where mobile reads role access from if it ever gates a
-screen. `@summit/design` and `@summit/session` do not: the palette is CSS and
-OKLCH (issue #206), and `@summit/session` is a `"use client"` module around a
-browser Supabase client.
+screen. `@summit/session` does not: it is a `"use client"` module around a
+browser Supabase client, and would need the same core-plus-adapters split.
 
-**Neither gets copied in the meantime.** Retyping a colour or a role list into
+**`@summit/design` did not qualify and now does** — PRs #210 and #211, the
+same day. The palette moved into TypeScript (`src/tokens.ts`), `tokens.css`
+became generated output, and `apps/mobile` resolves the same formula to hex
+through `src/oklch.ts`. That is the worked example of what "split it" means
+here, and of the rule below: the phone states no colour of its own, and a test
+fails on a hex literal anywhere in `apps/mobile/src/`.
+
+**Nothing gets copied in the meantime.** Retyping a colour or a role list into
 `apps/mobile` creates a second source of truth that drifts silently — the
 failure this repo already paid for four times with one clinical vocabulary.
 The answer to "mobile needs what the web has" is always to make it data both
-consume. `apps/mobile`'s placeholder blue is the one outstanding breach of
-that and is tracked, not blessed.
+consume.
 
 Still open, deliberately: no clinic scoping to review yet — the app reads
 nothing but the signed-in user's own `profiles` row.
