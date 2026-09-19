@@ -719,6 +719,11 @@ nothing about what they are about to open. Write **`issue #205`** and
 `#` stands on its own, so a glued prefix trades the link away for the label
 when you want both.
 
+**One exception, and it matters:** a closing keyword takes the bare number —
+`Closes #206`, never `Closes issue #206`. GitHub parses `KEYWORD #NUMBER` and
+nothing else, so the labelled form reads fine to a person and silently fails
+to close anything.
+
 **Where each kind of thing goes.** A defect or a piece of work is a GitHub
 issue. A *decision* — what was chosen, what is still genuinely undecided, why
 something was rejected — goes in `docs/context/decisions.md`, which is the one
