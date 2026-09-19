@@ -9,7 +9,13 @@
     "./components.css": "./components.css",
     "./motion.css": "./motion.css",
     "./motion": "./motion.tsx",
-    "./icons": "./icons.tsx"
+    "./icons": "./icons.tsx",
+    "./tokens": "./src/tokens.ts",
+    "./oklch": "./src/oklch.ts"
+  },
+  "scripts": {
+    "build:tokens": "node scripts/generate-tokens.mjs",
+    "test": "node tests/tokens-generated.test.mjs && node tests/contrast.test.mjs"
   },
   "peerDependencies": {
     "react": "^19.0.0"
