@@ -900,15 +900,32 @@ function ClientsView({ clients, locations, clientAvailability, setClientAvailabi
   const staleAfterDays = Number(getSetting("clients.staleAfterDays"));
   const incrementMinutes = Number(getSetting("calendar.gridIncrementMinutes")) || 30;
 
+  // Saving availability is a delete followed by an insert, and neither result
+  // was checked. A refused insert therefore left the old rows deleted while
+  // this announced a save and closed the panel - the availability was gone and
+  // nothing said so. @summit/availability's grid shows its failure toast when
+  // onSave REJECTS, so throwing is what makes it speak.
+  //
+  // Still not atomic: the pair is two statements, so a failure between them
+  // loses the previous rows. The restore below is a best effort, not a
+  // transaction; the durable fix is a single upsert or a database function.
   async function handleSaveAvailability(clientId, ranges) {
     const scoped = ranges.map(r => ({ ...r, clinic_id: appUser.clinic_id }));
-    await supabase.from("client_availability").delete().eq("client_id", clientId);
-    if (scoped.length) await supabase.from("client_availability").insert(scoped);
+    const previous = clientAvailability.filter(a => a.client_id === clientId);
+
+    const del = await supabase.from("client_availability").delete().eq("client_id", clientId);
+    if (del.error) throw new Error(del.error.message);
+
+    if (scoped.length) {
+      const ins = await supabase.from("client_availability").insert(scoped);
+      if (ins.error) {
+        if (previous.length) await supabase.from("client_availability").insert(previous);
+        throw new Error(ins.error.message);
+      }
+    }
+
     setClientAvailability(prev => [...prev.filter(a => a.client_id !== clientId), ...scoped]);
     setExpandedId(null);
-    // No showToast here: @summit/availability's grid announces its own save
-    // (and its own failure) now, which is what made it worth sharing - the
-    // two profile pages that use the same grid said nothing before.
   }
 
   // client.sessions is a stored counter, set to 0 at creation and never
@@ -990,13 +1007,25 @@ function EmployeesView({ employees, locations, staffAvailability, setStaffAvaila
   const appUser = useContext(UserContext);
   const incrementMinutes = Number(getSetting("calendar.gridIncrementMinutes")) || 30;
 
+  // See ClientsView's copy of this handler for why both results are checked
+  // and why a failure throws rather than closing the panel.
   async function handleSaveAvailability(staffId, ranges) {
     const scoped = ranges.map(r => ({ ...r, clinic_id: appUser.clinic_id }));
-    await supabase.from("staff_availability").delete().eq("staff_id", staffId);
-    if (scoped.length) await supabase.from("staff_availability").insert(scoped);
+    const previous = staffAvailability.filter(a => a.staff_id === staffId);
+
+    const del = await supabase.from("staff_availability").delete().eq("staff_id", staffId);
+    if (del.error) throw new Error(del.error.message);
+
+    if (scoped.length) {
+      const ins = await supabase.from("staff_availability").insert(scoped);
+      if (ins.error) {
+        if (previous.length) await supabase.from("staff_availability").insert(previous);
+        throw new Error(ins.error.message);
+      }
+    }
+
     setStaffAvailability(prev => [...prev.filter(a => a.staff_id !== staffId), ...scoped]);
     setExpandedId(null);
-    // See ClientsView's copy of this handler - the grid toasts for itself.
   }
 
   return (

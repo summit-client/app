@@ -8,29 +8,33 @@
  * Run: node tests/support.test.mjs
  */
 
-import { existsSync, readdirSync, unlinkSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const roots = ["../../node_modules/.pnpm", "../../../node_modules/.pnpm"];
-let esbuildMain = null;
-for (const root of roots) {
-  if (!existsSync(root)) continue;
-  const dir = readdirSync(root).find((d) => d.startsWith("esbuild@"));
-  if (!dir) continue;
-  const candidate = join(root, dir, "node_modules/esbuild/lib/main.js");
-  if (existsSync(candidate)) { esbuildMain = resolve(candidate); break; }
-}
-if (!esbuildMain) { console.log("SKIP: esbuild not found - run pnpm install at the repo root"); process.exit(0); }
-const esbuild = await import(pathToFileURL(esbuildMain).href);
+/** Anchored to this file, not the working directory - see the note below. */
+const PKG = dirname(dirname(fileURLToPath(import.meta.url)));
 
-const out = join("tests", ".tmp-support.mjs");
+/**
+ * esbuild is a declared root devDependency, so Node resolves it by walking up
+ * from this file. It used to be hunted for down two RELATIVE paths
+ * ("../../node_modules/.pnpm"), which resolve against the working directory
+ * rather than this file — so running this suite from the repo root, which is
+ * where CLAUDE.md's command list puts you, found nothing and printed SKIP.
+ * A skip exits 0 and reads as a pass.
+ *
+ * If this ever throws, esbuild has been dropped from the root package.json.
+ * Fix that rather than reaching for an explanation about the environment.
+ */
+const esbuild = await import("esbuild");
+
+const out = join(PKG, "tests", ".tmp-support.mjs");
 await esbuild.build({
-  entryPoints: ["src/SupportButton.tsx"], bundle: true, outfile: out,
+  entryPoints: [join(PKG, "src", "SupportButton.tsx")], bundle: true, outfile: out,
   format: "esm", platform: "neutral", external: ["react"], jsx: "automatic",
 });
 process.on("exit", () => { try { unlinkSync(out); } catch { /* gone */ } });
-const S = await import(pathToFileURL(resolve(out)).href);
+const S = await import(pathToFileURL(out).href);
 
 let pass = 0, fail = 0;
 const t = (name, cond, detail = "") => {
@@ -126,6 +130,30 @@ t("the subject and body are still encoded after the address check", (() => {
   const url = S.supportMailto({ ...base, to: "help@clinic.test", detail: "a&b" });
   return decodeURIComponent(new URL(url).searchParams.get("body")).startsWith("a&b");
 })());
+
+console.log("a support report names the route, not the record that was open");
+{
+  // The address is a free-text org setting an admin types. A client id in the
+  // body is a client id sent to whatever is in that field.
+  t("a numeric id is masked", S.maskRoute("/clients/4192") === "/clients/:id");
+  t("every id in a nested route is masked",
+    S.maskRoute("/clients/4192/sessions/88") === "/clients/:id/sessions/:id");
+  t("a uuid is masked",
+    S.maskRoute("/clients/3f2504e0-4f89-11d3-9a0c-0305e82c3301") === "/clients/:id");
+  t("a readable slug survives", S.maskRoute("/settings/workforce") === "/settings/workforce");
+  t("a Pages Router template is left alone",
+    S.maskRoute("/clients/[id]/sessions/[sessionId]") === "/clients/[id]/sessions/[sessionId]");
+  t("an empty path stays empty", S.maskRoute("") === "");
+
+  const body = decodeURIComponent(
+    S.supportMailto({
+      to: "help@clinic.test", brand: "B", kind: "Troubleshoot", detail: "d",
+      moduleName: "m", pathname: "/clients/4192/sessions/88", when: "now",
+    }),
+  );
+  t("the mailto body carries the masked route", body.includes("Page: /clients/:id/sessions/:id"));
+  t("the mailto body carries no raw id", !/4192|\/88\b/.test(body));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

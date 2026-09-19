@@ -8,11 +8,12 @@
     "ios": "expo start --ios",
     "build:brand": "node scripts/build-brand.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/theme.test.mjs"
+    "test": "node tests/theme.test.mjs && node tests/family-data.test.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "~2.2.0",
     "@summit/design": "workspace:*",
+    "@summit/family": "workspace:*",
     "@supabase/supabase-js": "^2.58.0",
     "aes-js": "^3.1.2",
     "expo": "~57.0.24",

@@ -1,6 +1,8 @@
+import { can, childById, defaultView, displayName, type FamilyChild } from "@summit/family";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,61 +11,112 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import {
+  explainEmpty,
+  loadCareTeam,
+  loadFamily,
+  loadUpcomingSessions,
+  type CareTeamMember,
+  type UpcomingSession,
+} from "@/lib/family-data";
 import { supabase } from "@/lib/supabase";
-import { useTheme } from "@/lib/use-theme";
 import type { Theme } from "@/lib/theme";
+import { useTheme } from "@/lib/use-theme";
 
-type Profile = { role: string | null; clinic_id: string | null };
+/** "2:30 PM", from the hour and minute columns as the clinic stored them. */
+function timeOf(session: UpcomingSession): string {
+  if (session.hour == null) return "Time to be confirmed";
+  const h = session.hour % 12 === 0 ? 12 : session.hour % 12;
+  const m = String(session.minute ?? 0).padStart(2, "0");
+  return `${h}:${m} ${session.hour < 12 ? "AM" : "PM"}`;
+}
+
+/** "Mon 22 Sep". The date is a plain calendar date, so it is split rather than
+ *  passed through Date, which would read it as UTC midnight and shift a day. */
+function dayOf(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, d);
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${days[dt.getDay()]} ${d} ${months[(m ?? 1) - 1]}`;
+}
+
+type State = {
+  loading: boolean;
+  children: FamilyChild[];
+  selected: number | null;
+  sessions: UpcomingSession[];
+  careTeam: CareTeamMember[];
+  problem: string | null;
+};
 
 export default function Home() {
-  const [email, setEmail] = useState<string | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const insets = useSafeAreaInsets();
   const theme = useTheme();
   const styles = useMemo(() => sheet(theme), [theme]);
+  const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
+  const [state, setState] = useState<State>({
+    loading: true,
+    children: [],
+    selected: null,
+    sessions: [],
+    careTeam: [],
+    problem: null,
+  });
 
-  const load = useCallback(async () => {
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError || !userData.user) {
-      setNote(userError?.message ?? "No signed-in user.");
-      setLoading(false);
+  const load = useCallback(async (keepSelected: number | null) => {
+    const family = await loadFamily();
+    if (!family.ok) {
+      setState((s) => ({ ...s, loading: false, problem: family.reason }));
       return;
     }
-    setEmail(userData.user.email ?? null);
 
-    // maybeSingle, not single: RLS answers a forbidden read with an empty set
-    // rather than an error, and `single()` would turn that into a row-count
-    // error that reads like a bug in the query. An empty result here means
-    // either no profiles row or no policy admitting this user - worth saying
-    // out loud rather than rendering blank.
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("role, clinic_id")
-      .eq("id", userData.user.id)
-      .maybeSingle();
+    const view = defaultView(family.value);
+    const selected =
+      keepSelected != null && family.value.children.some((c) => c.clientId === keepSelected)
+        ? keepSelected
+        : view.kind === "child"
+          ? view.clientId
+          : (family.value.children[0]?.clientId ?? null);
 
-    if (error) setNote(error.message);
-    else if (!data) setNote("No profiles row is readable for this account.");
-    else setProfile(data);
-    setLoading(false);
+    const child = childById(family.value, selected);
+    // Only ask for what this parent may have. A refused read comes back empty,
+    // so asking anyway would be indistinguishable from an empty schedule.
+    const sessions =
+      selected != null && can(child, "view_appointments")
+        ? await loadUpcomingSessions(selected)
+        : { ok: true as const, value: [] as UpcomingSession[] };
+    const careTeam = await loadCareTeam();
+
+    setState({
+      loading: false,
+      children: family.value.children,
+      selected,
+      sessions: sessions.ok ? sessions.value : [],
+      careTeam: careTeam.ok ? careTeam.value : [],
+      problem: sessions.ok ? null : sessions.reason,
+    });
   }, []);
 
   useEffect(() => {
-    load();
+    load(null);
   }, [load]);
 
-  // Called directly, unlike the web portals. Their rule - never call signOut(),
-  // navigate to signOutUrl() - exists because four browser portals share one
-  // .summitclient.io cookie that only apps/web may clear. This app shares no
-  // cookie with anything; its session lives in its own encrypted storage, so
-  // the central endpoint has nothing to end here.
+  const child = useMemo(
+    () => state.children.find((c) => c.clientId === state.selected) ?? null,
+    [state.children, state.selected],
+  );
+
+  const clinician = useMemo(
+    () => state.careTeam.find((m) => m.clientId === state.selected) ?? null,
+    [state.careTeam, state.selected],
+  );
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
-  if (loading) {
+  if (state.loading) {
     return (
       <View style={styles.centre}>
         <ActivityIndicator color={theme.colors.accent} />
@@ -71,34 +124,112 @@ export default function Home() {
     );
   }
 
+  const [next, ...rest] = state.sessions;
+
   return (
     <ScrollView
       style={styles.page}
       contentContainerStyle={[styles.screen, { paddingTop: insets.top + theme.size.space6 }]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          tintColor={theme.colors.muted}
+          onRefresh={async () => {
+            setRefreshing(true);
+            await load(state.selected);
+            setRefreshing(false);
+          }}
+        />
+      }
     >
-      <Text style={styles.title}>Signed in</Text>
+      {state.children.length === 0 ? (
+        <Notice theme={theme} title="No child linked yet">
+          This account is not linked to a child's record. The clinic sets that
+          up — contact them and they can link you.
+        </Notice>
+      ) : (
+        <>
+          <Text style={styles.greeting}>{child ? displayName(child) : "Your family"}</Text>
 
-      <Field theme={theme} label="Email" value={email ?? "—"} />
-      <Field theme={theme} label="Role" value={profile?.role ?? "null"} />
-      <Field theme={theme} label="Clinic" value={profile?.clinic_id ?? "null"} />
+          {state.children.length > 1 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.switcher}>
+              {state.children.map((c) => {
+                const on = c.clientId === state.selected;
+                return (
+                  <TouchableOpacity
+                    key={c.clientId}
+                    style={[styles.pill, on && styles.pillOn]}
+                    onPress={() => {
+                      setState((s) => ({ ...s, selected: c.clientId, loading: true }));
+                      load(c.clientId);
+                    }}
+                  >
+                    <Text style={[styles.pillText, on && styles.pillTextOn]}>{displayName(c)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          ) : null}
 
-      {note ? <Text style={styles.note}>{note}</Text> : null}
+          {clinician ? (
+            <Text style={styles.clinician}>
+              Care team: {clinician.name}
+              {clinician.jobTitle ? ` · ${clinician.jobTitle}` : ""}
+            </Text>
+          ) : null}
 
-      <TouchableOpacity style={styles.button} onPress={signOut}>
-        <Text style={styles.buttonText}>Sign out</Text>
+          <Text style={styles.heading}>Next session</Text>
+          {next ? (
+            <View style={styles.next}>
+              <Text style={styles.nextDay}>{dayOf(next.date)}</Text>
+              <Text style={styles.nextTime}>{timeOf(next)}</Text>
+              {next.type ? <Text style={styles.nextType}>{next.type}</Text> : null}
+              {next.isHomeVisit ? <Text style={styles.tag}>At home</Text> : null}
+            </View>
+          ) : (
+            <Notice theme={theme} title={null}>
+              {state.problem ?? explainEmpty(child, "view_appointments", "appointments")}
+            </Notice>
+          )}
+
+          {rest.length > 0 ? (
+            <>
+              <Text style={styles.heading}>Also coming up</Text>
+              {rest.slice(0, 8).map((s) => (
+                <View key={s.id} style={styles.row}>
+                  <Text style={styles.rowDay}>{dayOf(s.date)}</Text>
+                  <Text style={styles.rowTime}>{timeOf(s)}</Text>
+                  <Text style={styles.rowType} numberOfLines={1}>
+                    {s.type ?? ""}
+                  </Text>
+                </View>
+              ))}
+            </>
+          ) : null}
+        </>
+      )}
+
+      <TouchableOpacity style={styles.signOut} onPress={signOut}>
+        <Text style={styles.signOutText}>Sign out</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
-function Field({ theme, label, value }: { theme: Theme; label: string; value: string }) {
+function Notice({
+  theme,
+  title,
+  children,
+}: {
+  theme: Theme;
+  title: string | null;
+  children: React.ReactNode;
+}) {
   const styles = useMemo(() => sheet(theme), [theme]);
   return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value} selectable>
-        {value}
-      </Text>
+    <View style={styles.notice}>
+      {title ? <Text style={styles.noticeTitle}>{title}</Text> : null}
+      <Text style={styles.noticeBody}>{children}</Text>
     </View>
   );
 }
@@ -106,35 +237,72 @@ function Field({ theme, label, value }: { theme: Theme; label: string; value: st
 const sheet = (t: Theme) =>
   StyleSheet.create({
     page: { backgroundColor: t.colors.bg },
-    screen: { padding: t.size.space6, gap: t.size.space4 },
+    screen: { padding: t.size.space6, gap: t.size.space3, paddingBottom: t.size.space12 },
     centre: {
       flex: 1,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: t.colors.bg,
     },
-    title: {
-      fontSize: t.size.text3xl,
-      fontWeight: "700",
-      color: t.colors.ink,
-      marginBottom: t.size.space2,
+    greeting: { fontSize: t.size.text3xl, fontWeight: "700", color: t.colors.ink },
+    switcher: { marginVertical: t.size.space2 },
+    pill: {
+      paddingHorizontal: t.size.space4,
+      paddingVertical: t.size.space2,
+      borderRadius: t.size.radiusFull,
+      borderWidth: 1,
+      borderColor: t.colors.line,
+      marginRight: t.size.space2,
     },
-    field: { gap: 2 },
-    label: {
+    pillOn: { backgroundColor: t.colors.accent, borderColor: t.colors.accent },
+    pillText: { color: t.colors.ink, fontSize: t.size.textSm },
+    pillTextOn: { color: t.colors.accentInk, fontWeight: "600" },
+    clinician: { fontSize: t.size.textSm, color: t.colors.muted },
+    heading: {
       fontSize: t.size.textSm,
       textTransform: "uppercase",
       letterSpacing: 0.5,
       color: t.colors.muted,
+      marginTop: t.size.space5,
     },
-    value: { fontSize: t.size.textLg, color: t.colors.ink },
-    note: { fontSize: t.size.textSm, lineHeight: 20, color: t.colors.danger },
-    button: {
+    next: {
+      backgroundColor: t.colors.surface,
+      borderRadius: t.size.radiusLg,
+      padding: t.size.space5,
+      borderWidth: 1,
+      borderColor: t.colors.line,
+      gap: 2,
+    },
+    nextDay: { fontSize: t.size.textLg, fontWeight: "600", color: t.colors.ink },
+    nextTime: { fontSize: t.size.text2xl, fontWeight: "700", color: t.colors.accent },
+    nextType: { fontSize: t.size.textBase, color: t.colors.muted },
+    tag: { fontSize: t.size.textXs, color: t.colors.muted, marginTop: t.size.space1 },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: t.size.space3,
+      borderBottomWidth: 1,
+      borderBottomColor: t.colors.line,
+      gap: t.size.space3,
+    },
+    rowDay: { fontSize: t.size.textBase, color: t.colors.ink, width: 96 },
+    rowTime: { fontSize: t.size.textBase, color: t.colors.muted, width: 84 },
+    rowType: { fontSize: t.size.textBase, color: t.colors.muted, flex: 1 },
+    notice: {
+      backgroundColor: t.colors.surface2,
+      borderRadius: t.size.radiusMd,
+      padding: t.size.space4,
+      gap: t.size.space1,
+    },
+    noticeTitle: { fontSize: t.size.textMd, fontWeight: "600", color: t.colors.ink },
+    noticeBody: { fontSize: t.size.textBase, lineHeight: 21, color: t.colors.muted },
+    signOut: {
       borderWidth: 1,
       borderColor: t.colors.line,
       borderRadius: t.size.radiusMd,
       paddingVertical: t.size.space4,
       alignItems: "center",
-      marginTop: t.size.space6,
+      marginTop: t.size.space10,
     },
-    buttonText: { fontSize: t.size.textMd, fontWeight: "600", color: t.colors.ink },
+    signOutText: { fontSize: t.size.textMd, fontWeight: "600", color: t.colors.ink },
   });

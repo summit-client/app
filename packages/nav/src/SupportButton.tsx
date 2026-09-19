@@ -58,6 +58,34 @@ type Kind = "Troubleshoot" | "Feature request";
  * The mailto: URL for a report. Exported so it can be tested without a DOM,
  * and so the encoding is in one place rather than inline in a click handler.
  */
+/**
+ * The page path, with identifiers taken out.
+ *
+ * A support report names the route so somebody can find the screen. It does
+ * not need to name the record that was open on it — and the address it goes to
+ * is a free-text org setting an admin types, so it is not a place a client id
+ * belongs.
+ *
+ * The App Router callers pass `usePathname()`, which is the RESOLVED path:
+ * `/clients/4192/sessions/88` rather than `/clients/[id]/sessions/[sessionId]`.
+ * The Pages Router callers already pass `router.pathname`, the template, and
+ * for them this is a no-op — a bracketed segment matches nothing below.
+ *
+ * Masked: anything that is all digits, and anything UUID-shaped. Both are what
+ * this schema uses for ids; a slug that is neither stays readable.
+ */
+export function maskRoute(pathname: string): string {
+  if (!pathname) return "";
+  return pathname
+    .split("/")
+    .map((segment) => {
+      if (/^\d+$/.test(segment)) return ":id";
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) return ":id";
+      return segment;
+    })
+    .join("/");
+}
+
 export function supportMailto(opts: {
   to: string;
   brand: string;
@@ -70,7 +98,7 @@ export function supportMailto(opts: {
   const subject = encodeURIComponent(`[${opts.brand}] ${opts.kind}`);
   const body = encodeURIComponent(
     `${opts.detail}\n\n---\n`
-    + `Page: ${opts.pathname || "unknown"}\n`
+    + `Page: ${maskRoute(opts.pathname) || "unknown"}\n`
     + `When: ${opts.when}\n`
     + `Module: ${opts.moduleName}`,
   );
@@ -110,7 +138,6 @@ export function SupportButton({
   const [open, setOpen] = React.useState(false);
   const [kind, setKind] = React.useState<Kind>("Troubleshoot");
   const [detail, setDetail] = React.useState("");
-  const panelRef = React.useRef<HTMLDivElement>(null);
   const detailRef = React.useRef<HTMLTextAreaElement>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
 
@@ -163,7 +190,6 @@ export function SupportButton({
 
   return (
     <div
-      ref={panelRef}
       style={
         floating
           ? {

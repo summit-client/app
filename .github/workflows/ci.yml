@@ -71,9 +71,10 @@ jobs:
       # colour pair still clears WCAG AA - measured across all four accents and
       # both themes rather than trusted from a comment. Plain Node plus the
       # root esbuild; no credentials, no database.
-      - name: Design tokens, contrast, and the phone's copy of them
+      - name: Design tokens, the family core, and the phone's copy of both
         run: |
           pnpm --filter @summit/design test
+          pnpm --filter @summit/family test
           pnpm --filter @summit/mobile test
 
       # The database suites. PGlite - a real Postgres compiled to WASM - so

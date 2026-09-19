@@ -10,18 +10,19 @@
   "dependencies": {
     "@summit/availability": "workspace:*",
     "@summit/db": "workspace:*",
+    "@summit/design": "workspace:*",
+    "@summit/family": "workspace:*",
     "@summit/nav": "workspace:*",
+    "@summit/portals": "workspace:*",
+    "@summit/proxy-auth": "workspace:*",
+    "@summit/session": "workspace:*",
+    "@summit/settings": "workspace:*",
+    "@summit/toast": "workspace:*",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.103.0",
     "next": "16.2.1",
     "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "@summit/design": "workspace:*",
-    "@summit/portals": "workspace:*",
-    "@summit/session": "workspace:*",
-    "@summit/settings": "workspace:*",
-    "@summit/proxy-auth": "workspace:*",
-    "@summit/toast": "workspace:*"
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@types/node": "^22",

@@ -8,6 +8,6 @@ const nextConfig = {
   // header lists drift, and a portal missing frame-ancestors looks exactly
   // like one that has it. See packages/portals/security-headers.mjs.
   headers: securityHeadersConfig,
-  transpilePackages: ["@summit/availability", "@summit/design", "@summit/nav", "@summit/portals", "@summit/session", "@summit/settings", "@summit/proxy-auth", "@summit/toast"],
+  transpilePackages: ["@summit/availability", "@summit/design", "@summit/family", "@summit/nav", "@summit/portals", "@summit/session", "@summit/settings", "@summit/proxy-auth", "@summit/toast"],
 };
 export default nextConfig;

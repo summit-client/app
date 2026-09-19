@@ -32,6 +32,8 @@ import type {
 } from "next";
 import { useRef, useState } from "react";
 import { useRouter } from "next/router";
+import Head from "next/head";
+import { can, childById, familyFromRows } from "../lib/family";
 import Sidebar from "../components/Sidebar";
 import { MobileNavChrome } from "../components/mobile-nav-chrome";
 import { createClient } from "../lib/supabase-server";
@@ -71,6 +73,7 @@ type PageProps =
       isAdminViewingAs: boolean;
     }
   | { mode: "problem"; problem: AccountProblem }
+  | { mode: "no-access" }
   | { mode: "error" };
 
 export default function Documents(
@@ -81,6 +84,41 @@ export default function Documents(
   }
   if (props.mode === "error") {
     return <LoadErrorNotice />;
+  }
+  if (props.mode === "no-access") {
+    return (
+      <>
+        <Head>
+          <title>Documents · Summit Client Portal</title>
+        </Head>
+        <MobileNavChrome title="Documents" />
+        <div className={styles.page}>
+          <Sidebar />
+          <main className={styles.main} style={{ background: "#edf7f8", minHeight: "100vh" }}>
+            <header style={{ marginBottom: 24 }}>
+              <p className={styles.eyebrow}>CLIENT PORTAL</p>
+              <h1 style={{ margin: "0 0 6px", color: "#173f5f" }}>Documents</h1>
+            </header>
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #d7e8ea",
+                borderRadius: 12,
+                padding: 20,
+              }}
+            >
+              <strong style={{ color: "#173f5f" }}>
+                Shared documents are not turned on for your account.
+              </strong>
+              <p style={{ margin: "8px 0 0", color: "#5a7684", fontSize: 14 }}>
+                Another adult on your family record may handle documents for this
+                file. The clinic can turn it on for you.
+              </p>
+            </div>
+          </main>
+        </div>
+      </>
+    );
   }
 
   const {
@@ -435,6 +473,33 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ req, r
   // their own row (migration 0032).
   // Neither read needs the other, so they go together rather than adding a
   // second round trip to this page's TTFB.
+  // Gate before querying, not after: client_documents_family_read is
+  // `auth_guardian_can(client_id, 'view_shared_documents')`, so a guardian
+  // without it gets an EMPTY SET rather than an error - and this page rendered
+  // that as "No documents yet", beside an upload box whose insert the matching
+  // write policy would refuse. Same shape, and same reason, as statement.tsx's
+  // view_billing gate.
+  const { data: familyRows, error: familyError } = await supabase
+    .from("my_family")
+    .select("client_id, client_name, client_status, preferred_name, date_of_birth, household_id, household_name, permissions");
+  if (familyError) {
+    console.error("documents: family load failed:", familyError.message);
+    return { props: { mode: "error" } };
+  }
+  const family = familyFromRows(familyRows ?? []);
+  // A legacy single-child account has no my_family rows and still reaches its
+  // own documents through RLS, so it gets the page rather than the notice -
+  // the carve-out statement.tsx and forms.tsx both make.
+  //
+  // The check is on the CHILD being viewed, matching the query below, which is
+  // .eq("client_id", viewed.clientId). A family-wide check would let a guardian
+  // holding the permission on one child see the notice-free page for a sibling
+  // they do not hold it on, and RLS would then return an empty list.
+  const viewedChild = childById(family, Number(viewed.clientId));
+  if (family.children.length > 0 && !can(viewedChild, "view_shared_documents")) {
+    return { props: { mode: "no-access" } };
+  }
+
   const [profileRes, docsRes] = await Promise.all([
     supabase
       .from("profiles")

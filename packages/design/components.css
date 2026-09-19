@@ -71,7 +71,7 @@
    and 0.65 opacity is now a deliberate de-emphasis rather than a way to make
    a mismatched font glyph look intentional. */
 .nav-icon {
-  font-size: 14px; line-height: 1; opacity: 0.65; flex: none; width: 15px; height: 15px;
+  font-size: 14px; line-height: 1; opacity: 0.72; flex: none; width: 15px; height: 15px;
   text-align: center; display: inline-flex; align-items: center; justify-content: center;
 }
 .nav-icon > svg { display: block; }
@@ -152,7 +152,7 @@
 .btn.secondary:hover { background: var(--surface-2); border-color: var(--line-strong); transform: translateY(-2px); }
 .btn.ghost { background: transparent; color: var(--accent); box-shadow: none; }
 .btn.ghost:hover { background: var(--accent-tint); color: var(--accent-strong); transform: none; box-shadow: none; }
-.btn.danger { background: var(--danger); color: #fff; box-shadow: 0 1px 3px color-mix(in oklch, var(--danger) 30%, transparent); }
+.btn.danger { background: var(--danger); color: var(--danger-ink); box-shadow: 0 1px 3px color-mix(in oklch, var(--danger) 30%, transparent); }
 .btn.danger:hover { background: var(--danger); filter: brightness(0.94); }
 .btn.lg { padding: 12px 22px; font-size: var(--text-base); border-radius: var(--radius-md); }
 

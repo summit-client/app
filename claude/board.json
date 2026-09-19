@@ -1,13 +1,13 @@
 {
   "meta": {
-    "updated": "2026-09-18",
-    "commit": "e9d4dbd",
+    "updated": "2026-09-19",
+    "commit": "f2c54f2",
     "lastPRs": [
-      "PR #180",
-      "PR #179",
-      "PR #178"
+      "PR #214",
+      "PR #212",
+      "PR #211"
     ],
-    "note": "PR #180 is this run. Carried forward from the 2026-09-17 board: every module's history is kept, this run's fixes appended to good, items it resolved moved out of pending/blocked, next replaced entirely."
+    "note": "PR #214 is this run. Its primary work was apps/mobile, not the three-wins sweep: the family app is the objective for the next few weeks. Eight of the 24 Phase 1 candidates were REJECTED by verification and are recorded under neutral so they are not proposed again."
   },
   "modules": [
     {
@@ -17,6 +17,20 @@
       "desc": "The scheduling portal on port 3000, scheduler.summitclient.io. Calendar, sessions, waitlist, clients and staff admin.",
       "sections": {
         "good": [
+          {
+            "t": "The scheduler's private token copy loses the retired third text tone",
+            "d": "--color-text-tertiary was still oklch(63% 0.034 196), 3.21:1 on the sidebar it renders 11px text on. @summit/design collapsed that tone into --muted for failing AA; this copy never got the same collapse.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "Availability saves report failure instead of losing the data",
+            "d": "Both handlers discarded the delete and insert results, so a refused insert wiped availability while the grid said 'saved'. Both are checked now and a failure throws so the grid speaks; the previous rows are re-inserted. Still two statements, so the restore is best effort, not a transaction.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "Every read pages past PostgREST's 1000-row cap",
             "d": "loadData() and refreshBookings() ran unbounded selects, so the Sessions tab, its count, the dashboard stat cards, the engagement leaderboard and the Create wizard's conflict pre-check silently under-reported past 1000 rows. All nine reads now page with .range() through a shared fetchAllRows() helper.",
@@ -112,27 +126,6 @@
             "refs": [
               "PR #179"
             ]
-          },
-          {
-            "t": "P2: the admin role gate fails open when identity is null",
-            "d": "pages/admin.tsx:558 renders the staff and client management forms when appUser is null; data is empty via RLS, and fetchAll() at :126 still runs before the gate.",
-            "refs": [
-              "PR #180"
-            ]
-          },
-          {
-            "t": "P2: availability save is delete-then-insert with no result check",
-            "d": "index.jsx:896 and :986 wipe a client's or staff member's availability when the re-insert is refused. Same shape as the family-portal finding backed by migration 0082.",
-            "refs": [
-              "PR #180"
-            ]
-          },
-          {
-            "t": "P2: client names resolved without the privacy helper",
-            "d": "CalendarView's conflict message, the reschedule header and the create-wizard preview grid use a raw clients.find(); protection is sessions_visible() nulling client_id, not the app.",
-            "refs": [
-              "PR #180"
-            ]
           }
         ],
         "blocked": [],
@@ -147,28 +140,40 @@
         ],
         "next": [
           {
-            "t": "Make the admin role gate fail closed and move fetchAll() behind it",
-            "d": "An excluded role's browser should not issue the query at all.",
+            "t": "Make the availability save atomic",
+            "d": "Replace the delete-then-insert pair with a single upsert or a database function, so a failure cannot lose the previous rows at all.",
             "refs": [
-              "PR #180"
+              "PR #214"
             ]
           },
           {
-            "t": "Check the availability delete-then-insert result",
-            "d": "A refused re-insert currently leaves the grid wiped and says nothing.",
+            "t": "Use MASKED_CLIENT_LABEL where a masked client currently falls back to generic copy",
+            "d": "Cosmetic, not a leak \u2014 the id is already NULL by then.",
             "refs": [
-              "PR #180"
+              "PR #214"
             ]
           },
           {
-            "t": "Route the remaining client-name lookups through visibleClient()",
-            "d": "Puts the app-side mask where the DB-side one already is.",
-            "refs": [
-              "PR #180"
-            ]
+            "t": "Give bulk cancel its own canManageSession() check",
+            "d": "Inert today because the button is gated on isAdminOrScheduler, for whom the check returns true.",
+            "refs": []
           }
         ],
         "neutral": [
+          {
+            "t": "REJECTED: colleague client names cannot render in the calendar",
+            "d": "Both call sites read through sessions_visible(), and 0077 NULLs client_id on rows the caller may not associate, so clients.find(id===null) is undefined. The only gap is cosmetic \u2014 a generic fallback rather than MASKED_CLIENT_LABEL.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "REJECTED: the admin role gate does not actually fail open",
+            "d": "_app.tsx renders <Component> only after identity resolves, so admin.tsx never renders in the null window, and the only user===null state is 'no session', which proxy.ts redirects. Defensive hardening, not an exposure. Do not re-propose.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "tests/calendar-utils.test.mjs self-skips here",
             "d": "No esbuild exists in the remote sandbox, so the suite prints SKIP and exits 0. Re-run against tsc-compiled output for a real pass line: 53 passed, 0 failed this run.",
@@ -193,6 +198,13 @@
       "desc": "Marketing site and sign-in hub on port 3001, summitclient.io. Owns the only endpoints allowed to refresh or end the shared .summitclient.io session cookie.",
       "sections": {
         "good": [
+          {
+            "t": "The open-redirect check no longer lets a backslash through",
+            "d": "safeRedirect accepted anything starting with one '/' and rejected only '//'. Browsers normalise '\\' to '/', so /\\evil.example resolved protocol-relative \u2014 on a response that already carries a session cookie. Backslashes are normalised before the check now, and it moved to lib/auth-guards.ts where the suite exercises it.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "The refresh retry follows the current origin",
             "d": "The bounded retry for a concurrent-redemption race hardcoded the production URL, stranding any non-production session. It now builds from webUrl().",
@@ -257,13 +269,6 @@
         ],
         "pending": [
           {
-            "t": "safeRedirect does not reject a backslash authority",
-            "d": "confirm.js blocks //host but not /\\host, which browsers normalize, so an offsite Location is emitted after the session cookie has been set. P1.",
-            "refs": [
-              "PR #179"
-            ]
-          },
-          {
             "t": "The session cookie is written without Secure",
             "d": "The server cookie writer never sets secure and @supabase/ssr's defaults do not either (they also set httpOnly:false); no HSTS anywhere in the repo. P1.",
             "refs": [
@@ -290,41 +295,37 @@
             "refs": [
               "PR #180"
             ]
-          },
-          {
-            "t": "P2: verifyOtp's `type` comes straight from the query string",
-            "d": "pages/api/auth/confirm.js:25,32 passes it with no allowlist, and any successful type lands on /update-password.",
-            "refs": [
-              "PR #180"
-            ]
           }
         ],
         "blocked": [],
         "deferred": [],
         "next": [
           {
-            "t": "Reject backslash-authority destinations in confirm.js's safeRedirect",
-            "d": "It blocks //host but not /\\host, which browsers normalize, after the cookie is set.",
+            "t": "Give the marketing site a <title> and meta description",
+            "d": "Only /privacy and /terms set one, so the tab, bookmarks and search results for summitclient.io fall back to the bare URL. Verified, not applied this run.",
             "refs": [
-              "PR #180"
-            ]
-          },
-          {
-            "t": "Allowlist the verifyOtp `type` parameter",
-            "d": "A fixed set instead of whatever the query string carries.",
-            "refs": [
-              "PR #180"
+              "PR #214"
             ]
           },
           {
             "t": "Add a headers() block with a CSP and frame-ancestors",
-            "d": "Nothing in the repo defines one today; note the bar's inline styles need handling first.",
-            "refs": [
-              "PR #180"
-            ]
+            "d": "Carried forward.",
+            "refs": []
+          },
+          {
+            "t": "Set Secure on the session cookie",
+            "d": "Carried forward.",
+            "refs": []
           }
         ],
         "neutral": [
+          {
+            "t": "REJECTED: allowlisting verifyOtp's `type` fixes nothing",
+            "d": "An unrecognised type already makes verifyOtp error, which the route already turns into /login?error=link_invalid \u2014 the same outcome the allowlist would produce. Hardening with no defect behind it. Do not re-propose.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "Built almost entirely from inline styles",
             "d": "A className that seems inert here is usually a stylesheet-import question, not a selector bug.",
@@ -406,6 +407,13 @@
         ],
         "pending": [
           {
+            "t": "P2: inserts take client_id from the URL, and the fix is not browser-side",
+            "d": "goal-bank.ts and data.ts insert with a route-param client_id while stamping the caller's own clinic_id, and no clinic-consistency trigger exists on those tables. The proposed browser-side pre-check was rejected: a caller supplying a foreign id is not running your browser code. Real enforcement is a DB trigger or a server route \u2014 an architecture decision.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
             "t": "PHI persisted to sessionStorage",
             "d": "Full SOAP bodies, ABC incidents, document drafts and assessment answers sit in the browser on shared clinic workstations; supervision notes are written there and never to supervision_notes at all.",
             "refs": [
@@ -415,13 +423,6 @@
           {
             "t": "P2: WorkforceSection has no role gate",
             "d": "Every sibling settings section checks for admin; this one renders the clinic roster and the derivation action for any clinician. Migration 0081 turns that action into a database error rather than a cross-tenant write, so the button should be gated too.",
-            "refs": [
-              "PR #180"
-            ]
-          },
-          {
-            "t": "P2: browser-side inserts take client_id from the URL",
-            "d": "goal-bank.ts:248,:313 and data.ts:832,:1068,:1087 stamp clinic_id from the caller's own profile while the insert policy checks only clinic and staff.",
             "refs": [
               "PR #180"
             ]
@@ -447,24 +448,22 @@
         "next": [
           {
             "t": "Give WorkforceSection the admin gate its siblings have",
-            "d": "Also stops a clinician hitting migration 0081's new refusal.",
+            "d": "Verified: no identity/appRole reference anywhere in the file, while custom.tsx and controls.tsx both gate org writes on admin. The roster, the staff-employment select and the derivation button are all ungated. Not applied this run.",
             "refs": [
-              "PR #180"
+              "PR #214"
             ]
           },
           {
-            "t": "Add the missing client_id filters in retriever.ts and funding.ts",
-            "d": "treatment_modifications and integrity_checks are filtered in memory; the budget update trusts a caller-supplied client_id.",
+            "t": "Stop a budget update re-pointing at another client",
+            "d": "Verified: funding.ts's update carries a caller-supplied client_id and keys only on the budget id. RLS stops cross-CLINIC row access but checks no client_id, so a staff caller can re-point their own budget at any client. Not applied this run.",
             "refs": [
-              "PR #180"
+              "PR #214"
             ]
           },
           {
-            "t": "Stop persisting SOAP bodies, drafts and supervision notes to sessionStorage",
-            "d": "PHI at rest in the browser on shared clinic workstations, and supervision notes never reach their table.",
-            "refs": [
-              "PR #180"
-            ]
+            "t": "Stop persisting SOAP bodies and supervision notes to sessionStorage",
+            "d": "Carried forward.",
+            "refs": []
           }
         ],
         "neutral": [
@@ -483,6 +482,20 @@
       "desc": "The FAMILY portal on port 3003, client.summitclient.io, used by parents and guardians. Scoped by my_family and per-child guardian permissions.",
       "sections": {
         "good": [
+          {
+            "t": "The family core moved into @summit/family so the phone shares it",
+            "d": "The pure half of lib/family.ts and all of lib/clinic-date.ts moved verbatim; apps/client re-exports from the old paths so no page changed an import. family.test.mjs passes unchanged at 29.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "Documents tells a parent why it is empty instead of saying 'No documents yet'",
+            "d": "client_documents_family_read is auth_guardian_can(client_id,'view_shared_documents'), so a guardian without it got an empty set rendered as 'No documents yet' beside an upload box the write policy would refuse. Gated before the query, on the child being viewed rather than the family.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "The dashboard follows the child you switched to",
             "d": "Only the heading and task list changed on a switch while every server-rendered number still described the previous child. A specific-child switch now refetches.",
@@ -559,13 +572,6 @@
             "refs": [
               "PR #180"
             ]
-          },
-          {
-            "t": "P2: the feed-token GET has no user_id filter",
-            "d": "pages/api/calendar/feed-token.ts:59 reads the active bearer token relying on RLS alone, while POST and DELETE both filter by user_id.",
-            "refs": [
-              "PR #180"
-            ]
           }
         ],
         "blocked": [
@@ -588,6 +594,14 @@
         ],
         "deferred": [
           {
+            "t": "MIGRATION 0092 WRITTEN, NOT APPLIED: P1 revoking a guardian does not revoke them",
+            "d": "The legacy clients.user_id branch in auth_accessible_client_ids() and auth_guardian_can() checks no status, starts_on or ends_on, and inside auth_guardian_can returns true for all sixteen permissions. 0047 backfilled relationships and never cleared the column, so REVOKED, SUSPENDED and expired do nothing for anyone predating it. 1 of 119 clients carries a legacy link today and it is ACTIVE.",
+            "refs": [
+              "PR #214",
+              "migration 0092"
+            ]
+          },
+          {
             "t": "Announcement read-receipts",
             "d": "announcement_reads has no write path anywhere, so every clinic notice stays pinned to the dashboard forever. The insert policy already permits a guardian's own receipt with no migration, but mark-on-mount versus mark-on-click is a product call.",
             "refs": [
@@ -604,28 +618,45 @@
         ],
         "next": [
           {
-            "t": "Re-derive family membership in observation.ts and withdraw-consent.ts",
-            "d": "Both act on a request-supplied id with only RLS behind them.",
+            "t": "Gate forms.tsx on the viewed child",
+            "d": "documents.tsx got this in PR #214; forms.tsx has the same shape and did not.",
             "refs": [
-              "PR #180"
-            ]
-          },
-          {
-            "t": "Gate forms.tsx and documents.tsx on the viewed child",
-            "d": "Same family-wide-gate-over-per-child-query shape statement.tsx just lost.",
-            "refs": [
-              "PR #180"
+              "PR #214"
             ]
           },
           {
             "t": "Append rather than replace Set-Cookie in lib/supabase-server.ts",
-            "d": "Port this run's apps/web fix.",
-            "refs": [
-              "PR #180"
-            ]
+            "d": "Carried forward.",
+            "refs": []
+          },
+          {
+            "t": "Give guardians the client_availability read they already have the write for",
+            "d": "Carried forward from blocked.",
+            "refs": []
           }
         ],
         "neutral": [
+          {
+            "t": "Verified clean: a parent cannot reach another family's child",
+            "d": "Every family-facing policy keys on auth_guardian_can or auth_accessible_client_ids, never clinic_id alone and never for-all. The three helpers are security definer with pg_temp last and fully schema-qualified. my_family is an invoker view.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "Not a finding: announcements_family_read IS clinic-scoped live",
+            "d": "The audit reported it cross-tenant from 0083's header, which says NOT APPLIED. Production disagrees. The header is stale \u2014 read pg_policies, not the file.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "REJECTED: the API routes and the feed-token GET are correctly bounded",
+            "d": "observation.ts and withdraw-consent.ts are scoped by guardian-checked RLS and both handle the refusal path; the feed-token select policy is already user_id = auth.uid() and the handler rejects non-client callers. Defence-in-depth preferences, not defects. Do not re-propose.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "Shows PHI to non-staff",
             "d": "Anything that widens what a family can see is a security change, never a quick win.",
@@ -641,6 +672,14 @@
       "desc": "Staff self-service and the Admin console on port 3004, employee.summitclient.io. HR records, payroll, credentials, onboarding, time off.",
       "sections": {
         "good": [
+          {
+            "t": "Issue #190 was stale and is closed",
+            "d": "hub_pd_manage_select and hub_timeoff_manage_select both exist in production \u2014 confirmed against pg_policies, not against the migration files. The issue described a defect that was not there, and CLAUDE.md pointed at it.",
+            "refs": [
+              "PR #214",
+              "issue #190"
+            ]
+          },
           {
             "t": "The sidebar marks the current screen",
             "d": "The nav loop moved into a small client component so it can read the pathname; app/layout.tsx is a Server Component. The other half of issue #160.",
@@ -717,23 +756,6 @@
         ],
         "pending": [
           {
-            "t": "Audit-insert policies do not pin the actor",
-            "d": "hub_audit_write and hr_audit_log check only clinic_id, so any clinic member can forge events under someone else's actor/subject. Migration 0012 fixed exactly this for settings_audit.",
-            "refs": [
-              "PR #179",
-              "migration 0006",
-              "migration 0007"
-            ]
-          },
-          {
-            "t": "hub_can_manage() admits the caller as their own subject",
-            "d": "A scheduler can self-approve their own time off, self-verify their own PD and sign off their own onboarding.",
-            "refs": [
-              "PR #179",
-              "migration 0022"
-            ]
-          },
-          {
             "t": "Edge Function rate limiting fails open",
             "d": "isRateLimited() returns false on a count error.",
             "refs": [
@@ -765,6 +787,22 @@
         "blocked": [],
         "deferred": [
           {
+            "t": "MIGRATION 0091 WRITTEN, NOT APPLIED: three audit tables do not pin the actor",
+            "d": "hub_audit_events, hr_audit_log and clinical_audit_events accept an insert on the clinic alone, so any member can file an event under a colleague's name. settings_audit got this exact fix in 0012. Awaiting a run.",
+            "refs": [
+              "PR #214",
+              "migration 0091"
+            ]
+          },
+          {
+            "t": "MIGRATION 0090 WRITTEN, NOT APPLIED: hub_can_manage admits the caller as their own subject",
+            "d": "An admin or scheduler can approve their own time off, verify their own PD and sign off their own onboarding, because the queues rely on these policies to scope them and the function says yes to the caller. Awaiting a run. Cost named in the file: a clinic whose only admin is its only employee has nobody to approve them.",
+            "refs": [
+              "PR #214",
+              "migration 0090"
+            ]
+          },
+          {
             "t": "~4.8 MB of clinic-specific assets in public/",
             "d": "Carried forward from CLAUDE.md's open list; untouched this run.",
             "refs": []
@@ -773,24 +811,23 @@
         "next": [
           {
             "t": "Fail isRateLimited() closed in _shared/auth.ts and drop provision-clinic's copy",
-            "d": "Both are Edge Functions: merging a PR does not deploy them.",
+            "d": "Verified: it returns 'is limited' and returns false on a query error, so a broken count disables the invite and clinic-provisioning limits. EDGE FUNCTION \u2014 deploys separately from the app. Not applied this run.",
             "refs": [
-              "PR #180"
+              "PR #214"
             ]
           },
           {
-            "t": "Pin actor = auth.uid() on hub_audit_write and hr_audit_log",
-            "d": "Audit integrity, a PHIPA concern; 0012 fixed exactly this for settings_audit.",
+            "t": "Re-check issue #191 before doing any of it",
+            "d": "Its two blockers were stale; the remaining part may be too. Verify against production first.",
             "refs": [
-              "PR #180"
+              "PR #214",
+              "issue #191"
             ]
           },
           {
-            "t": "Exclude subject = auth.uid() from hub_can_manage()",
-            "d": "Restores segregation of duties for time off, PD and sign-offs.",
-            "refs": [
-              "PR #180"
-            ]
+            "t": "Store more than a filename for the Vulnerable Sector Check upload",
+            "d": "Carried forward.",
+            "refs": []
           }
         ],
         "neutral": [
@@ -878,13 +915,6 @@
             ]
           },
           {
-            "t": "P2: clearSettings() does not clear @summit/design's theme keys",
-            "d": "The prior user's theme and accent survive a same-tab user switch. No PHI, but the same class of bleed.",
-            "refs": [
-              "PR #180"
-            ]
-          },
-          {
             "t": "P2: BRIGHTHR_TENANT_DEFAULT ships in the browser bundle",
             "d": "It is exported from this package, which client components import, so the tenant id PR #54 moved server-side is readable anyway.",
             "refs": [
@@ -896,28 +926,40 @@
         "deferred": [],
         "next": [
           {
-            "t": "Stop reading clinic-wide settings_audit rows into the browser",
-            "d": "Scope the read, or drop the actor id before it leaves the server.",
+            "t": "Decide what change history should show, then narrow the settings_audit query",
+            "d": "The over-fetch stays until that is settled.",
             "refs": [
-              "PR #180"
-            ]
-          },
-          {
-            "t": "Clear @summit/design's theme keys in clearSettings()",
-            "d": "Finishes the sign-out cleanup the rest of the layer now does.",
-            "refs": [
-              "PR #180"
+              "PR #214"
             ]
           },
           {
             "t": "Stop re-exporting BRIGHTHR_TENANT_DEFAULT from a client-imported package",
-            "d": "Undoes the leak that made PR #54's server-side move moot.",
+            "d": "Carried forward.",
+            "refs": []
+          },
+          {
+            "t": "Say honestly which appearance settings render nowhere",
+            "d": "Primary colour and Accent colour are editable and paint nothing \u2014 issue #209.",
             "refs": [
-              "PR #180"
+              "issue #209"
             ]
           }
         ],
         "neutral": [
+          {
+            "t": "REJECTED for now: narrowing the settings_audit query is a product decision",
+            "d": "The over-fetch is real \u2014 200 clinic-wide rows carrying actor UUIDs reach every staff browser \u2014 but scoping the query and resolving names change what admins see in change history. Needs a decision, not a patch.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "REJECTED: clearSettings should not reach into @summit/design's keys",
+            "d": "The leak is a theme preference, no user data, and design is deliberately browser-scoped with no settings dependency (its init script runs pre-auth, before paint). The fix inverts a documented boundary. Do not re-propose.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "Reads are synchronous against a cache that starts empty",
             "d": "Anything read before initSettings() resolves gets the registry default, indistinguishably from a real value.",
@@ -933,6 +975,20 @@
       "desc": "The cross-portal AppNav bar and SupportButton, compiled from source by every app via transpilePackages. Renders from the @summit/portals registry.",
       "sections": {
         "good": [
+          {
+            "t": "The nav suite was silently skipping and now runs",
+            "d": "It hunted for esbuild down two paths relative to the WORKING DIRECTORY, so from the repo root it printed SKIP and exited 0 \u2014 a pass it had not earned. Anchored to the file; 30 passed, 0 failed from anywhere.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "A support report names the route, not the record that was open",
+            "d": "The App Router call sites passed usePathname(), the resolved path, so /clients/4192/sessions/88 was prefilled into a mailto addressed to a free-text org setting. maskRoute() now replaces numeric and UUID segments with :id, fixed in the shared component so every caller is covered.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "The scheduler portal has a sign-out control",
             "d": "AppNav was mounted without signOutHref and no page consumed the signOut fn, so the portal had no way to sign out at all.",
@@ -999,13 +1055,6 @@
             ]
           },
           {
-            "t": "P2: the report body embeds the real pathname",
-            "d": "apps/data and apps/employee pass usePathname(), so a client id in the URL is prefilled into an outbound email to a tenant-configured address. apps/client deliberately passes the route template instead.",
-            "refs": [
-              "PR #180"
-            ]
-          },
-          {
             "t": "P2: the bar is entirely inline styles",
             "d": "A CSP would need style-src 'unsafe-inline' as well as the script-src the theme script already forces.",
             "refs": [
@@ -1017,25 +1066,19 @@
         "deferred": [],
         "next": [
           {
-            "t": "Pass the route template, not the real pathname, from apps/data and apps/employee",
-            "d": "Stops a client id reaching an outbound email; apps/client already does this.",
-            "refs": [
-              "PR #180"
-            ]
+            "t": "Validate support.devEmail on the way in",
+            "d": "Carried forward.",
+            "refs": []
+          },
+          {
+            "t": "Stop rendering an activeKey pill for a role ACCESS does not admit",
+            "d": "Carried forward.",
+            "refs": []
           },
           {
             "t": "Move the bar's inline styles into components.css",
-            "d": "So a CSP need not allow style-src 'unsafe-inline'.",
-            "refs": [
-              "PR #180"
-            ]
-          },
-          {
-            "t": "Validate support.devEmail on the way in",
-            "d": "Now that it is guarded at the point of use, catch it at the point of entry too.",
-            "refs": [
-              "PR #180"
-            ]
+            "d": "Carried forward.",
+            "refs": []
           }
         ],
         "neutral": [
@@ -1054,6 +1097,20 @@
       "desc": "tokens.css (the single OKLCH palette), components.css and motion, imported by every app. Apps import their own app.css after it, so a duplicate silently wins.",
       "sections": {
         "good": [
+          {
+            "t": ".nav-icon's composited contrast is above 3:1",
+            "d": "0.65 opacity composited --muted over the sidebar at 2.88:1 in light. 0.72 gives 3.30:1. Dark was already fine at 3.54:1 \u2014 the claim that both themes failed was wrong.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "White on a danger button failed AA in dark mode",
+            "d": "'.btn.danger' hardcoded #fff, which measures 2.86:1 on the lightened dark --danger. A --danger-ink token carries white in light and a near-black in dark (6.63:1). The suite missed it because every pair it checked was a token against a SURFACE, never a label against the thing it sits on \u2014 that pair is in it now, 132 rather than 124.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "The hidden drawer checkbox no longer takes a desktop tab stop",
             "d": "opacity:0 does not remove an element from the tab order, so every page above 820px began with a phantom tab stop. It is display:none by default and re-declared inside the media block.",
@@ -1125,13 +1182,6 @@
             "refs": [
               "PR #179"
             ]
-          },
-          {
-            "t": "P2: .nav-icon composites below 3:1",
-            "d": "opacity 0.65 gives 2.87:1 light and 3.56:1 dark. Not a WCAG failure (aria-hidden, duplicated by its label) but the one composite under 3:1 in the palette.",
-            "refs": [
-              "PR #180"
-            ]
           }
         ],
         "blocked": [
@@ -1146,25 +1196,21 @@
         "deferred": [],
         "next": [
           {
-            "t": "Self-host the two Google fonts",
-            "d": "Closes the third-party CSS fetch on every authenticated PHI page in all five apps.",
+            "t": "Drive the hue dial from an org setting",
+            "d": "The palette is a formula now and the phone reads it, so a real per-tenant brand colour is reachable from both renderers. Nothing is wired to it \u2014 issue #209.",
             "refs": [
-              "PR #180"
+              "issue #209"
             ]
+          },
+          {
+            "t": "Self-host the two Google fonts",
+            "d": "Carried forward from blocked.",
+            "refs": []
           },
           {
             "t": "Expose a nonce for the inline theme script",
-            "d": "So a CSP can drop script-src 'unsafe-inline'.",
-            "refs": [
-              "PR #180"
-            ]
-          },
-          {
-            "t": "Raise .nav-icon's composited contrast above 3:1",
-            "d": "The only pair in the palette under that line.",
-            "refs": [
-              "PR #180"
-            ]
+            "d": "Carried forward.",
+            "refs": []
           }
         ],
         "neutral": [
@@ -1180,6 +1226,129 @@
             "d": "Checked this run: tokens.css:327 and :328 have equal specificity and :focus-visible comes last, so an element that matches it already gets the ring. The proposed `:focus:not(:focus-visible)` is a no-op in any browser supporting :focus-visible.",
             "refs": [
               "PR #180"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "mobile",
+      "name": "Mobile",
+      "tag": "apps/mobile",
+      "desc": "The family app. A parent signs in and sees their child's sessions, progress, notifications, documents and billing. apps/client is the authority on what a parent may see; the phone shares that logic rather than restating it. Expo Go only \u2014 no Apple Developer account, so no native modules and no push.",
+      "sections": {
+        "good": [
+          {
+            "t": "A parent sees their child's next session",
+            "d": "Which child, when the next session is, what service, who is on the care team, and what else is coming up. A switcher for multi-child households. It replaced a screen showing profiles.role and clinic_id, which are null for a parent.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "It joins nothing a guardian cannot read",
+            "d": "staff admits no guardian at all, and locations and session_types need auth_role() in (scheduler|client|clinician), which a parent with no profiles row does not have. An embedded join returns NULL rather than erroring, so names come from my_care_team() and the session's own type column.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "An empty list says which access is missing",
+            "d": "RLS answers a refused read with an empty set, so a parent without view_appointments would be told 'nothing scheduled' about a child with weekly sessions. The screen reads the permissions my_family returns and says so.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "The phone renders the web's palette and states no colour of its own",
+            "d": "theme.ts reads @summit/design/tokens through oklch.ts; a test compares the phone's palette against the shipped stylesheet token by token and fails on a hex literal anywhere in src/.",
+            "refs": [
+              "PR #211"
+            ]
+          },
+          {
+            "t": "Scaffolded, running in Expo Go, verified on a device",
+            "d": "Sign-in, session surviving a force-quit, sign out. LargeSecureStore keeps the session ciphertext in AsyncStorage with its key in the keychain.",
+            "refs": [
+              "PR #204"
+            ]
+          }
+        ],
+        "pending": [
+          {
+            "t": "P2: the session key is written before the ciphertext",
+            "d": "A kill between the two leaves key N+1 against blob N, so decrypt returns garbage and the parent is forced to sign in again. Availability only, no confidentiality impact.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "P2: AES-CTR with no MAC, and SecureStore uses default accessibility",
+            "d": "The stored session is malleable (bounded \u2014 the JWT is signature-checked server-side), and both the key and the blob ride an encrypted device backup onto another device.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "P2: nothing in CI builds or bundles the app",
+            "d": "CI runs its typecheck and its two suites. expo export is the only thing that proves the bundle compiles, and it runs only when somebody runs it.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "P2: one test guardian exists in production",
+            "d": "One active guardian_relationship against 119 clients, and that user has no profiles row. Every multi-child and permission-variant path is unexercised against real data.",
+            "refs": [
+              "PR #214"
+            ]
+          }
+        ],
+        "blocked": [],
+        "deferred": [
+          {
+            "t": "Push notifications",
+            "d": "Expo Go cannot receive them. Needs an Apple Developer account and a dev build, which is the constraint the whole app is shaped around.",
+            "refs": []
+          }
+        ],
+        "next": [
+          {
+            "t": "Progress",
+            "d": "programs plus the my_goal_progress RPC, gated on view_clinical_progress \u2014 which is NOT a default grant, so the empty-state explanation matters more here than anywhere.",
+            "refs": []
+          },
+          {
+            "t": "Notifications list",
+            "d": "The my_notifications RPC. In-app only; push is deferred above.",
+            "refs": []
+          },
+          {
+            "t": "Messages",
+            "d": "Reading first. Sending goes through Next.js API routes the phone cannot call, so it needs a path that does not.",
+            "refs": []
+          },
+          {
+            "t": "Documents and forms",
+            "d": "Both gated on their own permissions, both with the same empty-set trap documents.tsx just had on the web.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "Billing last, and deliberately",
+            "d": "Receipts carry a clinician's credential number (0034) and budgets are money, and issue #192 says 0029 already picks rates off the wrong clinic. It deserves its own run.",
+            "refs": [
+              "issue #192"
+            ]
+          }
+        ],
+        "neutral": [
+          {
+            "t": "Metro needs no monorepo configuration",
+            "d": "It resolves TypeScript from workspace packages across pnpm's symlinks unaided. metro.config.js carries one override, for @supabase/supabase-js's ESM build, which Hermes refuses to compile.",
+            "refs": [
+              "PR #211"
             ]
           }
         ]

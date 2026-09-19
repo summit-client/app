@@ -194,6 +194,7 @@
   --warn-soft: oklch(95% 0.045 68);
   --danger: oklch(54% 0.205 25);
   --danger-soft: oklch(96% 0.035 25);
+  --danger-ink: #ffffff;
   --info: oklch(52% 0.130 250);
   --info-soft: oklch(95% 0.030 250);
 
@@ -284,6 +285,7 @@
     --warn-soft: oklch(31% 0.055 68);
     --danger: oklch(70% 0.160 25);
     --danger-soft: oklch(31% 0.075 25);
+    --danger-ink: oklch(18% 0.040 25);
     --info: oklch(76% 0.110 250);
     --info-soft: oklch(30% 0.055 250);
     --accent: #5fb0c4;
@@ -343,6 +345,7 @@
   --warn-soft: oklch(31% 0.055 68);
   --danger: oklch(70% 0.160 25);
   --danger-soft: oklch(31% 0.075 25);
+  --danger-ink: oklch(18% 0.040 25);
   --info: oklch(76% 0.110 250);
   --info-soft: oklch(30% 0.055 250);
   --accent: #5fb0c4;
