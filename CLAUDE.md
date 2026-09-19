@@ -111,30 +111,37 @@ app's `next.config`. A `tsup` build in `nav` once failed on a missing
 
 ## Supabase access for Claude sessions
 
-`.mcp.json` at the repo root (2026-08-30) configures a read-only Supabase MCP
-server (`@supabase/mcp-server-supabase`, `--read-only`, scoped to this one
-project via `--project-ref`) so a Claude session can query the live schema
-and data directly instead of every migration/mock-data script being handed
-over as SQL for a human to paste into the dashboard's SQL editor. It needs
-`SUPABASE_ACCESS_TOKEN` set in the Claude Code environment's own env vars
-(per-person/per-environment, never committed). `--read-only`
-is the actual enforcement point (not the token, which is account-wide) — do
-not run migrations or writes through this connection; hand those over as SQL
-for a human to run, same as before.
+**Read `pg_policies` before believing this repo's migration history.** You can
+query production directly, and that habit is what found six unscoped policies
+in 2026-09 — four of which appear in no migration here at all — plus a
+migration the history says was applied and was not (`0014`), and a column
+`0000` declares that does not exist. Three premises written from the history
+have now turned out false against the deployed schema. Introspect first.
 
-**If `ToolSearch` for "supabase" comes back empty, a missing token is not the
-first thing to check (2026-08-31).** Confirmed live: a correctly-set token
-still produced zero usable tools, because `@supabase/mcp-server-supabase`
-calls `https://api.supabase.com` for everything it does (hardcoded in the
-package, no flag changes it), and this Claude Code environment's network
-access defaults to **Trusted**, which does not include that domain — the
-proxy rejects it with a 403 before the token is ever read. Fix is in the
-environment's own settings, not `.mcp.json`: Network access → **Custom**,
-add `api.supabase.com` and `*.supabase.co` to Allowed domains, keep "also
-include default list of common package managers" checked (needed for
-`npx`/`pnpm`), save, and start a **new** session — changes never reach an
-already-running one. See `docs/context/environments.md`'s Supabase section
-for the full diagnostic trail.
+`SUPABASE_ACCESS_TOKEN` is set in the Claude Code environment's own env vars
+(per-person, never committed). With it:
+
+```bash
+curl -s -X POST "https://api.supabase.com/v1/projects/<ref>/database/query" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{"query":"select ..."}'
+```
+
+**That token is account-wide and can write.** Nothing about the transport
+restrains it, so the restraint is you: read freely, and treat a migration or
+any other write as needing the account owner's explicit approval first, named
+and with its consequences stated. `supabase/tests/tenancy.mjs --live` uses a
+scoped read-only role instead, which is the right shape when something runs
+unattended — see `supabase/tests/README.md`.
+
+**The `.mcp.json` MCP server does not work, and the reason written here until
+2026-09-19 was wrong.** It said the environment's proxy rejects
+`api.supabase.com` with a 403 and prescribed adding it to Custom allowed
+domains. That was true on 2026-08-31 and is not true now: the curl above
+works with no environment change at all. Whatever keeps
+`@supabase/mcp-server-supabase` from loading its tools is something else, and
+nobody has diagnosed it. Do not spend a session on the network settings; use
+the endpoint above.
 
 ## Hard constraints
 
@@ -527,244 +534,122 @@ on the server, or every deploy fails for every app.
 Full operational detail, including the server, nginx, TLS and the failure modes:
 the `summitclient-deploy-ssh.md` doc in the Claude project.
 
-## Flagged for the next pass (2026-09-18)
+## Open work
 
-Raised and deliberately not bundled. None is urgent; the first is the only one
-with a tenancy consequence.
+What is still wrong, plus the landmines. **History — what was fixed, when, and
+in which PR — lives in `docs/context/decisions.md`**, so this section stays
+about the present. Cross-check any status claim against `git log` before
+trusting it; that habit is what caught the last three gaps.
 
-- ~~The pre-history `Staff can read own sessions` policy has no clinic
-  predicate.~~ **Closed by `0087`, applied live 2026-09-18** — see "Known open
-  work" below. It was one of six, not one, and the other five were invisible
-  from this repo for the same reason: four of them appear in no migration at
-  all. The lesson survives the fix. An audit run against the migration files
-  reported `sessions` cleanly scoped and was wrong, which is why
-  `supabase/tests/tenancy.mjs` now reads the live database as well and fails
-  the build when that live run is skipped.
-- **`sessions.type` still exists.** `0085` added the pointer and backfilled it
-  (measured live: 2085 of 2085 rows resolved). Dropping the column is the
-  follow-up, and it is safe only once a release shows nothing lands unmatched.
-- **`0029`'s `time_entry_economics` and `0031`'s `session_delivery` still join
-  `session_types` on the NAME.** Correct only because `0085`'s rename trigger
-  keeps that name true. Moving them onto `session_type_id` retires the
-  trigger.
-- **`0029` joins `st.clinic_id = e.clinic_id`** — the TIME ENTRY's clinic, not
-  the session's. Pre-existing, unrelated to `0085`, and it decides a billing
-  rate, so it wants its own look rather than a drive-by fix.
-- **`behaviour.mjs` fails one case on `main`**: "the bulk derivation skips what
-  is already derived", with `not authorised to derive session deliveries for
-  that clinic`. Predates this work; looks like the fixture's permissions
-  rather than the rule.
-- **CI runs the tenancy and Edge Function suites now, not the rest.**
-  `tenancy.mjs` (both modes), `edit_teammate_authz.mjs` and
-  `invite_teammate_guard.mjs` gate every pull request. `apply.mjs`,
-  `behaviour.mjs`, `rls.mjs`, `session_type_id.mjs` and
-  `credential_verification.mjs` still only run by hand — that is how `rls.mjs`
-  sat red from `0077` landing until `0086`, two cases asserting the exact
-  behaviour `0077` removed. Those need PGlite installed in CI, so whether they
-  should gate it is still the account owner's call.
-- **Three clinics exist now**, not one: Mount Etna plus two test clinics
-  ("Second Clinic (test)", "Test Clinic Seven"). Measured 2026-09-18. The
-  "only one clinic exists today" framing elsewhere in this file is about
-  posture, not a count — but the count is no longer one.
+### Landmines — read before touching the schema
 
-## Known open work
-
-Fixed since the last pass, so don't re-fix: `apps/client` now has a `proxy.ts`
-edge guard (PR #50); `design-b.tsx`'s status pill now reflects the session's
-real status instead of hardcoding "confirmed" (PR #50); `packages/settings`
-persists for real via Supabase (PR #57, see "Traps that have already bitten"
-above); `apps/scheduler/proxy.ts` uses `getUser()` (PR #52); the BrightHR
-tenant ID moved server-side (PR #54); `.gitattributes` now normalizes line
-endings (PR #56); and the cross-portal refresh-token race that could bounce a
-valid session to login is fixed via `@summit/proxy-auth` (see "Traps that
-have already bitten" above) — application code only, no manual migration.
-
-Fixed 2026-08-30, ahead of the first clinician dry run: the client-portal
-"reports" screen now shows real goals and signed/countersigned SOAP notes
-under RLS (PR #83, migration `0020`); the "view as a client" picker's
-invisible button text (PR #83); the scheduler calendar's dead "Completed"
-filter and unfiltered "Upcoming Sessions" query (PR #84); the live
-`user_role` enum's missing `'supervisor'` value (PR #85, migration `0021`,
-see "One role vocabulary" above); Edge Function CORS preflight handling
-(PR #86, see "Traps that have already bitten" above); `@summit/session`'s
-`IS_PREVIEW` missing its `NODE_ENV` gate (PR #87, see "Traps that have
-already bitten" above); and the cross-portal bar having no working sign-out
-at all (PR #88, see "Traps that have already bitten" above).
-
-Fixed 2026-08-31: the Admin console's "Pending sign-offs" queue only ever
-showed the caller's own onboarding tasks, never the clinic's (PR #91, see
-the "Admin console... scoped to the wrong user" bullet below for what's
-still open there); the platform-default, unbranded invite email (PR #92,
-`supabase/templates/invite.html` — confirmed live, see
-`docs/context/environments.md`'s Supabase Edge Functions section); the
-generic "Edge Function returned a non-2xx status code" message that hid
-the real reason an invite/edit/deactivate call was rejected (PR #93,
-`hr-backend.ts`'s `describeFunctionError()`); and schedulers having no
-access to `apps/employee` at all, now scoped specifically to the Admin
-console (PR #94, migration `0022` — applied live — widened
-`hub_can_manage()`, see "One role vocabulary" above).
-
-Fixed 2026-09-16 (PR #175): invites consolidated to one flow —
-`apps/employee`'s Admin console `InviteForm` is now the only place to invite
-anyone, staff or client; the duplicate panel in `apps/scheduler`'s admin page
-is deleted outright, no replacement link. `invite-teammate` now
-auto-provisions the full row set for a brand-new account in one call —
-`staff` + `staff_availability` + `employment_records` for staff-shaped
-roles, `clients` + `client_availability` for an inline-created client.
-Backed by migration `0075` (`staff.user_id` — never existed before despite
-0013's comment assuming it did) and migration `0076` (`staff` contact/
-emergency-contact columns + a guard trigger restricting self-edit to those
-fields, `staff_availability`/`client_availability` own-row write RLS,
-`households.email`) — both confirmed applied live. A profile-setup checklist
-now drives a progress ring on the cross-portal nav avatar (critical items get
-a plain "!" badge, no text anywhere); shared `@summit/availability` package
-replaces three independent copies of the drag-to-select grid, with the org's
-real `calendar.gridIncrementMinutes` wired through instead of a hardcoded 30.
-Also: `apps/web/pages/profile.tsx` (and its provider) deleted — it had
-become two identity-only stubs nothing in the app linked to anymore, once
-`profileUrl()` was repointed to send every role straight to its real profile
-in `apps/employee` or `apps/client`.
-
-Applied live 2026-09-18 (PR #178): migrations `0077`–`0080`, in that order.
-`0077` puts the clinician/client privacy boundary in the database —
-admin/supervisor keep a clinic-wide read of `sessions`, a clinician's direct
-read is their own rows, and colleague occupancy comes from
-`public.sessions_visible()`, a security-definer function that NULLs
-`client_id`/`home_address` and sets `client_masked` on rows the caller may
-not associate. Apps now **read `sessions_visible()`, write `sessions`**.
-`0078` makes clientless Break/Lunch/Meeting blocks insertable (0016's trigger
-had no null guard on `client_id`). `0079` adds
-`hub_scoreboard_sites`/`hub_scoreboard_scores`. `0080` restores 0014's
-`clients` grant and backfills `staff.user_id` from `employment_records`
-(14 of 17 staff rows linked; the 3 skipped are test accounts with no
-employment record).
-
-**The lesson from that night is bigger than the migrations, and it is this:
-read `pg_policies` before believing this repo's migration history.** Three
-premises written from the history turned out to be false against the
-deployed schema, all found by introspecting before applying:
-
-- **Migration 0014 was never applied.** Neither `clients_clinical_staff_select`
-  nor `sessions_clinical_staff_select` existed, and nothing here drops them.
-  So the clinic-wide clinician read 0077 was written to *narrow* never
-  existed; on this database 0077 is a grant. **Never apply 0014 now** — its
-  sessions half would OR with 0077's narrow policy and silently undo it.
-- **`staff.user_id` was null for every pre-existing staff member** (0075 added
-  the column and `invite-teammate` sets it for new hires only). Everything
-  keyed on it was dead: `staff_self_select`, 0076's availability writes and
-  contact self-edit, and the pre-history "Staff can read own sessions". A
-  clinician and a supervisor each read **zero** sessions and zero clients,
-  while 0046 — applied — let a clinician *write* their own.
-- **`sessions.created_at` does not exist**, though `0000` declares it. 0077
-  listed it on that authority and would have failed outright. First measured
-  divergence between `0000`'s reconstruction and production; recorded in
-  `0000`'s own header. Treat every other column there as inferred, not
-  observed, until the `pg_dump` reconciliation that header asks for happens.
-
-Applied live 2026-09-18 (PR #188): migration `0087`. **Every policy on a
-clinic-scoped table now names the clinic**, and the live suite proves it
-rather than this paragraph asserting it.
-
-Six policies decided "is this row yours?" by reaching through `staff` or
-`clients` on `user_id` and naming no clinic. They were correct only because
-one person held one staff row — a fact about an *index on another table*, and
-for the two client ones, not even that: `clients` had no unique index on
-`user_id`, so what kept a family out of another clinic's sessions was that
-nobody had made the second row. A tenant boundary that lives in an index
-somewhere else is not a boundary. 0087 names the clinic in all six, gives
-`clients.user_id` the index `staff.user_id` already had, pins `search_path`
-on the two `security definer` functions that did not name `pg_temp` (one of
-them `handle_new_user`, which writes to `profiles` and had no `search_path`
-at all), and makes `clinic_id` NOT NULL on 37 tables.
-
-**`supabase/tests/tenancy.mjs` now checks this on every pull request**, twice:
-once against the migration files and once against the live database. Read its
-header before changing a policy. The live run is the one that matters — the
-file run reported `sessions` cleanly scoped while production carried two
-unscoped policies that appear in no migration in this repo, and a live run
-that gets skipped fails the build rather than reporting green. Its `KNOWN`
-baseline is empty and is meant to stay empty; an entry there is a policy the
-suite will not fail on.
-
-Still open from that pass: `hub_pd_records`/`hub_time_off_requests` have no
-`..._manage_select` policy (see the Admin console bullet below).
-
-- **`invite-teammate` overwriting an existing account is FIXED** (commit
-  `479bbf8`); the reason it happened is worth keeping. Supabase's
-  `inviteUserByEmail` resolves an already-registered email to that *same
-  existing user id* rather than erroring or minting a new one, and the
-  function then `upsert`s `profiles` for that id — silently overwriting
-  whoever already owns that account with the new role/clinic/supervisor.
-  Confirmed live 2026-08-30: inviting an existing admin's own email as
-  "clinician" flipped that admin's own `profiles.role` in place, and their
-  prior `hub_task_progress`/`hub_employee_training` rows (from testing under
-  the old role) then legitimately showed up under the "new" invite, because
-  it was the same account the whole time.
-
-  The guard queries `profiles` by email and returns 409, naming whether the
-  account is in this clinic or another — the second case is where the
-  one-login-per-clinic decision is enforced. **It must stay ahead of
+- **Never apply migration `0014`.** It was never applied, and nothing drops
+  it. Its `sessions` half would OR with `0077`'s narrow policy and silently
+  undo the clinician/client privacy boundary.
+- **`0000` is a reconstruction, not a dump.** `sessions.created_at` is
+  declared there and does not exist in production — the first measured
+  divergence, recorded in `0000`'s own header. Treat every other column there
+  as inferred until the `pg_dump` reconciliation happens.
+- **`sessions.type` still exists** alongside `0085`'s `session_type_id`
+  pointer, and `0029`'s `time_entry_economics` and `0031`'s `session_delivery`
+  still join `session_types` on the NAME. They are correct only because
+  `0085`'s rename trigger keeps that name true — do not remove that trigger
+  without moving them onto the key first. Dropping the column is safe only
+  once a release shows nothing lands unmatched (2085 of 2085 rows resolved at
+  backfill).
+- **`supabase/tests/tenancy.mjs`'s `KNOWN` map is empty and must stay empty.**
+  An entry there is a policy the suite will not fail on. It runs twice on
+  every PR — once against the migration files, once against production — and
+  a skipped live run fails the build rather than reporting green.
+- **`invite-teammate`'s existing-account guard must stay ahead of
   `inviteUserByEmail` in the file.** A trigger creates a default `profiles`
-  row (role `client`, `clinic_id` null) the instant any `auth.users` row
-  appears, including the one the invite itself creates, so the same query
-  moved after the call would reject every legitimate invite.
-  `supabase/tests/invite_teammate_guard.mjs` asserts that ordering, and CI
-  runs it. Edge Functions deploy separately — a merge does not ship them.
-- **The Admin console's "Queues" tab (`apps/employee/app/admin/page.tsx`) was scoped to the
-  wrong user.** Every queue there read `getProgress()`/`getPd()`/`getTimeOff()` — the
-  CALLER's own loaded hub snapshot (`hub.ts`'s `requireSnap()` is always the signed-in
-  user's), never the clinic's — so an admin or supervisor could only ever see their *own*
-  onboarding tasks, PD records and time-off requests in a console whose whole point is
-  managing everyone else's. RLS already supported a clinic/team-wide read
-  (`hub_progress_manage_select` etc., migration `0006`); nothing queried it. Confirmed
-  live 2026-08-30 when a clinician's "ready for sign-off" task never appeared in the
-  signed-in admin's "Pending sign-offs" list. Fixed **for pending sign-offs only**:
-  `HubBackend.listPendingSignoffs()` queries `hub_task_progress` clinic-wide (no
-  `user_id` filter — relies on RLS) and the admin screen joins the result against
-  `directory()` for names. `signOffTask()` had a second, compounding bug on the write
-  side: it gated on the CALLER's own in-memory snapshot before ever calling the backend,
-  so signing off someone else's task matched no local row and silently no-op'ed — fixed
-  in the same change; the DB update also now requires `status = 'AWAITING_SIGNOFF'` so a
-  stale queue can't complete a row that already moved.
-  **Not yet fixed**, same shape of bug: "Certificates to issue," "Time-off requests,"
-  "PD awaiting verification," and the single-row "Team directory" table on that same
-  screen. Before wiring those the same way, note `hub_pd_records` and
-  `hub_time_off_requests` are missing a `..._manage_select` RLS policy entirely in
-  migration `0006` (only `hub_certificates` and `hub_task_progress` have one) — a
-  corrected client query against either would silently return nothing for anyone but the
-  caller (the "RLS returns empty sets, not errors" trap above) until that policy is added.
-- ~4.8 MB of clinic-specific assets in `apps/employee/public`
-- Scheduler calendar v2 (PR #74 onward) — full backlog is closed as of the
-  overnight PR that follows PR #76; see `docs/context/product.md`'s
-  "Scheduler calendar v2 — feedback backlog" section for the whole history
-  before touching that tab again. Two things worth knowing before you do:
-  `TimeGrid`'s `DayColumn.onClick` handler had a target-equality guard that
-  silently made click-to-create dead on arrival in every PR before that
-  last one — fixed, but if a future change to that handler brings back
-  anything shaped like `e.target !== e.currentTarget`, read why it was
-  wrong there first. And apps/scheduler now has its first automated test
-  (`tests/calendar-utils.test.mjs`) — it esbuild-skips silently in this
-  remote sandbox specifically (no esbuild anywhere on disk here); see the
-  Verification section below before trusting a bare SKIP.
+  row the instant any `auth.users` row appears, including the one the invite
+  itself creates, so the same query moved below that call would reject every
+  legitimate invite instead of catching a pre-existing account.
+  `supabase/tests/invite_teammate_guard.mjs` asserts the ordering.
+- **`TimeGrid`'s `DayColumn.onClick`**: anything shaped like
+  `e.target !== e.currentTarget` there makes click-to-create dead on arrival.
+  It did, in every PR before the one that fixed it.
 
-The full list — compliance gaps, product debt, ops debt, and unresolved
-conflicts between past sessions — lives in `docs/context/`. Read the relevant
-file before starting work in that area, and treat items there tagged OPEN as
-genuinely undecided, not as a backlog to just pick up:
+### Still broken — tracked as GitHub issues
 
-- `docs/context/decisions.md` — what was decided, what was only proposed, what
-  is still open, and what was rejected and why.
-- `docs/context/environments.md` — server, deploy pipeline, env files, and
-  failure modes with their diagnostic tells.
-- `docs/context/compliance.md` — regulatory regimes, what gates revenue, PHI
-  handling rules, open compliance questions.
-- `docs/context/product.md` — who this is for, portal-to-app naming, scope
-  boundaries, commercial model.
+**Open defects live in GitHub Issues, not here.** This list is pointers, so it
+cannot drift out of date the way a prose list does: the issue carries the
+detail and the state, and closing it is what marks the work done.
 
-These were assembled 2026-08-27 from project chat history and were missing
-that day's later merges (PR #49, #50) until corrected; `decisions.md` and
-`environments.md` were updated again 2026-08-30 with that day's dry-run prep
-(PRs #83–#88, the missing `'supervisor'` enum value, the Edge Function CORS
-fix, the `IS_PREVIEW` gate fix, cross-portal sign-out, and the Supabase MCP
-access grant). Still cross-check dates against `git log` before trusting a
-status claim in them — that habit is what caught the gaps last time too.
+- **#190** — `hub_pd_records` and `hub_time_off_requests` have no
+  `..._manage_select` RLS policy at all. Any clinic-wide query against either
+  returns nothing for anyone but the caller, silently.
+- **#191** — Three Admin console queues and the team directory still read the
+  caller's own hub snapshot instead of the clinic's. Blocked on #190 for two
+  of them, which would otherwise look fixed and show nothing.
+- **#192** — `0029` picks a billing rate using the time entry's clinic rather
+  than the session's.
+- **#193** — `behaviour.mjs` is one-red on `main` and predates `0085`.
+- **#194** — CI does not run the PGlite database suites. Needs a decision on
+  whether they should gate.
+- **#195** — ~4.8 MB of clinic-specific assets ship to every tenant.
+  `blocked`: needs a product decision on where per-tenant content lives.
+- **#196** — the scheduler Dashboard's "No-show rate" reads a meaningless
+  number, because nothing ever sets `sessions.status = 'completed'`.
+  `blocked`: see `decisions.md` for the choice it waits on.
+
+**Where each kind of thing goes.** A defect or a piece of work is a GitHub
+issue. A *decision* — what was chosen, what is still genuinely undecided, why
+something was rejected — goes in `docs/context/decisions.md`, which is the one
+thing issues are bad at. A *rule* a future session must not break is a Landmine
+above or a Trap earlier in this file, because those are read automatically and
+an issue is not. Never put the same thing in two places; link instead.
+
+**Keeping it that way is part of the work, not tidying afterwards.** This
+structure decays silently, and has: `decisions.md` carried the
+`invite-teammate` overwrite bug tagged OPEN, "not yet fixed", for weeks after
+it shipped. A session reading it would have rebuilt a guard that already
+existed. So:
+
+- **Found a defect? Open an issue** and add one pointer line here. Do not
+  write the description here — a paragraph in this file has no state and
+  nobody closes it.
+- **Fixed something? Close its issue in the same PR**, and delete its pointer
+  line. "Fixed in #189" in a commit message is not closing it.
+- **Starting work in an area? Read its open issues first**, not just this
+  file. This list is pointers and can lag; the issues cannot.
+- **Made or changed a decision? Record it in `decisions.md`** with the date
+  and who made it — including when the account owner settles something
+  mid-session. That file is the only record of *why*, and a decision nobody
+  wrote down gets re-litigated by the next session.
+- **A status claim in any doc is a claim, not a fact.** Cross-check against
+  `git log origin/main` and the issue list before repeating it. That habit is
+  what caught the last four gaps.
+
+Not a defect, so no issue: **three clinics exist now**, not one — Mount Etna
+plus two test clinics. The "only one clinic exists today" framing elsewhere in
+this file is about posture, not a count.
+
+### The deeper files
+
+`docs/context/` holds the full record — compliance gaps, product debt, ops
+debt, and unresolved conflicts between past sessions. Read the relevant one
+before starting work in that area, and treat items tagged OPEN as genuinely
+undecided, not as a backlog to pick up.
+
+- `decisions.md` — what was decided, what was only proposed, what is still
+  open, what was rejected and why, and the dated record of what shipped.
+- `environments.md` — server, deploy pipeline, env files, failure modes with
+  their diagnostic tells.
+- `compliance.md` — regulatory regimes, what gates revenue, PHI handling.
+- `product.md` — who this is for, portal naming, scope, commercial model.
+- `workforce.md` — employment, pay and scheduling rules.
+
+`ARCHITECTURE.md` at the repo root is a different kind of file and nothing
+used to point at it, which is why it is named here. It holds the binding
+rules for anything AI-adjacent — the LLM never computes a number, every
+surfaced flag ships a structured evidence object, every suggestion carries a
+provenance label, the clinician decides. Read it before touching
+`packages/analytics`, `packages/clinical-ai`, or any screen that shows a
+clinical conclusion.
+
+`BLOCKED.md` is gone as of 2026-09-19. It held one investigated-but-unfixed
+item under a title naming a branch that merged weeks ago, with its own private
+status vocabulary — which is a tracker nobody checks. Its full content,
+manifest and all, is issue #195.

@@ -1,12 +1,31 @@
 # Decisions
 
+**This file tracks decisions, not tasks.** Work items — defects, features,
+anything with a done state — are GitHub issues. Put a thing in one place and
+link from the other; a status tag here that duplicates an issue's state will
+go stale, and did: the `invite-teammate` guard sat tagged OPEN in this file
+for weeks after it shipped, and a session reading it would have rebuilt a
+guard that already existed.
+
+What belongs here is what issues are bad at: *why* something was chosen, what
+was rejected and on what grounds, and what is genuinely still undecided.
+**Close an entry when the decision is made, not when the code lands** — and if
+an entry is OPEN because nobody has built it rather than because nobody has
+decided, it is an issue, not a decision.
+
+**Write a decision down the session it is made.** When the account owner
+settles something mid-conversation, it is binding from that moment and this
+file is the only place it survives. An unrecorded decision gets re-proposed by
+the next session, which wastes their time and reads as not having listened.
+
 Status key:
 
 - **DECIDED** — Yanko stated it, or executed it. Binding.
 - **PROPOSED** — recommended in a session and reacted to positively, but never
   confirmed as shipped. Do not treat as binding.
-- **OPEN** — genuinely undecided, or decided in principle with execution
-  unverified.
+- **OPEN** — genuinely undecided. Not "decided but unbuilt" — that is an issue.
+- **CLOSED** — was OPEN, now settled; kept with the reasoning intact, since
+  the point of this file is not re-litigating it.
 
 Assembled 2026-08-27 from project chat history and the review docs under
 `claude/`. Dates are the date of the conversation or the commit, not the date
@@ -182,19 +201,21 @@ access to their own data — real, standalone work with its own PR and its own
 verification pass, not something that should ride in on an unrelated batch.
 Needs a decision on *when*, not *whether*.
 
-**OPEN (raised 2026-09-14, scheduler feature batch, PR #170)** — the
-Dashboard's "No-show rate" stat (added in the same PR) will read as a
-degenerate 100%/0% indefinitely, because nothing in `apps/scheduler`
-anywhere sets `sessions.status = 'completed'`. The stat is computed against
-`completed + no_show` only (deliberately excluding future bookings), but
-with the numerator's other half never populated, every occurred session
-either has no status transition at all or sits at whatever it was created
-with — there is currently no code path, button, or job in this app that
-marks a session completed. Flagged in PR #170's own body rather than
-silently worked around. Needs a decision on where completion-marking
-belongs (automatic — e.g. session end time has passed and it wasn't
-cancelled/no-showed — versus an explicit staff action) before the stat is
-trustworthy.
+**OPEN (raised 2026-09-14, scheduler feature batch, PR #170)** — where does
+marking a session **completed** belong? Automatic (its end time passed and it
+was not cancelled or no-showed) or an explicit staff action?
+
+Automatic is cheap and asserts a session happened that nobody confirmed.
+Explicit is truthful and is one more thing to remember, so sessions nobody
+marks stay invisible forever. Decide alongside the no-show/cancellation
+billing policy below and issue #171, since all three turn on what "this
+session occurred" formally means — and per the account owner that may need to
+differ per clinic.
+
+The defect this causes — the Dashboard's "No-show rate" reading a degenerate
+100%/0% because nothing ever sets `sessions.status = 'completed'` — is **issue
+#196**, which is blocked on this. Track the code there; the choice stays
+here.
 
 **RESOLVED (verified live 2026-09-16)** — PR #170's body also flagged that
 `apps/scheduler/pages/admin.tsx` reads/writes `client.email`, `client.sessions`
@@ -279,14 +300,25 @@ clear it. `apps/scheduler` and `apps/client`'s pre-existing sign-out buttons
 had this same latent gap (looked like it worked locally, left the shared
 cookie valid) and were repointed at the same endpoint. PR #88, merged.
 
-**OPEN, discovered live 2026-08-30** — `invite-teammate` has no guard
-against inviting an email that already has an `auth.users`/`profiles` row.
-Supabase's `inviteUserByEmail` resolves an existing email to that same
-user id rather than erroring, and the function's `upsert` then overwrites
-that person's `profiles` row with the new role/clinic/supervisor. Surfaced
-when an admin invited their own email as a test "clinician" and their
-account was silently role-flipped in place. Not yet fixed — see
-`CLAUDE.md`'s "Known open work."
+~~**OPEN, discovered live 2026-08-30**~~ **CLOSED — shipped in `479bbf8`,
+tested since 2026-09-19.** `invite-teammate` had no guard against inviting an
+email that already had an `auth.users`/`profiles` row. Supabase's
+`inviteUserByEmail` resolves an existing email to that same user id rather
+than erroring, and the function's `upsert` then overwrote that person's
+`profiles` row with the new role/clinic/supervisor. Surfaced when an admin
+invited their own email as a test "clinician" and their account was silently
+role-flipped in place.
+
+The guard queries `profiles` by email before the invite is sent and returns
+409, naming whether the account is in this clinic or another — the second
+case is where the one-login-per-clinic decision is enforced. It must stay
+ahead of `inviteUserByEmail` in the file, for the reason
+`supabase/tests/invite_teammate_guard.mjs` asserts.
+
+**This entry said OPEN until 2026-09-19, months after the fix shipped**, which
+is the failure this file exists to prevent: a session reading it would have
+rebuilt a guard that was already there. Status tags here are only worth
+anything if they are closed when the work closes.
 
 **DECIDED** — Grant Claude Code sessions read-only access to the live
 Supabase project via `@supabase/mcp-server-supabase` (`.mcp.json`,
@@ -299,6 +331,164 @@ enforcement boundary, not the token (which is account-wide — Supabase has
 no finer-grained PAT scoping today). No real PHI exists in the system yet
 (see `compliance.md`), so this doesn't touch the BAA gate as written today —
 revisit this grant's scope explicitly once real client data is ever loaded.
+
+---
+
+## 2026-08-31 — the Admin console starts working for a clinic, not just its caller
+
+**SHIPPED** — Four fixes, PRs #91–#94.
+
+The "Pending sign-offs" queue only ever showed the signed-in person's own
+onboarding tasks, never the clinic's, in a console whose whole purpose is
+managing everyone else's. RLS already supported the clinic-wide read
+(`hub_progress_manage_select`, migration `0006`); nothing queried it. Found
+live when a clinician's ready-for-sign-off task never appeared for the admin.
+`listPendingSignoffs()` now queries clinic-wide and relies on RLS.
+`signOffTask()` had a compounding bug on the write side — it gated on the
+caller's own in-memory snapshot, so signing off somebody else's task matched
+no local row and silently did nothing.
+
+Also: the platform-default unbranded invite email replaced
+(`supabase/templates/invite.html`); `describeFunctionError()` added so an
+invite or edit rejection says why instead of "Edge Function returned a non-2xx
+status code"; and schedulers given access to `apps/employee`, scoped to the
+Admin console only, with migration `0022` widening `hub_can_manage()` so the
+queues return data rather than rendering empty.
+
+---
+
+## 2026-09-16 — one invite flow, and a shared availability grid
+
+**SHIPPED** — PR #175, migrations `0075` and `0076`, both applied live.
+
+`apps/employee`'s Admin console is now the only place to invite anyone, staff
+or client; the duplicate panel in `apps/scheduler`'s admin page is deleted
+outright. `invite-teammate` provisions the full row set for a new account in
+one call — `staff` + `staff_availability` + `employment_records` for
+staff-shaped roles, `clients` + `client_availability` for an inline-created
+client.
+
+`0075` added `staff.user_id`, which had never existed despite `0013`'s comment
+assuming it did. `0076` added the `staff` contact and emergency-contact
+columns with a guard trigger restricting self-edit to those fields only, plus
+own-row write RLS on both availability tables.
+
+`@summit/availability` replaced three independent copies of the drag-to-select
+grid, wired to the org's real `calendar.gridIncrementMinutes` instead of a
+hardcoded 30. `apps/web/pages/profile.tsx` deleted — two identity-only stubs
+nothing linked to once `profileUrl()` pointed every role at its real profile.
+
+---
+
+## 2026-09-18 — the clinician/client privacy boundary moves into the database
+
+**SHIPPED** — PR #178, migrations `0077`–`0080`, applied live in that order.
+
+Admin and supervisor keep a clinic-wide read of `sessions`; a clinician's
+direct read is their own rows; colleague occupancy comes from
+`public.sessions_visible()`, a security-definer function that NULLs
+`client_id`/`home_address` and sets `client_masked` on rows the caller may not
+associate. **Apps read `sessions_visible()`, write `sessions`.**
+
+`0078` made clientless Break/Lunch/Meeting blocks insertable (`0016`'s trigger
+had no null guard on `client_id`). `0079` added the scoreboard tables. `0080`
+restored `0014`'s `clients` grant and backfilled `staff.user_id` from
+`employment_records` — 14 of 17 rows linked, the 3 skipped being test accounts
+with no employment record.
+
+**Three premises taken from this repo's migration history were false against
+the deployed schema**, all caught by introspecting before applying, and this
+is why the standing rule is to read `pg_policies` first:
+
+1. Migration `0014` was never applied, so the clinic-wide clinician read that
+   `0077` was written to *narrow* never existed — on this database `0077` is a
+   grant. Applying `0014` now would silently undo it.
+2. `staff.user_id` was null for every pre-existing staff member, so everything
+   keyed on it was dead: `staff_self_select`, `0076`'s availability writes and
+   contact self-edit, and the pre-history "Staff can read own sessions". A
+   clinician and a supervisor each read zero sessions and zero clients, while
+   `0046` let a clinician *write* their own.
+3. `sessions.created_at` does not exist, though `0000` declares it. `0077`
+   listed it on that authority and would have failed outright.
+
+---
+
+## 2026-09-18/19 — ids over names, credentials somebody else confirms, and tenancy in the database
+
+**SHIPPED** — PRs #183–#188, migrations `0085`–`0087`, all applied live.
+
+**#183** — Admin console role access, guardian permissions, and a deactivation
+that doesn't orphan a team.
+
+**#184, migration `0085`** — A session points at its session type instead of
+copying its name. `sessions.session_type_id` added and backfilled (2085 of
+2085 rows resolved), with `type` kept in agreement both ways: a trigger
+derives it from the pointer on every session write, and a second carries a
+`session_types` rename out to the sessions holding the old label. Deliberately
+not finished: `sessions.type` still exists, and `0029`/`0031` still join on
+the name — correct only while that rename trigger lives.
+
+**#185, migration `0086`** — A credential's standing is something somebody
+else asserts, and it reaches a bill. `credentials_own_update` let a person set
+their own `status`, and `0034`'s receipt view puts a `GOOD_STANDING`
+credential number on a client's receipt under that clinician's name — so a
+self-entered, self-approved number was the clinic's assertion of who delivered
+the service, checked by nothing. The self-write stays; a trigger forces
+`PENDING` on entry or amendment and refuses the move to `GOOD_STANDING` when
+the actor is the holder, for every role including admin. Gated on a new
+`hr.credential.verify` action, seeded to admin, supervisor and `hr_admin` —
+not `hr.record.write`, which `0024` grants to admin and `hr_admin` only and
+would have given a supervisor a screen that refuses them.
+
+Same migration retired `staff.role` — a clinical credential held as free text,
+typed into the scheduler's admin page, verified by nothing, and a fourth copy
+of a vocabulary that already existed three times over. Two consumers moved
+with it: `isClinicalStaff()` became `carriesSessions()` and tests capacity
+alone, and `my_care_team()` — which had been publishing `staff.role` to
+FAMILIES as a job title — reads `hub_employee_profiles.job_title` now. Also
+added `session_types.is_intake`, replacing three places that matched a session
+type's name against the literal "Assessment", and `clients.session_type_id`.
+
+**#186** — The explanation style in CLAUDE.md, asked for directly.
+
+**#187** — The landing-page menu rebuilt without JavaScript. It was React
+state, so the dropdown did not exist in the DOM until a click handler ran —
+dead until hydration, dead for good if hydration failed. On a phone the
+header's own "Log in" link is `display:none` below 780px, so that dropdown was
+the *only* route to signing in. Also: the Admin directory was tagging four
+distinct roles as "employee", a word this system does not issue, because the
+pill rendered `accessLevel` (a three-value display ladder) rather than the raw
+`appRole` that PR #183 had already added.
+
+**#188, migration `0087`** — Every policy on a clinic-scoped table now names
+the clinic. Six decided "is this row yours?" by reaching through `staff` or
+`clients` on `user_id` with no clinic predicate. They were correct only
+because one person held one staff row — a fact about an index on another
+table, and for the two client ones not even that, since `clients` had no
+unique index on `user_id` at all. A tenant boundary that lives in an index
+somewhere else is not a boundary. `0087` names the clinic in all six, adds
+`clients_user_id_unique`, pins `search_path` on the two `security definer`
+functions that did not name `pg_temp` (one of them `handle_new_user`, which
+writes to `profiles` and had no `search_path` at all), and makes `clinic_id`
+NOT NULL on 37 tables — 45 nullable before, 8 after, the exclusions being the
+platform-default tables where null means "every clinic", plus `profiles`.
+
+**DECIDED (2026-09-18, account owner)** — **One login per clinic, for every
+role.** A person working at two clinics gets an error on invite rather than a
+second membership. The alternative was rewriting the clinic predicate in 435
+policies for a case nobody has hit. `invite-teammate` enforces it.
+
+**DECIDED (2026-09-18, account owner)** — Claude may **apply additive
+migrations to production directly**, and must do a full sweep and get express
+alignment on the consequences before anything destructive. `0087` was applied
+under this.
+
+**DECIDED (2026-09-19, account owner)** — CI reads production through a
+**scoped read-only Postgres role** (`tenancy_audit`), not the account-wide
+`SUPABASE_ACCESS_TOKEN`, which can write and would be printable by anyone
+editing a workflow file in a PR. The role holds a grant on no table: 0 of 156
+readable, 0 writable. `supabase/tests/README.md` has the SQL and the pooler
+string; the password is the owner's and appears nowhere.
 
 ---
 

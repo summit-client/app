@@ -213,28 +213,80 @@ one-time trust prompt on session start, and env var changes don't reach an
 already-running session's container - both need a fresh session to take
 effect.
 
-**A correctly-set token is not enough on its own (2026-08-31).** Confirmed
-live: with `SUPABASE_ACCESS_TOKEN` set and correctly formatted, the server
-still connected with zero usable tools - `ToolSearch` returned nothing for
-every query, even though the server's own MCP instructions loaded fine.
-Root cause, confirmed by running the server binary directly and sending it
-a raw `tools/list` request: `@supabase/mcp-server-supabase` calls
-`https://api.supabase.com` for everything (org lookups, `list_tables`,
-`execute_sql`, all of it - checked the package source, it's hardcoded, no
-flag changes it), and this environment's outbound network policy defaults
-to **Trusted**, which does not include `api.supabase.com` - the proxy
-rejects the connection with a 403 before the token is ever checked. The
-fix is in the Claude Code environment's own settings, not `.mcp.json` or
-the token: **Network access → Custom**, add `api.supabase.com` and
-`*.supabase.co` to **Allowed domains**, and check "also include default
-list of common package managers" (unchecking it would break `npx`/`pnpm`
-installs, which the Trusted default otherwise covers). Changes apply only
-to *new* sessions - an already-running session needs to be replaced, not
-just reconfigured, same as the env-var-changes caveat above. So: if
-`ToolSearch` for "supabase" comes back empty, check the environment's
-network access level before assuming the token or `.mcp.json` is the
-problem - that used to be the first guess, and in the case that motivated
-this note, it was the wrong one.
+**Superseded 2026-09-19 — the 403 is gone; the MCP server is still broken.**
+
+The note below was written 2026-08-31 and was correct then. It is not correct
+now, and it was costing sessions their most useful capability, so read the
+correction first.
+
+Direct HTTPS to `api.supabase.com` **works from this environment with no
+settings change at all**. Confirmed repeatedly on 2026-09-18/19: dozens of
+`POST /v1/projects/<ref>/database/query` calls with `SUPABASE_ACCESS_TOKEN`,
+against a session that had never touched Network access. So:
+
+```bash
+curl -s -X POST "https://api.supabase.com/v1/projects/<ref>/database/query" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{"query":"select ..."}'
+```
+
+That endpoint runs arbitrary SQL and the token is account-wide, so it can
+write. The restraint is procedural, not technical — see `decisions.md`,
+2026-09-18, for what the account owner authorised.
+
+The MCP server genuinely still does not load its tools; `ToolSearch` for
+"supabase" returns nothing. But the 403 is no longer why, and nobody has
+diagnosed the real cause. **Do not spend a session on network settings.**
+Use the endpoint above; for anything unattended, use the scoped read-only
+Postgres role in `supabase/tests/README.md` instead of the token.
+
+<details>
+<summary>The original 2026-08-31 diagnosis, kept for the trail</summary>
+
+Confirmed live at the time: with `SUPABASE_ACCESS_TOKEN` set and correctly
+formatted, the server connected with zero usable tools.
+`@supabase/mcp-server-supabase` calls `https://api.supabase.com` for
+everything (hardcoded in the package, no flag changes it), and this
+environment's outbound network policy defaulted to **Trusted**, which did not
+include that domain — the proxy rejected it with a 403 before the token was
+ever checked. The fix was **Network access → Custom**, adding
+`api.supabase.com` and `*.supabase.co` to Allowed domains with "also include
+default list of common package managers" left checked, applied to a *new*
+session.
+
+</details>
+
+## CI (2026-09-19)
+
+`.github/workflows/ci.yml`, on pull requests to `main`: typecheck, the two
+Edge Function authorization suites, the tenancy doctrine in both modes, then
+per-app builds for whatever changed.
+
+Two things about it are deliberate and easy to undo by accident.
+
+**The tenancy check runs twice and the second one needs a credential.** The
+file-based run reads `supabase/migrations/` and cannot see the database — on
+2026-09-18 it reported `sessions` cleanly scoped while production carried two
+unscoped policies that exist in no migration here. The live run reads
+production and is the one that finds drift from any source.
+
+**A skipped live run fails the build.** There is a step whose only job is to
+turn "the secret is absent, so the check quietly did not run" into a visible
+failure, because a check that did not run reads exactly like a check that
+passed. If CI starts failing on "Fail if the live tenancy check did not run",
+the secret is missing — do not delete the step.
+
+The credential is `SUPABASE_DB_URL`, a repository secret holding a pooler
+connection string for `tenancy_audit`, a Postgres role with login and catalog
+access and a grant on **no table** (measured: 0 of 156 readable, 0 writable).
+`SUPABASE_ACCESS_TOKEN` also works and warns, because it is account-wide and
+can write — anyone able to edit a workflow file in a PR could print it.
+`supabase/tests/README.md` has the role SQL and the connection-string
+mechanics, including why it must be the pooler host (the direct host has no
+A record; GitHub runners are IPv4-only) and why the username carries a
+`.<project-ref>` suffix.
+
+Rotate by dropping the role, not by editing the secret alone.
 
 ## Env files
 
