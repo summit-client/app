@@ -557,6 +557,13 @@ trusting it; that habit is what caught the last three gaps.
 - **Never apply migration `0014`.** It was never applied, and nothing drops
   it. Its `sessions` half would OR with `0077`'s narrow policy and silently
   undo the clinician/client privacy boundary.
+- **Every table without `clinic_id` is now justified, not just unchecked.**
+  `tenancy.mjs` used to reason only about tables that *have* one, so a table
+  without it was invisible to the check meant to enforce clinic scoping.
+  `NO_CLINIC_ALLOWED` lists the 14 that legitimately have none — the clinic
+  list itself, action vocabularies, statutory rates, and rows scoped through
+  a parent — each with the predicate that was read to justify it. A new table
+  with no `clinic_id` and no entry fails the run.
 - **`0000` was a guess and is now measured (2026-09-19).** It reconstructs the
   scheduler's pre-history tables from application code. Reconciling it against
   production found **44** differences — every id `integer` not `bigint`,
@@ -615,27 +622,6 @@ detail and the state, and closing it is what marks the work done.
 - **#198** — any staff member of a clinic can sign a note against any of that
   clinic's sessions, which since `0088` makes it billable under another
   clinician's name. Not a tenancy leak; a missing boundary *within* a clinic.
-- **#200** — migration `0073` was never applied. `apps/client` upserts
-  `home_session_preferences`, which does not exist live, so the family
-  portal's home-session preference is broken right now.
-- **#201** — four tables exist in production that no migration describes,
-  including `leads` (12 rows of personal data, no `clinic_id`). The bigger
-  finding is that `tenancy.mjs` cannot see a table with no `clinic_id` at
-  all, so the doctrine is only enforced on tables that already follow it.
-
-**Where each kind of thing goes.** A defect or a piece of work is a GitHub
-issue. A *decision* — what was chosen, what is still genuinely undecided, why
-something was rejected — goes in `docs/context/decisions.md`, which is the one
-thing issues are bad at. A *rule* a future session must not break is a Landmine
-above or a Trap earlier in this file, because those are read automatically and
-an issue is not. Never put the same thing in two places; link instead.
-
-**Keeping it that way is part of the work, not tidying afterwards.** This
-structure decays silently, and has: `decisions.md` carried the
-`invite-teammate` overwrite bug tagged OPEN, "not yet fixed", for weeks after
-it shipped. A session reading it would have rebuilt a guard that already
-existed. So:
-
 - **Found a defect? Open an issue** and add one pointer line here. Do not
   write the description here — a paragraph in this file has no state and
   nobody closes it.

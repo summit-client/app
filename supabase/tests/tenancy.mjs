@@ -70,6 +70,58 @@ const PLATFORM_DEFAULTS = new Set([
 ]);
 
 /**
+ * Tables in `public` that legitimately carry NO `clinic_id`, with the reason.
+ *
+ * WHY THIS LIST HAD TO EXIST. Every check below reasons about tables that
+ * HAVE a clinic_id. A table without one was invisible to this entire suite -
+ * so the check written to enforce "every table names the clinic" could only
+ * ever see tables that already did. Four undescribed tables were sitting in
+ * production the whole time and nothing here could say so (issue #201).
+ *
+ * Two shapes are legitimate. A PLATFORM table is genuinely not a tenant's -
+ * the clinic list itself, the action vocabulary, a wage schedule set by law.
+ * A PARENT-SCOPED table carries no clinic because its rows belong to a row
+ * that does: every policy on it either anchors on `user_id = auth.uid()` or
+ * reaches through a parent that is clinic-scoped. Each entry below was read
+ * before being written here.
+ */
+const NO_CLINIC_ALLOWED = new Map([
+  // Platform-wide, not a tenant's data.
+  ["clinics", "the tenant list itself - it cannot be scoped to a tenant"],
+  ["platform_operators",
+   "who may provision accounts across the whole platform. RLS on with zero " +
+   "policies is correct here: no clinic user should read it at all, and only " +
+   "definer functions do."],
+  ["permission_actions", "the action vocabulary auth_can() resolves against"],
+  ["guardian_permission_kinds", "the list of permission NAMES, not a grant to anybody"],
+  ["organization_event_types", "the event vocabulary"],
+  ["minimum_wage_rates", "statutory rates by jurisdiction, set by law not by a clinic"],
+  ["provisioning_audit", "records provisioning that happens before a clinic exists"],
+
+  // Scoped through the row they belong to. Predicates read 2026-09-19.
+  ["announcement_reads", "user_id = auth.uid(): a read receipt is the reader's own"],
+  ["message_reads", "user_id = auth.uid(): same"],
+  ["notification_preferences", "user_id = auth.uid(): a person's own preferences"],
+  ["relationship_permissions", "reaches through the household relationship it grants on"],
+  ["goal_bank_steps", "reaches through goal_bank_entries, which is clinic-scoped"],
+  ["goal_bank_relations", "reaches through goal_bank_entries on both ends"],
+  // Justified by migration 0089 rather than merely tolerated: a lead is a
+  // PROSPECTIVE clinic, so there is no tenant to scope it to. clinic_name is
+  // free text from a marketing form, not a reference to a clinics row. Its
+  // deny-all is now three explicit policies instead of an empty list.
+  ["leads", "a prospective clinic - no tenant exists to scope it to yet (0089)"],
+]);
+
+/**
+ * Tables with no clinic_id that are NOT yet justified. Same rule as KNOWN:
+ * a baseline, not an excuse, and it is meant to reach zero.
+ */
+const NO_CLINIC_KNOWN = new Map([
+  // Empty. Every table in public without a clinic_id now has a recorded
+  // reason above. An entry here would be one that does not.
+]);
+
+/**
  * Policies allowed to be unscoped, with the reason each is still open.
  *
  * EMPTY, and that is the point. It held six entries; migration 0087 closed
@@ -215,6 +267,32 @@ if (clinicTables.length === 0) {
   process.exit(1);
 }
 
+// 0. Every table in `public` either carries clinic_id or is justified.
+//    This runs FIRST because everything after it reasons only about tables
+//    that have a clinic_id - so without this, a table missing one is not
+//    checked and not reported, which is the hole that let four undescribed
+//    tables sit in production unseen (issue #201).
+const noClinic = (await q(`
+  select c.relname as table_name
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind in ('r', 'p')
+     and not exists (
+       select 1 from pg_attribute a
+        where a.attrelid = c.oid and a.attname = 'clinic_id'
+          and not a.attisdropped and a.attnum > 0)
+   order by c.relname`)).map((r) => r.table_name);
+
+const unjustified = noClinic.filter(
+  (t) => !NO_CLINIC_ALLOWED.has(t) && !NO_CLINIC_KNOWN.has(t));
+known += noClinic.filter((t) => NO_CLINIC_KNOWN.has(t)).length;
+t(`every table without clinic_id is justified (${noClinic.length} of them)`,
+  unjustified.length === 0,
+  unjustified.join(", ") + "\n         A PHI table needs clinic_id. A table that " +
+  "genuinely does not - the clinic list, an action vocabulary, a row scoped " +
+  "through its parent - goes in NO_CLINIC_ALLOWED with the reason, which is " +
+  "a decision somebody made rather than a gap nobody saw.");
+
 // 1. Row security is on wherever a clinic owns the row.
 const rlsOff = await q(`
   select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
@@ -316,6 +394,9 @@ if (known) {
   const found = [...unscoped, ...indirect].map((p) => `${p.tablename}/${p.policyname}`);
   for (const [k, why] of KNOWN) {
     if (found.includes(k)) console.log(`    - ${k}\n        ${why}`);
+  }
+  for (const [k, why] of NO_CLINIC_KNOWN) {
+    if (noClinic.includes(k)) console.log(`    - ${k} (no clinic_id)\n        ${why}`);
   }
   console.log("  These do not fail the run. They are meant to reach zero.");
 }

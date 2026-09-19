@@ -79,6 +79,16 @@ const RULES = [
   { klass: "Operational",
     why: "reference and lookup data: enumerations, not records about a person",
     table: /_kinds$|_types$|_codes$|^permission_actions$/, col: null },
+  // Classified 2026-09-19, and deliberately not any flavour of PHI. `leads`
+  // holds a name and an email for someone enquiring about the product - a
+  // PROSPECTIVE clinic, not a patient and not an employee. It is personal
+  // data and PIPEDA applies to it; nothing in it says anyone receives health
+  // services, which is what makes the PHI classes what they are. Listed
+  // before the PHI rules so the word "clinic" in clinic_name cannot pull it
+  // into one. See migration 0089.
+  { klass: "Operational",
+    why: "prospective-customer contact details from the public marketing form: personal data, but nothing indicating anyone receives care",
+    table: /^leads$/, col: null },
   { klass: "PHI — clinical",
     why: "clinical observation, assessment or treatment content about an identified child",
     table: /note|goal|program|assessment|mastery|milestone|trial|behaviour|incident|supervision|session_record|progress|observation|lesson/,
