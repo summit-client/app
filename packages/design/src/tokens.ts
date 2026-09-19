@@ -265,6 +265,11 @@ third tone can come back here if one is ever wanted.`,
       { name: "--warn-soft", value: ok(95, 0.045, 68) },
       { name: "--danger", value: ok(54, 0.205, 25) },
       { name: "--danger-soft", value: ok(96, 0.035, 25) },
+      // The label on a danger button, which cannot be plain white in both
+      // themes: white measures 5.62:1 on the light --danger and 2.86:1 on the
+      // lightened dark one. Light keeps white; dark gets a near-black that
+      // measures 6.63:1. See the dark override below.
+      { name: "--danger-ink", value: raw("#ffffff") },
       { name: "--info", value: ok(52, 0.130, 250) },
       { name: "--info-soft", value: ok(95, 0.030, 250) },
     ],
@@ -325,6 +330,7 @@ export const DARK: Decl[] = [
   { name: "--warn-soft", value: ok(31, 0.055, 68) },
   { name: "--danger", value: ok(70, 0.160, 25) },
   { name: "--danger-soft", value: ok(31, 0.075, 25) },
+  { name: "--danger-ink", value: ok(18, 0.040, 25) },
   { name: "--info", value: ok(76, 0.110, 250) },
   { name: "--info-soft", value: ok(30, 0.055, 250) },
   ...accentDecls(ACCENTS.blue.dark),

@@ -55,6 +55,11 @@ const COMMON = [
   ["--muted", "--bg", 4.5, "secondary text on the page ground"],
   ["--accent", "--surface", 4.5, "links and accent text"],
   ["--accent-ink", "--accent", 4.5, "label on a primary button"],
+  // A button's label against its OWN background. .btn.danger hardcoded #fff
+  // and measured 2.86:1 in dark, and nothing here caught it because every
+  // pair was a token against a surface - never a label against the thing it
+  // sits on.
+  ["--danger-ink", "--danger", 4.5, "label on a destructive button"],
   ["--good", "--surface", 4.5, "status text"],
   ["--warn", "--surface", 4.5, "status text"],
   ["--danger", "--surface", 4.5, "status text"],

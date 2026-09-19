@@ -40,7 +40,11 @@
   /* ── Text ────────────────────────────────────────────── */
   --color-text-primary:   oklch(21%  0.042 212);   /* near-black, teal-tinted */
   --color-text-secondary: oklch(47%  0.048 194);
-  --color-text-tertiary:  oklch(63%  0.034 196);
+  /* The retired third text tone. @summit/design collapsed --faint into
+     --muted because it could not clear AA at the 11px it carries; this
+     private copy kept the old value and the small text that uses it
+     measured 3.21:1 on the sidebar. Same collapse, same reason. */
+  --color-text-tertiary:  oklch(47%  0.048 194);
 
   /* ── Semantic status ─────────────────────────────────── */
   --color-success:        oklch(52%  0.148 152);
