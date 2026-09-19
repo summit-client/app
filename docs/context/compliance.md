@@ -79,6 +79,33 @@ Recorded here because they are the pattern to watch for, not just history.
   exempted the whole statement if `status='superseded'` was set, so content,
   signer and signature timestamp were all rewritable in one statement on a
   billing-relevant record.
+- **Six policies had no clinic predicate (`0087`, fixed 2026-09-18).** They
+  decided "is this row yours?" by reaching through `staff` or `clients` on
+  `user_id` and never named a clinic — `sessions`, both availability tables,
+  and a client's own record. They were correct only while one person holds one
+  staff row, which is a property of an *index on another table*, and for the
+  two client ones not even that: `clients` had no unique index on `user_id` at
+  all, so nothing but the absence of a second row kept a family out of another
+  clinic's session data. **A tenant boundary enforced by an index elsewhere is
+  not a boundary**, and the pattern to watch for is a policy that proves
+  ownership without proving tenancy. Nothing leaked: zero people held rows in
+  two clinics when it was measured. Four of the six appear in no migration in
+  this repo — they predate its history and were visible only in `pg_policies`.
+  `supabase/tests/tenancy.mjs` now checks every policy against production on
+  every pull request, and fails the build if that live check is skipped.
+- **A person could verify their own credential, and it printed on a client's
+  bill (`0086`, fixed 2026-09-18).** `credentials_own_update` (`0007`) let
+  someone set their own `employee_credentials.status`, and `0034`'s receipt
+  view puts a `GOOD_STANDING` credential number on a client's receipt under
+  that clinician's name. So the clinic's assertion of who was qualified to
+  deliver a billed service was self-entered and self-approved, checked by
+  nobody. The self-write stays — a person must be able to enter and correct
+  their own number — but a trigger now forces `PENDING` on entry or amendment
+  and **refuses the move to `GOOD_STANDING` when the actor is the holder, for
+  every role including admin**. Verification is a human act: a supervisor
+  looks the number up on the issuer's register, and nothing in Summit contacts
+  an issuer, which is exactly why the row records who made the assertion and
+  when.
 - **`/api/match` forwarded any caller's body to Anthropic with the org key** —
   no auth, no model pin, no token cap. Fixed in PR #40. It still has no rate
   limit, so one staff account can spend the key without bound.
