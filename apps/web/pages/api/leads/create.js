@@ -108,7 +108,11 @@ async function sendEmail({ to, from, subject, text, html }, label) {
   } catch (err) {
     // Never fail the request over an email issue. The lead is
     // already saved in Supabase regardless.
-    console.error(`${label} email failed:`, err);
+    // error.message, not the object: a PostgREST error carries `details` and
+    // `hint` that can quote the offending row, so logging it whole writes the
+    // record into a server log - outside every access control the database
+    // enforces, retained, and shipped to whatever monitoring vendor is wired up.
+    console.error(`${label} email failed:`, err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -181,7 +185,7 @@ export default async function handler(req, res) {
   const { error } = await supabaseAdmin.from('leads').insert(cleanLead);
 
   if (error) {
-    console.error('Lead insert error:', error);
+    console.error('Lead insert error:', error.message);
     return res.status(500).json({ error: 'Something went wrong' });
   }
 

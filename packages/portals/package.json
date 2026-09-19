@@ -8,6 +8,9 @@
   "exports": {
     ".": {
       "default": "./index.ts"
+    },
+    "./security-headers.mjs": {
+      "default": "./security-headers.mjs"
     }
   },
   "devDependencies": {

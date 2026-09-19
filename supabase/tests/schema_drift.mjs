@@ -44,12 +44,25 @@ if (!DIR) {
  * and `tenancy.mjs` cannot reason about it.
  */
 const UNTRACKED_IN_PROD = new Map([
-  ["leads", "marketing signups (12 rows: name, email, clinic name, role). " +
-            "RLS is on with ZERO policies, so the API denies everything - " +
-            "locked by accident rather than by design. No clinic_id. Issue #201."],
-  ["mock_data_seed_people", "leftover from mock-data seeding, 0 rows. Issue #201."],
-  ["mock_data_location_backfill", "leftover from mock-data seeding, 0 rows. Issue #201."],
-  ["mock_data_availability_backfill", "leftover from mock-data seeding, 0 rows. Issue #201."],
+  // NOT leftovers, which is what they looked like until someone read the
+  // script that owns them. These three are the UNDO RECORD for
+  // supabase/mock-data/dummy-calendar-sessions-2026.sql: they store what each
+  // row's availability and location were BEFORE the seed overwrote them, so
+  // its documented cleanup can put the originals back. That script creates
+  // them itself and is deliberately not a numbered migration, because a
+  // `db reset` must not replay fictional bookings for one clinic.
+  //
+  // So they belong here as tables this repo knows about but does not create,
+  // and dropping them would take a rollback path with them. A migration to do
+  // that was written and deleted once this was understood.
+  //
+  // Worth knowing: all three are EMPTY while ~2000 seeded sessions exist, so
+  // the cleanup's `update ... from mock_data_availability_backfill` would
+  // match nothing and restore no availability. Whoever runs that cleanup
+  // should check that first. Issue #201.
+  ["mock_data_seed_people", "undo record for the mock-data seed script. Issue #201."],
+  ["mock_data_location_backfill", "undo record for the mock-data seed script. Issue #201."],
+  ["mock_data_availability_backfill", "undo record for the mock-data seed script. Issue #201."],
 ]);
 
 /**
@@ -57,10 +70,9 @@ const UNTRACKED_IN_PROD = new Map([
  * a migration that was never applied, so it should be empty and stay empty.
  */
 const MISSING_FROM_PROD = new Map([
-  ["home_session_preferences",
-   "migration 0073 was never applied - none of its five artifacts exist live. " +
-   "apps/client/pages/family.tsx UPSERTS this table, so the family portal's " +
-   "home-session preference is broken in production right now. Issue #200."],
+  // Empty, and it should stay empty. An entry here is a migration this repo
+  // says happened that did not - which is how apps/client shipped an upsert
+  // against a table that did not exist (0073, issue #200, applied 2026-09-19).
 ]);
 
 /**
@@ -70,8 +82,8 @@ const MISSING_FROM_PROD = new Map([
  * whole-table check cannot see it.
  */
 const COLUMNS_MISSING_FROM_PROD = new Map([
-  ["household_members.phone_secondary",
-   "migration 0073, never applied. Issue #200."],
+  // Empty. Same rule as the map above: a column declared here and absent live
+  // means a migration did not run.
 ]);
 
 const COLUMNS = `

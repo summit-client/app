@@ -11,7 +11,20 @@ import { loginUrl, refreshUrl, urlFor } from "@summit/portals";
  * Previously the only guard was a getServerSideProps check duplicated on each
  * page, so a new page was public by default unless someone remembered to add
  * it. This makes every page protected unless explicitly excluded below.
+ *
+ * NEXT_PUBLIC_DEV_PREVIEW=1 lets the portal be explored on fixtures with no
+ * Supabase project, exactly as apps/data and apps/employee already allow.
+ * Without it this portal could not be rendered locally at all - every route
+ * redirected to apps/web's login - which is why its screens had never been
+ * looked at in a browser despite CLAUDE.md asking for exactly that. The same
+ * gap remains in apps/scheduler.
+ *
+ * Gated twice, matching apps/data: the flag must be "1" AND the build must not
+ * be production. The flag alone would mean one stray env value on the droplet
+ * opens the family portal - every child's record in it - to the internet.
  */
+const PREVIEW_BYPASS =
+  process.env.NEXT_PUBLIC_DEV_PREVIEW === "1" && process.env.NODE_ENV !== "production";
 // NEXT_PUBLIC_LOGIN_URL is this app's own decided override (PR #32) for the
 // sign-in link specifically - kept as the outermost override here rather
 // than folded into @summit/portals's NEXT_PUBLIC_URL_WEB, since the two
@@ -35,6 +48,8 @@ const REFRESH_URL = refreshUrl();
 const PUBLIC_ORIGIN = urlFor("client");
 
 export async function proxy(request: NextRequest) {
+  if (PREVIEW_BYPASS) return NextResponse.next();
+
   // All four portals share one .summitclient.io session cookie. If this
   // session is within 90s of expiry, getUser() below would attempt to
   // redeem the refresh token itself - the exact race that sends another
