@@ -546,10 +546,15 @@ trusting it; that habit is what caught the last three gaps.
 - **Never apply migration `0014`.** It was never applied, and nothing drops
   it. Its `sessions` half would OR with `0077`'s narrow policy and silently
   undo the clinician/client privacy boundary.
-- **`0000` is a reconstruction, not a dump.** `sessions.created_at` is
-  declared there and does not exist in production — the first measured
-  divergence, recorded in `0000`'s own header. Treat every other column there
-  as inferred until the `pg_dump` reconciliation happens.
+- **`0000` was a guess and is now measured (2026-09-19).** It reconstructs the
+  scheduler's pre-history tables from application code. Reconciling it against
+  production found **44** differences — every id `integer` not `bigint`,
+  eleven nullability claims backwards in both directions, eight columns that
+  exist live and were missing, eight declared that do not exist.
+  `supabase/tests/schema_drift.mjs` now compares the two on every PR, so it
+  cannot drift again silently. Two differences remain, both deliberate and
+  both issues: `home_session_preferences` (#200) and four undescribed live
+  tables (#201).
 - **`sessions.type` still exists** alongside `0085`'s `session_type_id`
   pointer, and `0029`'s `time_entry_economics` and `0031`'s `session_delivery`
   still join `session_types` on the NAME. They are correct only because
@@ -599,10 +604,13 @@ detail and the state, and closing it is what marks the work done.
 - **#198** — any staff member of a clinic can sign a note against any of that
   clinic's sessions, which since `0088` makes it billable under another
   clinician's name. Not a tenancy leak; a missing boundary *within* a clinic.
-- **#199** — `0000` omits `profiles.email`, which production has NOT NULL.
-  The invite guard queries by it, so on a rebuilt database that guard errors
-  rather than protects. Second measured divergence; the `pg_dump`
-  reconciliation is overdue.
+- **#200** — migration `0073` was never applied. `apps/client` upserts
+  `home_session_preferences`, which does not exist live, so the family
+  portal's home-session preference is broken right now.
+- **#201** — four tables exist in production that no migration describes,
+  including `leads` (12 rows of personal data, no `clinic_id`). The bigger
+  finding is that `tenancy.mjs` cannot see a table with no `clinic_id` at
+  all, so the doctrine is only enforced on tables that already follow it.
 
 **Where each kind of thing goes.** A defect or a piece of work is a GitHub
 issue. A *decision* — what was chosen, what is still genuinely undecided, why

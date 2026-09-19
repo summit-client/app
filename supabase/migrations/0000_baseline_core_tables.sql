@@ -43,48 +43,52 @@
 --   apps/client/lib/admin-view-as.ts         client lookups
 --   migrations 0011, 0013, 0016, 0018, 0019  every column added since
 --
--- That means this is a best reconstruction, not a guarantee of parity. Types
--- and nullability of columns nothing in the codebase writes may differ from
--- production. Before trusting a fresh environment to behave like the live one,
--- someone with database access should run
+-- That was a best reconstruction and not a guarantee of parity, and it asked
+-- for a pg_dump against production to settle it. THAT HAS NOW BEEN DONE - see
+-- the next paragraph. It was not done with pg_dump in the end: the tool reads
+-- the same catalogs it prints from, and those are readable directly, which
+-- also means the comparison can be re-run by a test on every pull request
+-- instead of by a person once.
 --
---   pg_dump --schema-only -t clients -t staff -t sessions -t calendars \
---           -t locations -t session_types -t staff_availability \
---           -t client_availability
+-- RECONCILED 2026-09-19. The warning above has been acted on, and the nine
+-- tables below now match the deployed schema column for column - measured,
+-- not inferred. `supabase/tests/schema_drift.mjs` compares a database built
+-- from these files against production on every pull request and fails on any
+-- new difference, so this file cannot drift again without somebody being told.
 --
--- against production and reconcile it with this file. Until that has been
--- done, treat a database built from these migrations as good enough to
--- develop against and not yet proven as a restore target.
+-- WHAT WAS WRONG, because the shape of it is the lesson. 44 differences, not
+-- the two that had been found by accident:
 --
--- FIRST CONFIRMED DIVERGENCE (2026-09-18). The warning above is no longer
--- hypothetical. `sessions.created_at`, declared below as
--- `created_at timestamptz not null default now()`, DOES NOT EXIST on the live
--- table. Found by introspecting information_schema before applying migration
--- 0077, which had listed the column on this file's authority and would
--- otherwise have failed with `column s.created_at does not exist`; 0077 no
--- longer publishes it. Nothing in the monorepo reads a session's created_at,
--- so the column has not been added to production to match - this file is the
--- thing that is wrong, and it is left as-is rather than edited so that the
--- reconstruction still shows what was inferred and this note shows what was
--- measured. Treat every other column here the same way until the pg_dump
--- reconciliation above actually happens: inferred from application code, not
--- observed.
+--   * Every id and foreign key on these tables is `integer` live, not
+--     `bigint`. Seventeen columns.
+--   * Eleven nullability claims were backwards, in both directions -
+--     `profiles.role` is NOT NULL live and was declared nullable here, while
+--     `sessions.session_date`, `hour`, `minute` and `status` are all nullable
+--     live and were declared NOT NULL.
+--   * Eight columns exist live and were missing here: `profiles.email` and
+--     `profiles.location_id`, `clients.email` and `clients.sessions`,
+--     `staff.booked`, `locations.is_active`, `session_types.max_slots` and
+--     `session_types.cost`.
+--   * Eight `created_at` columns were declared here and do not exist live.
+--   * `session_types.price` is an `integer`, not `numeric(10,2)` - and a
+--     separate `cost numeric(10,2)` is the money column. The "price vs cost"
+--     ambiguity this header used to flag as a guess is answered: production
+--     has both.
+--   * `calendars.created_at` is `timestamp WITHOUT time zone`, unlike every
+--     other timestamp this repo adds.
+--   * `sessions.status` has no CHECK constraint live, so it accepts any
+--     string. Left matching production rather than tightened - constraining
+--     it is a migration, not a reconstruction.
 --
--- SECOND CONFIRMED DIVERGENCE (2026-09-19), and it points the other way.
--- `profiles.email` EXISTS on the live table and is NOT NULL; this file does
--- not declare it at all. Found while writing a fixture for 0088, which
--- inserted a profiles row with an email and failed with 42703 against a
--- database built from these files.
+-- The one that mattered was `profiles.email`, NOT NULL live and absent here:
+-- `invite-teammate`'s guard against overwriting somebody's existing account
+-- queries profiles BY EMAIL, so on a database built from this repo that guard
+-- errored instead of protecting. Found when a test fixture failed 42703.
 --
--- This one is not harmless the way created_at was. `invite-teammate`'s guard
--- against overwriting an existing account queries `profiles` by email - the
--- check that stops an invite silently reassigning somebody's role and clinic.
--- On a database rebuilt from this repo that column does not exist, so the
--- guard would error rather than protect. Same for anything else keyed on it.
---
--- Left as-is for the same reason as above: this file records what was
--- inferred, these notes record what was measured. The divergence is one more
--- reason the pg_dump reconciliation is overdue rather than optional.
+-- Not reconciled, because they are not this file's to fix: four tables exist
+-- live that no migration describes (`leads` and three `mock_data_*`, issue
+-- #201), and `home_session_preferences` exists here and not live because
+-- migration 0073 was never applied (issue #200).
 --
 -- Two known ambiguities, left deliberately visible rather than guessed away:
 --
@@ -127,38 +131,44 @@ end $$;
 
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
+  -- MEASURED 2026-09-19. Production has email NOT NULL; this file omitted it
+  -- entirely, and invite-teammate's guard against overwriting an existing
+  -- account queries profiles BY EMAIL - so on a database built from this repo
+  -- that guard errored instead of protecting.
+  email text not null,
   full_name text,
-  role user_role,
-  created_at timestamptz not null default now()
+  role user_role not null,
+  location_id integer,
+  created_at timestamptz default now()
 );
 
 -- ---------------------------------------------------------------------------
 -- locations · the clinic's physical sites
 -- ---------------------------------------------------------------------------
 create table if not exists locations (
-  id bigint generated by default as identity primary key,
+  id integer generated by default as identity primary key,
   name text not null,
   address text,
-  created_at timestamptz not null default now()
+  is_active boolean not null default true
 );
 
 -- ---------------------------------------------------------------------------
 -- clients · the people served. clinic_id and address are added by 0013 / 0018.
 -- ---------------------------------------------------------------------------
 create table if not exists clients (
-  id bigint generated by default as identity primary key,
+  id integer generated by default as identity primary key,
   name text not null,
-  status text not null default 'active',   -- active | waitlist | inactive
-  location_id bigint references locations(id),
+  status text default 'active',            -- active | waitlist | inactive
+  email text,
+  sessions integer,                        -- a per-client counter the old scheduler kept
+  location_id integer references locations(id),
   session_type text,                       -- the type this client is waitlisted for
 
   -- The family's portal login. Required by auth_client_row_id() in migration
   -- 0020, which is the whole basis of every client-role RLS policy:
   --   select id from clients where user_id = auth.uid()
   -- Nullable because most clients predate the portal and have no login.
-  user_id uuid references auth.users(id) on delete set null,
-
-  created_at timestamptz not null default now()
+  user_id uuid references auth.users(id) on delete set null
 );
 create unique index if not exists clients_user_id_unique
   on clients(user_id) where user_id is not null;
@@ -175,13 +185,13 @@ create unique index if not exists clients_user_id_unique
 -- stands.
 -- ---------------------------------------------------------------------------
 create table if not exists staff (
-  id bigint generated by default as identity primary key,
+  id integer generated by default as identity primary key,
   name text not null,
   role text,                               -- free text job title, not a permission
   specialties text[],                      -- session type names this person delivers
   capacity integer,                        -- sessions per calendar the matcher will fill
-  location_id bigint references locations(id),
-  created_at timestamptz not null default now()
+  booked integer,                          -- a counter the old scheduler kept alongside capacity
+  location_id integer references locations(id)
 );
 
 -- ---------------------------------------------------------------------------
@@ -191,26 +201,31 @@ create table if not exists staff (
 -- shape is created here so that migration still has work to do.
 -- ---------------------------------------------------------------------------
 create table if not exists session_types (
-  id bigint generated by default as identity primary key,
+  id integer generated by default as identity primary key,
   name text not null,
-  duration integer not null default 60,    -- minutes
-  price numeric(10,2) not null default 0,
+  duration integer default 60,             -- minutes
+  -- MEASURED 2026-09-19: price is an INTEGER live, not numeric(10,2), and a
+  -- separate `cost` numeric(10,2) also exists. 0000's header flagged
+  -- "price vs cost" as a guess; this is the answer - production has both.
+  price integer,
+  cost numeric(10,2),
   max_clients integer not null default 1,
-  color text,
-  created_at timestamptz not null default now()
+  max_slots integer,
+  color text
 );
 
 -- ---------------------------------------------------------------------------
 -- calendars · a named scheduling period. Sessions belong to one.
 -- ---------------------------------------------------------------------------
 create table if not exists calendars (
-  id bigint generated by default as identity primary key,
+  id integer generated by default as identity primary key,
   name text not null,
-  date_start date not null,
-  date_end date not null,
-  status text not null default 'active'
-    check (status in ('draft', 'active', 'archived')),
-  created_at timestamptz not null default now()
+  date_start date,
+  date_end date,
+  status text default 'active',
+  -- MEASURED 2026-09-19: timestamp WITHOUT time zone live, unlike every
+  -- created_at this repo adds later.
+  created_at timestamp default now()
 );
 
 -- ---------------------------------------------------------------------------
@@ -222,18 +237,19 @@ create table if not exists calendars (
 -- with no table behind it.
 -- ---------------------------------------------------------------------------
 create table if not exists sessions (
-  id bigint generated by default as identity primary key,
-  client_id bigint references clients(id),
-  employee_id bigint references staff(id),
-  calendar_id bigint references calendars(id),
-  session_date date not null,
-  hour integer not null check (hour between 0 and 23),
-  minute integer not null default 0 check (minute between 0 and 59),
+  id integer generated by default as identity primary key,
+  client_id integer references clients(id),
+  employee_id integer references staff(id),
+  calendar_id integer references calendars(id),
+  session_date date,
+  hour integer,
+  minute integer default 0,
   type text,                               -- session_types.name, denormalized
-  status text not null default 'scheduled'
-    check (status in ('scheduled', 'completed', 'cancelled', 'no_show')),
-  recurrence_id uuid,
-  created_at timestamptz not null default now()
+  -- No CHECK constraint live: sessions.status accepts any string, which is
+  -- why a typo elsewhere would go in silently. Left matching production
+  -- rather than tightened here - that is a migration, not a reconstruction.
+  status text default 'scheduled',
+  recurrence_id uuid
 );
 create index if not exists sessions_date_idx on sessions(session_date);
 create index if not exists sessions_client_idx on sessions(client_id, session_date);
@@ -250,22 +266,20 @@ create index if not exists sessions_employee_idx on sessions(employee_id, sessio
 -- this file cannot verify.
 -- ---------------------------------------------------------------------------
 create table if not exists staff_availability (
-  id bigint generated by default as identity primary key,
-  staff_id bigint not null references staff(id) on delete cascade,
+  id integer generated by default as identity primary key,
+  staff_id integer references staff(id) on delete cascade,
   day text not null,
   start_time time not null,
-  end_time time not null,
-  created_at timestamptz not null default now()
+  end_time time not null
 );
 create index if not exists staff_availability_staff_idx on staff_availability(staff_id);
 
 create table if not exists client_availability (
-  id bigint generated by default as identity primary key,
-  client_id bigint not null references clients(id) on delete cascade,
+  id integer generated by default as identity primary key,
+  client_id integer references clients(id) on delete cascade,
   day text not null,
   start_time time not null,
-  end_time time not null,
-  created_at timestamptz not null default now()
+  end_time time not null
 );
 create index if not exists client_availability_client_idx on client_availability(client_id);
 

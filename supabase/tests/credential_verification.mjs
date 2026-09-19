@@ -76,7 +76,7 @@ for (const [key, role, clinic] of [
   ["clinician", "clinician", clinicA], ["scheduler", "scheduler", clinicA],
 ]) {
   const u = (await one(`insert into auth.users (email) values ('${key}@t.test') returning id`)).id;
-  await db.exec(`insert into profiles (id, full_name, role, clinic_id) values ('${u}','${key}','${role}','${clinic}')`);
+  await db.exec(`insert into profiles (id, email, full_name, role, clinic_id) values ('${u}','${key}@fixture.test','${key}','${role}','${clinic}')`);
   people[key] = u;
 }
 await db.exec(`update profiles set supervisor_id='${people.supervisor}' where id='${people.clinician}'`);

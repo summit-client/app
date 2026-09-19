@@ -32,6 +32,36 @@ Two things PGlite cannot do, so neither script tests them:
   it (`employment_positions`, `pay_periods`, `pay_rates` overlap guards) are
   stripped for the run and reported as unverified. They are fine on Supabase.
 
+## Schema drift — does a rebuilt database match production?
+
+    cd supabase/tests
+    node schema_drift.mjs ../migrations     # needs a live credential
+
+Migration `0000` does not describe the scheduler's original tables — it
+**guesses** them. They predate this repo, nobody had their real definitions,
+and someone reconstructed them by reading application code.
+
+Two divergences were then found *by accident*, two days apart, both while
+doing something else. The second one bit: `profiles.email` is NOT NULL live
+and was not declared here, and `invite-teammate`'s guard against overwriting
+somebody's account queries `profiles` by email — so on a database built from
+this repo that guard **errored instead of protecting**.
+
+Measuring the whole thing found **44** differences, not two. They are fixed;
+this suite is what keeps them fixed. It compares every `public` table column
+by column — type, nullability, presence — plus the tables that exist on one
+side and not the other, which is the worse class: a table missing from
+production means a migration here was never applied, and a table missing from
+here means something exists live that no migration describes and no other
+check can reason about.
+
+It never writes, and it never proposes that production change to match the
+files. **Where they disagree, production is the fact and this repo is the
+claim.**
+
+`known` carries the differences that are recorded and not yet closed, each
+with a reason and an issue. Anything else fails.
+
 ## Tenancy doctrine — one run with no credentials, one with
 
     cd supabase/tests

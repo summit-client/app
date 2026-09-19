@@ -74,8 +74,8 @@ for (const [key, role] of Object.entries({
   hr: "hr_admin", payroll: "payroll_admin",
 })) {
   const u = (await one(`insert into auth.users (email) values ('${key}@t.test') returning id`)).id;
-  await db.exec(`insert into profiles (id, full_name, role, clinic_id)
-                 values ('${u}', '${key}', '${role}', '${clinic}')`);
+  await db.exec(`insert into profiles (id, email, full_name, role, clinic_id)
+                 values ('${u}', '${key}@fixture.test', '${key}', '${role}', '${clinic}')`);
   people[key] = u;
 }
 // The clinician reports to the supervisor; the admin does not.
@@ -159,8 +159,8 @@ await check("hub_can_manage: 0022's grant to scheduler survives the rewrite", as
   // function in terms of actions, and would silently take that back if the
   // scheduler seed did not carry hr.hub.manage. This is the test that says so.
   const u = (await one(`insert into auth.users (email) values ('sched@t.test') returning id`)).id;
-  await db.exec(`insert into profiles (id, full_name, role, clinic_id)
-                 values ('${u}','sched','scheduler','${clinic}')`);
+  await db.exec(`insert into profiles (id, email, full_name, role, clinic_id)
+                 values ('${u}','sched@fixture.test','sched','scheduler','${clinic}')`);
   await be(u);
   eq((await one(`select public.hub_can_manage('${people.clinician}') g`)).g, true, "scheduler manages");
   // And it is scoped to the hub, not widened into employment or pay records.
@@ -174,11 +174,11 @@ await check("hub_can_manage: a clinician who supervises someone keeps their acce
   // someone reporting to them has always had this. The action rewrite must not
   // quietly narrow it to the 'supervisor' role.
   const u = (await one(`insert into auth.users (email) values ('leadclin@t.test') returning id`)).id;
-  await db.exec(`insert into profiles (id, full_name, role, clinic_id)
-                 values ('${u}','lead','clinician','${clinic}')`);
+  await db.exec(`insert into profiles (id, email, full_name, role, clinic_id)
+                 values ('${u}','leadclin@t.test','lead','clinician','${clinic}')`);
   const rep = (await one(`insert into auth.users (email) values ('reports@t.test') returning id`)).id;
-  await db.exec(`insert into profiles (id, full_name, role, clinic_id, supervisor_id)
-                 values ('${rep}','reports','clinician','${clinic}','${u}')`);
+  await db.exec(`insert into profiles (id, email, full_name, role, clinic_id, supervisor_id)
+                 values ('${rep}','reports@t.test','reports','clinician','${clinic}','${u}')`);
   await be(u);
   eq((await one(`select public.hub_can_manage('${rep}') g`)).g, true, "own supervisee");
   eq((await one(`select public.hub_can_manage('${people.admin}') g`)).g, false, "a non-supervisee");
