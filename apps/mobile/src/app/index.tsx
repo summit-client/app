@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -10,6 +10,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "@/lib/supabase";
+import { useTheme } from "@/lib/use-theme";
+import type { Theme } from "@/lib/theme";
 
 type Profile = { role: string | null; clinic_id: string | null };
 
@@ -19,6 +21,8 @@ export default function Home() {
   const [note, setNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => sheet(theme), [theme]);
 
   const load = useCallback(async () => {
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -62,18 +66,21 @@ export default function Home() {
   if (loading) {
     return (
       <View style={styles.centre}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.colors.accent} />
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.screen, { paddingTop: insets.top + 24 }]}>
+    <ScrollView
+      style={styles.page}
+      contentContainerStyle={[styles.screen, { paddingTop: insets.top + theme.size.space6 }]}
+    >
       <Text style={styles.title}>Signed in</Text>
 
-      <Field label="Email" value={email ?? "—"} />
-      <Field label="Role" value={profile?.role ?? "null"} />
-      <Field label="Clinic" value={profile?.clinic_id ?? "null"} />
+      <Field theme={theme} label="Email" value={email ?? "—"} />
+      <Field theme={theme} label="Role" value={profile?.role ?? "null"} />
+      <Field theme={theme} label="Clinic" value={profile?.clinic_id ?? "null"} />
 
       {note ? <Text style={styles.note}>{note}</Text> : null}
 
@@ -84,7 +91,8 @@ export default function Home() {
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ theme, label, value }: { theme: Theme; label: string; value: string }) {
+  const styles = useMemo(() => sheet(theme), [theme]);
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -95,21 +103,38 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { padding: 24, gap: 16 },
-  centre: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 28, fontWeight: "700", marginBottom: 8 },
-  field: { gap: 2 },
-  label: { fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5, color: "#6b7280" },
-  value: { fontSize: 17 },
-  note: { fontSize: 14, lineHeight: 20, color: "#b00020" },
-  button: {
-    borderWidth: 1,
-    borderColor: "#c7c7cc",
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 24,
-  },
-  buttonText: { fontSize: 16, fontWeight: "600" },
-});
+const sheet = (t: Theme) =>
+  StyleSheet.create({
+    page: { backgroundColor: t.colors.bg },
+    screen: { padding: t.size.space6, gap: t.size.space4 },
+    centre: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: t.colors.bg,
+    },
+    title: {
+      fontSize: t.size.text3xl,
+      fontWeight: "700",
+      color: t.colors.ink,
+      marginBottom: t.size.space2,
+    },
+    field: { gap: 2 },
+    label: {
+      fontSize: t.size.textSm,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+      color: t.colors.muted,
+    },
+    value: { fontSize: t.size.textLg, color: t.colors.ink },
+    note: { fontSize: t.size.textSm, lineHeight: 20, color: t.colors.danger },
+    button: {
+      borderWidth: 1,
+      borderColor: t.colors.line,
+      borderRadius: t.size.radiusMd,
+      paddingVertical: t.size.space4,
+      alignItems: "center",
+      marginTop: t.size.space6,
+    },
+    buttonText: { fontSize: t.size.textMd, fontWeight: "600", color: t.colors.ink },
+  });

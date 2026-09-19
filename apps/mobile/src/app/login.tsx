@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,12 +11,16 @@ import {
 } from "react-native";
 
 import { supabase } from "@/lib/supabase";
+import { useTheme } from "@/lib/use-theme";
+import type { Theme } from "@/lib/theme";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const theme = useTheme();
+  const styles = useMemo(() => sheet(theme), [theme]);
 
   async function signIn() {
     setBusy(true);
@@ -41,6 +45,7 @@ export default function Login() {
       <TextInput
         style={styles.input}
         placeholder="Email"
+        placeholderTextColor={theme.colors.muted}
         autoCapitalize="none"
         autoComplete="email"
         keyboardType="email-address"
@@ -50,6 +55,7 @@ export default function Login() {
       <TextInput
         style={styles.input}
         placeholder="Password"
+        placeholderTextColor={theme.colors.muted}
         autoCapitalize="none"
         autoComplete="current-password"
         secureTextEntry
@@ -65,34 +71,47 @@ export default function Login() {
         disabled={busy || !email || !password}
         onPress={signIn}
       >
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
+        {busy ? (
+          <ActivityIndicator color={theme.colors.accentInk} />
+        ) : (
+          <Text style={styles.buttonText}>Sign in</Text>
+        )}
       </TouchableOpacity>
       <View style={styles.spacer} />
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, justifyContent: "center", padding: 24, gap: 12 },
-  title: { fontSize: 32, fontWeight: "700" },
-  subtitle: { fontSize: 15, marginBottom: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#c7c7cc",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  error: { color: "#b00020", fontSize: 14, lineHeight: 20 },
-  button: {
-    backgroundColor: "#1f6feb",
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  spacer: { height: 40 },
-});
+const sheet = (t: Theme) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      justifyContent: "center",
+      padding: t.size.space6,
+      gap: t.size.space3,
+      backgroundColor: t.colors.bg,
+    },
+    title: { fontSize: t.size.text4xl, fontWeight: "700", color: t.colors.ink },
+    subtitle: { fontSize: t.size.textBase, color: t.colors.muted, marginBottom: t.size.space3 },
+    input: {
+      borderWidth: 1,
+      borderColor: t.colors.line,
+      backgroundColor: t.colors.surface,
+      color: t.colors.ink,
+      borderRadius: t.size.radiusMd,
+      paddingHorizontal: t.size.space4,
+      paddingVertical: t.size.space3,
+      fontSize: t.size.textMd,
+    },
+    error: { color: t.colors.danger, fontSize: t.size.textSm, lineHeight: 20 },
+    button: {
+      backgroundColor: t.colors.accent,
+      borderRadius: t.size.radiusMd,
+      paddingVertical: t.size.space4,
+      alignItems: "center",
+      marginTop: t.size.space1,
+    },
+    buttonDisabled: { opacity: 0.5 },
+    buttonText: { color: t.colors.accentInk, fontSize: t.size.textMd, fontWeight: "600" },
+    spacer: { height: t.size.space10 },
+  });

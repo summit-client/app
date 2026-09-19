@@ -25,6 +25,24 @@ by anyone holding the app, exactly as `NEXT_PUBLIC_*` is readable in a
 browser. The anon key belongs there. A service-role key never does, and no
 security decision may be gated on one.
 
+## Colour comes from `@summit/design`, never from this app
+
+`src/lib/theme.ts` reads `@summit/design/tokens` — the same TypeScript the
+web's `tokens.css` is generated from — and resolves it to hex through
+`@summit/design/oklch`. Screens call `useTheme()`; nothing here states a colour.
+
+That is enforced, not encouraged: `tests/theme.test.mjs` compares the phone's
+palette against the shipped stylesheet token by token, and fails on a hex
+literal anywhere in `src/`.
+
+The two values Expo reads at build time — `app.json`'s splash colour and the
+icon — are generated for the same reason. Run `pnpm --filter @summit/mobile
+build:brand` after a palette change; the test fails if `app.json` drifts.
+
+Only the default `blue` accent is wired. The web's other three are a
+per-browser preference with no phone equivalent, and a tenant's own hue is
+wired to nothing on either side yet (issue #209).
+
 ## Two house rules this app deliberately breaks
 
 **It calls `supabase.auth.signOut()` directly.** CLAUDE.md says never to —
@@ -51,7 +69,7 @@ pre-existing root `package-lock.json`, not this app's.
 
 ## Not done yet
 
-No `@summit/design` tokens, no `@summit/session`, no shared navigation, and
-nothing clinic-scoped — the only read is the signed-in user's own `profiles`
-row. It is a scaffold: the app icon is a plain blue square and the splash
-screen is a background colour, both waiting on real branding.
+No `@summit/session`, no shared navigation, and nothing clinic-scoped — the
+only read is the signed-in user's own `profiles` row. The app icon is still a
+flat colour field waiting on real artwork; it is generated rather than drawn so
+that it cannot at least be the wrong colour.
