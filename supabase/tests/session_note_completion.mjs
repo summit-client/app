@@ -79,8 +79,8 @@ const clinician = (await one(
 // it; production has it NOT NULL. Second measured divergence between that
 // file and the deployed schema, after sessions.created_at.
 await db.exec(
-  `insert into profiles (id, full_name, role, clinic_id)
-   values ('${clinician}', 'A Clinician', 'clinician', '${clinicA}')`);
+  `insert into profiles (id, email, full_name, role, clinic_id)
+   values ('${clinician}', 'clinician@a.test', 'A Clinician', 'clinician', '${clinicA}')`);
 
 let day = 1;
 async function mkSession(status = "scheduled", clinic = clinicA, client = clientA) {

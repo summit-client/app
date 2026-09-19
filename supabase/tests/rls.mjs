@@ -93,7 +93,7 @@ const clinicB = (await db.query(`insert into clinics (name, slug) values ('B','b
 
 const mkUser = async (name, role, clinic) => {
   const id = (await db.query(`insert into auth.users (email) values ('${name}@t.test') returning id`)).rows[0].id;
-  await db.exec(`insert into profiles (id, full_name, role, clinic_id) values ('${id}','${name}','${role}','${clinic}')`);
+  await db.exec(`insert into profiles (id, email, full_name, role, clinic_id) values ('${id}','${id}@fixture.test','${name}','${role}','${clinic}')`);
   return id;
 };
 
@@ -107,7 +107,7 @@ const bAdmin = await mkUser("b_admin", "admin", clinicB);
 await db.exec(`update profiles set supervisor_id='${aSuper}' where id='${aClin}'`);
 
 const familyUser = (await db.query(`insert into auth.users (email) values ('family@t.test') returning id`)).rows[0].id;
-await db.exec(`insert into profiles (id, full_name, role, clinic_id) values ('${familyUser}','Family','client','${clinicA}')`);
+await db.exec(`insert into profiles (id, email, full_name, role, clinic_id) values ('${familyUser}','family@fixture.test','Family','client','${clinicA}')`);
 
 const clientA = (await db.query(
   `insert into clients (name, status, clinic_id, user_id) values ('Child A','active','${clinicA}','${familyUser}') returning id`)).rows[0].id;
@@ -1634,8 +1634,8 @@ await check("the care team names the people who actually deliver the sessions", 
   // an HR profile, which is what a clinic that has onboarded somebody has.
   const danaUser = (await db.query(
     `insert into auth.users (email) values ('dana@t.test') returning id`)).rows[0].id;
-  await db.exec(`insert into profiles (id, full_name, role, clinic_id)
-                 values ('${danaUser}','Dana Okafor','clinician','${clinicA}')`);
+  await db.exec(`insert into profiles (id, email, full_name, role, clinic_id)
+                 values ('${danaUser}','dana@t.test','Dana Okafor','clinician','${clinicA}')`);
   await db.exec(`insert into hub_employee_profiles (user_id, clinic_id, job_title)
                  values ('${danaUser}','${clinicA}','Behaviour Therapist')`);
   const st = (await db.query(

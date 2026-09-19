@@ -105,6 +105,12 @@ jobs:
           npm install --silent
           node tenancy.mjs ../migrations
 
+      # schema_drift runs here rather than with the PGlite suites above
+      # because it needs the same live credential: it compares a database
+      # built from the migration files against the real one, column by column.
+      # 0000 GUESSES the scheduler's original tables - it reconstructs them
+      # from application code - and two divergences were found by accident
+      # before anything measured the whole thing.
       - name: Tenancy doctrine (live database)
         # Secrets are not available to workflow runs from forked repositories,
         # so this cannot run there. It is skipped rather than failed in that
@@ -115,6 +121,7 @@ jobs:
         run: |
           cd supabase/tests
           node tenancy.mjs ../migrations --live
+          node schema_drift.mjs ../migrations
 
       - name: Fail if the live tenancy check did not run
         if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
