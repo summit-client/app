@@ -1,0 +1,13 @@
+{
+  "name": "@summit/family",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node tests/family.test.mjs",
+    "typecheck": "tsc --noEmit"
+  }
+}

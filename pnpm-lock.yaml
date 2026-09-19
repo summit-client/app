@@ -29,6 +29,9 @@ importers:
       '@summit/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@summit/family':
+        specifier: workspace:*
+        version: link:../../packages/family
       '@summit/nav':
         specifier: workspace:*
         version: link:../../packages/nav
@@ -194,6 +197,9 @@ importers:
       '@summit/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@summit/family':
+        specifier: workspace:*
+        version: link:../../packages/family
       '@supabase/supabase-js':
         specifier: ^2.58.0
         version: 2.106.1
@@ -407,6 +413,8 @@ importers:
       '@types/react':
         specifier: ^19
         version: 19.2.14
+
+  packages/family: {}
 
   packages/i18n: {}
 
