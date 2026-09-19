@@ -514,6 +514,52 @@ string; the password is the owner's and appears nowhere.
 
 ---
 
+## 2026-09-19 — a mobile app, and the two house rules it deliberately breaks
+
+**DECIDED** — `apps/mobile`, scaffolded on branch `yanko/mobile-scaffold`.
+Sixth workspace app, first one that is not Next.js.
+
+It must run in **Expo Go**, because there is no Apple Developer account. That
+is the constraint everything else follows from: no custom native modules, no
+dev build, no EAS Build. Expo SDK 57, expo-router, and React Native's own
+React (19.2.3) rather than the web apps' 19.2.4 — pnpm keeps the two trees
+apart, and forcing them to match would mean overriding what the SDK was
+tested against. The five live apps' resolved versions are unchanged; all five
+still build.
+
+**Two rules in CLAUDE.md have a deliberate mobile exception.** Both look like
+defects to a session that knows the rule and not the reason:
+
+1. **Mobile calls `supabase.auth.signOut()` directly.** The rule — never call
+   it, navigate to `signOutUrl()` — exists because four browser portals share
+   one `.summitclient.io` cookie that only `apps/web` can clear. This app
+   shares no cookie with anything; its session is an encrypted blob in its own
+   storage, so the central endpoint has nothing to end here.
+2. **`EXPO_PUBLIC_*` is the `NEXT_PUBLIC_*` rule, same force.** Both are
+   inlined into the shipped bundle and readable by anyone holding it. The anon
+   key belongs there; a service-role key never does; no security decision may
+   be gated on one.
+
+**The production droplet does not install it.** `deploy.yml`'s `pnpm install`
+became `pnpm install --filter '!@summit/mobile'`, because that box is 1 vCPU
+and 1.9 GiB and would otherwise pull the whole React Native toolchain on every
+deploy for an app that never runs there. Nothing else about the deploy
+changes: the build step already names the five apps explicitly, and every
+shared package stays in the install set, so a mobile PR that deliberately
+changes `packages/*` still ships to production normally.
+
+**Rejected: a root `.npmrc` with `node-linker=hoisted`.** It is the usual
+advice for Metro in a pnpm monorepo and it would change the installed tree for
+all five live apps and the droplet to fix a sixth that does not deploy there.
+Metro resolves through pnpm's symlinks unaided here, so the only thing
+`apps/mobile/metro.config.js` does is force `@supabase/supabase-js` to its
+CommonJS build — its ESM build carries a dynamic `import()` that Hermes
+refuses to compile.
+
+Still open, deliberately: no `@summit/design` tokens, no shared session
+package, no clinic scoping to review yet — the app reads nothing but the
+signed-in user's own `profiles` row.
+
 ## Contractor work and merges
 
 **DECIDED (2026-08-26)** — PR #40 (`release/v1`, Adina) merged to `main` as
