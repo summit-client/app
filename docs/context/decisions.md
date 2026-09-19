@@ -279,14 +279,25 @@ clear it. `apps/scheduler` and `apps/client`'s pre-existing sign-out buttons
 had this same latent gap (looked like it worked locally, left the shared
 cookie valid) and were repointed at the same endpoint. PR #88, merged.
 
-**OPEN, discovered live 2026-08-30** — `invite-teammate` has no guard
-against inviting an email that already has an `auth.users`/`profiles` row.
-Supabase's `inviteUserByEmail` resolves an existing email to that same
-user id rather than erroring, and the function's `upsert` then overwrites
-that person's `profiles` row with the new role/clinic/supervisor. Surfaced
-when an admin invited their own email as a test "clinician" and their
-account was silently role-flipped in place. Not yet fixed — see
-`CLAUDE.md`'s "Known open work."
+~~**OPEN, discovered live 2026-08-30**~~ **CLOSED — shipped in `479bbf8`,
+tested since 2026-09-19.** `invite-teammate` had no guard against inviting an
+email that already had an `auth.users`/`profiles` row. Supabase's
+`inviteUserByEmail` resolves an existing email to that same user id rather
+than erroring, and the function's `upsert` then overwrote that person's
+`profiles` row with the new role/clinic/supervisor. Surfaced when an admin
+invited their own email as a test "clinician" and their account was silently
+role-flipped in place.
+
+The guard queries `profiles` by email before the invite is sent and returns
+409, naming whether the account is in this clinic or another — the second
+case is where the one-login-per-clinic decision is enforced. It must stay
+ahead of `inviteUserByEmail` in the file, for the reason
+`supabase/tests/invite_teammate_guard.mjs` asserts.
+
+**This entry said OPEN until 2026-09-19, months after the fix shipped**, which
+is the failure this file exists to prevent: a session reading it would have
+rebuilt a guard that was already there. Status tags here are only worth
+anything if they are closed when the work closes.
 
 **DECIDED** — Grant Claude Code sessions read-only access to the live
 Supabase project via `@supabase/mcp-server-supabase` (`.mcp.json`,
