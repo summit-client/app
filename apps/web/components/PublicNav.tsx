@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
+const MENU_ID = 'pubnav-toggle'
+
 export default function PublicNav() {
   const [scrolled, setScrolled] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const toggleRef = useRef<HTMLButtonElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
+  const toggleRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
@@ -13,38 +13,31 @@ export default function PublicNav() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  // Mobile menu behaviour: close on Escape (returning focus to the toggle),
-  // close on an outside click, and close if the viewport is resized back up
-  // past the desktop breakpoint (e.g. rotating a tablet) so the panel can't
-  // get stuck open underneath the now-visible desktop links. All three only
-  // need to run while the menu is actually open.
+  // Escape closes the menu. This is the ONLY JavaScript the menu has, and it
+  // is an enhancement rather than the mechanism - the open/close state is a
+  // checkbox, so everything below still works with scripting dead.
+  //
+  // It used to be React state, and that was the bug: on a phone the header's
+  // own "Log in" link is display:none (see .pubnav-login in globals.css), so
+  // the dropdown was the only route to signing in - and the dropdown did not
+  // exist in the DOM until a click handler ran. Before hydration finished, or
+  // permanently if it failed, tapping the hamburger did nothing and a visitor
+  // had no way into the product at all. Verified by loading this page with
+  // JavaScript disabled: the toggle rendered, the panel never mounted.
+  //
+  // Tap-outside-to-close is the backdrop label; the resize case is the media
+  // query. Neither needs a listener any more.
   useEffect(() => {
-    if (!mobileOpen) return
-
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setMobileOpen(false)
-        toggleRef.current?.focus()
-      }
+      if (e.key !== 'Escape') return
+      const box = toggleRef.current
+      if (!box?.checked) return
+      box.checked = false
+      box.focus()
     }
-    const onPointerDown = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (panelRef.current?.contains(target) || toggleRef.current?.contains(target)) return
-      setMobileOpen(false)
-    }
-    const onResize = () => {
-      if (window.innerWidth > 780) setMobileOpen(false)
-    }
-
     document.addEventListener('keydown', onKeyDown)
-    document.addEventListener('mousedown', onPointerDown)
-    window.addEventListener('resize', onResize)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      document.removeEventListener('mousedown', onPointerDown)
-      window.removeEventListener('resize', onResize)
-    }
-  }, [mobileOpen])
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const links = [
     { label: 'Features', href: '/#features' },
@@ -61,6 +54,17 @@ export default function PublicNav() {
       transition: 'box-shadow .25s ease, background .25s ease',
       fontFamily: "'Source Sans 3',sans-serif"
     }}>
+      {/* First child of <nav> on purpose: every rule below reaches the
+          backdrop and the panel with a `~` sibling selector, which only works
+          forwards from here. */}
+      <input
+        ref={toggleRef}
+        type="checkbox"
+        id={MENU_ID}
+        className="pubnav-toggle-input"
+        aria-label="Site menu"
+      />
+
       <div className="pubnav-inner" style={{
         maxWidth: 1200, margin: '0 auto',
         padding: '0 24px', height: 64,
@@ -118,46 +122,36 @@ export default function PublicNav() {
           }}>
             Get started
           </a>
-          <button
-            ref={toggleRef}
-            type="button"
-            className="mobile-nav-toggle"
-            aria-expanded={mobileOpen}
-            aria-controls="pubnav-mobile-menu"
-            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
-            onClick={() => setMobileOpen(open => !open)}
-          >
-            {mobileOpen ? (
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-                <path d="M4 4L18 18M18 4L4 18" stroke="#1A3F5C" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-                <path d="M3 6H19M3 11H19M3 16H19" stroke="#1A3F5C" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            )}
-          </button>
+          {/* Both icons are always in the DOM and CSS swaps them on the
+              checkbox's state - a JS-driven ternary would have put us back
+              where we started. The label is the thing a thumb hits; the
+              checkbox itself is the focusable control, sitting invisible
+              above with pointer-events off, exactly as
+              packages/design/components.css does it for the in-app sidebars. */}
+          <label htmlFor={MENU_ID} className="mobile-nav-toggle">
+            <svg className="mobile-nav-icon-open" width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+              <path d="M3 6H19M3 11H19M3 16H19" stroke="#1A3F5C" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <svg className="mobile-nav-icon-close" width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+              <path d="M4 4L18 18M18 4L4 18" stroke="#1A3F5C" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </label>
         </div>
       </div>
 
-      {/* Mobile dropdown panel. Only mounted while open, so a closed menu's
-          links are genuinely out of the tab order rather than merely hidden
-          with CSS — no separate aria-hidden/inert bookkeeping needed. */}
-      {mobileOpen && (
-        <div
-          id="pubnav-mobile-menu"
-          ref={panelRef}
-          className="mobile-nav-panel"
-          role="dialog"
-          aria-modal="false"
-          aria-label="Site menu"
-        >
+      {/* Tap anywhere off the panel to close. A label, not a listener, so it
+          works without scripting like the rest of this. */}
+      <label htmlFor={MENU_ID} className="mobile-nav-backdrop" aria-hidden="true" />
+
+      {/* Always in the DOM now, shown by CSS. `display: none` when closed
+          keeps these links out of the tab order and the accessibility tree
+          just as unmounting did, so nothing is lost by the change. */}
+      <div className="mobile-nav-panel" aria-label="Site menu">
           {links.map(l => (
             <a
               key={l.href}
               href={l.href}
               className="mobile-nav-link"
-              onClick={() => setMobileOpen(false)}
             >
               {l.label}
             </a>
@@ -170,15 +164,10 @@ export default function PublicNav() {
               account?" link. Confirmed live by rendering the mobile menu:
               the comment on .pubnav-login in globals.css claims the dropdown
               already carries "a path to sign in" - it didn't. */}
-          <a
-            href="/login"
-            className="mobile-nav-link"
-            onClick={() => setMobileOpen(false)}
-          >
+          <a href="/login" className="mobile-nav-link">
             Log in
           </a>
-        </div>
-      )}
+      </div>
     </nav>
   )
 }
