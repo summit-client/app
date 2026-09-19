@@ -85,14 +85,27 @@ That is the whole grant. No `select` on any table, ever — the suite reads
 readable in Postgres. Confirm the role really is powerless before you trust it:
 
 ```sql
-set role tenancy_audit;
-select count(*) from pg_policies;     -- works
-select count(*) from public.clients;  -- must fail: permission denied
-reset role;
+select
+  (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r','p','v','m')
+      and has_table_privilege('tenancy_audit', c.oid, 'select'))   as tables_it_can_read,
+  has_database_privilege('tenancy_audit','postgres','connect')     as can_connect,
+  (select rolbypassrls from pg_roles where rolname='tenancy_audit') as bypasses_rls;
 ```
 
-If the second one returns a number, stop and fix the grants; a suite running
-with table access is a credential in CI that can read PHI.
+Want `0, true, false`. If `tables_it_can_read` is anything but zero, stop and
+fix the grants — a suite running with table access is a credential in CI that
+can read PHI.
+
+**Do not verify this with `set role tenancy_audit`.** The Supabase dashboard's
+SQL Editor does not run as `postgres`, so it cannot switch into a role even
+though `postgres` owns it: you get `42501: permission denied to set role`.
+The trap is what happens next — the `set role` fails, the rest of the script
+runs as the Editor's own admin role, and `select count(*) from public.clients`
+returns a row count that looks exactly like the powerless role reading your
+PHI. It is not; it is the Editor reading it, as it always could.
+`has_table_privilege()` asks Postgres the question directly and cannot be
+misread that way.
 
 Then build the connection string from Supabase's **Connection pooling** tab
 (Settings → Database), not the direct one — GitHub's runners are IPv4-only and
