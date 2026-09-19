@@ -532,17 +532,14 @@ the `summitclient-deploy-ssh.md` doc in the Claude project.
 Raised and deliberately not bundled. None is urgent; the first is the only one
 with a tenancy consequence.
 
-- **The pre-history `Staff can read own sessions` policy on `sessions` has no
-  clinic predicate** — it matches on `employee_id` alone, across clinics. It
-  appears in this repo only as a COMMENT, in `0013`, `0077` and `0080`: no
-  migration creates it and none drops it, so it exists on the deployed
-  database and nothing here can see it. An audit run against the migration
-  files will report `sessions` as cleanly scoped and be wrong. It is
-  unreachable rather than safe, because `0016`'s trigger refuses to WRITE a
-  session whose clinic disagrees with its staff member's — and a write-side
-  trigger is not a tenant boundary. Dropping it needs a live `pg_policies`
-  read first, since nobody can say from this repo what its predicate actually
-  is.
+- ~~The pre-history `Staff can read own sessions` policy has no clinic
+  predicate.~~ **Closed by `0087`, applied live 2026-09-18** — see "Known open
+  work" below. It was one of six, not one, and the other five were invisible
+  from this repo for the same reason: four of them appear in no migration at
+  all. The lesson survives the fix. An audit run against the migration files
+  reported `sessions` cleanly scoped and was wrong, which is why
+  `supabase/tests/tenancy.mjs` now reads the live database as well and fails
+  the build when that live run is skipped.
 - **`sessions.type` still exists.** `0085` added the pointer and backfilled it
   (measured live: 2085 of 2085 rows resolved). Dropping the column is the
   follow-up, and it is safe only once a release shows nothing lands unmatched.
@@ -557,12 +554,14 @@ with a tenancy consequence.
   is already derived", with `not authorised to derive session deliveries for
   that clinic`. Predates this work; looks like the fixture's permissions
   rather than the rule.
-- **CI does not run the database suites.** `.github/workflows/ci.yml` is
-  typecheck and per-app builds only, so `apply.mjs`, `behaviour.mjs`,
-  `rls.mjs`, `session_type_id.mjs` and `credential_verification.mjs` only ever
-  run by hand. That is how `rls.mjs` sat red from `0077` landing until
-  `0086` — two cases asserting the exact behaviour `0077` removed. Whether
-  these should gate CI is the account owner's call.
+- **CI runs the tenancy and Edge Function suites now, not the rest.**
+  `tenancy.mjs` (both modes), `edit_teammate_authz.mjs` and
+  `invite_teammate_guard.mjs` gate every pull request. `apply.mjs`,
+  `behaviour.mjs`, `rls.mjs`, `session_type_id.mjs` and
+  `credential_verification.mjs` still only run by hand — that is how `rls.mjs`
+  sat red from `0077` landing until `0086`, two cases asserting the exact
+  behaviour `0077` removed. Those need PGlite installed in CI, so whether they
+  should gate it is still the account owner's call.
 - **Three clinics exist now**, not one: Mount Etna plus two test clinics
   ("Second Clinic (test)", "Test Clinic Seven"). Measured 2026-09-18. The
   "only one clinic exists today" framing elsewhere in this file is about
