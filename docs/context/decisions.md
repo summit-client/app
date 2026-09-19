@@ -482,7 +482,7 @@ distinct roles as "employee", a word this system does not issue, because the
 pill rendered `accessLevel` (a three-value display ladder) rather than the raw
 `appRole` that PR #183 had already added.
 
-**#188, migration `0087`** — Every policy on a clinic-scoped table now names
+**PR #188, migration `0087`** — Every policy on a clinic-scoped table now names
 the clinic. Six decided "is this row yours?" by reaching through `staff` or
 `clients` on `user_id` with no clinic predicate. They were correct only
 because one person held one staff row — a fact about an index on another
@@ -570,7 +570,7 @@ the DOM, CSS or `next/*` stays web-only until it is split into a
 renderer-agnostic core with per-platform adapters. `@summit/portals` already
 qualifies and is where mobile reads role access from if it ever gates a
 screen. `@summit/design` and `@summit/session` do not: the palette is CSS and
-OKLCH (#206), and `@summit/session` is a `"use client"` module around a
+OKLCH (issue #206), and `@summit/session` is a `"use client"` module around a
 browser Supabase client.
 
 **Neither gets copied in the meantime.** Retyping a colour or a role list into

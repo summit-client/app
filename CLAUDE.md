@@ -508,7 +508,7 @@ tell you it passes when it does not.
 `@summit/design/tokens` and `@summit/design/oklch` are pure TypeScript, which
 is exactly what the sharing rule permits mobile to consume — but nothing on the
 phone reads them yet, and a tenant's hue is still wired to nothing on either
-side. **#206** and **#209** carry the rest.
+side. **issue #206** and **issue #209** carry the rest.
 
 Apps must not redefine what `components.css` already defines. Each app imports
 its own `app.css` *after* the shared file, so a duplicate silently wins and the
@@ -646,8 +646,8 @@ trusting it; that habit is what caught the last three gaps.
   exist live and were missing, eight declared that do not exist.
   `supabase/tests/schema_drift.mjs` now compares the two on every PR, so it
   cannot drift again silently. Two differences remain, both deliberate and
-  both issues: `home_session_preferences` (#200) and four undescribed live
-  tables (#201).
+  both issues: `home_session_preferences` (issue #200) and four undescribed live
+  tables (issue #201).
 - **`sessions.type` still exists** alongside `0085`'s `session_type_id`
   pointer, and `0029`'s `time_entry_economics` and `0031`'s `session_delivery`
   still join `session_types` on the NAME. They are correct only because
@@ -684,23 +684,46 @@ trusting it; that habit is what caught the last three gaps.
 cannot drift out of date the way a prose list does: the issue carries the
 detail and the state, and closing it is what marks the work done.
 
-- **#190** — `hub_pd_records` and `hub_time_off_requests` have no
+- **issue #190** — `hub_pd_records` and `hub_time_off_requests` have no
   `..._manage_select` RLS policy at all. Any clinic-wide query against either
   returns nothing for anyone but the caller, silently.
-- **#191** — Three Admin console queues and the team directory still read the
-  caller's own hub snapshot instead of the clinic's. Blocked on #190 for two
+- **issue #191** — Three Admin console queues and the team directory still read the
+  caller's own hub snapshot instead of the clinic's. Blocked on issue #190 for two
   of them, which would otherwise look fixed and show nothing.
-- **#192** — `0029` picks a billing rate using the time entry's clinic rather
+- **issue #192** — `0029` picks a billing rate using the time entry's clinic rather
   than the session's.
-- **#195** — ~4.8 MB of clinic-specific assets ship to every tenant.
+- **issue #195** — ~4.8 MB of clinic-specific assets ship to every tenant.
   `blocked`: needs a product decision on where per-tenant content lives.
-- **#205** — a stray root `package-lock.json` in a pnpm repo. `deploy.yml`
+- **issue #205** — a stray root `package-lock.json` in a pnpm repo. `deploy.yml`
   restores it on every deploy, which means something on the droplet writes it.
-- **#206** — the palette is CSS/OKLCH only, so `apps/mobile` hardcodes a blue
+- **issue #206** — the palette is CSS/OKLCH only, so `apps/mobile` hardcodes a blue
   that is in no token file. The fix is a TypeScript source both render from.
-- **#198** — any staff member of a clinic can sign a note against any of that
+- **issue #198** — any staff member of a clinic can sign a note against any of that
   clinic's sessions, which since `0088` makes it billable under another
   clinician's name. Not a tenancy leak; a missing boundary *within* a clinic.
+**Say which kind a number is.** GitHub gives issues and pull requests one
+shared sequence, so `#205` is an issue, `#204` is a PR, and there is never
+both — the risk is not a collision, it is that a bare number tells a reader
+nothing about what they are about to open. Write **`issue #205`** and
+**`PR #204`**. Not `I#205`: GitHub only turns a number into a link when the
+`#` stands on its own, so a glued prefix trades the link away for the label
+when you want both.
+
+**Where each kind of thing goes.** A defect or a piece of work is a GitHub
+issue. A *decision* — what was chosen, what is still genuinely undecided, why
+something was rejected — goes in `docs/context/decisions.md`, which is the one
+thing issues are bad at. A *rule* a future session must not break is a
+Landmine above or a Trap earlier in this file, because those are read
+automatically and an issue is not. Never put the same thing in two places;
+link instead.
+
+**Keeping it that way is part of the work, not tidying afterwards.** This
+structure decays silently, and has — twice. `decisions.md` carried the
+`invite-teammate` overwrite bug tagged OPEN for weeks after it shipped, so a
+session reading it would have rebuilt a guard that already existed. And these
+four rules spent a day inside the defect list above, having lost their own
+heading in an edit, reading as though "open an issue" were an open issue. So:
+
 - **Found a defect? Open an issue** and add one pointer line here. Do not
   write the description here — a paragraph in this file has no state and
   nobody closes it.
