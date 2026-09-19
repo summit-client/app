@@ -70,20 +70,21 @@ const PLATFORM_DEFAULTS = new Set([
 ]);
 
 /**
- * Policies known to be unscoped, with the reason they have not been fixed yet.
- * A baseline, not an excuse: the suite still FAILS on anything new, and this
- * list is meant to reach zero. Each entry says what it would take.
+ * Policies allowed to be unscoped, with the reason each is still open.
+ *
+ * EMPTY, and that is the point. It held six entries; migration 0087 closed
+ * all six, confirmed against production on 2026-09-18 - the live run reports
+ * 0 failed and 0 known.
+ *
+ * Keep it empty. An entry here is a policy the suite will not fail on, so a
+ * stale one silently excuses exactly the thing it was written to flag: put
+ * any of those six policies back unscoped today and the run goes red, which
+ * is the whole reason this is a Map and not a comment.
+ *
+ * If you must add one, say what holds the boundary up and what would close
+ * it - and treat it as a debt with a date, not a decision.
  */
-const KNOWN = new Map([
-  ["sessions/Staff can read own sessions",
-   "reaches through staff.user_id. Held today only by staff_user_id_unique - one staff row per person. Drop that index to support a person at two clinics and this returns the other clinic's sessions."],
-  ["staff_availability/Staff can read own availability", "same reach, same dependency."],
-  ["staff_availability/staff_availability_own_delete", "same reach, same dependency (migration 0076)."],
-  ["sessions/Clients can read own sessions",
-   "reaches through clients.user_id, and clients has NO unique index on user_id - so nothing prevents the precondition, only the fact that nobody has done it. Worse than the staff pair."],
-  ["client_availability/Clients can read own availability", "same reach, same absence of a constraint."],
-  ["clients/Clients can read own record", "pre-history own-row read with no clinic predicate."],
-]);
+const KNOWN = new Map([]);
 
 /**
  * Being "anchored to the caller" comes in two shapes and only one of them is

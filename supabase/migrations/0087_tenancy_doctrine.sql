@@ -40,11 +40,20 @@
 --   4. Makes `clinic_id` NOT NULL on 37 tables where it is already never
 --      null, so an orphan row cannot be created later.
 --
--- NOT APPLIED by the session that wrote it. Every premise above was measured
--- against production rather than read out of this repo's migration history —
--- which matters here specifically, because four of the five policies appear
--- in no migration at all. They predate the history and are visible only in
--- `pg_policies`.
+-- APPLIED LIVE 2026-09-18, on the account owner's explicit approval. Verified
+-- after: all six policies name the clinic, `clients_user_id_unique` exists,
+-- both functions carry `search_path = public, pg_temp`, `clinic_id` is NOT
+-- NULL on 37 tables (45 nullable before, 8 after - the intended exclusions),
+-- and the live tenancy suite reports 12 passed, 0 failed, 0 known.
+--
+-- The signup trigger was exercised rather than reasoned about: inserting an
+-- auth.users row inside a rolled-back transaction still produced a profiles
+-- row with role 'client' under the new pinned search_path.
+--
+-- Every premise above was measured against production rather than read out of
+-- this repo's migration history — which matters here specifically, because
+-- four of the five policies appear in no migration at all. They predate the
+-- history and are visible only in `pg_policies`.
 -- ============================================================================
 
 begin;

@@ -113,12 +113,15 @@ drop role tenancy_audit;
 
 ### Reading the output
 
-`known` is not `passed`. It is a baseline of policies already found unscoped
-and not yet fixed; each prints with the reason it is still there and what it
-would take to close. The list is meant to reach zero. Anything *not* on it
-fails the run — new drift is the whole point of the suite, and the baseline
-exists so that drift is visible instead of buried under six pre-existing
-failures.
+`known` is a baseline of policies already found unscoped and not yet fixed.
+**It is currently empty**, and should stay that way: migration 0087 closed all
+six it once held, confirmed against production on 2026-09-18.
+
+That emptiness is load-bearing. An entry in `KNOWN` is a policy the suite will
+not fail on, so a stale entry silently excuses the exact thing it was written
+to flag. With it empty, putting any of those six policies back unscoped turns
+the run red today. If you add one, say what holds the boundary up and what
+would close it, and treat it as a debt with a date.
 
 ## Edge Function authorization — no install needed
 

@@ -621,13 +621,32 @@ deployed schema, all found by introspecting before applying:
   `0000`'s own header. Treat every other column there as inferred, not
   observed, until the `pg_dump` reconciliation that header asks for happens.
 
-Open after that pass, both raised and deliberately not bundled: the
-pre-history `Staff can read own sessions` has **no clinic predicate** — it
-matches on `employee_id` alone, across clinics. It is unreachable rather than
-safe, because 0016's trigger refuses to write a session whose clinic
-disagrees with its staff member's; proven by removing that trigger in a
-scratch cluster and reading a cross-clinic row. A write-side trigger is not a
-tenant boundary. And `hub_pd_records`/`hub_time_off_requests` still have no
+Applied live 2026-09-18 (PR #188): migration `0087`. **Every policy on a
+clinic-scoped table now names the clinic**, and the live suite proves it
+rather than this paragraph asserting it.
+
+Six policies decided "is this row yours?" by reaching through `staff` or
+`clients` on `user_id` and naming no clinic. They were correct only because
+one person held one staff row — a fact about an *index on another table*, and
+for the two client ones, not even that: `clients` had no unique index on
+`user_id`, so what kept a family out of another clinic's sessions was that
+nobody had made the second row. A tenant boundary that lives in an index
+somewhere else is not a boundary. 0087 names the clinic in all six, gives
+`clients.user_id` the index `staff.user_id` already had, pins `search_path`
+on the two `security definer` functions that did not name `pg_temp` (one of
+them `handle_new_user`, which writes to `profiles` and had no `search_path`
+at all), and makes `clinic_id` NOT NULL on 37 tables.
+
+**`supabase/tests/tenancy.mjs` now checks this on every pull request**, twice:
+once against the migration files and once against the live database. Read its
+header before changing a policy. The live run is the one that matters — the
+file run reported `sessions` cleanly scoped while production carried two
+unscoped policies that appear in no migration in this repo, and a live run
+that gets skipped fails the build rather than reporting green. Its `KNOWN`
+baseline is empty and is meant to stay empty; an entry there is a policy the
+suite will not fail on.
+
+Still open from that pass: `hub_pd_records`/`hub_time_off_requests` have no
 `..._manage_select` policy (see the Admin console bullet below).
 
 - **`invite-teammate` overwriting an existing account is FIXED** (commit
