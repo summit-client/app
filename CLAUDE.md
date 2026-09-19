@@ -82,6 +82,13 @@ revenue and what's still open.
 | `apps/client` | 3003 | `client.summitclient.io` | yes — the **family** portal |
 | `apps/employee` | 3004 | `employee.summitclient.io` | yes — MySummitHR |
 | `apps/teacher` | 3005 | `teacher.summitclient.io` | **no** — one-line stub, 502 is expected |
+| `apps/mobile` | — | — | **not deployed** — an iPhone app, run in Expo Go |
+
+`apps/mobile` is the sixth app and the first that is not Next.js: Expo SDK 57
+and React Native, no port, no domain, and nothing on the droplet. It must stay
+runnable in **Expo Go** — there is no Apple Developer account, so no custom
+native modules, no dev build, no EAS Build. `apps/mobile/README.md` is its own
+entry point.
 
 Names do not match domains. `data` is the clinician portal, `client` is the
 family portal. Get this wrong and you will edit the wrong app.
@@ -97,6 +104,7 @@ pnpm install
 pnpm --filter @summit/<app> dev          # ports above, all pinned
 pnpm turbo build --filter=@summit/<app>
 pnpm -r --if-present run typecheck
+pnpm --filter @summit/mobile start       # Expo; scan the QR in Expo Go
 node apps/employee/qa.mjs
 cd apps/employee && node tests/onboarding-certificates.test.mjs
 cd apps/scheduler && node tests/calendar-utils.test.mjs
@@ -150,6 +158,10 @@ These are never violated regardless of what a task seems to ask for:
 - The service role key bypasses RLS entirely. Server-side only, never behind a
   `NEXT_PUBLIC_` prefix, never in an app `.env.local`. Apps get the anon key
   only.
+- **`EXPO_PUBLIC_*` is `NEXT_PUBLIC_*` with a different prefix.** Expo inlines
+  it into the shipped bundle, so anyone holding the app can read it. Anon key
+  only, and never a security decision gated on one. Same rule, same force, and
+  the next line is the one it repeats.
 - Anything named `NEXT_PUBLIC_*` is readable by the browser. Never gate auth
   or security behavior on one. A preview/bypass flag must be gated on the flag
   **and** `NODE_ENV !== "production"` (see `NEXT_PUBLIC_DEV_PREVIEW` below).
@@ -298,6 +310,25 @@ before assuming the code is wrong.
 - **Each app** — what that portal does about it. Screens and copy stay with the
   screens.
 
+**What `apps/mobile` may take from `packages/`.** React Native has no DOM, no
+CSS and no `next/*`. A package is shareable with it only if it is pure data or
+pure TypeScript — `@summit/portals` is, today, and is the right place for
+mobile to read role access from rather than inventing a second answer.
+Anything that assumes a browser stays web-only until it is split, and the
+split is the work: a renderer-agnostic core plus thin per-platform adapters.
+
+**Never copy a value across that boundary — extract it.** A colour, a role
+list, a rule duplicated into `apps/mobile` is a second source of truth that
+drifts silently, and this repo has already paid for that four times over with
+one clinical vocabulary. If mobile needs something the web has, the answer is
+to make it data both consume, not to paste it. `apps/mobile`'s placeholder
+blue is the current exception and the current debt — see the design note under
+"Design system".
+
+**Mobile is never a reason to change the five web apps' React or Next
+versions.** pnpm keeps the two trees apart; forcing them to agree would mean
+overriding what an Expo SDK was tested against, to no one's benefit.
+
 `AppNav` renders from **server** layouts in `apps/data` and `apps/employee`, and
 `@summit/session` is client-only. Wrap it in a small `"use client"` component
 rather than trying to resolve identity in the layout.
@@ -388,6 +419,13 @@ the only place a session is actually allowed to end, mirroring
 `/api/auth/refresh` exactly. Never call `supabase.auth.signOut()` directly
 in a portal; navigate to `signOutUrl()` instead.
 
+**`apps/mobile` is the one exception, and it is deliberate.** It calls
+`supabase.auth.signOut()` directly. Everything above is about a cookie four
+browser portals share on one domain; the phone app shares no cookie with
+anything, and its session is an encrypted blob in its own device storage.
+Routing it through `apps/web`'s endpoint would end a browser session it does
+not have and leave its own intact. Do not "fix" this.
+
 **`NEXT_PUBLIC_DEV_PREVIEW=1` is double-gated.** The flag must be `1` *and* the
 build must not be production. Preview mode therefore needs `next dev`, not
 `next start`. Never set it on the server. **This only held for each portal's
@@ -457,6 +495,17 @@ add a colour, check it against the surface it lands on, and remember element
 `opacity` composites — reading `computedStyle.color` alone will tell you it
 passes when it does not.
 
+**`apps/mobile` cannot use any of this, and currently invents its own blue.**
+React Native parses no CSS and no `oklch()`, so the palette cannot simply be
+imported. It also should not be retyped: this palette is a formula, not a list
+— one `--hue` dial driving an OKLCH ramp, with four accents on the same
+spacing and type — and a second hand-copied version of it would drift on the
+first tenant who picks a different accent. The long-term shape is that the
+formula becomes TypeScript, the CSS is generated from it, and React Native
+reads the same source. Until somebody does that, mobile has one placeholder
+blue and no design system — **#206**, which carries the two decisions that
+sizing it depends on.
+
 Apps must not redefine what `components.css` already defines. Each app imports
 its own `app.css` *after* the shared file, so a duplicate silently wins and the
 shared rule renders nowhere.
@@ -497,6 +546,14 @@ assuming the class name or selector is wrong.
 - `apps/scheduler/tests/calendar-utils.test.mjs` for anything in
   `apps/scheduler/components/calendar/` (date math, gap/conflict detection,
   conflict-resolution suggestions)
+- For `apps/mobile`: `pnpm --filter @summit/mobile typecheck` **and**
+  `npx expo export --platform ios`, which is the only thing that proves the
+  bundle compiles — a typecheck passes on code Hermes then refuses, which is
+  how the `@supabase/supabase-js` ESM build was caught. `npx expo-doctor` and
+  `npx expo install --check` both need `api.expo.dev`, which the cloud sandbox
+  blocks with a 403; run them on a machine that can reach it rather than
+  assuming a pin is right. Nothing in this repo can test the app on a device —
+  that is a person with a phone.
 - `node supabase/tests/app-controls.mjs` for anything touching an API route, an
   Edge Function, a `next.config`, or a `console.error` near a Supabase error.
   It is static checks over source, so it can be satisfied by code that does the
@@ -541,6 +598,16 @@ fails the run instead of going live.
 
 Never add an app to `deploy.yml` before its `.env.local` and pm2 process exist
 on the server, or every deploy fails for every app.
+
+**`apps/mobile` is never added at all.** It runs on phones, so it has no
+`.env.local` on that box, no pm2 process and nothing to serve. It is excluded
+from the droplet's install for the same reason — `pnpm install --filter
+'!@summit/mobile'` — because a 1 vCPU / 1.9 GiB box should not download the
+React Native toolchain on every deploy. Every shared package stays in the
+install set, so a mobile change that touches `packages/*` still reaches the
+five apps normally. The root lockfile and root `package.json` mark all five
+apps changed in `ci.yml`, since adding one app moves what the others resolve
+to.
 
 Full operational detail, including the server, nginx, TLS and the failure modes:
 the `summitclient-deploy-ssh.md` doc in the Claude project.
@@ -619,6 +686,10 @@ detail and the state, and closing it is what marks the work done.
   than the session's.
 - **#195** — ~4.8 MB of clinic-specific assets ship to every tenant.
   `blocked`: needs a product decision on where per-tenant content lives.
+- **#205** — a stray root `package-lock.json` in a pnpm repo. `deploy.yml`
+  restores it on every deploy, which means something on the droplet writes it.
+- **#206** — the palette is CSS/OKLCH only, so `apps/mobile` hardcodes a blue
+  that is in no token file. The fix is a TypeScript source both render from.
 - **#198** — any staff member of a clinic can sign a note against any of that
   clinic's sessions, which since `0088` makes it billable under another
   clinician's name. Not a tenancy leak; a missing boundary *within* a clinic.
