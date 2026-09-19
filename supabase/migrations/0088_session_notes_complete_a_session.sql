@@ -54,6 +54,15 @@
 --   4. The note's clinic must equal the session's. Every step checks the
 --      clinic; that is doctrine here, not a precaution.
 --
+-- APPLIED LIVE 2026-09-19, on the account owner's approval. Inert on arrival:
+-- zero notes exist, so no session changed status and nothing became
+-- derivable. Exercised against production inside rolled-back transactions
+-- rather than reasoned about - signing a note on a real scheduled session set
+-- it to `completed` and made it selectable by 0031's own predicate; returning
+-- the note put it back to `scheduled`; signing against a cancelled session was
+-- refused with '23514: session 2514 is marked cancelled'. Afterwards: 0 notes,
+-- 0 non-scheduled sessions, 0 time entries - production untouched.
+--
 -- ONE PERSON, ONE NOTE: `session_notes_session_id_key` is unique on
 -- `session_id`, so a session has at most one note and the reversal in (2)
 -- never has to ask whether some other note still confirms it. If that index
