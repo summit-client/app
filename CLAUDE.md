@@ -741,7 +741,12 @@ heading in an edit, reading as though "open an issue" were an open issue. So:
 
 - **Found a defect? Open an issue** and add one pointer line here. Do not
   write the description here — a paragraph in this file has no state and
-  nobody closes it.
+  nobody closes it. **Label it with every app it touches** — `web`, `client`,
+  `data`, `employee`, `scheduler`, `mobile` — plus `bug`, `infra`,
+  `compliance` or `settings` as they apply. One issue list for six apps, and
+  the label is what makes "everything open on mobile" a filter rather than a
+  second tracker to keep in step. Three issues went up unlabelled on
+  2026-09-19, which is how this line came to exist.
 - **Fixed something? Close its issue in the same PR**, and delete its pointer
   line. "Fixed in #189" in a commit message is not closing it.
 - **Starting work in an area? Read its open issues first**, not just this
