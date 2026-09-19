@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { handlePreflight, json, recordAudit, serviceClient, verifyCaller } from "../_shared/auth.ts";
+import { handlePreflight, isRateLimited, json, recordAudit, serviceClient, verifyCaller } from "../_shared/auth.ts";
 
 /**
  * Creating a brand-new clinic and its first admin is deliberately NOT gated
@@ -51,14 +51,11 @@ Deno.serve(async (req) => {
     return json(400, { error: "clinic_name, clinic_slug and admin_email are required" });
   }
 
-  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { count } = await admin
-    .from("provisioning_audit")
-    .select("id", { count: "exact", head: true })
-    .eq("actor_id", callerId)
-    .eq("action", "provision_clinic")
-    .gte("created_at", since);
-  if ((count ?? 0) >= MAX_PER_HOUR) {
+  // The shared helper rather than a second copy. This one destructured `count`
+  // alone and never looked at `error`, so a failed query read as `undefined ?? 0`
+  // and provisioning was unmetered - on the highest-consequence action in this
+  // whole feature, the one that creates a clinic and its first admin.
+  if (await isRateLimited(admin, callerId, "provision_clinic", MAX_PER_HOUR)) {
     return json(429, { error: "Too many clinics provisioned recently. Try again in a bit." });
   }
 
