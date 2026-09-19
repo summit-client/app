@@ -16,7 +16,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#1f6feb"
+          "backgroundColor": "#1b5a6e"
         }
       ]
     ],
