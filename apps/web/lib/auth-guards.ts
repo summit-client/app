@@ -114,3 +114,33 @@ export function signOutRequestAllowed(
   if (!claimed) return true;
   return isOurs(claimed);
 }
+
+/**
+ * Where a post-authentication redirect is allowed to land.
+ *
+ * `redirect_to` comes straight off the query string of a link this app did not
+ * generate, and by the time it is followed a real session cookie is already on
+ * the response — so an unchecked value hands an attacker a summitclient.io
+ * link that authenticates the clicking browser and then bounces it to a page
+ * they control. That is the shape phishing relies on.
+ *
+ * Two forms are allowed: a same-origin relative path, or an absolute URL to
+ * one of our own portals (`isOurs`, injected so this module stays free of
+ * @summit/portals and can be compiled standalone by the test).
+ *
+ * **A relative path is one leading slash and nothing slash-shaped after it.**
+ * `//host` is protocol-relative — the original check knew that. `/\host` is
+ * too: browsers normalise the backslash to a forward slash, so it reaches the
+ * same place while passing a `startsWith('//')` test. Both separators are
+ * rejected, and backslashes are normalised before the check rather than
+ * enumerated, so `/\/host` and `/\\host` cannot slip through either.
+ */
+export function safeRedirect(dest: unknown, isOurs: (url: string) => boolean): string | null {
+  if (typeof dest !== "string" || !dest) return null;
+  if (dest.startsWith("/")) {
+    // Compare on a copy with every backslash normalised; return the original.
+    const normalised = dest.replace(/\\/g, "/");
+    return normalised.startsWith("//") ? null : dest;
+  }
+  return isOurs(dest) ? dest : null;
+}

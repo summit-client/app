@@ -207,5 +207,35 @@ console.log("the password route enforces all three checks before writing");
   t("the page still states the same minimum", /MIN_PASSWORD_LENGTH = 8/.test(page));
 }
 
+console.log("safeRedirect keeps a post-authentication redirect on our own ground");
+{
+  const { safeRedirect } = guards;
+  // The confirm route has already set a session cookie by the time this runs,
+  // so anything that escapes here is an authenticated browser handed to
+  // somebody else.
+  const ours = (u) => u.startsWith("https://scheduler.summitclient.io");
+
+  t("an ordinary relative path is kept", safeRedirect("/update-password", ours) === "/update-password");
+  t("a relative path with a query is kept", safeRedirect("/login?error=x", ours) === "/login?error=x");
+  t("one of our own portals is kept",
+    safeRedirect("https://scheduler.summitclient.io/x", ours) === "https://scheduler.summitclient.io/x");
+
+  t("protocol-relative is refused", safeRedirect("//evil.example", ours) === null);
+  // The backslash forms: browsers normalise \ to /, so each of these reaches
+  // evil.example while passing a naive startsWith("//") check.
+  t("a backslash authority is refused", safeRedirect("/\\evil.example", ours) === null);
+  t("slash-backslash is refused", safeRedirect("/\\/evil.example", ours) === null);
+  t("backslash-slash is refused", safeRedirect("/\\\\evil.example", ours) === null);
+
+  t("an absolute URL elsewhere is refused", safeRedirect("https://evil.example", ours) === null);
+  t("a non-string is refused", safeRedirect(undefined, ours) === null);
+  t("an empty string is refused", safeRedirect("", ours) === null);
+
+  // The route must use the guard rather than keeping its own copy.
+  const confirm = readFileSync("pages/api/auth/confirm.js", "utf8");
+  t("confirm.js imports the shared guard", /import\s*\{[^}]*safeRedirect[^}]*\}\s*from\s*["'][^"']*auth-guards["']/.test(confirm));
+  t("confirm.js no longer defines its own", !/function\s+safeRedirect/.test(confirm));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
