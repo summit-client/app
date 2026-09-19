@@ -34,7 +34,13 @@ jobs:
             git pull origin main
 
             echo "--> Installing..."
-            pnpm install
+            # Excluding apps/mobile: it is an Expo app that runs on phones, not
+            # on this droplet, and installing its React Native toolchain here
+            # would cost minutes and hundreds of megabytes on a 1 vCPU / 1.9 GiB
+            # box for something that is never built or served. Every shared
+            # package stays in the install set, so a mobile change that touches
+            # packages/* still reaches the five apps normally.
+            pnpm install --filter '!@summit/mobile'
 
             # Every deployed app needs its own .env.local present, or its build
             # fails on "@supabase/ssr: Your project's URL and API key are required".
