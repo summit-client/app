@@ -162,5 +162,38 @@ console.log("clientSessionFreshness() vs sessionFreshness() - same input, same v
   t("unrelated cookies don't interfere -> 'fresh'", clientResult === "fresh", `got ${clientResult}`);
 }
 
+// --------------------------------------------------------------------------
+// A missing or unusable NEXT_PUBLIC_SUPABASE_URL
+//
+// Every portal's proxy.ts passes `process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""`.
+// The `?? ""` says what an absent URL means: there cannot be a session. This
+// used to throw "Invalid URL" from inside proxy.ts, which runs before any page
+// renders - so one unset variable returned 500 on EVERY route of that portal,
+// public ones included, naming nothing that would lead you to the cause.
+// Confirmed against apps/client with no .env.local.
+// --------------------------------------------------------------------------
+for (const [label, url] of [
+  ["an empty string, which is what `?? \"\"` produces", ""],
+  ["a value that is not a URL at all", "not-a-url"],
+  ["a URL with no hostname", "http://"],
+]) {
+  t(`reports "missing" for ${label}, rather than throwing`, await (async () => {
+    try {
+      return (await sessionFreshness([], url)) === "missing";
+    } catch {
+      return false;
+    }
+  })());
+}
+
+t("a real URL still resolves a session normally", await (async () => {
+  // The guard must not swallow the working case.
+  const fresh = await sessionFreshness(
+    [{ name: COOKIE_NAME, value: cookieValueFor(futureSession(3600)) }],
+    SUPABASE_URL,
+  );
+  return fresh === "fresh";
+})());
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

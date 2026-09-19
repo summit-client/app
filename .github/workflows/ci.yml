@@ -63,6 +63,7 @@ jobs:
           node supabase/tests/edit_teammate_authz.mjs
           node supabase/tests/invite_teammate_guard.mjs
 
+
       # The database suites. PGlite - a real Postgres compiled to WASM - so
       # these need no server, no Docker and no credentials. It is already
       # installed by the step below, which npm installs in the same directory;
@@ -85,6 +86,20 @@ jobs:
           node session_type_id.mjs ../migrations
           node credential_verification.mjs ../migrations
           node session_note_completion.mjs ../migrations
+
+          # The control register, the data inventory and the application-layer
+          # controls: executed rather than written down, because a hand-kept
+          # control matrix states what was true the day somebody wrote it and
+          # this repo has already produced several stale claims of that kind.
+          #
+          # They run HERE, in this step, because controls.mjs and
+          # data-inventory.mjs build a database from the migration files and so
+          # need the PGlite installed above. Run from the repo root before that
+          # install they fail with ERR_MODULE_NOT_FOUND - which is how they
+          # failed the first time this was wired up.
+          node controls.mjs ../migrations
+          node data-inventory.mjs ../migrations
+          node app-controls.mjs
 
       # ---------------------------------------------------------------------
       # Tenancy doctrine. Two runs, because they answer different questions.

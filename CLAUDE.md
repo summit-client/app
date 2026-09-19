@@ -497,24 +497,35 @@ assuming the class name or selector is wrong.
 - `apps/scheduler/tests/calendar-utils.test.mjs` for anything in
   `apps/scheduler/components/calendar/` (date math, gap/conflict detection,
   conflict-resolution suggestions)
+- `node supabase/tests/app-controls.mjs` for anything touching an API route, an
+  Edge Function, a `next.config`, or a `console.error` near a Supabase error.
+  It is static checks over source, so it can be satisfied by code that does the
+  wrong thing in a way the pattern misses — but a **new** name in its output is
+  a real finding. Its two allowlists (`PUBLIC_ROUTES`, `SERVICE_ROLE_ALLOWED`)
+  are how an exception becomes a reviewed decision instead of an oversight;
+  adding to one is a deliberate act, not a way to make a check quiet.
 
-**Both esbuild-bundled suites (`onboarding-certificates.test.mjs` and
-`calendar-utils.test.mjs`) self-skip.** If a suite can't find esbuild in the
-workspace store it prints `SKIP` and exits **0**, which looks like a pass —
-confirmed live in the remote sandbox this repo is sometimes worked in: no
-esbuild anywhere on disk there at all (this Next.js version's Turbopack build
-doesn't vendor it the way the comment in the certificate suite assumes), so
-both suites always print SKIP in that environment specifically, regardless of
-`pnpm install`. **A skip is not a pass.** Run `pnpm install` at the repo root
-first; if it still skips, that's the sandbox, not a real failure — verify the
-logic instead by compiling the subject files with plain `tsc` (`--module
-commonjs`, no bundler needed since these files' relative imports resolve fine
-under CommonJS) into a scratch directory and running the same assertions
-against the compiled output with a bare `node` script. Either way, don't
-report a suite as passing without an actual `N passed, 0 failed` line — from
-the real harness when esbuild is available, from the tsc-compiled substitute
-when it isn't. `qa.mjs` and the certificate suite test re-implemented copies
-of `apps/employee`'s functions and cannot catch drift from the shipped code.
+**esbuild is a declared dependency now, and the two suites that used to
+self-skip actually run (2026-09-19).** `onboarding-certificates.test.mjs` and
+`calendar-utils.test.mjs` print `SKIP` and exit **0** when they cannot find
+esbuild — which reads as a pass. They had been skipping everywhere.
+
+**The explanation that used to be here was wrong**, and it is worth knowing
+why, because it sent people the wrong way for weeks. It said no esbuild
+existed on disk in the remote sandbox, that this was environment-specific, and
+that if `pnpm install` did not fix it "that's the sandbox, not a real
+failure." The real cause was that **esbuild was never declared in any
+`package.json`** — it only ever arrived transitively, so `pnpm install` had no
+reason to fetch it and the advice to re-run it could not have worked. Adding
+it to the root `devDependencies` made both suites run immediately: **62 and 7
+tests that nobody had been seeing.**
+
+A skip is still not a pass. If either prints `SKIP` again, esbuild has been
+dropped from the root `package.json` — fix that rather than reaching for an
+explanation about the environment.
+
+`qa.mjs` and the certificate suite test re-implemented copies of
+`apps/employee`'s functions and cannot catch drift from the shipped code.
 
 For UI work, render it. Several defects here were only visible in a browser: a
 10px overflow from a token that disagreed with the element it sized, a portal
@@ -546,6 +557,13 @@ trusting it; that habit is what caught the last three gaps.
 - **Never apply migration `0014`.** It was never applied, and nothing drops
   it. Its `sessions` half would OR with `0077`'s narrow policy and silently
   undo the clinician/client privacy boundary.
+- **Every table without `clinic_id` is now justified, not just unchecked.**
+  `tenancy.mjs` used to reason only about tables that *have* one, so a table
+  without it was invisible to the check meant to enforce clinic scoping.
+  `NO_CLINIC_ALLOWED` lists the 14 that legitimately have none — the clinic
+  list itself, action vocabularies, statutory rates, and rows scoped through
+  a parent — each with the predicate that was read to justify it. A new table
+  with no `clinic_id` and no entry fails the run.
 - **`0000` was a guess and is now measured (2026-09-19).** It reconstructs the
   scheduler's pre-history tables from application code. Reconciling it against
   production found **44** differences — every id `integer` not `bigint`,
@@ -604,27 +622,6 @@ detail and the state, and closing it is what marks the work done.
 - **#198** — any staff member of a clinic can sign a note against any of that
   clinic's sessions, which since `0088` makes it billable under another
   clinician's name. Not a tenancy leak; a missing boundary *within* a clinic.
-- **#200** — migration `0073` was never applied. `apps/client` upserts
-  `home_session_preferences`, which does not exist live, so the family
-  portal's home-session preference is broken right now.
-- **#201** — four tables exist in production that no migration describes,
-  including `leads` (12 rows of personal data, no `clinic_id`). The bigger
-  finding is that `tenancy.mjs` cannot see a table with no `clinic_id` at
-  all, so the doctrine is only enforced on tables that already follow it.
-
-**Where each kind of thing goes.** A defect or a piece of work is a GitHub
-issue. A *decision* — what was chosen, what is still genuinely undecided, why
-something was rejected — goes in `docs/context/decisions.md`, which is the one
-thing issues are bad at. A *rule* a future session must not break is a Landmine
-above or a Trap earlier in this file, because those are read automatically and
-an issue is not. Never put the same thing in two places; link instead.
-
-**Keeping it that way is part of the work, not tidying afterwards.** This
-structure decays silently, and has: `decisions.md` carried the
-`invite-teammate` overwrite bug tagged OPEN, "not yet fixed", for weeks after
-it shipped. A session reading it would have rebuilt a guard that already
-existed. So:
-
 - **Found a defect? Open an issue** and add one pointer line here. Do not
   write the description here — a paragraph in this file has no state and
   nobody closes it.

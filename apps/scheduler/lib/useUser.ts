@@ -100,7 +100,11 @@ export function useUser() {
         );
         if (cancelled) return;
 
-        if (error) console.error("[useUser] profile lookup failed", error);
+        // error.message, not the object: a PostgREST error carries `details` and
+        // `hint` that can quote the offending row, so logging it whole writes the
+        // record into a server log - outside every access control the database
+        // enforces, retained, and shipped to whatever monitoring vendor is wired up.
+        if (error) console.error("[useUser] profile lookup failed", error.message);
 
         if (!profile) {
           setUser(null);
@@ -130,10 +134,10 @@ export function useUser() {
               "employment_records lookup"
             );
             if (cancelled) return;
-            if (erError) console.error("[useUser] employment_records lookup failed", erError);
+            if (erError) console.error("[useUser] employment_records lookup failed", erError.message);
             p.staffId = er?.staff_id == null ? null : Number(er.staff_id);
           } catch (err) {
-            console.error("[useUser] employment_records lookup failed", err);
+            console.error("[useUser] employment_records lookup failed", err instanceof Error ? err.message : String(err));
             p.staffId = null;
           }
         }
@@ -145,7 +149,7 @@ export function useUser() {
           null
         );
       } catch (err) {
-        console.error("[useUser] profile load failed", err);
+        console.error("[useUser] profile load failed", err instanceof Error ? err.message : String(err));
         if (!cancelled) {
           setUser(null);
           setProblem("NO_PROFILE");
@@ -166,7 +170,7 @@ export function useUser() {
         );
         if (!cancelled) await applySession(session);
       } catch (err) {
-        console.error("[useUser] initial auth load failed", err);
+        console.error("[useUser] initial auth load failed", err instanceof Error ? err.message : String(err));
         // This branch (getSession() itself throwing or timing out - a
         // network blip, not a role/clinic problem) previously left `problem`
         // at its initial `null` while also leaving `user` null. _app.tsx

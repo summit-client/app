@@ -113,9 +113,28 @@ interface StoredSession {
  * Summit's apps override this, so this must stay in sync with that default
  * (SupabaseClient's constructor) rather than duplicating a hardcoded name.
  */
-function storageKeyFor(supabaseUrl: string): string {
-  const ref = new URL(supabaseUrl).hostname.split(".")[0];
-  return `sb-${ref}-auth-token`;
+/**
+ * The cookie name Supabase stores a session under, or null if the URL cannot
+ * name one.
+ *
+ * Returns null rather than throwing. Every caller passes
+ * `process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""`, which says plainly what they
+ * mean by an absent URL: there cannot be a session. `new URL("")` threw
+ * instead, and because this runs in `proxy.ts` - before any page renders - the
+ * throw took down EVERY route in that portal with a bare "TypeError: Invalid
+ * URL" and no hint of which variable was missing.
+ *
+ * Confirmed by running apps/client with no .env.local: every path, including
+ * the public ones, returned 500. All four portals share this code path and
+ * would fail identically.
+ */
+function storageKeyFor(supabaseUrl: string): string | null {
+  try {
+    const ref = new URL(supabaseUrl).hostname.split(".")[0];
+    return ref ? `sb-${ref}-auth-token` : null;
+  } catch {
+    return null;
+  }
 }
 
 function decodeCookieValue(raw: string): unknown {
@@ -138,6 +157,17 @@ export async function sessionFreshness(
   supabaseUrl: string,
 ): Promise<SessionFreshness> {
   const key = storageKeyFor(supabaseUrl);
+  // No usable Supabase URL means no session can exist, which is what "missing"
+  // says. The caller then redirects to login - a correct outcome for a
+  // misconfigured deployment, and a far better one than a 500 on every route.
+  //
+  // A mutation test said this line was redundant: removing it changed no test
+  // result, because combineChunks() finds nothing for a null key and the
+  // function returns "missing" anyway. It measured runtime behaviour only.
+  // `tsc` disagreed - combineChunks takes a string, and without this narrowing
+  // `string | null` reaches it. The line earns its place on the type contract
+  // even where the runtime would have limped on.
+  if (key === null) return "missing";
   const byName = new Map(cookies.map((c) => [c.name, c.value]));
 
   const raw = await combineChunks(key, async (name: string) => byName.get(name) ?? null);

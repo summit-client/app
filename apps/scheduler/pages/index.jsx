@@ -3632,7 +3632,11 @@ export default function Scheduler() {
     for (const [table, res, setter] of results) {
       if (res.error) {
         anyFailed = true;
-        console.error(`[scheduler] loadData: ${table} query failed`, res.error);
+        // error.message, not the object: a PostgREST error carries `details` and
+        // `hint` that can quote the offending row, so logging it whole writes the
+        // record into a server log - outside every access control the database
+        // enforces, retained, and shipped to whatever monitoring vendor is wired up.
+        console.error(`[scheduler] loadData: ${table} query failed`, res.error?.message ?? res.error);
       }
       setter(res.data ?? []);
     }
@@ -3647,7 +3651,7 @@ export default function Scheduler() {
   async function refreshBookings() {
     const { data, error: err } = await fetchAllRows(() => supabase.rpc("sessions_visible"));
     if (err) {
-      console.error("[scheduler] refreshBookings: sessions query failed", err);
+      console.error("[scheduler] refreshBookings: sessions query failed", err instanceof Error ? err.message : String(err));
       showToast("Couldn't refresh the session list — it may be out of date.");
       return;
     }
