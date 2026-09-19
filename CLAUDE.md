@@ -571,40 +571,39 @@ trusting it; that habit is what caught the last three gaps.
   `e.target !== e.currentTarget` there makes click-to-create dead on arrival.
   It did, in every PR before the one that fixed it.
 
-### Still broken
+### Still broken — tracked as GitHub issues
 
-- **`hub_pd_records` and `hub_time_off_requests` have no `..._manage_select`
-  RLS policy at all** (migration `0006` gave one to `hub_certificates` and
-  `hub_task_progress` only). Any clinic-wide query against either returns
-  nothing for anyone but the caller — silently, per the "RLS returns empty
-  sets" trap above.
-- **Three Admin console queues are still scoped to the caller, not the
-  clinic** (`apps/employee/app/admin/page.tsx`): "Certificates to issue",
-  "Time-off requests", "PD awaiting verification", plus the single-row "Team
-  directory" table. Same bug as the pending-sign-offs queue, which was fixed;
-  these read the caller's own hub snapshot instead of querying clinic-wide
-  under RLS. Two of them need the policy above added first or they will read
-  empty and look fixed.
-- **`0029` joins `st.clinic_id = e.clinic_id`** — the TIME ENTRY's clinic, not
-  the session's. It decides a billing rate, so it wants its own look rather
-  than a drive-by fix.
-- **`behaviour.mjs` fails one case on `main`**: "the bulk derivation skips
-  what is already derived", with `not authorised to derive session deliveries
-  for that clinic`. Bisected across the migration set — it fails identically
-  at 84, 86 and 87 migrations, so it predates `0085`. Looks like the fixture's
-  permissions rather than the rule.
-- **CI runs the tenancy and Edge Function suites, not the database ones.**
-  `apply.mjs`, `behaviour.mjs`, `rls.mjs`, `session_type_id.mjs` and
-  `credential_verification.mjs` only run by hand — which is how `rls.mjs` sat
-  red from `0077` landing until `0086`, two cases asserting the exact
-  behaviour `0077` removed. They need PGlite in CI; whether they should gate
-  it is the account owner's call.
-- **~4.8 MB of clinic-specific assets in `apps/employee/public`**, shipped to
-  every tenant. Full manifest and the `lib/content.ts` hardcoded-Drive-URL
-  problem behind it: `BLOCKED.md`.
-- **Three clinics exist now**, not one: Mount Etna plus two test clinics. The
-  "only one clinic exists today" framing elsewhere in this file is about
-  posture, not a count.
+**Open defects live in GitHub Issues, not here.** This list is pointers, so it
+cannot drift out of date the way a prose list does: the issue carries the
+detail and the state, and closing it is what marks the work done.
+
+- **#190** — `hub_pd_records` and `hub_time_off_requests` have no
+  `..._manage_select` RLS policy at all. Any clinic-wide query against either
+  returns nothing for anyone but the caller, silently.
+- **#191** — Three Admin console queues and the team directory still read the
+  caller's own hub snapshot instead of the clinic's. Blocked on #190 for two
+  of them, which would otherwise look fixed and show nothing.
+- **#192** — `0029` picks a billing rate using the time entry's clinic rather
+  than the session's.
+- **#193** — `behaviour.mjs` is one-red on `main` and predates `0085`.
+- **#194** — CI does not run the PGlite database suites. Needs a decision on
+  whether they should gate.
+- **#195** — ~4.8 MB of clinic-specific assets ship to every tenant.
+  `blocked`: needs a product decision on where per-tenant content lives.
+- **#196** — the scheduler Dashboard's "No-show rate" reads a meaningless
+  number, because nothing ever sets `sessions.status = 'completed'`.
+  `blocked`: see `decisions.md` for the choice it waits on.
+
+**Where to file what.** A defect or a piece of work is a GitHub issue. A
+*decision* — what was chosen, what is still genuinely undecided, why something
+was rejected — goes in `docs/context/decisions.md`, which is the one thing
+issues are bad at. A *rule* a future session must not break is a Landmine
+above or a Trap earlier in this file, because those are read automatically and
+an issue is not. Don't put the same thing in two places; link instead.
+
+Not a defect, so no issue: **three clinics exist now**, not one — Mount Etna
+plus two test clinics. The "only one clinic exists today" framing elsewhere in
+this file is about posture, not a count.
 
 ### The deeper files
 
@@ -629,7 +628,7 @@ provenance label, the clinician decides. Read it before touching
 `packages/analytics`, `packages/clinical-ai`, or any screen that shows a
 clinical conclusion.
 
-`BLOCKED.md` is a single investigated-but-unfixed item: the clinic-specific
-assets in `apps/employee/public`, with the full manifest and the
-hardcoded-Drive-URL problem underneath it. Its title still names a branch
-that is long merged.
+`BLOCKED.md` is gone as of 2026-09-19. It held one investigated-but-unfixed
+item under a title naming a branch that merged weeks ago, with its own private
+status vocabulary — which is a tracker nobody checks. Its full content,
+manifest and all, is issue #195.

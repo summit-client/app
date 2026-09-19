@@ -1,12 +1,26 @@
 # Decisions
 
+**This file tracks decisions, not tasks.** Work items — defects, features,
+anything with a done state — are GitHub issues. Put a thing in one place and
+link from the other; a status tag here that duplicates an issue's state will
+go stale, and did: the `invite-teammate` guard sat tagged OPEN in this file
+for weeks after it shipped, and a session reading it would have rebuilt a
+guard that already existed.
+
+What belongs here is what issues are bad at: *why* something was chosen, what
+was rejected and on what grounds, and what is genuinely still undecided.
+**Close an entry when the decision is made, not when the code lands** — and if
+an entry is OPEN because nobody has built it rather than because nobody has
+decided, it is an issue, not a decision.
+
 Status key:
 
 - **DECIDED** — Yanko stated it, or executed it. Binding.
 - **PROPOSED** — recommended in a session and reacted to positively, but never
   confirmed as shipped. Do not treat as binding.
-- **OPEN** — genuinely undecided, or decided in principle with execution
-  unverified.
+- **OPEN** — genuinely undecided. Not "decided but unbuilt" — that is an issue.
+- **CLOSED** — was OPEN, now settled; kept with the reasoning intact, since
+  the point of this file is not re-litigating it.
 
 Assembled 2026-08-27 from project chat history and the review docs under
 `claude/`. Dates are the date of the conversation or the commit, not the date
@@ -182,19 +196,21 @@ access to their own data — real, standalone work with its own PR and its own
 verification pass, not something that should ride in on an unrelated batch.
 Needs a decision on *when*, not *whether*.
 
-**OPEN (raised 2026-09-14, scheduler feature batch, PR #170)** — the
-Dashboard's "No-show rate" stat (added in the same PR) will read as a
-degenerate 100%/0% indefinitely, because nothing in `apps/scheduler`
-anywhere sets `sessions.status = 'completed'`. The stat is computed against
-`completed + no_show` only (deliberately excluding future bookings), but
-with the numerator's other half never populated, every occurred session
-either has no status transition at all or sits at whatever it was created
-with — there is currently no code path, button, or job in this app that
-marks a session completed. Flagged in PR #170's own body rather than
-silently worked around. Needs a decision on where completion-marking
-belongs (automatic — e.g. session end time has passed and it wasn't
-cancelled/no-showed — versus an explicit staff action) before the stat is
-trustworthy.
+**OPEN (raised 2026-09-14, scheduler feature batch, PR #170)** — where does
+marking a session **completed** belong? Automatic (its end time passed and it
+was not cancelled or no-showed) or an explicit staff action?
+
+Automatic is cheap and asserts a session happened that nobody confirmed.
+Explicit is truthful and is one more thing to remember, so sessions nobody
+marks stay invisible forever. Decide alongside the no-show/cancellation
+billing policy below and issue #171, since all three turn on what "this
+session occurred" formally means — and per the account owner that may need to
+differ per clinic.
+
+The defect this causes — the Dashboard's "No-show rate" reading a degenerate
+100%/0% because nothing ever sets `sessions.status = 'completed'` — is **issue
+#196**, which is blocked on this. Track the code there; the choice stays
+here.
 
 **RESOLVED (verified live 2026-09-16)** — PR #170's body also flagged that
 `apps/scheduler/pages/admin.tsx` reads/writes `client.email`, `client.sessions`
