@@ -108,11 +108,34 @@ PHI. It is not; it is the Editor reading it, as it always could.
 misread that way.
 
 Then build the connection string from Supabase's **Connection pooling** tab
-(Settings → Database), not the direct one — GitHub's runners are IPv4-only and
-the direct host is IPv6-only, so a direct string times out there with no useful
-error. Substitute the role and its password into the pooler's host and port:
+(Settings → Database). **Not the direct one**, which is the string that page
+offers first and the one you will reach for:
 
-    postgresql://tenancy_audit.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+    postgresql://postgres:[YOUR-PASSWORD]@db.<project-ref>.supabase.co:5432/postgres
+
+That host has no A record — only AAAA. GitHub's runners are IPv4-only, so it
+cannot resolve there at all, and the job hangs until it times out with nothing
+in the log naming DNS as the cause. Measured on this project 2026-09-19:
+`db.xbkokyxegrxutppolgtz.supabase.co` → `2600:1f16:111a:af01:...`, no IPv4.
+
+The pooler string differs in four places, not one:
+
+    postgresql://tenancy_audit.<project-ref>:<password>@aws-N-<region>.pooler.supabase.com:6543/postgres
+                 ^^^^^^^^^^^^^ ^^^^^^^^^^^^^           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^
+
+- the **role**, `tenancy_audit` rather than `postgres`
+- a **`.<project-ref>` suffix on the username**, which looks like a typo and is
+  not: it is how the pooler routes a connection to the right project. Drop it
+  and you get an authentication failure that reads like a wrong password.
+- the **pooler host**. Copy it; do not derive it. The `aws-N` prefix is not
+  predictable from the region — this project is `us-east-2` and `aws-1`.
+- **port 6543**, the pooler's transaction mode. Fine here: every query this
+  suite runs is a single self-contained SELECT on its own connection. Session
+  mode on 5432 works too if 6543 ever misbehaves.
+
+If you'd rather not assemble it by hand, the pooler tab prints the whole
+string with `postgres` as the role — swap in `tenancy_audit` and your
+password, change nothing else.
 
 Store it as the `SUPABASE_DB_URL` repository secret under Settings → Secrets
 and variables → Actions. The runner has `psql` preinstalled; nothing else is
