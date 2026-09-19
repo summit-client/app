@@ -810,7 +810,9 @@ function StaffTab({ isAdmin, isScheduler, isPreview, canVerify }: { isAdmin: boo
         <table className="data">
           <thead>
             <tr>
-              <th>Name</th><th>Access</th><th>Supervisor</th>
+              {/* "Role", not "Access": this column shows profiles.role now,
+                  which is the thing an admin came here to check. */}
+              <th>Name</th><th>Role</th><th>Supervisor</th>
               {isAdmin ? <th></th> : null}
             </tr>
           </thead>
@@ -818,7 +820,18 @@ function StaffTab({ isAdmin, isScheduler, isPreview, canVerify }: { isAdmin: boo
             {visiblePeople.map((m) => (
               <tr key={m.id}>
                 <td><b>{m.name}</b></td>
-                <td><span className="pill">{m.accessLevel.toLowerCase()}</span></td>
+                {/* The person's REAL profiles.role, not `accessLevel`.
+                    accessLevel is a three-value display ladder and
+                    hr-backend's ACCESS map only knows three roles - admin,
+                    supervisor, clinician - so a scheduler, an hr_admin and a
+                    payroll_admin ALL fell through its default and rendered as
+                    "employee". In the one console where an admin goes to see
+                    who holds what, four different roles read as the same
+                    word, and none of them is a role this system issues.
+                    (`employee` is not a profiles.role at all - see the note
+                    on EditTeammateRole below, which had the same bug on the
+                    write side.) */}
+                <td><span className="pill">{(m.appRole ?? "no role set").replace(/_/g, " ")}</span></td>
                 <td>{visiblePeople.find((x) => x.id === m.supervisorId)?.name ?? "—"}</td>
                 {isAdmin ? (
                   <td>

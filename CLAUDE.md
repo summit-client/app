@@ -527,6 +527,47 @@ on the server, or every deploy fails for every app.
 Full operational detail, including the server, nginx, TLS and the failure modes:
 the `summitclient-deploy-ssh.md` doc in the Claude project.
 
+## Flagged for the next pass (2026-09-18)
+
+Raised and deliberately not bundled. None is urgent; the first is the only one
+with a tenancy consequence.
+
+- **The pre-history `Staff can read own sessions` policy on `sessions` has no
+  clinic predicate** — it matches on `employee_id` alone, across clinics. It
+  appears in this repo only as a COMMENT, in `0013`, `0077` and `0080`: no
+  migration creates it and none drops it, so it exists on the deployed
+  database and nothing here can see it. An audit run against the migration
+  files will report `sessions` as cleanly scoped and be wrong. It is
+  unreachable rather than safe, because `0016`'s trigger refuses to WRITE a
+  session whose clinic disagrees with its staff member's — and a write-side
+  trigger is not a tenant boundary. Dropping it needs a live `pg_policies`
+  read first, since nobody can say from this repo what its predicate actually
+  is.
+- **`sessions.type` still exists.** `0085` added the pointer and backfilled it
+  (measured live: 2085 of 2085 rows resolved). Dropping the column is the
+  follow-up, and it is safe only once a release shows nothing lands unmatched.
+- **`0029`'s `time_entry_economics` and `0031`'s `session_delivery` still join
+  `session_types` on the NAME.** Correct only because `0085`'s rename trigger
+  keeps that name true. Moving them onto `session_type_id` retires the
+  trigger.
+- **`0029` joins `st.clinic_id = e.clinic_id`** — the TIME ENTRY's clinic, not
+  the session's. Pre-existing, unrelated to `0085`, and it decides a billing
+  rate, so it wants its own look rather than a drive-by fix.
+- **`behaviour.mjs` fails one case on `main`**: "the bulk derivation skips what
+  is already derived", with `not authorised to derive session deliveries for
+  that clinic`. Predates this work; looks like the fixture's permissions
+  rather than the rule.
+- **CI does not run the database suites.** `.github/workflows/ci.yml` is
+  typecheck and per-app builds only, so `apply.mjs`, `behaviour.mjs`,
+  `rls.mjs`, `session_type_id.mjs` and `credential_verification.mjs` only ever
+  run by hand. That is how `rls.mjs` sat red from `0077` landing until
+  `0086` — two cases asserting the exact behaviour `0077` removed. Whether
+  these should gate CI is the account owner's call.
+- **Three clinics exist now**, not one: Mount Etna plus two test clinics
+  ("Second Clinic (test)", "Test Clinic Seven"). Measured 2026-09-18. The
+  "only one clinic exists today" framing elsewhere in this file is about
+  posture, not a count — but the count is no longer one.
+
 ## Known open work
 
 Fixed since the last pass, so don't re-fix: `apps/client` now has a `proxy.ts`
