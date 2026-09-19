@@ -567,6 +567,15 @@ trusting it; that habit is what caught the last three gaps.
   itself creates, so the same query moved below that call would reject every
   legitimate invite instead of catching a pre-existing account.
   `supabase/tests/invite_teammate_guard.mjs` asserts the ordering.
+- **A signed session note is what makes money move (`0088`).** It sets
+  `sessions.status = 'completed'`, which is the only thing
+  `derive_pending_session_deliveries()` picks up — time entry, budget charge,
+  then a receipt carrying a clinician's credential number. Before `0088`
+  nothing ever set that status, so none of it had run. Withdrawing the note
+  (returned, back to draft, deleted) reverses it; `cancelled` and `no_show`
+  are refused, never overwritten. The reversal assumes
+  `session_notes_session_id_key` — one note per session — so if that unique
+  index is dropped, `0088` must change with it.
 - **`TimeGrid`'s `DayColumn.onClick`**: anything shaped like
   `e.target !== e.currentTarget` there makes click-to-create dead on arrival.
   It did, in every PR before the one that fixed it.
@@ -585,14 +594,15 @@ detail and the state, and closing it is what marks the work done.
   of them, which would otherwise look fixed and show nothing.
 - **#192** — `0029` picks a billing rate using the time entry's clinic rather
   than the session's.
-- **#193** — `behaviour.mjs` is one-red on `main` and predates `0085`.
-- **#194** — CI does not run the PGlite database suites. Needs a decision on
-  whether they should gate.
 - **#195** — ~4.8 MB of clinic-specific assets ship to every tenant.
   `blocked`: needs a product decision on where per-tenant content lives.
-- **#196** — the scheduler Dashboard's "No-show rate" reads a meaningless
-  number, because nothing ever sets `sessions.status = 'completed'`.
-  `blocked`: see `decisions.md` for the choice it waits on.
+- **#198** — any staff member of a clinic can sign a note against any of that
+  clinic's sessions, which since `0088` makes it billable under another
+  clinician's name. Not a tenancy leak; a missing boundary *within* a clinic.
+- **#199** — `0000` omits `profiles.email`, which production has NOT NULL.
+  The invite guard queries by it, so on a rebuilt database that guard errors
+  rather than protects. Second measured divergence; the `pg_dump`
+  reconciliation is overdue.
 
 **Where each kind of thing goes.** A defect or a piece of work is a GitHub
 issue. A *decision* — what was chosen, what is still genuinely undecided, why

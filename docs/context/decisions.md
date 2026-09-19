@@ -201,9 +201,31 @@ access to their own data — real, standalone work with its own PR and its own
 verification pass, not something that should ride in on an unrelated batch.
 Needs a decision on *when*, not *whether*.
 
-**OPEN (raised 2026-09-14, scheduler feature batch, PR #170)** — where does
-marking a session **completed** belong? Automatic (its end time passed and it
-was not cancelled or no-showed) or an explicit staff action?
+~~**OPEN (raised 2026-09-14)**~~ **DECIDED (2026-09-19, account owner) — a
+signed session note is what marks a session complete, and signing alone
+releases billing.** In their words: "completed session notes are what mark a
+session as complete. Sessions can be cancelled and marked no show, but notes
+on a session are the final and true confirmation", and "Signing alone releases
+billing. That may change in the future but for now it's the right decision."
+
+So completion is an explicit human act and writing the note *is* that act —
+no separate button. Deriving it from the clock was rejected: it would have had
+the system assert a session happened on a record that later bills a family,
+which is the same shape as the self-verified credential `0086` closed.
+
+Built as migration `0088` — a trigger on `session_notes`, because every
+consumer already reads `sessions.status` and a view would break `0031`.
+Countersigning is a supervision control over the note's content (`0043`), not
+a second opinion on whether the session occurred, and not every note gets one,
+so gating on it would leave a senior clinician's sessions never completing.
+The 47 past sessions stay `scheduled`; the account owner confirmed they are
+dummy entries.
+
+Revisit this when "signing alone releases billing" stops being true — the
+countersignature gate is the natural next step and would split completion from
+billability.
+
+The original question, kept because the reasoning is what dates:
 
 Automatic is cheap and asserts a session happened that nobody confirmed.
 Explicit is truthful and is one more thing to remember, so sessions nobody

@@ -84,6 +84,7 @@ jobs:
           node rls.mjs ../migrations
           node session_type_id.mjs ../migrations
           node credential_verification.mjs ../migrations
+          node session_note_completion.mjs ../migrations
 
       # ---------------------------------------------------------------------
       # Tenancy doctrine. Two runs, because they answer different questions.
