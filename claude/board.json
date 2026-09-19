@@ -594,6 +594,14 @@
         ],
         "deferred": [
           {
+            "t": "MIGRATION 0092 WRITTEN, NOT APPLIED: P1 revoking a guardian does not revoke them",
+            "d": "The legacy clients.user_id branch in auth_accessible_client_ids() and auth_guardian_can() checks no status, starts_on or ends_on, and inside auth_guardian_can returns true for all sixteen permissions. 0047 backfilled relationships and never cleared the column, so REVOKED, SUSPENDED and expired do nothing for anyone predating it. 1 of 119 clients carries a legacy link today and it is ACTIVE.",
+            "refs": [
+              "PR #214",
+              "migration 0092"
+            ]
+          },
+          {
             "t": "Announcement read-receipts",
             "d": "announcement_reads has no write path anywhere, so every clinic notice stays pinned to the dashboard forever. The insert policy already permits a guardian's own receipt with no migration, but mark-on-mount versus mark-on-click is a product call.",
             "refs": [
@@ -628,6 +636,20 @@
           }
         ],
         "neutral": [
+          {
+            "t": "Verified clean: a parent cannot reach another family's child",
+            "d": "Every family-facing policy keys on auth_guardian_can or auth_accessible_client_ids, never clinic_id alone and never for-all. The three helpers are security definer with pg_temp last and fully schema-qualified. my_family is an invoker view.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "Not a finding: announcements_family_read IS clinic-scoped live",
+            "d": "The audit reported it cross-tenant from 0083's header, which says NOT APPLIED. Production disagrees. The header is stale \u2014 read pg_policies, not the file.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "REJECTED: the API routes and the feed-token GET are correctly bounded",
             "d": "observation.ts and withdraw-consent.ts are scoped by guardian-checked RLS and both handle the refusal path; the feed-token select policy is already user_id = auth.uid() and the handler rejects non-client callers. Defence-in-depth preferences, not defects. Do not re-propose.",
@@ -1253,6 +1275,20 @@
           }
         ],
         "pending": [
+          {
+            "t": "P2: the session key is written before the ciphertext",
+            "d": "A kill between the two leaves key N+1 against blob N, so decrypt returns garbage and the parent is forced to sign in again. Availability only, no confidentiality impact.",
+            "refs": [
+              "PR #214"
+            ]
+          },
+          {
+            "t": "P2: AES-CTR with no MAC, and SecureStore uses default accessibility",
+            "d": "The stored session is malleable (bounded \u2014 the JWT is signature-checked server-side), and both the key and the blob ride an encrypted device backup onto another device.",
+            "refs": [
+              "PR #214"
+            ]
+          },
           {
             "t": "P2: nothing in CI builds or bundles the app",
             "d": "CI runs its typecheck and its two suites. expo export is the only thing that proves the bundle compiles, and it runs only when somebody runs it.",
