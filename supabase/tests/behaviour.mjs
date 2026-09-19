@@ -650,6 +650,11 @@ await check("the catch-up view names why each stuck session is stuck", async () 
 });
 
 await check("the bulk derivation skips what is already derived", async () => {
+  // 0081 gated this function on auth_role() = 'admin' and a matching clinic.
+  // Whatever actor the previous case left set is not necessarily one, and an
+  // unset claim makes auth_role() null - which is a refusal, not a skip. The
+  // test has to say who is pressing the button.
+  await be(people.admin);
   const before = (await one(`select count(*)::int n from time_entries where source='session'`)).n;
   await mkSession("2026-04-13");
   const rows = (await db.query(

@@ -63,6 +63,29 @@ jobs:
           node supabase/tests/edit_teammate_authz.mjs
           node supabase/tests/invite_teammate_guard.mjs
 
+      # The database suites. PGlite - a real Postgres compiled to WASM - so
+      # these need no server, no Docker and no credentials. It is already
+      # installed by the step below, which npm installs in the same directory;
+      # `@electric-sql/pglite` is that directory's only dependency, so the
+      # marginal cost of everything here is about 27 seconds.
+      #
+      # These GATE. That is deliberate, and the precedent is specific: rls.mjs
+      # sat red from 0077 landing until 0086 - two cases asserting the exact
+      # behaviour 0077 had removed - because nothing ran it. The PR that broke
+      # it would have been stopped here. A migration-shaped change can break a
+      # suite in an app-shaped PR, which is why these run on every PR rather
+      # than only on ones touching supabase/.
+      - name: Database suites (PGlite)
+        run: |
+          cd supabase/tests
+          npm install --silent
+          node apply.mjs ../migrations
+          node behaviour.mjs ../migrations
+          node rls.mjs ../migrations
+          node session_type_id.mjs ../migrations
+          node credential_verification.mjs ../migrations
+          node session_note_completion.mjs ../migrations
+
       # ---------------------------------------------------------------------
       # Tenancy doctrine. Two runs, because they answer different questions.
       #

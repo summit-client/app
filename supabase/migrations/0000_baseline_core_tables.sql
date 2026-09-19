@@ -70,6 +70,22 @@
 -- reconciliation above actually happens: inferred from application code, not
 -- observed.
 --
+-- SECOND CONFIRMED DIVERGENCE (2026-09-19), and it points the other way.
+-- `profiles.email` EXISTS on the live table and is NOT NULL; this file does
+-- not declare it at all. Found while writing a fixture for 0088, which
+-- inserted a profiles row with an email and failed with 42703 against a
+-- database built from these files.
+--
+-- This one is not harmless the way created_at was. `invite-teammate`'s guard
+-- against overwriting an existing account queries `profiles` by email - the
+-- check that stops an invite silently reassigning somebody's role and clinic.
+-- On a database rebuilt from this repo that column does not exist, so the
+-- guard would error rather than protect. Same for anything else keyed on it.
+--
+-- Left as-is for the same reason as above: this file records what was
+-- inferred, these notes record what was measured. The divergence is one more
+-- reason the pg_dump reconciliation is overdue rather than optional.
+--
 -- Two known ambiguities, left deliberately visible rather than guessed away:
 --
 --   session_types.duration vs duration_minutes, and price vs cost. The editor
