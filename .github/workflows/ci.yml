@@ -163,8 +163,14 @@ jobs:
           CHANGED=$(git diff --name-only origin/main...HEAD)
           echo "Changed files:"
           echo "$CHANGED"
+          # The root lockfile and the root package.json count as a change to
+          # every app. A dependency added for ONE app can move what all five
+          # resolve to - apps/mobile's arrival gave next an optional-peer
+          # suffix for babel-plugin-react-compiler - and a PR that touches
+          # only the lockfile otherwise builds nothing at all, so the first
+          # thing to test that install is the deploy.
           for app in scheduler web data client employee; do
-            if echo "$CHANGED" | grep -q "^apps/$app/\|^packages/"; then
+            if echo "$CHANGED" | grep -q "^apps/$app/\|^packages/\|^pnpm-lock\.yaml$\|^package\.json$"; then
               echo "${app}_changed=true" >> $GITHUB_OUTPUT
             else
               echo "${app}_changed=false" >> $GITHUB_OUTPUT

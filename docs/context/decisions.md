@@ -548,6 +548,14 @@ changes: the build step already names the five apps explicitly, and every
 shared package stays in the install set, so a mobile PR that deliberately
 changes `packages/*` still ships to production normally.
 
+**The root lockfile now marks every app changed in CI.** Adding one app
+moved what all five resolve to — `next` gained an optional-peer suffix for
+`babel-plugin-react-compiler`, which `expo` brings into the workspace — and
+CI's change detector fired on `apps/<app>/` and `packages/` only, so a PR
+whose only shared file is `pnpm-lock.yaml` built nothing and left the first
+real test of that install to the deploy. `pnpm-lock.yaml` and the root
+`package.json` now count as a change to all five.
+
 **Rejected: a root `.npmrc` with `node-linker=hoisted`.** It is the usual
 advice for Metro in a pnpm monorepo and it would change the installed tree for
 all five live apps and the droplet to fix a sixth that does not deploy there.
