@@ -532,17 +532,14 @@ the `summitclient-deploy-ssh.md` doc in the Claude project.
 Raised and deliberately not bundled. None is urgent; the first is the only one
 with a tenancy consequence.
 
-- **The pre-history `Staff can read own sessions` policy on `sessions` has no
-  clinic predicate** — it matches on `employee_id` alone, across clinics. It
-  appears in this repo only as a COMMENT, in `0013`, `0077` and `0080`: no
-  migration creates it and none drops it, so it exists on the deployed
-  database and nothing here can see it. An audit run against the migration
-  files will report `sessions` as cleanly scoped and be wrong. It is
-  unreachable rather than safe, because `0016`'s trigger refuses to WRITE a
-  session whose clinic disagrees with its staff member's — and a write-side
-  trigger is not a tenant boundary. Dropping it needs a live `pg_policies`
-  read first, since nobody can say from this repo what its predicate actually
-  is.
+- ~~The pre-history `Staff can read own sessions` policy has no clinic
+  predicate.~~ **Closed by `0087`, applied live 2026-09-18** — see "Known open
+  work" below. It was one of six, not one, and the other five were invisible
+  from this repo for the same reason: four of them appear in no migration at
+  all. The lesson survives the fix. An audit run against the migration files
+  reported `sessions` cleanly scoped and was wrong, which is why
+  `supabase/tests/tenancy.mjs` now reads the live database as well and fails
+  the build when that live run is skipped.
 - **`sessions.type` still exists.** `0085` added the pointer and backfilled it
   (measured live: 2085 of 2085 rows resolved). Dropping the column is the
   follow-up, and it is safe only once a release shows nothing lands unmatched.
@@ -557,12 +554,14 @@ with a tenancy consequence.
   is already derived", with `not authorised to derive session deliveries for
   that clinic`. Predates this work; looks like the fixture's permissions
   rather than the rule.
-- **CI does not run the database suites.** `.github/workflows/ci.yml` is
-  typecheck and per-app builds only, so `apply.mjs`, `behaviour.mjs`,
-  `rls.mjs`, `session_type_id.mjs` and `credential_verification.mjs` only ever
-  run by hand. That is how `rls.mjs` sat red from `0077` landing until
-  `0086` — two cases asserting the exact behaviour `0077` removed. Whether
-  these should gate CI is the account owner's call.
+- **CI runs the tenancy and Edge Function suites now, not the rest.**
+  `tenancy.mjs` (both modes), `edit_teammate_authz.mjs` and
+  `invite_teammate_guard.mjs` gate every pull request. `apply.mjs`,
+  `behaviour.mjs`, `rls.mjs`, `session_type_id.mjs` and
+  `credential_verification.mjs` still only run by hand — that is how `rls.mjs`
+  sat red from `0077` landing until `0086`, two cases asserting the exact
+  behaviour `0077` removed. Those need PGlite installed in CI, so whether they
+  should gate it is still the account owner's call.
 - **Three clinics exist now**, not one: Mount Etna plus two test clinics
   ("Second Clinic (test)", "Test Clinic Seven"). Measured 2026-09-18. The
   "only one clinic exists today" framing elsewhere in this file is about
@@ -662,28 +661,55 @@ deployed schema, all found by introspecting before applying:
   `0000`'s own header. Treat every other column there as inferred, not
   observed, until the `pg_dump` reconciliation that header asks for happens.
 
-Open after that pass, both raised and deliberately not bundled: the
-pre-history `Staff can read own sessions` has **no clinic predicate** — it
-matches on `employee_id` alone, across clinics. It is unreachable rather than
-safe, because 0016's trigger refuses to write a session whose clinic
-disagrees with its staff member's; proven by removing that trigger in a
-scratch cluster and reading a cross-clinic row. A write-side trigger is not a
-tenant boundary. And `hub_pd_records`/`hub_time_off_requests` still have no
+Applied live 2026-09-18 (PR #188): migration `0087`. **Every policy on a
+clinic-scoped table now names the clinic**, and the live suite proves it
+rather than this paragraph asserting it.
+
+Six policies decided "is this row yours?" by reaching through `staff` or
+`clients` on `user_id` and naming no clinic. They were correct only because
+one person held one staff row — a fact about an *index on another table*, and
+for the two client ones, not even that: `clients` had no unique index on
+`user_id`, so what kept a family out of another clinic's sessions was that
+nobody had made the second row. A tenant boundary that lives in an index
+somewhere else is not a boundary. 0087 names the clinic in all six, gives
+`clients.user_id` the index `staff.user_id` already had, pins `search_path`
+on the two `security definer` functions that did not name `pg_temp` (one of
+them `handle_new_user`, which writes to `profiles` and had no `search_path`
+at all), and makes `clinic_id` NOT NULL on 37 tables.
+
+**`supabase/tests/tenancy.mjs` now checks this on every pull request**, twice:
+once against the migration files and once against the live database. Read its
+header before changing a policy. The live run is the one that matters — the
+file run reported `sessions` cleanly scoped while production carried two
+unscoped policies that appear in no migration in this repo, and a live run
+that gets skipped fails the build rather than reporting green. Its `KNOWN`
+baseline is empty and is meant to stay empty; an entry there is a policy the
+suite will not fail on.
+
+Still open from that pass: `hub_pd_records`/`hub_time_off_requests` have no
 `..._manage_select` policy (see the Admin console bullet below).
 
-- **`invite-teammate` does not check whether the invited email already has a
-  `profiles` row before upserting one.** Supabase's `inviteUserByEmail`
-  resolves an already-registered email to that *same existing user id*
-  rather than erroring or minting a new one, and the function then
-  `upsert`s `profiles` for that id — silently overwriting whoever already
-  owns that account with the new role/clinic/supervisor. Confirmed live
-  2026-08-30: inviting an existing admin's own email as "clinician" flipped
-  that admin's own `profiles.role` in place, and their prior
-  `hub_task_progress`/`hub_employee_training` rows (from testing under the
-  old role) then legitimately showed up under the "new" invite, because it
-  was the same account the whole time. Not yet fixed — add a check for an
-  existing `profiles` row (or an existing `auth.users` row for that email)
-  before inviting, and return a clear error instead of upserting over it.
+- **`invite-teammate` overwriting an existing account is FIXED** (commit
+  `479bbf8`); the reason it happened is worth keeping. Supabase's
+  `inviteUserByEmail` resolves an already-registered email to that *same
+  existing user id* rather than erroring or minting a new one, and the
+  function then `upsert`s `profiles` for that id — silently overwriting
+  whoever already owns that account with the new role/clinic/supervisor.
+  Confirmed live 2026-08-30: inviting an existing admin's own email as
+  "clinician" flipped that admin's own `profiles.role` in place, and their
+  prior `hub_task_progress`/`hub_employee_training` rows (from testing under
+  the old role) then legitimately showed up under the "new" invite, because
+  it was the same account the whole time.
+
+  The guard queries `profiles` by email and returns 409, naming whether the
+  account is in this clinic or another — the second case is where the
+  one-login-per-clinic decision is enforced. **It must stay ahead of
+  `inviteUserByEmail` in the file.** A trigger creates a default `profiles`
+  row (role `client`, `clinic_id` null) the instant any `auth.users` row
+  appears, including the one the invite itself creates, so the same query
+  moved after the call would reject every legitimate invite.
+  `supabase/tests/invite_teammate_guard.mjs` asserts that ordering, and CI
+  runs it. Edge Functions deploy separately — a merge does not ship them.
 - **The Admin console's "Queues" tab (`apps/employee/app/admin/page.tsx`) was scoped to the
   wrong user.** Every queue there read `getProgress()`/`getPd()`/`getTimeOff()` — the
   CALLER's own loaded hub snapshot (`hub.ts`'s `requireSnap()` is always the signed-in
