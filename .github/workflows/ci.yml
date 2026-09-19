@@ -62,6 +62,7 @@ jobs:
         run: |
           node supabase/tests/edit_teammate_authz.mjs
           node supabase/tests/invite_teammate_guard.mjs
+          node supabase/tests/rate_limit_fails_closed.mjs
 
 
       # The palette is generated from packages/design/src/tokens.ts, so these

@@ -98,7 +98,23 @@ export async function isRateLimited(
     .eq("actor_id", actorId)
     .eq("action", action)
     .gte("created_at", since);
-  if (error) return false; // fail open on the count query itself; the insert below still records the attempt
+  // Fail CLOSED. Every caller reads this as `if (await isRateLimited(...)) return 429`,
+  // so `false` means "let it through" - and returning false on a failed count
+  // meant a broken or unreachable provisioning_audit silently switched the
+  // limit off on the invite, edit and clinic-provisioning paths at once. A
+  // rate limit that disappears exactly when the database is unhappy is not a
+  // rate limit.
+  //
+  // The cost, and it is real: a transient error now refuses the action, and
+  // the caller's copy says "too many ... recently" rather than "we could not
+  // check". That is the wrong words for the right answer, and it is the
+  // trade - a refusal a person retries beats an unmetered invite endpoint.
+  // The reason is logged so it is diagnosable; this query counts rows in an
+  // audit table and carries no PHI.
+  if (error) {
+    console.error("[_shared/auth] rate-limit count failed, refusing:", error.message);
+    return true;
+  }
   return (count ?? 0) >= maxPerHour;
 }
 
