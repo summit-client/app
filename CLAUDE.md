@@ -594,12 +594,33 @@ detail and the state, and closing it is what marks the work done.
   number, because nothing ever sets `sessions.status = 'completed'`.
   `blocked`: see `decisions.md` for the choice it waits on.
 
-**Where to file what.** A defect or a piece of work is a GitHub issue. A
-*decision* — what was chosen, what is still genuinely undecided, why something
-was rejected — goes in `docs/context/decisions.md`, which is the one thing
-issues are bad at. A *rule* a future session must not break is a Landmine
+**Where each kind of thing goes.** A defect or a piece of work is a GitHub
+issue. A *decision* — what was chosen, what is still genuinely undecided, why
+something was rejected — goes in `docs/context/decisions.md`, which is the one
+thing issues are bad at. A *rule* a future session must not break is a Landmine
 above or a Trap earlier in this file, because those are read automatically and
-an issue is not. Don't put the same thing in two places; link instead.
+an issue is not. Never put the same thing in two places; link instead.
+
+**Keeping it that way is part of the work, not tidying afterwards.** This
+structure decays silently, and has: `decisions.md` carried the
+`invite-teammate` overwrite bug tagged OPEN, "not yet fixed", for weeks after
+it shipped. A session reading it would have rebuilt a guard that already
+existed. So:
+
+- **Found a defect? Open an issue** and add one pointer line here. Do not
+  write the description here — a paragraph in this file has no state and
+  nobody closes it.
+- **Fixed something? Close its issue in the same PR**, and delete its pointer
+  line. "Fixed in #189" in a commit message is not closing it.
+- **Starting work in an area? Read its open issues first**, not just this
+  file. This list is pointers and can lag; the issues cannot.
+- **Made or changed a decision? Record it in `decisions.md`** with the date
+  and who made it — including when the account owner settles something
+  mid-session. That file is the only record of *why*, and a decision nobody
+  wrote down gets re-litigated by the next session.
+- **A status claim in any doc is a claim, not a fact.** Cross-check against
+  `git log origin/main` and the issue list before repeating it. That habit is
+  what caught the last four gaps.
 
 Not a defect, so no issue: **three clinics exist now**, not one — Mount Etna
 plus two test clinics. The "only one clinic exists today" framing elsewhere in

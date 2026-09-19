@@ -13,6 +13,11 @@ was rejected and on what grounds, and what is genuinely still undecided.
 an entry is OPEN because nobody has built it rather than because nobody has
 decided, it is an issue, not a decision.
 
+**Write a decision down the session it is made.** When the account owner
+settles something mid-conversation, it is binding from that moment and this
+file is the only place it survives. An unrecorded decision gets re-proposed by
+the next session, which wastes their time and reads as not having listened.
+
 Status key:
 
 - **DECIDED** — Yanko stated it, or executed it. Binding.
